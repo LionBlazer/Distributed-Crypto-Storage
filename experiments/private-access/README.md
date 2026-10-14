@@ -10,6 +10,7 @@ database files. Run CPU experiments serially.
 | --- | --- |
 | [compact-store](../../crates/compact-store/README.md) | Existing owner AEAD sealing, Merkle proofs, bounded page decoder and snapshot replacement in the Spiral experiment |
 | [Blyss SDK, exact revision](https://github.com/blyssprivacy/sdk/tree/fdb7206517c249603b0c91b65f1f29f95272107c/lib) | Unmodified DoublePIR/Spiral cryptographic primitives |
+| TFHE-rs 1.8.1 | Fresh encrypted fields and real conditional COUNT/SUM/increment in the composed probe |
 | Cargo and project-local dependency cache | Build only the selected standalone probe; root workspace remains unchanged |
 
 doublepir_probe.rs measures a genuine private retrieval of one raw AES-masked
@@ -40,3 +41,12 @@ leakage and any visible retry policy need separate protocol work.
 
 Read [the experiment ledger](../../docs/experiment-private-access.md) for measured
 results, source references, full byte accounting and reproduction commands.
+
+spiral_fhe_probe.rs and run-spiral-fhe.ps1 compose actual authenticated known-row
+page retrieval with fresh owner-prepared TFHE inputs and real peer execution.
+The separate SpiralFhe.Cargo.lock pins this opt-in build. It compares visible and
+private retrieval on identical inputs and measures overflow refusal, compact
+writeback and complete PIR cache rebuilding. The evaluator receives no original
+stored bytes, nonce or row/page address. The owner is online and reads its own
+selected plaintext; hidden SQL index navigation and computation proofs remain
+absent. See the [complete pipeline measurements](../../docs/experiment-private-fhe-pipeline.md).

@@ -14,7 +14,7 @@ encrypted peer data and an independently authenticated snapshot head.
 | Updates | Authenticated index and data changes published atomically | Include oblivious rewriting, state synchronization and hint maintenance |
 | Collusion | Colluding peers combine visible traces | Prefer a single-server construction; a two-server noncollusion assumption is a separate unapproved relaxation |
 | Malicious results | Authenticate selected data and prove complete selection/computation | Same obligations; private retrieval does not establish correct SQL execution |
-| Current local code | Direct authenticated row-address retrieval experiment | [Native DoublePIR and authenticated Spiral page retrieval](experiment-private-access.md); no complete hidden SQL index yet |
+| Current local code | [Owner-built age index with genuine FHE and compact updates](experiment-compact-query.md) | [Composed authenticated Spiral page retrieval and fresh FHE](experiment-private-fhe-pipeline.md); no hidden SQL index navigation yet |
 
 These compare protocol families rather than promise a universal latency multiplier.
 The same query, records, selected result size, thread count, memory, cache and
@@ -56,13 +56,23 @@ storage/execution peer could match those bytes against its database. This is a
 composition risk inferred from our proposed protocol, not a failure claim about
 ORAM or PIR themselves.
 
-One candidate privately fetches an authenticated compact page to the owner's
-application, then freshly masks the selected encrypted bytes and supplies an FHE
-mask token to the evaluator. The token must bind the intended query and snapshot
-without revealing the selected stored nonce/address. This is a proposal, not an
-implemented proof or an approved requirement for owner availability. Costs include
-the private fetch, fresh input preparation, FHE execution, verification, and any
-second network exchange. Reusing unchanged selected bytes would defeat this goal.
+The [composed probe](experiment-private-fhe-pipeline.md) privately fetches an
+authenticated compact page to the owner's application, verifies/decrypts it there
+and freshly TFHE-encrypts the selected fields. The evaluator receives no original
+stored bytes, nonce or address. Both modes perform real encrypted >=, COUNT and SUM
+on the same million-row fixture: visible reads took 47–51 ms; warm private reads
+took 178–204 ms, with a measured combined peak of 418 MiB. This includes both local
+exchanges and all cryptographic work, with network/proofs excluded. The private
+path sends 498,088 bytes across two sequential round trips.
+
+This is an implemented known-row comparison, not a hidden SQL index or computation
+proof. The owner is online and sees its selected plaintext. Its availability is an
+explicit experiment assumption, not a newly approved requirement. SQL index
+navigation, authorized input/output proof binding, shard choice, padding, malicious
+feedback/retries and actual transport still need composition work. An accepted
+private FHE increment through cache readiness took 382 ms; including a subsequent
+private FHE read took 621 ms. Reusing selected stored ciphertext in the later FHE
+request would still defeat the intended address privacy.
 
 A range or JOIN may visit many pages even with an index. A hidden point lookup
 does not establish a hidden general SQL planner. A complete comparison must cover
