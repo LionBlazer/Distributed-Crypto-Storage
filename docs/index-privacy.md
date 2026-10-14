@@ -110,6 +110,35 @@ This replacement was not a FHE SQL UPDATE. Computation proofs, active-server
 feedback security, independently trusted freshness and distributed publication
 remain unresolved.
 
+## Measured byte-limb BFV comparison
+
+The [new composition](experiment-private-bfv-index.md) replaces the scalar TFHE
+arithmetic with the separately tested byte-limb BFV core. It performs actual
+complete index selection, visible or native Spiral retrieval, authentication,
+fresh 16-slot encryption and peer EQ COUNT/SUM. All 64 queries are exact and
+under 500 ms locally. Neither privacy policy is selected by this result.
+
+For the padded Fixed16 profile, with two samples per 0/1/4/16-row group:
+
+| Header policy | Visible complete ms, range across tested groups | Private complete ms, range across tested groups |
+| --- | ---: | ---: |
+| Cached | 81.709–91.881 | 330.006–356.373 |
+| Uncached | 82.521–92.211 | 451.596–488.904 |
+
+Both controls always run the same 16 encrypted slots. AddressOnly also uses
+fixed BFV geometry here, so its omitted empty reads reveal absence rather than
+inherently exposing every nonempty cardinality. Fixed16 additionally equalizes
+the tested retrieval lengths and schedules. Visible still exposes page addresses
+and repetition. Private Cached/Uncached sends 1,190,756/1,227,685 bytes in 3/4
+sequential exchanges; actual network time is excluded.
+
+Native process peak is 690 MB. Canonical data/index remain 1.688383x on the
+3 MB logical fixture; known keys/owner payload raise its subtotal to 6.738583x,
+with portable PIR secret-state framing still absent. This is not a joint 2x
+result. Online-owner, one-page groups, EQ, ready native caches and unverified
+arithmetic remain explicit limits. Cold setup is 2459 ms and the owner compact
+replacement/rebuild/fresh read is 695 ms; no BFV UPDATE is implemented.
+
 A range or JOIN may visit many pages even with an index. A hidden point lookup
 does not establish a hidden general SQL planner. A complete comparison must cover
 absent keys, repeated keys, duplicate groups, indexed-field changes, access padding,

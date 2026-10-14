@@ -344,3 +344,8 @@ arbitrary SQL, malicious result proof or distribution requirements. On this
 configuration only the one-row cached private queries met 500 ms among nonempty
 private classes in both measured repetitions; the warm uncached one-row repeat
 also did, while its first use did not. No privacy policy was newly approved.
+
+The subsequent [byte-limb BFV composition](experiment-private-bfv-index.md)
+measures both policies again with fixed 16-slot BFV arithmetic. Its faster EQ
+reads do not change these retained TFHE measurements or establish general SQL,
+hidden writes, independent security or malicious-peer computation proofs.
