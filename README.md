@@ -27,9 +27,11 @@ secret keys are generated in memory and are never written to disk. See the modul
 README for measurement assumptions, limitations, and the API.
 
 The separate [GUI playground](crates/fhe-playground/README.md) provides an egui
-client/manager, editable test data, one-click SQL presets, and 1–16 simulated peers.
+client/manager, editable test data, SQL presets, and 1–16 simulated peers.
 It runs actual FHE operations on local encrypted shards. The SQL frontend supports
 only the documented aggregate/update subset; peer simulation runs in one process.
+SQL, data, and infrastructure have separate tabs. Presets fill the editor; execution
+requires Run or Ctrl+Enter.
 
 ```sh
 cargo run --release --locked -p fhe-playground

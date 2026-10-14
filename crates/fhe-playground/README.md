@@ -28,19 +28,26 @@ and allows one GUI task instance at a time.
 
 ## Explore
 
-- Type SQL and press **Run query** or **Ctrl+Enter**. A preset button inserts its
-  query and runs it in one click. Presets cover all rows, adults, equality, no matches,
-  an increment, and overflow rejection.
-- Open **Edit data / rebuild** to name a test database, edit `age,amount` lines,
-  generate up to 128 synthetic rows, select an overflow fixture, or create an empty
-  database. **Create / rebuild** applies the draft and generates fresh keys.
-- Choose **1–16 peers** before rebuilding. Rows are assigned round-robin to encrypted
-  shards; changing the slider does not alter the live layout until a rebuild.
-- Toggle peer checkboxes to simulate availability. A required offline shard makes
-  reads and updates fail explicitly. Empty offline peers do not omit any data.
-- Inspect decrypted COUNT/SUM, measured per-shard computation times, compressed
-  shard bytes, local revision, and recent operations. Times are CPU computation plus
-  client decryption, not network ping.
+The SQL view follows the basic areas of
+[DataGrip's query console](https://www.jetbrains.com/help/datagrip/query-consoles.html):
+database tree on the left, editor on the right, and a resizable result/output pane
+below. The editor has line numbers and SQL highlighting; decorative cards and the
+topology diagram are removed.
+
+- **SQL:** write a statement, then click **Run** or press **Ctrl+Enter**. The
+  **Presets** menu only fills the editor; selecting a preset never submits a query.
+  SELECT answers appear as a result row. Updates, errors, and history use **Output**.
+- **Data:** name a database, edit `age,amount` lines, generate up to 128 synthetic
+  rows, or choose an overflow/empty fixture. **Create / replace** applies these
+  drafts and generates fresh keys using the peer count selected on Infrastructure.
+- **Infrastructure:** choose **1–16 peers**, then **Apply** to rebuild round-robin
+  shards from the live database. Unapplied data drafts are preserved. Toggle peer
+  availability and inspect rows, compressed bytes, and last per-shard query times.
+  A required offline shard makes reads/updates fail; empty offline peers do not
+  omit data. Times include FHE and client decryption, not network ping.
+
+Ctrl+Enter executes only on the SQL tab. Tab changes never submit operations. The
+small status bar marks this as a local, unverified experiment; details are in tooltips.
 
 The fixture editor is the owner's plaintext view. Peer evaluations receive only
 opaque ciphertext inputs and evaluation material. The fixture mirrors successful
@@ -80,8 +87,7 @@ All peers, the owner, and keys live in **one process**. The worker executes requ
 serially away from the UI thread; TFHE uses two Rayon threads. Evaluator clones
 share their key allocation, so memory does not model independent physical machines.
 Taking a peer offline preserves its local ciphertexts and does not model permanent
-data loss, recovery, replication, or adversarial behavior. The layout diagram shows
-logical shards around this test manager, not a production network topology.
+data loss, recovery, replication, or adversarial behavior.
 
 The database, keys, drafts, and history are ephemeral and are never saved. Closing
 the app loses the experiment. Results remain **unverified**: FHE confidentiality is
@@ -95,7 +101,13 @@ channel are private binary modules. API tests exercise real FHE across shards,
 availability rejection, cross-shard overflow rollback, invalid replacement, empty
 databases, and strict SQL/fixture validation.
 
+UI tests render egui in memory and observe its command channel. They exercise preset
+selection without execution, explicit Run/Ctrl+Enter, tab separation, result/output
+rendering, and draft preservation when applying a peer layout. They do not open
+native windows, capture the desktop, or inject OS input.
+
 ```sh
+cargo test --release --locked -p fhe-playground --bin fhe-playground
 cargo test --workspace --release --locked -- --test-threads=1
 cargo clippy --workspace --all-targets --release --locked -- -D warnings
 ```

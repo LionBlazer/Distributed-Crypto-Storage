@@ -31,6 +31,13 @@ pub struct Worker {
 }
 
 impl Worker {
+    #[cfg(test)]
+    pub fn test_channel() -> (Self, Receiver<Command>, mpsc::Sender<Event>) {
+        let (sender, commands) = mpsc::sync_channel(1);
+        let (events, receiver) = mpsc::channel();
+        (Self { sender, receiver }, commands, events)
+    }
+
     pub fn start(context: egui::Context) -> std::io::Result<Self> {
         let (sender, commands) = mpsc::sync_channel(1);
         let (events, receiver) = mpsc::channel();
