@@ -35,7 +35,7 @@ See [earlier measurements](fhe-optimization.md) before repeating experiments.
 | --- | --- | --- |
 | Existing compressed TFHE image | Measured | 50.31x at 1024 three-byte rows; fails storage target |
 | Narrow COUNT, multi-input SUM, overflow carry reuse | Reviewed and promoted; 42 owning/dependent tests passed | [Paired measurements](experiment-fast-scan.md): scan 2.68–4.16x faster, UPDATE 1.10–1.30x; storage unchanged |
-| Authenticated symmetric pages | API tests passed in worktree; edge checks and full measurement pending | 112-byte manifest + 48 bytes/page + exact payload; does not implement FHE |
+| Authenticated symmetric pages | Reviewed and promoted; 19 tests passed | [One million rows](experiment-compact-store.md): 1.062549x, 1.145952x including tree hashes; 1000 replacements retain size; no FHE |
 | TFHE 1.8.1 native one-time-pad transciphering | Implementation in isolated worktree | Measure actual compact-to-FHE COUNT/SUM, fresh/warm input and complete wire costs |
 | Native encrypted PRF mask regeneration | Implementation/review in isolated worktree | Avoid persistent FHE masks; audit seed lifecycle, key domain and rerandomization threat model |
 | Visible authenticated searchable index | Proposed | Direct row-ordinal lookup is not an index for arbitrary SQL predicates |

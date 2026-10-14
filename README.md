@@ -47,6 +47,13 @@ In Zed, use `task: spawn` and select **FHE: Open GUI playground** from
 [.zed/tasks.json](.zed/tasks.json). The GUI requires Rust 1.95 or newer; the Zed task
 uses the built-in Windows PowerShell and rustup.
 
+The experimental [compact-store](crates/compact-store/README.md) crate separates
+owner-only encryption keys from opaque peer pages and authenticates direct page
+retrieval against an independently known version root. Its fixed-width page
+replacements retain constant live encoded size. It currently exposes requested
+page addresses and does not implement FHE, SQL completeness proofs, or concealed
+access.
+
 The integration branch is `master`. [AGENTS.md](AGENTS.md) defines task branches,
 automatic commit and push after each completed change, synchronization from master,
 and explicitly requested promotion back to master. Project skills live in
