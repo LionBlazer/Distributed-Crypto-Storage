@@ -1,0 +1,29 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+secrets/
+.local/
+
+# Local participant data and generated artifacts
+data/
+storage/
+logs/
+artifacts/
+build/
+out/
+dist/
+target/
+coverage/
+*.log
+
+# Tool caches and local editor settings
+node_modules/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
