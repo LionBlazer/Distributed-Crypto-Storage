@@ -8,10 +8,12 @@ data and process queries without access to plaintext. The requirements cover FHE
 SQL operations, bounded storage and memory, replication, recovery, malicious peers,
 and verifiable query results.
 
-The repository is at the requirements and research stage. There is no implementation
-or selected language, build system, cryptographic library, consensus protocol, or
-reward mechanism yet. Treat performance and resource numbers as targets to validate,
-not established capabilities. Do not assume that blockchain is required.
+The repository contains a local Rust/Cargo FHE prototype using TFHE-rs, alongside
+requirements and research. The prototype experiments with a fixed encrypted schema;
+it does not establish the feasibility of distributed SQL or query proofs. Production
+cryptography, consensus, and rewards remain open choices. Treat performance and
+resource numbers as targets to validate, not established capabilities. Do not assume
+that blockchain is required.
 
 ## Working conventions
 
