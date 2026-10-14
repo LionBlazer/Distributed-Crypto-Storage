@@ -13,7 +13,7 @@ mod format;
 mod proof;
 mod snapshot;
 
-pub use crypto::{Owner, PlainPage};
+pub use crypto::{Owner, PlainPage, SecretMask};
 pub use format::{
     Commitment, Error, Layout, Limits, MANIFEST_BYTES, PAGE_OVERHEAD, Result, RowAddress,
 };

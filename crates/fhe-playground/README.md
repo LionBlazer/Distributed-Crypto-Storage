@@ -2,10 +2,11 @@
 
 A native **egui / eframe** client and manager for local FHE experiments. This crate
 owns the test UI, a small SQL frontend, and an in-process transport adapter.
-It composes [fhe-prototype](../fhe-prototype/README.md) for encryption, encrypted
-aggregation/updates and compression, and [peer-protocol](../peer-protocol/README.md)
-for connection/message state. Both reusable libraries are independent of the GUI
-and simulation clock. This is an experiment, not a production distributed database.
+It composes [compact-query](../compact-query/README.md) for compact authenticated
+storage, an owner-assisted encrypted age index, real FHE aggregation/updates and
+compact writeback; [compact-store](../compact-store/README.md) supplies the page
+limits, and [peer-protocol](../peer-protocol/README.md) owns connection/message
+state. These libraries are independent of the GUI and simulation clock. This is an experiment, not a production distributed database.
 
 ## Launch
 
@@ -77,15 +78,15 @@ surviving profiles. This is not automatic replication/recovery by the peer proto
 Creation retains current topology and availability. Zero peers retains owner state
 but cannot answer queries; failed repartition preserves the old encrypted data.
 
-Quotas cover the compressed shard image, including headers (1 KiB..64 MiB), not
-TFHE working memory or key allocation. Creation, repartitioning, profile edits and
+Quotas cover canonical encrypted data plus the complete encrypted index, including headers (1 KiB..64 MiB), not
+TFHE working memory, shared keys or rebuildable in-memory Merkle hashes. The node inspector shows data and index bytes separately. Creation, repartitioning, profile edits and
 updates reject overruns without partial writes. Peer delay (0..1000 ms) belongs to
 the virtual transport; it is not measured ping. Query wall time includes delivery,
-FHE evaluation and owner decryption; per-shard compute timing excludes virtual delay.
+index selection, fresh encrypted masks, request/output serialization, FHE evaluation and owner decryption; per-shard query timing excludes virtual delay.
 Offline required shards reject reads/updates, without silently omitting records.
 
 The fixture editor is the owner's plaintext view. Peer evaluations receive only
-opaque ciphertext inputs and evaluation material. The fixture mirrors successful
+opaque ciphertext inputs and evaluation material. The fixture is decrypted from actual staged compact ciphertexts after successful
 updates for further editing; aggregate answers come from FHE evaluation, not a
 plaintext SQL fallback. Unapplied draft edits are preserved when a live SQL update
 finishes. A failed rebuild preserves the old database.
@@ -107,11 +108,16 @@ Thresholds must be in `0..=255`, deltas in `0..=65535`. Omitting WHERE selects a
 rows. Empty selections return `(0, 0)`; SQL NULL semantics are not implemented.
 The entire statement is parsed, with a 4 KiB limit. Unsupported projections,
 operators, clauses, aliases, comments, quoted identifiers, and multiple statements
-are rejected. CREATE/INSERT/DELETE, joins, indexes, and transactions are not supported
+are rejected. CREATE/INSERT/DELETE, CREATE INDEX, joins and transactions are not supported
 as SQL; database creation and fixture replacement are GUI manager actions.
 
-Updates stage copies of every shard and commit only after all encrypted overflow
-checks and compression round trips succeed. Overflow on any shard retains all
+The current backend uses its owner-built encrypted age posting index for complete
+equality/range candidates. Peers observe selected addresses and cardinality. This
+is an explicit experimental visible-access case; the final leakage policy is open.
+
+Updates stage compact data/index copies for every shard. The owner decrypts and
+locally checks selected FHE updates, reencrypts changed pages with fresh nonces,
+and commits only after every shard passes. Overflow on any shard retains all
 original shards. This is local atomic behavior under one manager, not a distributed
 transaction or consensus guarantee. A committed update advances the local revision;
 that number is not a network freshness certificate.
@@ -120,9 +126,9 @@ that number is not a network freshness certificate.
 
 All peers, the owner, and keys live in **one process**. A network worker advances
 virtual delivery while a separate compute worker serializes FHE jobs; TFHE uses
-two Rayon threads. Evaluator clones share key allocation, so memory does not model
+eight Rayon threads. Evaluator clones share key allocation, so memory does not model
 independent physical machines. Packets carry opaque references to local operations;
-there is no TCP transport or serialized ciphertext request/result wire format yet.
+there is no TCP transport. The cryptographic backend actually serializes and decodes encrypted requests/results, but the virtual network does not yet model their byte-dependent transmission time.
 Taking a peer offline preserves its local ciphertexts and does not model permanent
 data loss, recovery, replication, or adversarial behavior.
 
@@ -130,7 +136,7 @@ The database, keys, drafts, and history are ephemeral and are never saved. Closi
 the app loses the experiment. Results remain **unverified**: FHE confidentiality is
 not proof of correct, complete, fresh execution by malicious peers. The cryptographic
 limitations and measured costs of the underlying implementation remain as described
-in [fhe-prototype](../fhe-prototype/README.md).
+in [compact-query](../compact-query/README.md). Owner-side update checking repeats selected plaintext work and is not a succinct single-peer computation proof.
 
 Library entry points include `LabEngine::create`, `create_with_peer_ids`,
 `repartition`, `execute`, `prepare_query`, `commit_prepared`, `discard_prepared`,
@@ -155,4 +161,7 @@ cargo test --release --locked -p fhe-playground --bin fhe-playground
 cargo test --release --locked -p fhe-playground --bin fhe-playground export_ui_previews -- --ignored --nocapture
 cargo test --workspace --release --locked -- --test-threads=1
 cargo clippy --workspace --all-targets --release --locked -- -D warnings
+cargo run --release --locked -p fhe-playground --example sql_workload -- 128 8 5
 ```
+
+The sql_workload example exercises the actual SQL/manager boundary without opening a GUI: indexed point, duplicate-group and absent queries, then compact UPDATE. It emits public-fixture JSON timings and storage counters; network/proofs are excluded. Tiny tables may exceed 2x once fixed metadata and the encrypted index are counted.

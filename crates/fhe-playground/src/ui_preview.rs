@@ -29,7 +29,9 @@ fn export_ui_previews() {
             app.network_view = NetworkView::Map;
         }
         for peer in &mut app.snapshot.as_mut().unwrap().peers {
-            peer.compressed_bytes = 1951 + peer.rows * 72;
+            peer.data_bytes = 112 + peer.rows * 3 + if peer.rows == 0 { 0 } else { 48 };
+            peer.index_bytes = 2328 + peer.rows * 4;
+            peer.stored_bytes = peer.data_bytes + peer.index_bytes;
         }
         app.tab = tab;
         if name == "peer-tab" {

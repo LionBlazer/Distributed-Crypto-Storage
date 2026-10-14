@@ -410,6 +410,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "compact-query"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "compact-store",
+ "getrandom 0.2.17",
+ "rayon",
+ "serde",
+ "serde_json",
+ "tfhe",
+ "zeroize",
+]
+
+[[package]]
 name = "compact-store"
 version = "0.1.0"
 dependencies = [
@@ -877,8 +891,9 @@ checksum = "b97b65636e5b9ef369943878ac74335ba1c55c1cb6adbf1e2c293c624248d693"
 name = "fhe-playground"
 version = "0.1.0"
 dependencies = [
+ "compact-query",
+ "compact-store",
  "eframe",
- "fhe-prototype",
  "peer-protocol",
  "rayon",
 ]

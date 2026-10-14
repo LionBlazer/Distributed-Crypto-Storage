@@ -1,7 +1,7 @@
 use std::sync::Once;
 
+use fhe_playground::PlainRow;
 use fhe_playground::{DatabaseDraft, LabEngine, LabError, PeerConfig, QueryOutcome, sample_rows};
-use fhe_prototype::PlainRow;
 
 // Synthetic public fixtures; each test owns fresh, ephemeral FHE keys.
 fn lab(rows: Vec<PlainRow>, peers: usize) -> LabEngine {
@@ -71,12 +71,12 @@ fn editing_sql_updates_real_encrypted_shards_and_preserves_their_image_sizes() {
         after
             .peers
             .iter()
-            .map(|peer| peer.compressed_bytes)
+            .map(|peer| peer.stored_bytes)
             .collect::<Vec<_>>(),
         before
             .peers
             .iter()
-            .map(|peer| peer.compressed_bytes)
+            .map(|peer| peer.stored_bytes)
             .collect::<Vec<_>>()
     );
 }
@@ -267,10 +267,7 @@ fn a_quota_failure_after_staging_a_shard_keeps_the_entire_original_layout() {
     let after = engine.snapshot().unwrap();
     assert_eq!(after.peers.len(), 1);
     assert_eq!(after.revision, before.revision);
-    assert_eq!(
-        after.peers[0].compressed_bytes,
-        before.peers[0].compressed_bytes
-    );
+    assert_eq!(after.peers[0].stored_bytes, before.peers[0].stored_bytes);
     assert_eq!(aggregate(&mut engine, ALL), (2, 30));
 }
 

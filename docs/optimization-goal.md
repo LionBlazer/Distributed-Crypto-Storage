@@ -38,7 +38,7 @@ See [earlier measurements](fhe-optimization.md) before repeating experiments.
 | Authenticated symmetric pages | Reviewed and promoted; 19 tests passed | [One million rows](experiment-compact-store.md): 1.062549x, 1.145952x including tree hashes; 1000 replacements retain size; no FHE |
 | TFHE 1.8.1 compact-to-FHE conversion | Reviewed opt-in [four-mode probe](transciphering-probe.md), actual encrypted COUNT/SUM | AES-radix: 1.033854x page, 1.059896x with owner state before FHE keys; eight-worker 19-warm-sample median/max 117.60/151.78 ms; two-worker max 573.88 ms |
 | Native encrypted PRF mask regeneration | Implemented raw and rerandomized controls in the same probe | No persistent FHE masks; 64-row native preparation takes 5.61/5.88 seconds; rerandomized query exceeds 500 ms; storage/security composition still needs review |
-| Visible authenticated searchable index | Proposed | Direct row-ordinal lookup is not an index for arbitrary SQL predicates |
+| Visible authenticated searchable index + FHE + compact updates | [Reviewed compact-query implementation](experiment-compact-query.md), now used by the GUI | Million-row serial baseline: 1/4/16-row aggregate p95 83.37/499.70/2052.57 ms; 100 point updates p95 278.21 ms; canonical data+index 2.41229x, keys additional; 380.15 MiB measured process peak |
 | Concealed access via single-server PIR | [Native DoublePIR and authenticated Spiral page probes](experiment-private-access.md) | Million-row Spiral: 133.73–142.50 ms full-page private retrieval, 1.007861x canonical data, 32 MiB RAM cache; indexed SQL/FHE composition remains unimplemented |
 | Verifiable FHE computation and SQL completeness | [Proof research and actual PBS accounting](experiment-query-proofs.md); no verifier | Point COUNT/SUM uses 33 PBS; UPDATE 59/67 at 2/8 workers. Inspected primitive proof systems take seconds, with no TFHE-rs adapter; full 500 ms budget remains unproved |
 
@@ -68,9 +68,16 @@ verify, decrypt and re-encrypt; this requires that application online for that
 operation and must be measured. No current experiment supplies a decentralized
 write-authorization or computation-proof protocol.
 
-The compact-store XChaCha20Poly1305 format and the AES/OPRF probe remain different
-implementations; no adapter between them exists. Their measured costs cannot be
-combined into one claimed pipeline. The probe's own page/keys/query accounting is
-complete for its narrow local read, with network, proofs and updates explicitly
-absent. The full goal remains active: implement and validate a composed indexed
-read/update lifecycle and compare concealed access before choosing a privacy policy.
+The AES/OPRF probe remains a separate format. The new compact-query pipeline uses
+actual compact-store XChaCha20Poly1305 pages with owner-supplied fresh FHE masks;
+its measured read/update lifecycle is not an arithmetic sum of unrelated probes.
+The GUI adapter passed 13 real SQL workflow tests and 59 headless library/UI/worker
+tests, with strict Clippy passing. Its 128-row serial SQL boundary control measured
+five point queries at 99.35–120.94 ms, four-row queries at 518.12–551.47 ms, and a
+point UPDATE at 233.54 ms. Canonical data/index were 544/2840 bytes for 384 logical
+bytes; fixed index metadata dominates tiny tables. No GUI window was opened.
+
+The full goal remains active: reduce index overhead and multi-row latency, compose
+concealed indexed access, and retain the unresolved proof, freshness, resource and
+durable lifecycle requirements. Transport and malicious-peer computation proofs
+remain absent from all local latency measurements.

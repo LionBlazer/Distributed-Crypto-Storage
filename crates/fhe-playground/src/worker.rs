@@ -832,7 +832,7 @@ impl Runtime {
 mod tests {
     use super::*;
     use fhe_playground::PeerInfo;
-    use fhe_prototype::PlainRow;
+    use fhe_playground::PlainRow;
 
     fn runtime() -> (
         Runtime,
@@ -862,7 +862,9 @@ mod tests {
                 config: config.clone(),
                 online: true,
                 rows: 1,
-                compressed_bytes: 2048,
+                data_bytes: 163,
+                index_bytes: 2332,
+                stored_bytes: 2495,
                 owner_row_indices: vec![0],
             }],
         };
@@ -1053,7 +1055,7 @@ mod tests {
 #[cfg(test)]
 mod live_worker_tests {
     use super::*;
-    use fhe_prototype::PlainRow;
+    use fhe_playground::PlainRow;
 
     fn until(worker: &Worker, condition: impl Fn(&Event) -> bool) -> Event {
         let deadline = Instant::now() + Duration::from_secs(60);

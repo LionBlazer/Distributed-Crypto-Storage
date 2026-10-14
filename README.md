@@ -28,7 +28,8 @@ README for measurement assumptions, limitations, and the API.
 
 The separate [GUI playground](crates/fhe-playground/README.md) provides an egui
 client/manager, editable test data, SQL presets, up to 16 simulated peers and 8 clients.
-It runs actual FHE operations on local encrypted shards. The SQL frontend supports
+It uses compact encrypted pages and an owner-assisted encrypted index, converting
+selected rows to FHE only for the current operation. The SQL frontend supports
 only the documented aggregate/update subset; peer simulation runs in one process.
 SQL/data occupy the left pane, with the network and node inspector tabs on the right.
 The map and dense connection matrix display the same actual links and packet events.
@@ -53,6 +54,14 @@ retrieval against an independently known version root. Its fixed-width page
 replacements retain constant live encoded size. It currently exposes requested
 page addresses and does not implement FHE, SQL completeness proofs, or concealed
 access.
+
+The [compact-query](crates/compact-query/README.md) crate composes those pages with
+complete age-index selection, genuine FHE COUNT/SUM and overflow-safe amount
+updates, followed by compact owner-assisted writeback. The GUI uses this backend.
+It remains an explicitly unverified local experiment with visible addresses;
+owner availability, general SQL, concealed index execution and computation proofs
+remain open. See the [measurement ledger](docs/optimization-goal.md) for measured
+costs, including indexes, keys and memory.
 
 The integration branch is `master`. [AGENTS.md](AGENTS.md) defines task branches,
 automatic commit and push after each completed change, synchronization from master,

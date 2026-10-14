@@ -10,9 +10,9 @@ fn main() -> eframe::Result {
         std::process::exit(1);
     }
     rayon::ThreadPoolBuilder::new()
-        .num_threads(2)
+        .num_threads(8)
         .build_global()
-        .expect("configure the GUI's two FHE CPU threads");
+        .expect("configure the GUI's eight FHE CPU threads");
     eframe::run_native(
         "DCS | FHE Playground",
         eframe::NativeOptions {

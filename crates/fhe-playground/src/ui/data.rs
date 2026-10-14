@@ -1,5 +1,5 @@
 use super::*;
-use fhe_prototype::PlainRow;
+use fhe_playground::PlainRow;
 impl Playground {
     pub(super) fn data_editor(&mut self, ui: &mut egui::Ui) {
         egui::CentralPanel::default().frame(egui::Frame::new().fill(EDITOR).inner_margin(12)).show(ui,|ui|{

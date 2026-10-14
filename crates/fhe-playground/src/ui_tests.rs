@@ -23,7 +23,9 @@ fn snapshot(peers: usize) -> LabSnapshot {
                 config: PeerConfig::numbered(index + 1),
                 online: true,
                 rows: (index..rows.len()).step_by(peers).count(),
-                compressed_bytes: 2023,
+                data_bytes: 166,
+                index_bytes: 2336,
+                stored_bytes: 2502,
                 owner_row_indices: (index..rows.len()).step_by(peers).collect(),
             })
             .collect(),

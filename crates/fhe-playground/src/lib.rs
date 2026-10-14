@@ -14,8 +14,9 @@ pub use simulation::{
     NetworkSnapshot, PacketKind,
 };
 
+pub use compact_query::PlainRow;
 pub use engine::{
     DatabaseDraft, LabEngine, LabError, LabProgress, LabSnapshot, MAX_LAB_ROWS, MAX_PEERS,
     PeerAggregate, PeerConfig, PeerInfo, QueryOutcome, format_rows, parse_rows, sample_rows,
 };
-pub use sql::{PRESETS, Predicate, Preset, QueryPlan, parse_sql};
+pub use sql::{Comparison, PRESETS, Predicate, Preset, QueryPlan, parse_sql};

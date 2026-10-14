@@ -197,16 +197,20 @@ impl Playground {
                 ui.label(format!(
                     "{} rows / {} stored of {} quota",
                     peer.rows,
-                    bytes(peer.compressed_bytes),
+                    bytes(peer.stored_bytes),
                     bytes(peer.config.storage_limit_bytes)
                 ));
                 ui.add(
                     egui::ProgressBar::new(
-                        peer.compressed_bytes as f32 / peer.config.storage_limit_bytes as f32,
+                        peer.stored_bytes as f32 / peer.config.storage_limit_bytes as f32,
                     )
                     .fill(ACCENT)
                     .desired_height(5.0),
                 );
+                ui.label(
+                    RichText::new(format!("Data {}  ·  Index {}", bytes(peer.data_bytes), bytes(peer.index_bytes)))
+                        .small().color(MUTED),
+                ).on_hover_text("Canonical encrypted data includes page authentication metadata. The index is counted separately. Shared evaluation keys and transient FHE memory are additional.");
                 section(ui, "Rows / owner view");
                 ui.label(
                     RichText::new(
@@ -824,7 +828,7 @@ fn draw_node(
         .peer_id
         .and_then(|id| state.and_then(|s| s.peers.iter().find(|p| p.id == id)))
     {
-        format!("{} rows / {}", peer.rows, bytes(peer.compressed_bytes))
+        format!("{} rows / {}", peer.rows, bytes(peer.stored_bytes))
     } else {
         "Connected".into()
     };

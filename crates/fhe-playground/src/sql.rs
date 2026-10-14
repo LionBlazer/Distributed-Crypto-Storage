@@ -1,4 +1,8 @@
-use fhe_prototype::Comparison;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Comparison {
+    Equal,
+    AtLeast,
+}
 
 use crate::LabError;
 

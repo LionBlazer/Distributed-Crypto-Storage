@@ -14,6 +14,16 @@ pub struct Owner {
     domain: [u8; 16],
 }
 
+/// Owner-only temporary stream mask; erased on drop. Never send this plaintext pad to a peer.
+pub struct SecretMask {
+    bytes: Zeroizing<Vec<u8>>,
+}
+impl SecretMask {
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
 /// Decrypted owner-side page. Its byte buffer is zeroized on drop.
 /// Application copies and source plaintext remain the application's responsibility.
 pub struct PlainPage {
@@ -117,6 +127,65 @@ impl Owner {
         })
     }
 
+    /// Authenticates and decrypts only at the owner, then XORs the requested range
+    /// with the public ciphertext. No key export or new stream primitive is used.
+    /// Both the decrypted page and temporary returned mask are erased on drop.
+    pub fn derive_keystream_range(
+        &self,
+        page: &VerifiedPage,
+        range: std::ops::Range<usize>,
+    ) -> Result<SecretMask> {
+        if range.start > range.end || range.end > page.ciphertext().len() {
+            return Err(Error::InvalidPage);
+        }
+        let plaintext = self.decrypt(page)?;
+        let bytes = plaintext.as_bytes()[range.clone()]
+            .iter()
+            .zip(&page.ciphertext()[range])
+            .map(|(plain, cipher)| plain ^ cipher)
+            .collect();
+        Ok(SecretMask {
+            bytes: Zeroizing::new(bytes),
+        })
+    }
+
+    /// Stage every replacement and fresh nonce before mutating the live snapshot.
+    /// A single global revision covers all pages; failure leaves every page intact.
+    pub fn replace_pages(
+        &self,
+        snapshot: &mut EncryptedSnapshot,
+        expected: &Commitment,
+        replacements: &[(u64, &[u8])],
+        limits: Limits,
+    ) -> Result<Commitment> {
+        if snapshot.commitment() != expected {
+            return Err(Error::WrongVersion);
+        }
+        self.check_owner(expected)?;
+        expected.layout.validate(limits)?;
+        let mut seen = std::collections::BTreeSet::new();
+        for (index, plain) in replacements {
+            if !seen.insert(*index) || plain.len() != expected.layout.page_plaintext_len(*index)? {
+                return Err(Error::InvalidPage);
+            }
+        }
+        if replacements.is_empty() {
+            return Ok(expected.clone());
+        }
+        let mut next = expected.clone();
+        next.revision = next
+            .revision
+            .checked_add(1)
+            .ok_or(Error::RevisionExhausted)?;
+        let packets = replacements
+            .iter()
+            .map(|(index, plain)| Ok((*index, self.encrypt_page(&next, *index, plain)?)))
+            .collect::<Result<Vec<_>>>()?;
+        for (index, packet) in packets {
+            snapshot.replace_from_owner(next.clone(), index as usize, packet);
+        }
+        Ok(snapshot.commitment().clone())
+    }
     fn check_owner(&self, commitment: &Commitment) -> Result<()> {
         if commitment.database != self.database || commitment.domain != self.domain {
             return Err(Error::WrongOwner);

@@ -23,6 +23,12 @@ address-based retrieval, not an FHE evaluator or SQL query proof.
   is zeroized on drop. The application remains responsible for its source plaintext
   and any copies. Public nonce, ciphertext and tag accessors on VerifiedPage permit
   a future separately validated transciphering adapter without exposing the key.
+- Owner::derive_keystream_range authenticates/decrypts a page only at the owner,
+  then derives a requested temporary pad range by XOR with public ciphertext. Its
+  SecretMask erases the pad on drop; the owner must never send this plaintext pad.
+- Owner::replace_pages stages all fresh encrypted packets before mutating the
+  snapshot, rejects duplicate addresses, and advances a single global revision.
+  This supplies in-memory atomic batches, not durable crash-atomic transactions.
 - Owner::replace_page requires the previously known head, encrypts one replacement
   page with a fresh nonce and a new page revision, updates its Merkle path, and
   returns the new head. It retains no historical ciphertext. Geometry changes,

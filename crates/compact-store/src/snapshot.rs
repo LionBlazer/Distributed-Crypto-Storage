@@ -3,6 +3,7 @@ use crate::{Commitment, Error, Limits, LookupResponse, MANIFEST_BYTES, PAGE_OVER
 
 /// Peer-owned opaque ciphertext pages plus a rebuildable in-memory Merkle index.
 /// Does not contain plaintext or secret keys. Addresses and lengths are public.
+#[derive(Clone)]
 pub struct EncryptedSnapshot {
     commitment: Commitment,
     pages: Vec<Vec<u8>>,
