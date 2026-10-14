@@ -1,0 +1,11 @@
+[package]
+name = "fhe-playground"
+version = "0.1.0"
+edition.workspace = true
+rust-version = "1.95"
+publish = false
+
+[dependencies]
+fhe-prototype = { path = "../fhe-prototype" }
+eframe = { version = "=0.36.2", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+rayon.workspace = true

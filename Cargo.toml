@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/fhe-prototype"]
+members = ["crates/fhe-prototype", "crates/fhe-playground"]
 resolver = "3"
 
 [workspace.package]

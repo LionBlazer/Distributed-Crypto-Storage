@@ -26,6 +26,19 @@ peak memory. Synthetic data and reports go into ignored `.local/fhe-runs/` folde
 secret keys are generated in memory and are never written to disk. See the module
 README for measurement assumptions, limitations, and the API.
 
+The separate [GUI playground](crates/fhe-playground/README.md) provides an egui
+client/manager, editable test data, one-click SQL presets, and 1–16 simulated peers.
+It runs actual FHE operations on local encrypted shards. The SQL frontend supports
+only the documented aggregate/update subset; peer simulation runs in one process.
+
+```sh
+cargo run --release --locked -p fhe-playground
+```
+
+In Zed, use `task: spawn` and select **FHE: Open GUI playground** from
+[.zed/tasks.json](.zed/tasks.json). The GUI requires Rust 1.95 or newer; the Zed task
+uses PowerShell 7 and rustup on Windows.
+
 The integration branch is `master`. [AGENTS.md](AGENTS.md) defines task branches,
 automatic commit and push after each completed change, synchronization from master,
 and explicitly requested promotion back to master. Project skills live in

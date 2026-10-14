@@ -6,7 +6,8 @@ operations, with a fixed schema `age: u8, amount: u16`. The library exposes type
 operations; the binary supplies public synthetic fixtures and measures them.
 
 There are no direct dependencies on other project modules. The binary and API tests
-are the library's consumers. TFHE-rs 1.8.1 is pinned as an experimental dependency;
+and [GUI playground](../fhe-playground/README.md) are the library's consumers.
+TFHE-rs 1.8.1 is pinned as an experimental dependency;
 the production cryptographic stack remains undecided. Consult its
 [license and patent terms](https://github.com/zama-ai/tfhe-rs/blob/tfhe-rs-1.8.1/LICENSE)
 before adopting it in a product.

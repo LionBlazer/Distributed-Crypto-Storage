@@ -1,0 +1,19 @@
+[
+  {
+    "label": "FHE: Open GUI playground",
+    "command": "pwsh",
+    "args": [
+      "-NoProfile",
+      "-Command",
+      "& (rustup which cargo) run --release --locked -p fhe-playground"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "env": {
+      "CARGO_HOME": "$ZED_WORKTREE_ROOT/.local/cargo-home"
+    },
+    "allow_concurrent_runs": false,
+    "use_new_terminal": false,
+    "reveal": "no_focus",
+    "save": "all"
+  }
+]
