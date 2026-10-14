@@ -78,8 +78,10 @@ surviving profiles. This is not automatic replication/recovery by the peer proto
 Creation retains current topology and availability. Zero peers retains owner state
 but cannot answer queries; failed repartition preserves the old encrypted data.
 
-Quotas cover canonical encrypted data plus the complete encrypted index, including headers (1 KiB..64 MiB), not
-TFHE working memory, shared keys or rebuildable in-memory Merkle hashes. The node inspector shows data and index bytes separately. Creation, repartitioning, profile edits and
+Quotas cover canonical encrypted data plus the complete encrypted index and its
+headers (1 KiB..64 MiB), not
+TFHE working memory, shared keys or rebuildable in-memory Merkle hashes. The node
+inspector shows data and index bytes separately. Creation, repartitioning, profile edits and
 updates reject overruns without partial writes. Peer delay (0..1000 ms) belongs to
 the virtual transport; it is not measured ping. Query wall time includes delivery,
 index selection, fresh encrypted masks, request/output serialization, FHE evaluation and owner decryption; per-shard query timing excludes virtual delay.
@@ -126,7 +128,8 @@ that number is not a network freshness certificate.
 
 All peers, the owner, and keys live in **one process**. A network worker advances
 virtual delivery while a separate compute worker serializes FHE jobs; TFHE uses
-eight Rayon threads. Evaluator clones share key allocation, so memory does not model
+eight shared Rayon threads and up to eight extra scoped row initiators per phase.
+Evaluator clones share key allocation, so memory does not model
 independent physical machines. Packets carry opaque references to local operations;
 there is no TCP transport. The cryptographic backend actually serializes and decodes encrypted requests/results, but the virtual network does not yet model their byte-dependent transmission time.
 Taking a peer offline preserves its local ciphertexts and does not model permanent

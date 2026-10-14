@@ -17,8 +17,8 @@ pub const MAX_ROWS: usize = 256;
 pub const MAX_TABLE_ROWS: usize = 1_000_000;
 pub const ROW_BYTES: u32 = 3;
 pub const SCHEMA: [u8; 16] = *b"CQAGEAMOUNT00001";
-const INDEX_SCHEMA: [u8; 16] = *b"CQAGEINDEX000001";
-const INDEX_HEADER_BYTES: usize = 112 + 257 * 8;
+const INDEX_SCHEMA: [u8; 16] = *b"CQAGEINDEX000002";
+const INDEX_HEADER_BYTES: usize = compact_store::MANIFEST_BYTES + (256 + 257) * 4;
 const MAX_WIRE_BYTES: u64 = 128 * 1024 * 1024;
 const _: () = assert!((MAX_ROWS as u64) * (u16::MAX as u64) <= u32::MAX as u64);
 
@@ -35,6 +35,7 @@ pub enum Error {
     WrongDomain,
     WrongQuery,
     InvalidOutput,
+    WorkerBudget { requested: usize, maximum: usize },
     WireLimit,
     Codec(String),
     Randomness,
@@ -114,9 +115,10 @@ pub struct Owner {
 pub struct Evaluator {
     server_key: ServerKey,
     domain: [u8; 16],
+    row_workers: usize,
 }
 /// Owner-issued trusted handle. Canonical peer data remains EncryptedSnapshot.
-/// The age index contains encrypted boundaries and u32 postings, with an exact
+/// The age index contains encrypted counts and padded delta-varint postings, with an exact
 /// encrypted table-head binding. Only AddAmount is supported, so age order is stable.
 pub struct Table {
     data: EncryptedSnapshot,
@@ -164,6 +166,7 @@ pub struct Stages {
     pub request_serialize_ms: f64,
     pub request_bytes: usize,
     pub peer_request_decode_ms: f64,
+    pub row_worker_budget: usize,
     pub peer_lookup_proof_verify_ms: f64,
     pub page_response_bytes: usize,
     pub peer_compact_to_fhe_ms: f64,

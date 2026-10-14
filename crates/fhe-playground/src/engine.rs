@@ -193,6 +193,7 @@ impl LabEngine {
             ));
         }
         let (owner, evaluator) = cq::Owner::generate(*b"playground-db-v1")?;
+        let evaluator = evaluator.with_row_workers_for_experiment(8)?;
         let profiles = ids
             .into_iter()
             .zip(draft.peers)

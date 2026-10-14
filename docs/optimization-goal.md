@@ -38,7 +38,8 @@ See [earlier measurements](fhe-optimization.md) before repeating experiments.
 | Authenticated symmetric pages | Reviewed and promoted; 19 tests passed | [One million rows](experiment-compact-store.md): 1.062549x, 1.145952x including tree hashes; 1000 replacements retain size; no FHE |
 | TFHE 1.8.1 compact-to-FHE conversion | Reviewed opt-in [four-mode probe](transciphering-probe.md), actual encrypted COUNT/SUM | AES-radix: 1.033854x page, 1.059896x with owner state before FHE keys; eight-worker 19-warm-sample median/max 117.60/151.78 ms; two-worker max 573.88 ms |
 | Native encrypted PRF mask regeneration | Implemented raw and rerandomized controls in the same probe | No persistent FHE masks; 64-row native preparation takes 5.61/5.88 seconds; rerandomized query exceeds 500 ms; storage/security composition still needs review |
-| Visible authenticated searchable index + FHE + compact updates | [Reviewed compact-query implementation](experiment-compact-query.md), now used by the GUI | Million-row serial baseline: 1/4/16-row aggregate p95 83.37/499.70/2052.57 ms; 100 point updates p95 278.21 ms; canonical data+index 2.41229x, keys additional; 380.15 MiB measured process peak |
+| Visible authenticated searchable index + FHE + compact updates | [Reviewed compact-query implementation](experiment-compact-query.md), used by the GUI with eight scoped row initiators | Million-row combined run: 1/4/16-row aggregate max 100.98/477.71/1240.72 ms; 100 point updates p95 264.27 ms; whole-process peak 373.81 MiB; transport/proofs excluded |
+| Padded delta-varint age index | [Reviewed V2 format and four-distribution measurement](experiment-index-compression.md) | Data+index 1.743071x; with rebuildable hashes 1.837012x; with all fixed keys and owner state 61.957164x for this 3 MB fixture; no distribution-dependent total length |
 | Concealed access via single-server PIR | [Native DoublePIR and authenticated Spiral page probes](experiment-private-access.md) | Million-row Spiral: 133.73–142.50 ms full-page private retrieval, 1.007861x canonical data, 32 MiB RAM cache; indexed SQL/FHE composition remains unimplemented |
 | Verifiable FHE computation and SQL completeness | [Proof research and actual PBS accounting](experiment-query-proofs.md); no verifier | Point COUNT/SUM uses 33 PBS; UPDATE 59/67 at 2/8 workers. Inspected primitive proof systems take seconds, with no TFHE-rs adapter; full 500 ms budget remains unproved |
 
@@ -71,11 +72,16 @@ write-authorization or computation-proof protocol.
 The AES/OPRF probe remains a separate format. The new compact-query pipeline uses
 actual compact-store XChaCha20Poly1305 pages with owner-supplied fresh FHE masks;
 its measured read/update lifecycle is not an arithmetic sum of unrelated probes.
-The GUI adapter passed 13 real SQL workflow tests and 59 headless library/UI/worker
+The initial GUI adapter passed 13 real SQL workflow tests and 59 headless library/UI/worker
 tests, with strict Clippy passing. Its 128-row serial SQL boundary control measured
 five point queries at 99.35–120.94 ms, four-row queries at 518.12–551.47 ms, and a
 point UPDATE at 233.54 ms. Canonical data/index were 544/2840 bytes for 384 logical
-bytes; fixed index metadata dominates tiny tables. No GUI window was opened.
+bytes; fixed index metadata dominates tiny tables. The integrated padded-index,
+scoped-evaluator version subsequently passed 114 owning/dependent tests and strict
+Clippy. Its actual 100 fresh point updates retained 5,229,212 canonical data/index
+bytes, reconstructed both images and rejected every stale output. See the report
+for complete combined-run timings, CPU budgets and the GUI boundary control.
+No GUI window was opened.
 
 The full goal remains active: reduce index overhead and multi-row latency, compose
 concealed indexed access, and retain the unresolved proof, freshness, resource and

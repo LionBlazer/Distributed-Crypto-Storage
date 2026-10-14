@@ -62,10 +62,10 @@ fn trial(
     )?;
     let request = query.encode_request()?;
     let mut output = evaluator.evaluate(table.snapshot(), &request, Limits::default())?;
-    let peer_stages = output.stages().clone();
     let timer = Instant::now();
     let wire = output.encode()?;
     let output_serialize_ms = ms(timer);
+    let peer_stages = output.stages().clone();
     let timer = Instant::now();
     let output = UnverifiedOutput::decode(&wire)?;
     let output_decode_ms = ms(timer);
@@ -98,12 +98,14 @@ fn main() -> Result<()> {
     let rounds = args.get(1).map_or(Ok(5usize), |v| v.parse())?;
     let updates = args.get(2).map_or(Ok(100usize), |v| v.parse())?;
     let threads = args.get(3).map_or(Ok(8usize), |v| v.parse())?;
+    let row_workers = args.get(4).map_or(Ok(1usize), |v| v.parse())?;
     if !(21..=1_000_000).contains(&rows)
         || !(1..=100).contains(&rounds)
         || !(1..=1000).contains(&updates)
         || !(1..=32).contains(&threads)
+        || !(1..=8).contains(&row_workers)
     {
-        return Err("Use 21..1000000 rows, 1..100 rounds, 1..1000 updates, 1..32 threads".into());
+        return Err("Use 21..1000000 rows, 1..100 rounds, 1..1000 updates, 1..32 Rayon threads, 1..8 row workers".into());
     }
     rayon::ThreadPoolBuilder::new()
         .num_threads(threads)
@@ -120,18 +122,21 @@ fn main() -> Result<()> {
     let timer = Instant::now();
     let mut table = owner.seal(&fixture, 256, Limits::default())?;
     let seal_and_index_ms = ms(timer);
+    let fixture_memory_bytes = fixture.len() * std::mem::size_of::<PlainRow>();
+    drop(fixture);
     let data_bytes = table.canonical_data_bytes();
     let index_bytes = table.encrypted_index_bytes();
     let logical_bytes = rows * 3;
     emit(
-        json!({"kind":"setup","rows":rows,"threads":threads,"logical_plaintext_bytes":logical_bytes,
+        json!({"kind":"setup","rows":rows,"threads":threads,"row_workers":row_workers,"logical_plaintext_bytes":logical_bytes,
         "canonical_data_bytes":data_bytes,"encrypted_age_index_bytes":index_bytes,
         "rebuildable_hash_bytes":table.rebuildable_hash_bytes(),"data_expansion":data_bytes as f64/logical_bytes as f64,
         "data_and_index_expansion":(data_bytes+index_bytes) as f64/logical_bytes as f64,
-        "owner_symmetric_key_and_domain_bytes":64,"trusted_data_and_index_heads_bytes":224,
+        "owner_symmetric_key_and_domain_bytes":80,"trusted_data_and_index_heads_bytes":224,
         "owner_fhe_key_serialized_bytes":secret_key_bytes,"peer_evaluation_key_wire_bytes":key_bytes,
-        "joint_persistent_bytes":data_bytes+index_bytes+64+224+secret_key_bytes as usize+key_bytes,
-        "persistent_fhe_rows_bytes":0,"persistent_plaintext_or_pads_bytes":0,
+        "joint_persistent_bytes":data_bytes+index_bytes+80+224+secret_key_bytes as usize+key_bytes,
+        "persistent_fhe_rows_bytes":0,"peer_persistent_plaintext_or_pads_bytes":0,
+        "public_fixture_setup_memory_bytes":fixture_memory_bytes,"fixture_retained_during_queries":false,
         "key_generation_ms":keygen_ms,"evaluation_key_serialization_ms":public_key_serialize_ms,
         "table_seal_and_index_ms":seal_and_index_ms,"query_proof_implemented":false,
         "privacy_policy":"owner-private encrypted age index; visible complete candidate count and addresses",
@@ -141,7 +146,8 @@ fn main() -> Result<()> {
     drop(evaluator);
     let cold = Instant::now();
     let timer = Instant::now();
-    let evaluator = Evaluator::restore_evaluation_key_for_experiment(&public_key)?;
+    let evaluator = Evaluator::restore_evaluation_key_for_experiment(&public_key)?
+        .with_row_workers_for_experiment(row_workers)?;
     let key_restore_ms = ms(timer);
     drop(public_key);
     let timer = Instant::now();
@@ -288,28 +294,63 @@ fn main() -> Result<()> {
         record["stale_output_rejected"] = json!(true);
         emit(record)?;
     }
-    // A genuine multi-row UPDATE is included, rather than extrapolated from one row.
-    let full = Instant::now();
-    let result = trial(
-        &owner,
-        &evaluator,
-        &table,
-        AgeRange::equal(251),
-        Operation::AddAmount(1),
-        "multirow_update",
-        0,
-    )?;
-    let applied = owner.apply_update_for_experiment(
-        &mut table,
-        &result.query,
-        &result.output,
-        Limits::default(),
-    )?;
-    assert_eq!(applied.changed_rows, 4);
-    assert!(!applied.rejected);
-    let mut record = result.record;
-    record["full_update_including_writeback_ms"] = json!(ms(full));
-    emit(record)?;
+    // Actual multi-row and empty UPDATEs retain genuine encrypted predicates.
+    for (age, selected, expected_sum) in [(251, 4, 810), (252, 16, 5000), (255, 0, 0)] {
+        let full = Instant::now();
+        let result = trial(
+            &owner,
+            &evaluator,
+            &table,
+            AgeRange::equal(age),
+            Operation::AddAmount(1),
+            "multirow_update",
+            0,
+        )?;
+        assert_eq!(
+            result.aggregate,
+            Aggregate {
+                count: selected as u32,
+                sum: expected_sum
+            }
+        );
+        let before = table.commitment().clone();
+        let applied = owner.apply_update_for_experiment(
+            &mut table,
+            &result.query,
+            &result.output,
+            Limits::default(),
+        )?;
+        assert_eq!(applied.changed_rows, selected);
+        assert!(!applied.rejected);
+        let mut record = result.record;
+        record["full_update_including_writeback_ms"] = json!(ms(full));
+        let timer = Instant::now();
+        let data_wire = table.snapshot().encode();
+        let index_wire = table.encrypted_index().encode();
+        final_image_bytes = data_wire.len() + index_wire.len();
+        table = owner.restore_table_for_experiment(
+            &data_wire,
+            &index_wire,
+            table.commitment(),
+            table.index_commitment(),
+            Limits::default(),
+        )?;
+        record["fresh_image_encode_decode_rebuild_ms"] = json!(ms(timer));
+        if selected != 0 {
+            assert!(matches!(
+                owner.decrypt_aggregate_for_experiment(&table, &result.query, &result.output),
+                Err(Error::WrongVersion)
+            ));
+        } else {
+            assert_eq!(table.commitment(), &before);
+        }
+        assert_eq!(
+            (table.canonical_data_bytes(), table.encrypted_index_bytes()),
+            (data_bytes, index_bytes)
+        );
+        record["full_update_including_writeback_and_fresh_decode_ms"] = json!(ms(full));
+        emit(record)?;
+    }
     emit(
         json!({"kind":"update_summary","updates":updates,"selected_rows":1,
         "p50_ms":nearest(&update_totals,0.5),"p95_ms":nearest(&update_totals,0.95),

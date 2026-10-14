@@ -3,8 +3,50 @@ use crate::{Error, Evaluator, MAX_ROWS, Result, Stages, UnverifiedOutput, check_
 use compact_store::{Commitment, EncryptedSnapshot, Limits, LookupResponse};
 use tfhe::prelude::*;
 use tfhe::{FheBool, FheUint8, FheUint10, FheUint16, FheUint32, with_server_key_as_context};
+const MAX_ROW_WORKERS: usize = 8;
+const _: () = assert!(MAX_ROWS < (1 << 10));
 
 impl Evaluator {
+    /// Opt-in experiment: at most eight additional scoped initiating OS threads.
+    /// TFHE's internal Rayon pool is shared. The default evaluator stays serial.
+    pub fn with_row_workers_for_experiment(&self, requested: usize) -> Result<Self> {
+        if !(1..=MAX_ROW_WORKERS).contains(&requested) {
+            return Err(Error::WorkerBudget {
+                requested,
+                maximum: MAX_ROW_WORKERS,
+            });
+        }
+        Ok(Self {
+            server_key: self.server_key.clone(),
+            domain: self.domain,
+            row_workers: requested,
+        })
+    }
+    fn map_rows<T: Sync, R: Send>(&self, rows: &[T], operation: impl Fn(&T) -> R + Sync) -> Vec<R> {
+        if self.row_workers == 1 || rows.len() < 2 {
+            return rows.iter().map(operation).collect();
+        }
+        let chunk_size = rows.len().div_ceil(self.row_workers.min(rows.len()));
+        // Initiate outside Rayon: TFHE may steal nested tasks without replacing
+        // the already borrowed server-key TLS of a Rayon initiating worker.
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = rows
+                .chunks(chunk_size)
+                .map(|chunk| {
+                    let operation = &operation;
+                    scope.spawn(move || {
+                        with_server_key_as_context(self.server_key.clone(), || {
+                            chunk.iter().map(operation).collect::<Vec<_>>()
+                        })
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .flat_map(|handle| handle.join().expect("FHE row worker panicked"))
+                .collect()
+        })
+    }
     /// No owner secret/plaintext is accepted. Exact pages are independently verified
     /// against the request head before public compact bytes are XORed with FHE pads.
     pub fn evaluate(
@@ -17,6 +59,7 @@ impl Evaluator {
         let request: Request = crate::wire::decode(request_wire)?;
         let mut stages = Stages {
             peer_request_decode_ms: ms(start),
+            row_worker_budget: self.row_workers,
             ..Stages::default()
         };
         if request.domain != self.domain {
@@ -63,56 +106,70 @@ impl Evaluator {
         stages.peer_lookup_proof_verify_ms = ms(start);
         Ok(with_server_key_as_context(self.server_key.clone(), || {
             let start = std::time::Instant::now();
-            let rows: Vec<(FheUint8, FheUint16)> = request
-                .rows
-                .iter()
-                .zip(compact)
-                .map(|(mask, (age, amount))| (&mask.age ^ age, &mask.amount ^ amount))
-                .collect();
+            let inputs: Vec<_> = request.rows.iter().zip(compact).collect();
+            let rows: Vec<(FheUint8, FheUint16)> = self
+                .map_rows(&inputs, |(mask, (age, amount))| {
+                    (&mask.age ^ *age, &mask.amount ^ *amount)
+                });
             stages.peer_compact_to_fhe_ms = ms(start);
             let start = std::time::Instant::now();
-            let matches: Vec<_> = rows
-                .iter()
-                .map(|(age, _)| {
-                    if request.equality {
-                        age.eq(&request.lower)
-                    } else {
-                        age.ge(&request.lower) & age.le(&request.upper)
-                    }
-                })
-                .collect();
+            let matches: Vec<_> = self.map_rows(&rows, |(age, _)| {
+                if request.equality {
+                    age.eq(&request.lower)
+                } else {
+                    age.ge(&request.lower) & age.le(&request.upper)
+                }
+            });
             let count: FheUint10 = matches
                 .iter()
                 .map(|bit| FheUint10::cast_from(bit.clone()))
                 .sum();
             let zero = FheUint16::encrypt_trivial(0u16);
-            let sum: FheUint32 = rows
-                .iter()
-                .zip(&matches)
-                .map(|((_, amount), bit)| FheUint32::cast_from(bit.if_then_else(amount, &zero)))
+            let selected: Vec<_> = rows.iter().zip(&matches).collect();
+            let sum: FheUint32 = self
+                .map_rows(&selected, |((_, amount), bit)| {
+                    FheUint32::cast_from(bit.if_then_else(amount, &zero))
+                })
+                .into_iter()
                 .sum();
             let (rejected, updated) = if let Some(delta) = &request.delta {
                 let mut rejected = FheBool::encrypt_trivial(false);
-                let candidates: Vec<_> = rows
-                    .iter()
-                    .zip(&matches)
-                    .map(|((_, amount), matched)| {
+                let candidates: Vec<_> = if self.row_workers == 1 {
+                    rows.iter()
+                        .zip(&matches)
+                        .map(|((_, amount), matched)| {
+                            let (candidate, overflow) = amount.overflowing_add(delta);
+                            rejected |= matched & overflow;
+                            candidate
+                        })
+                        .collect()
+                } else {
+                    let candidates = self.map_rows(&selected, |((_, amount), matched)| {
                         let (candidate, overflow) = amount.overflowing_add(delta);
-                        rejected |= matched & overflow;
-                        candidate
-                    })
-                    .collect();
+                        (candidate, *matched & overflow)
+                    });
+                    candidates
+                        .into_iter()
+                        .map(|(candidate, overflow)| {
+                            rejected |= overflow;
+                            candidate
+                        })
+                        .collect()
+                };
                 let permitted = !&rejected;
-                let updated = rows
+                let inputs: Vec<_> = rows
                     .iter()
                     .zip(&request.rows)
                     .zip(matches)
                     .zip(candidates)
-                    .map(|((((_, amount), input), matched), candidate)| UpdatedRow {
-                        ordinal: input.ordinal,
-                        amount: (matched & &permitted).if_then_else(&candidate, amount),
-                    })
                     .collect();
+                let updated =
+                    self.map_rows(&inputs, |((((_, amount), input), matched), candidate)| {
+                        UpdatedRow {
+                            ordinal: input.ordinal,
+                            amount: (matched & &permitted).if_then_else(candidate, amount),
+                        }
+                    });
                 (Some(rejected), updated)
             } else {
                 (None, Vec::new())
@@ -146,6 +203,10 @@ impl Evaluator {
             .reject_trailing_bytes()
             .deserialize(bytes)
             .map_err(|e| Error::Codec(e.to_string()))?;
-        Ok(Self { domain, server_key })
+        Ok(Self {
+            domain,
+            server_key,
+            row_workers: 1,
+        })
     }
 }

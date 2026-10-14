@@ -21,7 +21,11 @@ impl Owner {
         );
         Ok((
             Self { store, key, domain },
-            Evaluator { server_key, domain },
+            Evaluator {
+                server_key,
+                domain,
+                row_workers: 1,
+            },
         ))
     }
     /// Independent trusted table handles share this owner's keys and no global head.

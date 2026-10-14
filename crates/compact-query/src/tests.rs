@@ -462,3 +462,106 @@ fn oversized_complete_candidate_group_fails_before_fhe_materialization() {
         );
     }
 }
+#[test]
+fn scoped_row_workers_preserve_exact_aggregates_and_global_overflow_rejection() {
+    let roles = roles();
+    let (owner, evaluator) = &*roles;
+    let parallel = evaluator.with_row_workers_for_experiment(8).unwrap();
+    let range = AgeRange {
+        lower: 41,
+        upper: 42,
+    };
+    let mut table = owner
+        .seal(
+            &[
+                PlainRow { age: 42, amount: 5 },
+                PlainRow {
+                    age: 41,
+                    amount: 65_535,
+                },
+                PlainRow {
+                    age: 7,
+                    amount: 65_535,
+                },
+                PlainRow { age: 42, amount: 9 },
+            ],
+            1,
+            Limits::default(),
+        )
+        .unwrap();
+    for engine in [evaluator, &parallel] {
+        let (query, output) = run(
+            owner,
+            engine,
+            &table,
+            Selection::FullScan,
+            range,
+            Operation::CountSum,
+        );
+        assert_eq!(
+            owner
+                .decrypt_aggregate_for_experiment(&table, &query, &output)
+                .unwrap(),
+            Aggregate {
+                count: 3,
+                sum: 65_549
+            }
+        );
+        let (query, output) = run(
+            owner,
+            engine,
+            &table,
+            Selection::FullScan,
+            range,
+            Operation::AddAmount(1),
+        );
+        assert_eq!(
+            owner
+                .apply_update_for_experiment(&mut table, &query, &output, Limits::default())
+                .unwrap(),
+            AppliedUpdate {
+                rejected: true,
+                changed_rows: 0
+            }
+        );
+    }
+    let range = AgeRange::equal(42);
+    let (query, output) = run(
+        owner,
+        &parallel,
+        &table,
+        Selection::FullScan,
+        range,
+        Operation::AddAmount(1),
+    );
+    assert_eq!(
+        owner
+            .apply_update_for_experiment(&mut table, &query, &output, Limits::default())
+            .unwrap(),
+        AppliedUpdate {
+            rejected: false,
+            changed_rows: 2
+        }
+    );
+    assert_eq!(
+        owner
+            .decrypt_row_for_experiment(&table, 0, Limits::default())
+            .unwrap()
+            .amount,
+        6
+    );
+    assert_eq!(
+        owner
+            .decrypt_row_for_experiment(&table, 3, Limits::default())
+            .unwrap()
+            .amount,
+        10
+    );
+    assert!(matches!(
+        evaluator.with_row_workers_for_experiment(9),
+        Err(Error::WorkerBudget {
+            requested: 9,
+            maximum: 8
+        })
+    ));
+}

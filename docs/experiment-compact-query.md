@@ -157,3 +157,109 @@ and 21 compact-store tests, and strict release Clippy passed all their targets.
 The run's ignored files are .local/fhe-research/compact-query/serial-8t.jsonl,
 serial-8t.stderr.txt, serial-8t.process.json and measure.ps1. The measured executable
 SHA-256 is 8DA7CE65E398264509313EDBE121512F87E8442E8795BEA42410D2780F2BCA73.
+
+## Bounded scoped row initiators
+
+An opt-in evaluator policy preserves the same public API, exact TFHE security
+parameters, masks, predicate semantics and compact writeback. It creates up to
+eight scoped OS initiating threads outside the global Rayon pool, installing a
+server-key context on each thread. They share the public server-key allocation
+and the same eight internal Rayon workers; owner keys/plaintext are not supplied.
+One-row and empty phases do not spawn workers. Default and restored evaluators
+retain serial policy; with_row_workers_for_experiment explicitly selects 1..8.
+
+Two serial process runs on 2026-10-14T20:59:21.7970114Z and
+2026-10-14T20:59:45.3092397Z compare policies 1 and 8 using the same release
+executable, host, million-row fixture, parameters and old u32 posting index. Each
+process creates fresh keys and fresh request masks. This is a configuration
+comparison, not a statistical paired-input or production-load study. Each aggregate
+has five samples; each point UPDATE has 30 fresh queries and complete image decode.
+
+| Full local operation | Serial policy 1 | Scoped policy 8 |
+| --- | ---: | ---: |
+| 1-row aggregate p50 / p95 | 93.59 / 98.70 ms | 98.88 / 103.11 ms |
+| 4-row aggregate p50 / p95 | 532.36 / 572.24 ms | 426.31 / 445.14 ms |
+| 16-row aggregate p50 / p95 | 1879.35 / 1973.23 ms | 1320.99 / 1345.11 ms |
+| Empty aggregate p50 / p95 | 0.69 / 0.90 ms | 0.81 / 1.14 ms |
+| 21-row range aggregate, one sample | 3227.41 ms | 1880.93 ms |
+| Point UPDATE + fresh decode p50 / p95 / maximum | 253.77 / 271.92 / 275.91 ms | 242.44 / 283.56 / 300.52 ms |
+| 4-row UPDATE + fresh decode, one sample | 1072.81 ms | 896.88 ms |
+| 16-row UPDATE + fresh decode, one sample | 4079.88 ms | 3083.89 ms |
+| Empty UPDATE + fresh decode, one sample | 7.25 ms | 6.98 ms |
+| Kernel whole-process peak resident bytes | 399,310,848 | 398,692,352 |
+| Complete child-process wall time | 29.37 s | 23.47 s |
+
+The four-row aggregate p50 improves by about 20%, and the sixteen-row aggregate by
+about 30%. One-row aggregate timing is slightly higher, and point-update p95/max
+also vary upward; the option does not establish a one-row improvement. Sixteen-row
+aggregates, range aggregation and multi-row updates remain above 500 ms. The
+option supplies a measured scheduling improvement, not a 500 ms arbitrary-SQL SLA.
+Both processes retain exactly 7,236,872 canonical data/index bytes and pass all
+value, fresh-decode and stale-output assertions. Final revision is 32
+after 30 point updates plus the 4/16-row updates; the empty UPDATE retains its head.
+
+The focused release suite now passes ten compact-query and 21 compact-store tests,
+including serial/scoped range results, global overflow rejection, successful
+multi-row writeback and invalid initiating-thread budgets. Strict release Clippy
+passes all targets. Ignored records are paired-serial-8t-r1 and
+paired-parallel-8t-r8 .jsonl/.stderr.txt/.process.json under the same report folder.
+Their shared executable SHA-256 is
+4CF86A701B72CF4B9AFA6A966DE16FE7F3765F37037D733ED71D256AFB960AC6,
+archived as paired-scoped.exe. No keys or data files are saved.
+
+## Integrated padded index and scoped evaluator
+
+On 2026-10-14 at 21:11 UTC, the combined V2
+[padded index](experiment-index-compression.md) and scoped evaluator passed a fresh
+run on the same million-row fixture. It used eight Rayon workers and up to eight
+additional scoped row initiators, unchanged cryptographic parameters and no other
+research benchmark running. The GUI adapter explicitly selects this scheduling
+budget; the reusable evaluator's default remains one initiator.
+
+| Full local operation | Samples | p50 | p95 | p99 / maximum |
+| --- | ---: | ---: | ---: | ---: |
+| Indexed aggregate, 1 row | 5 | 96.24 ms | 100.98 ms | 100.98 ms |
+| Indexed aggregate, 4 rows | 5 | 434.58 ms | 477.71 ms | 477.71 ms |
+| Indexed aggregate, 16 rows | 5 | 1154.98 ms | 1240.72 ms | 1240.72 ms |
+| Indexed aggregate, absent age | 5 | 0.79 ms | 1.05 ms | 1.05 ms |
+| Point UPDATE, writeback and fresh complete image reconstruction | 100 | 202.38 ms | 264.27 ms | 267.90 / 273.18 ms |
+
+The 21-row range aggregate took 1565.69 ms. Complete 4/16-row UPDATEs including
+writeback and fresh image reconstruction took 776.08/2765.27 ms; the empty UPDATE
+took 6.66 ms without changing its head. A cold in-memory key/image reconstruction
+and first point query took 158.46 ms, with key generation excluded as setup.
+These remain local observations, with transport, durable IO, consensus and
+computation proofs excluded. Five-read nearest-rank p95/p99 are descriptive maxima.
+
+Actual canonical data and encrypted index were 3,187,648 and 2,041,564 bytes,
+1.743071x combined. Both remained exactly 5,229,212 bytes after all 100 point and
+two multi-row updates. Every point iteration reconstructed both images, checked
+its exact value and rejected its old output against the new head. Final revision
+was 102. Rebuildable hash payload was 281,824 bytes, bringing data/index/hashes to
+1.837012x. Full fixed keys and independent owner state still bring this tiny
+three-megabyte fixture to 61.957164x; see the index report's complete byte ledger.
+
+Kernel peak resident set was 391,970,816 bytes (373.81 MiB), and peak process
+commit was 389,091,328 bytes. The same external retained-handle measurement includes
+both roles and setup/query transients. Total child runtime was 35.62 seconds.
+Ignored records are combined-padded-r8.jsonl/.process.json/.stderr.txt in the same
+report directory. The measured executable SHA-256 is
+6270031806379DB785AE278AC2762D5D1E70FFDBA2743762DF03DB5CF0C142FE.
+
+The integrated source passed 21 compact-query, 21 compact-store and 72 GUI/API/
+worker tests (114 total), strict release Clippy and rustfmt. An independent source
+review found no actionable integration defect; this is not a cryptographic audit.
+The normal Cargo integration-test command could not replace an already open GUI
+executable on Windows. Its newly built integration test was identified by fresh
+timestamp and executed directly; all 13 workflow cases passed. No native window
+was opened or closed, and the user's running GUI was left alone.
+
+The actual 128-row SQL/manager boundary control, with the same 8+8 budget, measured
+five point reads at 86.71–133.57 ms, four-row reads at 417.00–466.59 ms and a point
+UPDATE at 257.79 ms. Data/index were 544/2581 bytes for 384 logical bytes;
+fixed metadata dominates this tiny example. Its ignored JSON is
+.local/fhe-research/gui-compact-padded-r8.jsonl.
+
+The combined version improves storage and multi-row scheduling. It still does
+not establish a 500 ms budget for 16-row queries, multi-row updates or complete
+adversarial/network execution, nor concealed SQL index navigation.

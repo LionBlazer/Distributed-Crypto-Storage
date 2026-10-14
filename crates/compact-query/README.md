@@ -16,6 +16,7 @@ is no persistent FHE row cache, plaintext row cache, pad cache or update overlay
 | Table::fork_for_experiment | Copy encrypted table/index state for local transactional staging, without copying keys |
 | Owner::prepare | Authenticate index/data pages, select complete candidates, encrypt temporary stream masks and the age predicate/delta |
 | PreparedQuery::encode_request | Serialize only addresses, exact head, encrypted masks and encrypted predicate/delta |
+| Evaluator::with_row_workers_for_experiment | Select 1..8 scoped initiating threads with shared public evaluation material |
 | Evaluator::evaluate | Verify exact pages, XOR public compact bytes with FHE masks, evaluate encrypted COUNT/SUM or atomic overflow-safe AddAmount |
 | UnverifiedOutput | Return encrypted results explicitly lacking a computation proof |
 | Owner::*_for_experiment | Decrypt unverified outputs; compare updates with owner-local plaintext expectations and compactly write them back |
@@ -32,6 +33,14 @@ Selection::FullScan explicitly converts every row. A candidate range must contai
 the complete predicate range; genuine FHE equality/range comparisons are still
 performed on all selected rows. No answer is precomputed at the owner.
 
+The default evaluator initiates rows serially. The optional
+with_row_workers_for_experiment(1..=8) policy creates bounded scoped OS threads
+outside the shared Rayon pool, with a server-key context per initiating thread.
+It preserves row ordering, encrypted predicates and global overflow rejection.
+Eight configured row workers add at most eight initiating threads to the selected
+Rayon budget; one-row and empty phases create none. The policy does not raise the
+256-row materialization limit. See measured gains and limits in the report.
+
 COUNT and SUM return exact u32 values, including (0,0) for no matches. AddAmount
 adds an encrypted u16 delta. If any matching row would overflow, an encrypted
 global rejection condition preserves all original amounts. The owner-local update
@@ -41,26 +50,37 @@ This is atomic in memory; durable crash-atomic persistence is a separate boundar
 
 ## Index consistency and limits
 
-The encrypted index contains the exact 112-byte data commitment, 257 little-endian
-u64 posting boundaries and one u32 logical row ordinal per table row, grouped by
-age and sorted within each group. Boundary/header and posting pages use the same
-compact-store AEAD/Merkle contracts. An owner-authenticated current index head and
-its encrypted exact table-head binding establish which complete posting list was
-built. AddAmount never changes age, so only the binding page needs replacement.
+The V2 encrypted age index contains the exact 112-byte data commitment, 256
+little-endian u32 counts, 257 u32 byte offsets and per-age delta-LEB128 postings.
+The 2164-byte header fits in page zero. Fixed-per-N encrypted zero padding makes
+the total index size independent of age distribution. Each bucket starts with an
+absolute row
+ordinal and then strictly positive gaps. Canonical unsigned encodings, count/byte
+boundaries, address bounds and selected duplicates are checked. Selected varints
+can straddle authenticated pages; unrelated posting pages are not read.
+
+Header and posting pages use the same compact-store AEAD/Merkle contracts. An
+owner-authenticated current index head and its exact encrypted table-head binding
+establish which complete posting list was built. AddAmount never changes age, so
+only page zero needs replacement, including its unchanged posting suffix.
 There is no public arbitrary-age mutation or peer-built untrusted index API.
 
 The table limit is 1,000,000 rows. MAX_ROWS is a distinct hard limit of 256 selected
-rows per request, checked from authenticated boundaries or the full-scan count
+rows per request, checked from authenticated counts or the full-scan count
 before any FHE pad encryption. A lower caller budget is honored. SelectionBudget
 returns the full selected count and effective budget; it never truncates a group.
 Private COUNT uses ten bits, then widens to u32; the largest SUM is
 256 * 65535 = 16,776,960. Wire encodings are bounded at 128 MiB. This bounds honest
 materialization, not every malicious TFHE parameter/allocation path.
 
-The encrypted posting payload alone uses four bytes per three-byte table row.
+The compressed index avoids a permanent four-byte ordinal per three-byte row.
 Report canonical data, encrypted index, rebuildable hash payload, keys, replicas
-and transient query traffic separately. The data-only compactness target does not
-imply a combined data/index/key expansion below 2x.
+and transient query traffic separately. A favorable combined data/index size does
+not imply that the same table plus its complete FHE key set fits below 2x. The
+[index-size report](../../docs/experiment-index-compression.md) records the format,
+bounded decoder and actual million-row sizes: 1.743071x for data plus padded
+index, but 61.957164x for one table including the full shared FHE key set and owner
+state. Key amortization is a separate system-level question.
 
 ## Experiment boundary
 
@@ -90,6 +110,7 @@ From the workspace root, run CPU-intensive commands serially:
 cargo test --release --locked --offline -p compact-query -p compact-store
 cargo clippy --release --locked --offline -p compact-query -p compact-store --all-targets -- -D warnings
 cargo run --release --locked --offline -p compact-query --example compact_query -- 1000000 5 100 8
+cargo run --release --locked --offline -p compact-query --example compact_query -- 1000000 5 30 8 8
 ~~~
 
 The example emits JSON lines and saves no keys/data. It includes full encrypted
@@ -97,7 +118,11 @@ request/output serialization, index lookup/proofs, exact page verification,
 compact-to-FHE conversion, genuine encrypted predicate/COUNT/SUM, owner decryption,
 and owner-verified compact writeback. Every repeated UPDATE encodes and freshly
 decodes both complete canonical images, rebuilds their hashes, checks constant live
-size and rejects its old output against the new head. It also performs an actual
-four-row UPDATE and a 21-row range aggregate. Setup and cold in-memory key/image
+size and rejects its old output against the new head. It also performs actual 4-row, 16-row and empty UPDATEs with fresh full-image
+decode, and a 21-row range aggregate. Setup and cold in-memory key/image
 round trips are separate. Transport, disk IO, consensus and computation proofs
 are unmeasured. See the [experiment report](../../docs/experiment-compact-query.md).
+
+The `index_storage` example measures padded data/index sizes across four public
+age distributions and exact encrypted-image restart. See the
+[index format and measured accounting](../../docs/experiment-index-compression.md).
