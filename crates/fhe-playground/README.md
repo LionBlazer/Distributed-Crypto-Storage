@@ -21,10 +21,14 @@ database with three simulated peers; key generation runs in the background.
 
 In **Zed**, run `task: spawn` from the command palette and choose
 **FHE: Open GUI playground**, defined in [`.zed/tasks.json`](../../.zed/tasks.json).
-This Windows task uses PowerShell 7 (`pwsh`) and `rustup which cargo` to select the
-active Rust toolchain rather than a different `cargo` executable earlier on PATH.
+This Windows task uses the built-in `powershell.exe` and `rustup which cargo` to
+select the active Rust toolchain rather than a different `cargo` executable earlier
+on PATH. The command runs directly in the task shell, without nested `-Command`
+arguments, and preserves Cargo's exit code. PowerShell 7 is not required.
 It runs at the workspace root with a local `.local/cargo-home` cache, saves buffers,
 and allows one GUI task instance at a time.
+After editing the task definition, select it again via `task: spawn`; rerunning an
+old terminal task may reuse its previous command.
 
 ## Explore
 

@@ -39,7 +39,7 @@ cargo run --release --locked -p fhe-playground
 
 In Zed, use `task: spawn` and select **FHE: Open GUI playground** from
 [.zed/tasks.json](.zed/tasks.json). The GUI requires Rust 1.95 or newer; the Zed task
-uses PowerShell 7 and rustup on Windows.
+uses the built-in Windows PowerShell and rustup.
 
 The integration branch is `master`. [AGENTS.md](AGENTS.md) defines task branches,
 automatic commit and push after each completed change, synchronization from master,

@@ -1,12 +1,13 @@
 [
   {
     "label": "FHE: Open GUI playground",
-    "command": "pwsh",
-    "args": [
-      "-NoProfile",
-      "-Command",
-      "& (rustup which cargo) run --release --locked -p fhe-playground"
-    ],
+    "command": "& (rustup which cargo) run --release --locked -p fhe-playground; exit $LASTEXITCODE",
+    "shell": {
+      "with_arguments": {
+        "program": "powershell.exe",
+        "args": ["-NoProfile"]
+      }
+    },
     "cwd": "$ZED_WORKTREE_ROOT",
     "env": {
       "CARGO_HOME": "$ZED_WORKTREE_ROOT/.local/cargo-home"
