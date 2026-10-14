@@ -144,3 +144,13 @@ measures 210 million-row tables at 1.975191x canonical material or 1.996193x wit
 hashes, with 1.386 GB whole-process peak RSS. Queries use supplied table IDs;
 this does not establish global SQL routing or a bound for every database size.
 Its Windows measurement wrapper constrains only its own headless child process.
+
+The `disk_tables` example writes independent canonical images to an explicitly
+supplied ignored directory and loads one table at a time using the same live
+owner keys and independently retained heads. Actual file corruption, truncation,
+bounded frame lengths, wrong heads and own-file cleanup are checked. The
+[disk experiment](../../docs/experiment-disk-tables.md) measured 5.4 GB logical
+data at 1.721920x counted material, 371 MB process peak RSS and nine supplied-table
+point queries at 61–118 ms including image reads/authentication. It does not
+persist keys/catalogs or implement crash recovery, hidden access or global SQL
+routing. Use a dedicated Cargo target to keep experiment artifacts separate.
