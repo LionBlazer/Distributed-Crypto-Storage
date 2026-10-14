@@ -1,7 +1,7 @@
 use crate::{AgeRange, Error, MAX_WIRE_BYTES, Operation, Result, Stages};
 use bincode::Options;
 use serde::{Deserialize, Serialize};
-use tfhe::{FheBool, FheUint8, FheUint16, FheUint32};
+use tfhe::{FheBool, FheUint8, FheUint10, FheUint16, FheUint24};
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct MaskedRow {
@@ -9,15 +9,21 @@ pub(crate) struct MaskedRow {
     pub age: FheUint8,
     pub amount: FheUint16,
 }
+/// Only the canonical comparison operator is public; each threshold is FHE encrypted.
+#[derive(Serialize, Deserialize)]
+pub(crate) enum EncryptedPredicate {
+    Equal(FheUint8),
+    AtLeast(FheUint8),
+    AtMost(FheUint8),
+    Range { lower: FheUint8, upper: FheUint8 },
+}
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Request {
     pub domain: [u8; 16],
     pub id: [u8; 16],
     pub head: Vec<u8>,
     pub rows: Vec<MaskedRow>,
-    pub equality: bool,
-    pub lower: FheUint8,
-    pub upper: FheUint8,
+    pub predicate: EncryptedPredicate,
     pub delta: Option<FheUint16>,
 }
 /// Owner-local query context retains the expected addresses and plaintext intent.
@@ -48,14 +54,24 @@ pub(crate) struct UpdatedRow {
     pub ordinal: u64,
     pub amount: FheUint16,
 }
+#[derive(Serialize, Deserialize)]
+pub(crate) enum CountCipher {
+    Single(FheBool),
+    Multiple(FheUint10),
+}
+#[derive(Serialize, Deserialize)]
+pub(crate) enum SumCipher {
+    Single(FheUint16),
+    Multiple(FheUint24),
+}
 /// Query output is unverified even after correct decoding/decryption and root checks.
 #[derive(Serialize, Deserialize)]
 pub struct UnverifiedOutput {
     pub(crate) domain: [u8; 16],
     pub(crate) id: [u8; 16],
     pub(crate) head: Vec<u8>,
-    pub(crate) count: FheUint32,
-    pub(crate) sum: FheUint32,
+    pub(crate) count: CountCipher,
+    pub(crate) sum: SumCipher,
     pub(crate) rejected: Option<FheBool>,
     pub(crate) rows: Vec<UpdatedRow>,
     pub(crate) stages: Stages,

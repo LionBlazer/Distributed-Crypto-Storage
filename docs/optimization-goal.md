@@ -40,6 +40,7 @@ See [earlier measurements](fhe-optimization.md) before repeating experiments.
 | Native encrypted PRF mask regeneration | Implemented raw and rerandomized controls in the same probe | No persistent FHE masks; 64-row native preparation takes 5.61/5.88 seconds; rerandomized query exceeds 500 ms; storage/security composition still needs review |
 | Visible authenticated searchable index + FHE + compact updates | [Reviewed compact-query implementation](experiment-compact-query.md), used by the GUI with eight scoped row initiators | Million-row combined run: 1/4/16-row aggregate max 100.98/477.71/1240.72 ms; 100 point updates p95 264.27 ms; whole-process peak 373.81 MiB; transport/proofs excluded |
 | Padded delta-varint age index | [Reviewed V2 format and four-distribution measurement](experiment-index-compression.md) | Data+index 1.743071x; with rebuildable hashes 1.837012x; with all fixed keys and owner state 61.957164x for this 3 MB fixture; no distribution-dependent total length |
+| Narrow encrypted request/output and conditional zero | [Reviewed and integrated kernel](experiment-query-wire.md), unchanged cryptographic parameters | One-row encrypted response 527169→148497 bytes; final 1/4/16-row max 91.73/419.42/1334.40 ms; 100 fresh point updates p95 329.03 ms; timing varies between runs and does not establish a universal speedup |
 | Concealed access via single-server PIR and fresh FHE | [Native retrieval probes](experiment-private-access.md) and [composed known-row pipeline](experiment-private-fhe-pipeline.md) | Million-row private >=/COUNT/SUM read 177.79–203.88 ms warm, 279.91 ms first including key restore; visible 47.16–50.68 ms; combined peak 417.86 MiB; hidden SQL index/proofs still absent |
 | Verifiable FHE computation and SQL completeness | [Proof research and actual PBS accounting](experiment-query-proofs.md); no verifier | Instrumented scalar control: 33 PBS for COUNT/SUM, 59/67 for UPDATE at 2/8 workers. Inspected primitive proof systems take seconds, with no TFHE-rs adapter; full 500 ms budget remains unproved |
 
@@ -82,6 +83,15 @@ Clippy. Its actual 100 fresh point updates retained 5,229,212 canonical data/ind
 bytes, reconstructed both images and rejected every stale output. See the report
 for complete combined-run timings, CPU budgets and the GUI boundary control.
 No GUI window was opened.
+
+The subsequent narrower-wire kernel passed 23 compact-query, 21 compact-store,
+59 headless GUI and 13 SQL workflow tests, with strict Clippy. Its independent
+100-update integration run retained the same 5,229,212 canonical data/index bytes,
+rejected every stale output and peaked at 373.74 MiB. Exact encrypted response
+widths reduce traffic without reducing security parameters. One- and four-row
+timings varied in paired comparisons; 16-row/range queries and multirow updates
+still exceed 500 ms. See the separate report for both comparison pairs and the
+final integration control.
 
 The full goal remains active: reduce index overhead and multi-row latency, compose
 concealed indexed access, and retain the unresolved proof, freshness, resource and

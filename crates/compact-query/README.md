@@ -69,8 +69,11 @@ The table limit is 1,000,000 rows. MAX_ROWS is a distinct hard limit of 256 sele
 rows per request, checked from authenticated counts or the full-scan count
 before any FHE pad encryption. A lower caller budget is honored. SelectionBudget
 returns the full selected count and effective budget; it never truncates a group.
-Private COUNT uses ten bits, then widens to u32; the largest SUM is
-256 * 65535 = 16,776,960. Wire encodings are bounded at 128 MiB. This bounds honest
+Private outputs use an encrypted bit and u16 sum for exactly one selected row,
+and ten-bit COUNT plus 24-bit SUM otherwise. Owner-facing values remain u32;
+the largest SUM is 256 * 65535 = 16,776,960. Conditional zero selection uses
+TFHE's CPU IfThenZero API. The extended-types feature exports FheUint24 without
+changing the configured cryptographic parameters. Wire encodings are bounded at 128 MiB. This bounds honest
 materialization, not every malicious TFHE parameter/allocation path.
 
 The compressed index avoids a permanent four-byte ordinal per three-byte row.
@@ -88,7 +91,9 @@ The index is private owner policy, with visible candidate cardinality and physic
 addresses at the peer. The owner reads/decrypts encrypted index pages. This is not
 a peer-executed concealed SQL index, ORAM/PIR, arbitrary SQL, distributed consensus,
 a proof of query correctness/completeness, durable key recovery or authorization.
-Public age-operator shape (equality/range), sizes, revisions, access repetition and
+Public canonical age-operator shape (Equal, AtLeast, AtMost, Range), including the
+implicit 255/0 endpoints of one-sided shapes, sizes,
+revisions, access repetition and
 timing are also visible. The required leakage model remains open.
 
 The owner must independently obtain trusted current data/index heads. An old Table
@@ -126,3 +131,8 @@ are unmeasured. See the [experiment report](../../docs/experiment-compact-query.
 The `index_storage` example measures padded data/index sizes across four public
 age distributions and exact encrypted-image restart. See the
 [index format and measured accounting](../../docs/experiment-index-compression.md).
+
+The [narrower query wire experiment](../../docs/experiment-query-wire.md) records
+exact encrypted widths, operator-shape leakage, unchanged TFHE parameters, traffic
+savings and mixed CPU results. Its 16-row aggregates and multirow updates still
+exceed 500 ms; the data/index compactness result does not establish that query target.

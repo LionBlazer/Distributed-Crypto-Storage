@@ -1,5 +1,11 @@
 # Compact query composition experiment
 
+This report preserves the initial implementation and successive integration
+measurements. The current padded V2 index is described in the
+[index format report](experiment-index-compression.md); the latest narrowed
+encrypted predicate/output kernel and its independently validated SQL boundary
+are in the [query wire report](experiment-query-wire.md).
+
 This experiment composes the existing compact-store authenticated XChaCha20Poly1305
 pages with selective genuine TFHE evaluation and compact owner-assisted update
 writeback. It is implemented by the independent

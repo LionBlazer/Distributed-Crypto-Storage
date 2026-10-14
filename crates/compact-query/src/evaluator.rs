@@ -1,10 +1,11 @@
-use crate::wire::{Request, UpdatedRow};
+use crate::wire::{CountCipher, EncryptedPredicate, Request, SumCipher, UpdatedRow};
 use crate::{Error, Evaluator, MAX_ROWS, Result, Stages, UnverifiedOutput, check_schema, ms};
 use compact_store::{Commitment, EncryptedSnapshot, Limits, LookupResponse};
 use tfhe::prelude::*;
-use tfhe::{FheBool, FheUint8, FheUint10, FheUint16, FheUint32, with_server_key_as_context};
+use tfhe::{FheBool, FheUint8, FheUint10, FheUint16, FheUint24, with_server_key_as_context};
 const MAX_ROW_WORKERS: usize = 8;
 const _: () = assert!(MAX_ROWS < (1 << 10));
+const _: () = assert!((MAX_ROWS as u64) * (u16::MAX as u64) < (1 << 24));
 
 impl Evaluator {
     /// Opt-in experiment: at most eight additional scoped initiating OS threads.
@@ -113,25 +114,33 @@ impl Evaluator {
                 });
             stages.peer_compact_to_fhe_ms = ms(start);
             let start = std::time::Instant::now();
-            let matches: Vec<_> = self.map_rows(&rows, |(age, _)| {
-                if request.equality {
-                    age.eq(&request.lower)
-                } else {
-                    age.ge(&request.lower) & age.le(&request.upper)
-                }
+            let matches: Vec<_> = self.map_rows(&rows, |(age, _)| match &request.predicate {
+                EncryptedPredicate::Equal(value) => age.eq(value),
+                EncryptedPredicate::AtLeast(value) => age.ge(value),
+                EncryptedPredicate::AtMost(value) => age.le(value),
+                EncryptedPredicate::Range { lower, upper } => age.ge(lower) & age.le(upper),
             });
-            let count: FheUint10 = matches
-                .iter()
-                .map(|bit| FheUint10::cast_from(bit.clone()))
-                .sum();
-            let zero = FheUint16::encrypt_trivial(0u16);
             let selected: Vec<_> = rows.iter().zip(&matches).collect();
-            let sum: FheUint32 = self
-                .map_rows(&selected, |((_, amount), bit)| {
-                    FheUint32::cast_from(bit.if_then_else(amount, &zero))
-                })
-                .into_iter()
-                .sum();
+            // The one-row path keeps the genuine encrypted predicate and selection;
+            // only known-zero high blocks are omitted from the output encoding.
+            let (count, sum) = if rows.len() == 1 {
+                (
+                    CountCipher::Single(matches[0].clone()),
+                    SumCipher::Single(matches[0].if_then_zero(&rows[0].1)),
+                )
+            } else {
+                let count: FheUint10 = matches
+                    .iter()
+                    .map(|bit| FheUint10::cast_from(bit.clone()))
+                    .sum();
+                let sum: FheUint24 = self
+                    .map_rows(&selected, |((_, amount), bit)| {
+                        FheUint24::cast_from(bit.if_then_zero(amount))
+                    })
+                    .into_iter()
+                    .sum();
+                (CountCipher::Multiple(count), SumCipher::Multiple(sum))
+            };
             let (rejected, updated) = if let Some(delta) = &request.delta {
                 let mut rejected = FheBool::encrypt_trivial(false);
                 let candidates: Vec<_> = if self.row_workers == 1 {
@@ -179,7 +188,7 @@ impl Evaluator {
                 domain: self.domain,
                 id: request.id,
                 head: request.head,
-                count: FheUint32::cast_from(count),
+                count,
                 sum,
                 rejected,
                 rows: updated,

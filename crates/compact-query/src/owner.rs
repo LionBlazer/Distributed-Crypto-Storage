@@ -1,4 +1,4 @@
-use crate::wire::{MaskedRow, Request};
+use crate::wire::{CountCipher, EncryptedPredicate, MaskedRow, Request, SumCipher};
 use crate::{
     AgeRange, Aggregate, AppliedUpdate, Error, Evaluator, MAX_ROWS, MAX_TABLE_ROWS, Operation,
     Owner, PlainRow, PreparedQuery, ROW_BYTES, Result, SCHEMA, Selection, Stages, Table,
@@ -155,14 +155,24 @@ impl Owner {
                 ),
             });
         }
+        let encrypted_predicate = if predicate.lower == predicate.upper {
+            EncryptedPredicate::Equal(FheUint8::encrypt(predicate.lower, &self.key))
+        } else if predicate.upper == u8::MAX {
+            EncryptedPredicate::AtLeast(FheUint8::encrypt(predicate.lower, &self.key))
+        } else if predicate.lower == 0 {
+            EncryptedPredicate::AtMost(FheUint8::encrypt(predicate.upper, &self.key))
+        } else {
+            EncryptedPredicate::Range {
+                lower: FheUint8::encrypt(predicate.lower, &self.key),
+                upper: FheUint8::encrypt(predicate.upper, &self.key),
+            }
+        };
         let request = Request {
             domain: self.domain,
             id: random_id()?,
             head: table.commitment().encode().to_vec(),
             rows,
-            equality: predicate.lower == predicate.upper,
-            lower: FheUint8::encrypt(predicate.lower, &self.key),
-            upper: FheUint8::encrypt(predicate.upper, &self.key),
+            predicate: encrypted_predicate,
             delta: match operation {
                 Operation::CountSum => None,
                 Operation::AddAmount(delta) => Some(FheUint16::encrypt(delta, &self.key)),
@@ -184,10 +194,7 @@ impl Owner {
         output: &UnverifiedOutput,
     ) -> Result<Aggregate> {
         self.check_output(table, query, output)?;
-        Ok(Aggregate {
-            count: output.count.decrypt(&self.key),
-            sum: output.sum.decrypt(&self.key),
-        })
+        Ok(self.decrypt_output_aggregate(output))
     }
     /// Locally recomputes the selected plaintext update at the owner and compares
     /// every decrypted FHE result. Then stages both images before committing either.
@@ -244,9 +251,8 @@ impl Owner {
                 expected_rejected |= amount.checked_add(delta).is_none();
             }
         }
-        let actual_count: u32 = output.count.decrypt(&self.key);
-        let actual_sum: u32 = output.sum.decrypt(&self.key);
-        if rejected != expected_rejected || actual_count != count || actual_sum != sum {
+        let actual = self.decrypt_output_aggregate(output);
+        if rejected != expected_rejected || actual.count != count || actual.sum != sum {
             return Err(Error::InvalidOutput);
         }
         let mut changed_rows = 0;
@@ -321,6 +327,20 @@ impl Owner {
     pub fn secret_key_serialized_bytes(&self) -> Result<u64> {
         bincode::serialized_size(&self.key).map_err(|e| Error::Codec(e.to_string()))
     }
+    fn decrypt_output_aggregate(&self, output: &UnverifiedOutput) -> Aggregate {
+        let count = match &output.count {
+            CountCipher::Single(bit) => {
+                let matched: bool = bit.decrypt(&self.key);
+                u32::from(matched)
+            }
+            CountCipher::Multiple(value) => value.decrypt(&self.key),
+        };
+        let sum = match &output.sum {
+            SumCipher::Single(value) => value.decrypt(&self.key),
+            SumCipher::Multiple(value) => value.decrypt(&self.key),
+        };
+        Aggregate { count, sum }
+    }
     fn check_output(
         &self,
         table: &Table,
@@ -335,6 +355,12 @@ impl Owner {
         }
         if query.request.head != table.commitment().encode() || output.head != query.request.head {
             return Err(Error::WrongVersion);
+        }
+        let single = query.request.rows.len() == 1;
+        if matches!(output.count, CountCipher::Single(_)) != single
+            || matches!(output.sum, SumCipher::Single(_)) != single
+        {
+            return Err(Error::InvalidOutput);
         }
         if output.rejected.is_some() != matches!(query.operation, Operation::AddAmount(_))
             || (query.operation == Operation::CountSum && !output.rows.is_empty())

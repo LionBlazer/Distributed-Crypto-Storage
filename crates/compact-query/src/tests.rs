@@ -565,3 +565,143 @@ fn scoped_row_workers_preserve_exact_aggregates_and_global_overflow_rejection() 
         })
     ));
 }
+#[test]
+fn one_row_operator_shapes_keep_encrypted_misses_zero_and_reduce_wire_bounds() {
+    let roles = roles();
+    let (owner, evaluator) = &*roles;
+    let table = owner
+        .seal(
+            &[PlainRow {
+                age: 42,
+                amount: 65_535,
+            }],
+            256,
+            Limits::default(),
+        )
+        .unwrap();
+    let cases = [
+        (AgeRange::equal(42), 1),
+        (AgeRange::equal(41), 0),
+        (
+            AgeRange {
+                lower: 42,
+                upper: 255,
+            },
+            1,
+        ),
+        (
+            AgeRange {
+                lower: 43,
+                upper: 255,
+            },
+            0,
+        ),
+        (
+            AgeRange {
+                lower: 0,
+                upper: 42,
+            },
+            1,
+        ),
+        (
+            AgeRange {
+                lower: 0,
+                upper: 41,
+            },
+            0,
+        ),
+        (
+            AgeRange {
+                lower: 41,
+                upper: 43,
+            },
+            1,
+        ),
+        (
+            AgeRange {
+                lower: 43,
+                upper: 44,
+            },
+            0,
+        ),
+    ];
+    let mut encoded_lengths = Vec::new();
+    for (range, count) in cases {
+        let (mut query, output) = run(
+            owner,
+            evaluator,
+            &table,
+            Selection::FullScan,
+            range,
+            Operation::CountSum,
+        );
+        assert_eq!(
+            owner
+                .decrypt_aggregate_for_experiment(&table, &query, &output)
+                .unwrap(),
+            Aggregate {
+                count,
+                sum: count * 65_535
+            }
+        );
+        encoded_lengths.push(query.encode_request().unwrap().len());
+    }
+    assert!(encoded_lengths[0] < encoded_lengths[6]);
+    assert_eq!(encoded_lengths[0], encoded_lengths[2]);
+    assert_eq!(encoded_lengths[2], encoded_lengths[4]);
+    let empty = owner.seal(&[], 256, Limits::default()).unwrap();
+    let before = empty.commitment().clone();
+    let mut empty = empty;
+    let (query, output) = run(
+        owner,
+        evaluator,
+        &empty,
+        Selection::FullScan,
+        AgeRange::equal(42),
+        Operation::AddAmount(1),
+    );
+    assert_eq!(
+        owner
+            .apply_update_for_experiment(&mut empty, &query, &output, Limits::default())
+            .unwrap(),
+        AppliedUpdate {
+            rejected: false,
+            changed_rows: 0
+        }
+    );
+    assert_eq!(empty.commitment(), &before);
+}
+#[test]
+fn maximum_complete_candidate_group_keeps_exact_count256_and_sum16776960() {
+    let roles = roles();
+    let (owner, evaluator) = &*roles;
+    let table = owner
+        .seal(
+            &[PlainRow {
+                age: 42,
+                amount: 65_535,
+            }; MAX_ROWS],
+            256,
+            Limits::default(),
+        )
+        .unwrap();
+    let evaluator = evaluator.with_row_workers_for_experiment(8).unwrap();
+    let range = AgeRange::equal(42);
+    let (query, output) = run(
+        owner,
+        &evaluator,
+        &table,
+        Selection::IndexedAgeRange(range),
+        range,
+        Operation::CountSum,
+    );
+    assert_eq!(
+        owner
+            .decrypt_aggregate_for_experiment(&table, &query, &output)
+            .unwrap(),
+        Aggregate {
+            count: 256,
+            sum: 16_776_960
+        }
+    );
+}
