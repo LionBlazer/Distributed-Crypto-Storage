@@ -311,3 +311,9 @@ arithmetic-correctness or completeness proof. The probe labels its output
 `proof: unavailable`; no production verification or acceptance API is implemented,
 even when its local exactness tests pass. The existing
 [query-proof analysis](experiment-query-proofs.md) still applies.
+
+Subsequent work is measured separately: [NTT/output-level variants](experiment-bfv-variants.md)
+retain the original 25-bit profile; [exact byte-limb SUMs](experiment-bfv-byte-limbs.md)
+use the official 17-bit profile and a depth-preserving closed-range identity.
+The latter passes its bounded 16/256-row matrix below 500 ms without changing
+these original measurements or establishing full SQL/index/PIR/proof guarantees.
