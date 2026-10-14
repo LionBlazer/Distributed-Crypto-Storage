@@ -40,7 +40,7 @@ See [earlier measurements](fhe-optimization.md) before repeating experiments.
 | Native encrypted PRF mask regeneration | Implemented raw and rerandomized controls in the same probe | No persistent FHE masks; 64-row native preparation takes 5.61/5.88 seconds; rerandomized query exceeds 500 ms; storage/security composition still needs review |
 | Visible authenticated searchable index | Proposed | Direct row-ordinal lookup is not an index for arbitrary SQL predicates |
 | Concealed index via single-server PIR/ORAM | Primary-source comparison | Measure retrieval, index traversal, updates, owner state and subsequent FHE execution together |
-| Verifiable FHE computation and SQL completeness | Unimplemented | Include proof generation/checking before claiming requirements 11–13 |
+| Verifiable FHE computation and SQL completeness | [Proof research and actual PBS accounting](experiment-query-proofs.md); no verifier | Point COUNT/SUM uses 33 PBS; UPDATE 59/67 at 2/8 workers. Inspected primitive proof systems take seconds, with no TFHE-rs adapter; full 500 ms budget remains unproved |
 
 Worktrees: `fhe-fast-scan`, `fhe-compact-store`, `fhe-transciphering`. Generated
 reports and ephemeral test data stay in ignored local directories; no keys or

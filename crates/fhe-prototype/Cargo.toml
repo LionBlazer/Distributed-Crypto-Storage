@@ -21,3 +21,11 @@ libc = "0.2"
 [dev-dependencies]
 bincode = "1.3"
 blake3 = "1.8"
+
+[features]
+# Opt-in operation accounting only; this does not generate a query proof.
+proof-cost = ["tfhe/pbs-stats"]
+
+[[example]]
+name = "proof_cost"
+required-features = ["proof-cost"]

@@ -11,6 +11,12 @@ It compares four conversion modes and explicit CPU budgets, with complete local
 wire/key accounting. It does not change library storage, supply an SQL index or
 implement compact updates. Its format is separate from compact-store.
 
+The opt-in [proof-cost probe](../../docs/experiment-query-proofs.md) counts native
+PBS operations for the scalar conversion, selected COUNT/SUM and overflow-safe
+u16 UPDATE, and measures a serialized 128-bit ciphertext. Enable only the
+`proof-cost` feature for that example. It generates no computation proof and does
+not change production acceptance or the library's Owner/Evaluator APIs.
+
 There are no direct dependencies on other project modules. The binary and API tests
 and [GUI playground](../fhe-playground/README.md) are the library's consumers.
 TFHE-rs 1.8.1 is pinned as an experimental dependency;
