@@ -887,6 +887,8 @@ dependencies = [
 name = "fhe-prototype"
 version = "0.1.0"
 dependencies = [
+ "bincode",
+ "blake3",
  "getrandom 0.2.17",
  "libc",
  "rayon",

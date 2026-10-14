@@ -5,6 +5,12 @@ values and survive repeated compression and reloads. It uses real TFHE-rs CPU
 operations, with a fixed schema `age: u8, amount: u16`. The library exposes typed
 operations; the binary supplies public synthetic fixtures and measures them.
 
+The opt-in [transciphering example](../../docs/transciphering-probe.md) separately
+tests compact AES/PRF input converted to FHE for one addressed COUNT/SUM query.
+It compares four conversion modes and explicit CPU budgets, with complete local
+wire/key accounting. It does not change library storage, supply an SQL index or
+implement compact updates. Its format is separate from compact-store.
+
 There are no direct dependencies on other project modules. The binary and API tests
 and [GUI playground](../fhe-playground/README.md) are the library's consumers.
 TFHE-rs 1.8.1 is pinned as an experimental dependency;

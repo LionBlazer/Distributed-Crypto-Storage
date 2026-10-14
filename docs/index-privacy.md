@@ -19,6 +19,9 @@ encrypted peer data and an independently authenticated snapshot head.
 These compare protocol families rather than promise a universal latency multiplier.
 The same query, records, selected result size, thread count, memory, cache and
 network profile must be used for an empirical comparison.
+ORAM/PIR within one shard does not automatically conceal which shard or peer is
+contacted, the requester identity, or subsequent execution traffic. Network routing
+privacy and cover traffic are separate protocol and resource choices.
 
 ## Concrete concealed candidates
 

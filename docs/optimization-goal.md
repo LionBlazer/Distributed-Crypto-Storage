@@ -36,8 +36,8 @@ See [earlier measurements](fhe-optimization.md) before repeating experiments.
 | Existing compressed TFHE image | Measured | 50.31x at 1024 three-byte rows; fails storage target |
 | Narrow COUNT, multi-input SUM, overflow carry reuse | Reviewed and promoted; 42 owning/dependent tests passed | [Paired measurements](experiment-fast-scan.md): scan 2.68–4.16x faster, UPDATE 1.10–1.30x; storage unchanged |
 | Authenticated symmetric pages | Reviewed and promoted; 19 tests passed | [One million rows](experiment-compact-store.md): 1.062549x, 1.145952x including tree hashes; 1000 replacements retain size; no FHE |
-| TFHE 1.8.1 native one-time-pad transciphering | Implementation in isolated worktree | Measure actual compact-to-FHE COUNT/SUM, fresh/warm input and complete wire costs |
-| Native encrypted PRF mask regeneration | Implementation/review in isolated worktree | Avoid persistent FHE masks; audit seed lifecycle, key domain and rerandomization threat model |
+| TFHE 1.8.1 compact-to-FHE conversion | Reviewed opt-in [four-mode probe](transciphering-probe.md), actual encrypted COUNT/SUM | AES-radix: 1.033854x page, 1.059896x with owner state before FHE keys; eight-worker 19-warm-sample median/max 117.60/151.78 ms; two-worker max 573.88 ms |
+| Native encrypted PRF mask regeneration | Implemented raw and rerandomized controls in the same probe | No persistent FHE masks; 64-row native preparation takes 5.61/5.88 seconds; rerandomized query exceeds 500 ms; storage/security composition still needs review |
 | Visible authenticated searchable index | Proposed | Direct row-ordinal lookup is not an index for arbitrary SQL predicates |
 | Concealed index via single-server PIR/ORAM | Primary-source comparison | Measure retrieval, index traversal, updates, owner state and subsequent FHE execution together |
 | Verifiable FHE computation and SQL completeness | Unimplemented | Include proof generation/checking before claiming requirements 11–13 |
@@ -66,3 +66,10 @@ An evaluated FHE UPDATE still needs a validated compact writeback. The owner may
 verify, decrypt and re-encrypt; this requires that application online for that
 operation and must be measured. No current experiment supplies a decentralized
 write-authorization or computation-proof protocol.
+
+The compact-store XChaCha20Poly1305 format and the AES/OPRF probe remain different
+implementations; no adapter between them exists. Their measured costs cannot be
+combined into one claimed pipeline. The probe's own page/keys/query accounting is
+complete for its narrow local read, with network, proofs and updates explicitly
+absent. The full goal remains active: implement and validate a composed indexed
+read/update lifecycle and compare concealed access before choosing a privacy policy.
