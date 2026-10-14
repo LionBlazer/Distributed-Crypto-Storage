@@ -4,8 +4,8 @@ mod kernel;
 
 use bincode::Options;
 use fhe::bfv::{
-    BfvParameters, Ciphertext, Encoding, EvaluationKeyBuilder, Plaintext, RelinearizationKey,
-    SecretKey,
+    BfvParameters, BfvParametersBuilder, Ciphertext, Encoding, EvaluationKeyBuilder, Plaintext,
+    RelinearizationKey, SecretKey,
 };
 use fhe_traits::{
     DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter,
@@ -181,10 +181,15 @@ fn profile(parameters: &BfvParameters) -> ParameterProfile {
     }
 }
 fn official_parameters() -> Result<Arc<BfvParameters>> {
-    let parameters = BfvParameters::default_parameters_128(17)
-        .map_err(backend)?
-        .find(|p| p.degree() == DEGREE)
-        .ok_or(Error::ParameterProfile)?;
+    // The upstream catalog eagerly constructs all degrees, including N16384.
+    // Build only the pinned N8192 entry; complete upstream wire equality is tested.
+    let parameters = BfvParametersBuilder::new()
+        .set_degree(DEGREE)
+        .set_plaintext_modulus(PLAINTEXT)
+        .set_moduli(&MODULI)
+        .set_variance(10)
+        .build_arc()
+        .map_err(backend)?;
     if parameters.degree() != DEGREE
         || parameters.plaintext() != PLAINTEXT
         || parameters.moduli() != MODULI
@@ -607,6 +612,16 @@ mod proof_boundary_tests {
 #[cfg(test)]
 mod profile_and_level_tests {
     use super::*;
+
+    #[test]
+    fn selected_profile_matches_the_complete_upstream_parameter_wire() {
+        let upstream = BfvParameters::default_parameters_128(17)
+            .unwrap()
+            .find(|parameters| parameters.degree() == DEGREE)
+            .unwrap();
+        let selected = official_parameters().unwrap();
+        assert_eq!(selected.to_bytes(), upstream.to_bytes());
+    }
 
     #[test]
     fn public_setup_rejects_any_serialized_parameter_profile_drift() {

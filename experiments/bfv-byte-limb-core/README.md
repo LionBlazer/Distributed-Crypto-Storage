@@ -58,6 +58,11 @@ This package requests no optimized-ntt feature. Consumers must record their
 resolved dependency features/artifact; upstream feature unification can change
 an implementation even without changing this manifest.
 
+Setup builds only the pinned N8192 entry with BfvParametersBuilder. A test
+compares the complete serialized parameter wire against the upstream default
+catalog entry, including its variance. This avoids constructing four unused
+degrees on every setup/restore; it changes neither the kernel nor its profile.
+
 For r16/256, four predicate groups support low at0, high at4096, COUNT at8r.
 Each limb<=255*COUNT and COUNT<=owner's active fields<=r; total sum<=65535*COUNT.
 All decode is unsigned, and low+256*high uses checked u64 then u32 conversion.
@@ -85,7 +90,7 @@ ciphertext/key decoders. This experiment supplies no decryption-oracle protectio
 
 ## Validation
 
-Using a dedicated CARGO_TARGET_DIR, release/offline/locked tests pass:3 unit
+Using a dedicated CARGO_TARGET_DIR, release/offline/locked tests pass:4 unit
 contract tests and7 public API tests. They cover actual16/256 FHE EQ/GE/range,
 max SUM16,776,960 and unsigned65280 limbs, inactive/missing/zero-value COUNT,
 byte/age boundaries and absent results, reversed/oversize preparation rejection,
@@ -97,5 +102,11 @@ Authored strict Clippy passes with --all-targets --no-deps -- -D warnings.
     cargo test --release --locked --offline --manifest-path experiments/bfv-byte-limb-core/Cargo.toml --jobs 2 -- --test-threads=1
     cargo clippy --release --locked --offline --manifest-path experiments/bfv-byte-limb-core/Cargo.toml --all-targets --no-deps --jobs 2 -- -D warnings
 
-The source-only extraction has no new latency claim; the separately frozen
-standalone measurements are not a measured composed index/PIR pipeline.
+The public-fixture `profile_setup` example measures cold owner generation,
+wire serialization/decode, public peer restore and three actual GE queries.
+Its first argument is an output label, not a backend switch; the measured
+catalog control was built from the preceding source revision. See the
+[paired cold setup measurements](../../docs/experiment-bfv-profile-setup.md)
+for exact sources, commands, all timings and whole-process memory. These
+measurements exclude index/PIR/network/proofs and do not replace the separate
+[composed index/PIR measurements](../../docs/experiment-private-bfv-index.md).
