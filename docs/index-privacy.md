@@ -187,6 +187,15 @@ kind, timing and rejected budgets remain visible. Network, consensus, general
 SQL, durable complete owner recovery and arithmetic proof costs remain absent.
 Neither leakage policy has been selected.
 
+The subsequent [native trial scheduling control](experiment-private-pir-batch.md)
+preserves exact serialized responses for the same queries, while executing the
+four independent database trials concurrently. Its 32 full range reads compare
+Official and ParallelTrials on the same fixture. Private Cached ranges improve
+from 458–466 to 414–424 ms; Uncached improves from 574–590 to 508–531 ms. All four
+candidate uncached observations still fail the 500 ms target. Query expansion
+remains the main cost. Separate independent-request batch results describe
+amortized throughput and do not establish an individual-query latency bound.
+
 A range or JOIN may visit many pages even with an index. A hidden point lookup
 does not establish a hidden general SQL planner. A complete comparison must cover
 absent keys, repeated keys, duplicate groups, indexed-field changes, access padding,
