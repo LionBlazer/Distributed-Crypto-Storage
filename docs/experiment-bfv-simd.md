@@ -78,6 +78,12 @@ for this probe. A library's profile name or successful decryption is not that
 evidence. The broader implementation guidance is
 [Security Guidelines for Implementing Homomorphic Encryption, 2024/463](https://eprint.iacr.org/2024/463).
 
+The subsequent [exact security-input mapping](experiment-bfv-security.md) identifies
+the variance-ten sampler as estimator CBD(20), pins the complete modulus and
+official estimator, and supplies a reproduction script. Sage is unavailable in
+the inspected Windows runtimes; no numerical estimate has run and this gate
+remains open.
+
 For exact unsigned SUM, 256*65535 = 16,776,960 < t, and COUNT <=256.
 Decode as unsigned u64, check these bounds, then use u32. A signed centered
 decoder can return a negative value near this maximum because t/2 is smaller
