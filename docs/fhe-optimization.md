@@ -1,8 +1,8 @@
 # FHE storage and indexed query performance
 
-The targets remain canonical encrypted storage at most 2x the logical plaintext
-size and 100 ms indexed queries, preferably 50 ms. Full scans and arbitrary SQL
-remain separate workloads.
+The active acceptance goal is canonical encrypted storage at most 2x the logical
+plaintext size and indexed queries within 500 ms. The earlier research target was
+100 ms, preferably 50 ms. Full scans and arbitrary SQL remain separate workloads.
 The current TFHE representation does not meet the storage target; a faster scan
 alone does not provide an index. Both observable-access and concealed-access index
 designs remain candidates. Neither privacy model has been selected.
@@ -40,11 +40,13 @@ compression does not automatically represent evaluated ciphertexts as one seed.
 
 ## Measured scan optimization
 
-The current evaluator compares each encrypted age and accumulates 32-bit COUNT/SUM
-serially. A comparison experiment replaces scalar COUNT muxes with boolean-to-integer
-casts, uses 12 bits for COUNT, masks amounts before widening, and applies TFHE's
+The previous evaluator compared each encrypted age and accumulated 32-bit COUNT/SUM
+serially. The initial comparison experiment replaced scalar COUNT muxes with boolean-to-integer
+casts, used 12 bits for COUNT, masked amounts before widening, and applied TFHE's
 specialized multiple-input `sum` instead of repeated addition. SUM stays 32 bits:
-`1024*65535=67107840` requires 26 bits. The library evaluator is unchanged.
+`1024*65535=67107840` requires 26 bits. The library now incorporates this scan kernel
+and uses an overflowing adder for UPDATE; public result types and encrypted atomic
+rejection semantics are unchanged. The following table records the earlier experiment.
 
 | Threads | Rows | Baseline query | Optimized query |
 | ---: | ---: | ---: | ---: |
@@ -62,11 +64,21 @@ or an end-to-end SQL SLA. Additional Cargo examples reproduce the computation an
 record whole-process peak memory (360–362 MiB for these small query cases).
 Changing thread count changes the resource budget.
 
-The specialized sum and narrower COUNT provide 2.1–3.6x in these paired trials,
-but still miss 100 ms. Widening a clean unsigned ciphertext can append trivial zeros;
+The specialized sum and narrower COUNT provided 2.1–3.6x in these earlier paired trials,
+but still missed 100 ms. Widening a clean unsigned ciphertext can append trivial zeros;
 it must not be treated as an inherently expensive bootstrap. Parallel high-level
 row operations need a server-key context on every Rayon worker.
 [Pinned multiple-input sum implementation](https://github.com/zama-ai/tfhe-rs/blob/tfhe-rs-1.8.1/tfhe/src/high_level_api/integers/unsigned/ops.rs)
+
+[Current evaluator measurements](experiment-fast-scan.md) cover three new paired
+rounds per case: scan speedups of 2.68–4.16x and UPDATE/status speedups of 1.10–1.30x
+with unchanged cryptographic parameters. At eight Rayon workers, the current scan
+takes 388–417 ms for four rows and 1202–1351 ms for sixteen. This is a full scan,
+not an indexed query, and storage remains about 50x at 1024 rows. An additional
+parallel scan variant adds up to `min(rows, workers)` initiating threads beyond
+the `threads` argument's Rayon count and uses the global pool; it remains
+experimental. The library retains serial row traversal and its existing evaluation
+context behavior. See the linked report for timings, flags, memory and limits.
 
 ## Candidate storage and query designs
 
@@ -148,8 +160,9 @@ transmission, verification and version checks, not just FHE arithmetic.
    reads requiring a new confirmed head need separate budgets.
 
 An implementation can claim at most 2x storage only after the read/update lifecycle
-preserves it. The 100 ms/50 ms targets need a declared indexed query family, result-size
-bound, privacy model and network profile. Online-owner requirements, proof design
+preserves it. Both the active 500 ms goal and earlier 100 ms/50 ms targets need a
+declared indexed query family, result-size bound, privacy model and network profile.
+Online-owner requirements, proof design
 and strict versus snapshot freshness remain unresolved.
 
 ## Reproduction
@@ -164,6 +177,9 @@ cargo run --release --locked -p fhe-prototype --example query_layout -- 2 3
 cargo run --release --locked -p fhe-prototype --example query_layout -- 8 3
 ```
 
-The scan example compares algorithms on identical inputs and alternates execution
-order between rounds. It demonstrates local correctness against a public fixture,
+The scan example compares previous/current scan and UPDATE kernels on identical
+inputs and alternates execution order between rounds. Scan records include
+`optimized` and `parallel_rows` flags; UPDATE/status records include `optimized`.
+The third scan variant's additional initiating threads require a separate resource
+budget. The example demonstrates local correctness against a public fixture,
 not a cryptographic proof of a peer's answer.

@@ -16,16 +16,20 @@ before adopting it in a product.
 
 - Encrypt rows, a comparison threshold, and an update delta at the owner.
 - Full-scan filtering by encrypted `age == threshold` or `age >= threshold`.
-- Return encrypted COUNT and SUM; SUM widens stored `u16` values to `u32`.
+- Return encrypted COUNT and SUM with TFHE's specialized multiple-input sums.
+  COUNT uses a private 12-bit accumulator before returning the existing `u32`
+  result; SUM masks stored `u16` values before widening them to `u32`.
   An empty selection returns zero for both; SQL NULL semantics are not implemented.
 - Add an encrypted delta to matching amounts. If any matching amount would overflow
   `u16`, an encrypted condition retains every original amount. The evaluator never
   decrypts or branches on whether an individual row matches or an overflow occurred.
+  The overflowing adder supplies both the candidate amount and its encrypted carry.
 - Compress the table with TFHE's `CompressedCiphertextList`, including after updates,
   and restore it with the same evaluation key.
 
 The API bounds tables at 1,024 rows and images at 64 MiB. The row bound also prevents
-overflow of the aggregate accumulator. These are experiment guards, not a validated
+overflow of the aggregate accumulators, with compile-time checks for their widths.
+These are experiment guards, not a validated
 peer RAM budget. Equality, range boundaries, empty results, wide sums, update overflow,
 and repeated compression are tested at the public API boundary.
 
@@ -91,6 +95,8 @@ databases. The experiment uses TFHE's
 
 ### Initial measurements
 
+These measurements predate the [scan kernel optimization](../../docs/experiment-fast-scan.md).
+
 Observed on 2026-10-14 with rustc 1.99.0, Windows 11 Pro x86_64, AMD Ryzen 9
 9950X3D2 (16 cores / 32 logical processors), approximately 94 GiB visible RAM,
 and **two Rayon threads**. Both runs use the default threshold 18 and delta 5;
@@ -120,16 +126,18 @@ strategies need separate measurements.
 
 [Optimization research](../../docs/fhe-optimization.md) records the current
 compression preset's structural overhead, larger storage probes, a measured
-aggregation variant and two index privacy models. The targets remain canonical
-encrypted storage at most 2x logical plaintext size and 100 ms indexed queries,
-preferably 50 ms; they are not
-achieved by the current evaluator.
+aggregation variant and two index privacy models. The active acceptance goal is
+canonical encrypted storage at most 2x logical plaintext size and 500 ms indexed
+queries; the earlier research target was 100 ms, preferably 50 ms. The current
+evaluator does not establish either indexed-query target or compact storage.
 
 The `storage_size` example measures image growth through 1024 rows without scanning
-the table. `query_layout` compares the current encrypted scan with narrower COUNT
-and specialized multiple-input sums on public fixtures, verifies decrypted answers,
-and reports latency and process peak memory. They use the same TFHE parameters;
-the library's execution algorithm remains unchanged.
+the table. `query_layout` compares the previous serial scan/update kernels, the
+current narrower COUNT/specialized SUM/overflowing-adder kernels, and an experimental
+scan with parallel initiating threads. It verifies decrypted answers and updated
+amounts and reports latency and process peak memory. They use the same TFHE parameters.
+The parallel experiment adds initiating threads to the declared Rayon worker count;
+the library retains serial row traversal. See [methods and limits](../../docs/experiment-fast-scan.md).
 
 ```sh
 cargo run --release --locked -p fhe-prototype --example storage_size

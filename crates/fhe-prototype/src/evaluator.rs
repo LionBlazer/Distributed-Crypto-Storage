@@ -1,9 +1,13 @@
 use tfhe::prelude::*;
-use tfhe::{FheBool, FheUint32, ServerKey, with_server_key_as_context};
+use tfhe::{FheBool, FheUint12, FheUint16, FheUint32, ServerKey, with_server_key_as_context};
 
 use crate::error::crypto_error;
 use crate::table::KeyDomain;
-use crate::{AgePredicate, AmountDelta, Comparison, EncryptedTable, Error, Result};
+use crate::{AgePredicate, AmountDelta, Comparison, EncryptedTable, Error, MAX_ROWS, Result};
+
+// Keep the private aggregate widths valid if the public allocation guard changes.
+const _: () = assert!(MAX_ROWS < (1 << 12));
+const _: () = assert!((MAX_ROWS as u64) * (u16::MAX as u64) <= u32::MAX as u64);
 
 /// Owns only evaluation material. Clone shares the underlying server key allocation.
 #[derive(Clone)]
@@ -34,21 +38,31 @@ impl Evaluator {
         self.check_domain(table.domain)?;
         self.check_domain(predicate.domain)?;
         Ok(self.in_context(|| {
-            let zero = FheUint32::encrypt_trivial(0_u32);
-            let mut count = zero.clone();
-            let mut sum = zero.clone();
-            for row in &table.rows {
-                let matches = match predicate.comparison {
+            let zero = FheUint16::encrypt_trivial(0_u16);
+            let matches: Vec<_> = table
+                .rows
+                .iter()
+                .map(|row| match predicate.comparison {
                     Comparison::Equal => row.age.eq(&predicate.threshold),
                     Comparison::AtLeast => row.age.ge(&predicate.threshold),
-                };
-                count += FheUint32::if_then_else(&matches, 1_u32, 0_u32);
-                let amount: FheUint32 = row.amount.clone().cast_into();
-                sum += matches.if_then_else(&amount, &zero);
-            }
+                })
+                .collect();
+            // MAX_ROWS is 1024: 12 bits hold COUNT, and 32 bits hold the exact
+            // maximum SUM (1024 * 65535). TFHE's multi-input sum avoids a serial
+            // chain of carry propagation. Empty sums produce encrypted zero.
+            let count: FheUint12 = matches
+                .iter()
+                .map(|bit| FheUint12::cast_from(bit.clone()))
+                .sum();
+            let sum: FheUint32 = table
+                .rows
+                .iter()
+                .zip(&matches)
+                .map(|(row, bit)| FheUint32::cast_from(bit.if_then_else(&row.amount, &zero)))
+                .sum();
             UnverifiedAggregate {
                 domain: self.domain,
-                count,
+                count: FheUint32::cast_from(count),
                 sum,
             }
         }))
@@ -75,8 +89,10 @@ impl Evaluator {
                         Comparison::Equal => row.age.eq(&predicate.threshold),
                         Comparison::AtLeast => row.age.ge(&predicate.threshold),
                     };
-                    let candidate = &row.amount + &delta.value;
-                    rejected |= &matches & candidate.lt(&row.amount);
+                    // The adder already computes the final carry. Reusing it
+                    // avoids a second encrypted comparison after modular addition.
+                    let (candidate, overflow) = (&row.amount).overflowing_add(&delta.value);
+                    rejected |= &matches & overflow;
                     (matches, candidate)
                 })
                 .collect();
