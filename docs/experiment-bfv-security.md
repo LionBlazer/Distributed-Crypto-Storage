@@ -3,8 +3,8 @@
 Status: input mapping and a pinned official estimator invocation are prepared.
 **No numerical security estimate ran and the independent >=128-bit gate remains
 open.** Windows Python3.11.9 and bundled Python3.12.14 have no sage module; no Sage
-command was found. Ubuntu WSL2 and Docker are stopped. They were inventoried only,
-not started, and no tools/packages were installed. This missing runtime concerns
+command was found. The earlier inventory recorded Ubuntu WSL2 and Docker as
+stopped; they were not started by this work, and no tools/packages were installed. This missing runtime concerns
 this estimate, not progress on the wider storage/query goal.
 
 The measured [BFV SIMD experiment](experiment-bfv-simd.md) supplies the exact
@@ -30,6 +30,23 @@ not one48/49-bit RNS prime, the plaintext t, or a rounded2^438 modulus. The
 [parameter source](https://github.com/tlepoint/fhe.rs/blob/fe47bac2e2abf0077c0e8d95f5c2ce7ce8a40b2a/crates/fhe/src/bfv/parameters.rs)
 and an actual N16384 setup record match these inputs exactly.
 
+The CLI names this unchanged default `n16384-plain25`. Explicit
+`--profile n8192-byte17` describes N8192, t114689 and these five unmodified
+official ciphertext primes:
+
+~~~text
+0x7fffffd8001, 0x7fffffc8001, 0xfffffffc001,
+0xffffff6c001, 0xfffffebc001
+~~~
+
+Their exact product is
+421249101157150430150591791601812858371395928330411389778873040897
+(bit_length218, log2(Q)=217.99999977561694). The new t exceeds the maximum
+individual byte-limb SUM65280; low+256*high is reconstructed after decryption.
+The default t still accommodates full SUM16776960 directly. Manifests and future
+attack records identify the selected profile. There is no silent substitution of
+N8192 for the original default, and both profiles use the exact distribution below.
+
 The variance10 sampler consumes40 random bits per coefficient: popcount of20
 minus popcount of20. Consequently both secret and error are exactly
 **ND.CenteredBinomial(20)** in lattice-estimator notation: mean0, variance10,
@@ -53,8 +70,9 @@ and avoids this approximation entirely.
 
 ## Ring model, sample count and evaluation keys
 
-The generic LWE input dimension is n=N=16384, not8192 SIMD-row slots,16/256 selected
-rows, or32768 cyclotomic index. A known-plaintext symmetric ciphertext gives one
+The generic LWE input dimension is the selected N:16384 for n16384-plain25 or
+8192 for n8192-byte17. It is not N/2 SIMD-row slots,16/256 selected rows or the
+2N cyclotomic index. A known-plaintext symmetric ciphertext gives one
 RLWE polynomial relation and N scalar coefficient equations. Its rows are
 negacyclic shifts of one public a polynomial, not N independent random LWE row
 vectors. Fresh public a values are seed-expanded with ChaCha8; the estimator's
@@ -69,11 +87,16 @@ all ring/algebraic attacks. Report the interpretation, not just a bit count.
 The official estimator explicitly defines
 [m as scalar samples](https://github.com/malb/lattice-estimator/blob/53da5982597709ba0fdf94ea37a84d822310fd84/estimator/lwe_parameters.py#L13).
 
-At level0 each rotation or relinearization key has nine RNS key-switch pairs under
-the full Q. The16-row shape publishes7 rotation keys plus1 relinearization key:
-72 polynomial pairs/1,179,648 coefficient relations. The256-row shape publishes11+1:
-108 pairs/1,769,472 relations. These are **exposure inventories**, not an IID sample
-count: their messages contain Gi*s(x^j) or Gi*s^2 under the same secret. The
+At level0 each rotation or relinearization key has one RNS pair per ciphertext
+prime. The16-row shape uses7 rotations plus relinearization; the256-row shape11+1:
+
+| Profile | Primes/key | Polynomial pairs,16 /256 rows | Coefficient relations,16 /256 rows |
+| --- | ---: | ---: | ---: |
+| n16384-plain25 | 9 | 72 /108 | 1179648 /1769472 |
+| n8192-byte17 | 5 | 40 /60 | 327680 /491520 |
+
+These are **exposure inventories**, not an IID sample count: messages contain
+Gi*s(x^j) or Gi*s^2 under the same secret. The
 [key-switch generator](https://github.com/tlepoint/fhe.rs/blob/fe47bac2e2abf0077c0e8d95f5c2ce7ce8a40b2a/crates/fhe/src/bfv/keys/key_switching_key.rs)
 adds fresh small error to -a*s plus those key-dependent terms. The ordinary LWE
 estimator does not establish their circular/KDM security. No extra public P
@@ -115,9 +138,12 @@ Prepared invocation from a project root in an existing Sage environment:
 ~~~sh
 git clone https://github.com/malb/lattice-estimator.git .local/fhe-research/estimator-53da598
 git -C .local/fhe-research/estimator-53da598 checkout --detach 53da5982597709ba0fdf94ea37a84d822310fd84
-python3 experiments/bfv-security/estimate_bfv.py --estimator-root .local/fhe-research/estimator-53da598
+python3 experiments/bfv-security/estimate_bfv.py
+python3 experiments/bfv-security/estimate_bfv.py --profile n8192-byte17
+python3 experiments/bfv-security/test_manifest.py
 # Only after a CPU lease and a version-recorded Sage runtime is available:
-sage -python experiments/bfv-security/estimate_bfv.py --estimate --model both --samples unlimited --estimator-root .local/fhe-research/estimator-53da598 > .local/fhe-research/bfv-lwe-estimates.jsonl
+sage -python experiments/bfv-security/estimate_bfv.py --profile n8192-byte17 --estimate --model both --samples unlimited --estimator-root .local/fhe-research/estimator-53da598 > .local/fhe-research/bfv-lwe-byte17-estimates.jsonl
+# Use --profile n16384-plain25 explicitly for the original profile.
 ~~~
 
 The source records Sage/Python versions, exact inputs, estimator commit, cost-model
@@ -141,8 +167,26 @@ fhe parameters.rs
 7F6B1D364CBC8547B3F381551EC14F1EC0272C07B3C8A4EE03C4DF1FC9AECE30;
 estimator nd.py
 099264D65B6610BDAA6B632C8B0CD33648FEB00177D1E99BE2B30AE3D5DB1EAC.
-The new script SHA-256 is
-EE4572BBC7A4544AD83665DD5165578A147ABAD52FB4EC336039C5AD9EF448C6.
+The original single-profile script SHA-256 was
+EE4572BBC7A4544AD83665DD5165578A147ABAD52FB4EC336039C5AD9EF448C6;
+the explicit-profile script is
+D0C96E9F0F45345DCDC3EBFAD9243FA0F4FC82EEBB27A4C633988084B4D9A9EC.
+
+This extension starts from published f80065e. All existing default JSON values
+except the source hash remain equal to that published script; additional fields
+only label profile/packing/component bound. Five stdlib CLI tests cover unchanged
+defaults, byte17 modulus/exposures, exact CBD/unlimited-model caveats, finite samples
+using the selected dimension, and rejection of an unknown profile. Both prime
+sets/products and batching primes match the locked library constants/generator;
+pinned estimator API signatures were checked statically. BOTH explicit --estimate
+requests stop at the missing-Sage guard before estimator import. No attacks ran.
+New local evidence under .local/fhe-research/bfv-security-profiles/ contains one
+manifest and runtime-failure stdout/stderr pair per profile, plus checks.json.
+
+Separate root-reported runtime-probe evidence: two version-only requests to
+SageCell /service returned HTTP520. They supplied neither a Sage version nor an
+estimate and are not alternative security evidence. This extension made no remote
+requests or messages.
 
 The next runtime stage needs a version-recorded Sage environment and saved full
 output under the experimental CPU/resource limits. An existing Ubuntu distribution

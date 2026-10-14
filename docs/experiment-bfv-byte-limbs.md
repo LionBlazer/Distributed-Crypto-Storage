@@ -195,9 +195,9 @@ bfv-byte17-add-range-boundary-20261014-222158-393-{1..11};
 bfv-byte17-add-matrix-{16,256}-{eq,ge,range}-20261014-222228-281.
 Generated raw output/executables/keys/database images are never committed.
 
-A separate experimental library may later expose owner preparation, public-only
-evaluation and owner decrypt_unverified with context binding to both trusted
-data/index heads. It must retain the measured packing/depth and explicit
-UnverifiedAggregate result. Index completeness, PIR access privacy and
-malicious-peer arithmetic proofs are separate contracts, not inferred from
-this benchmark.
+The subsequent [experimental core](../experiments/bfv-byte-limb-core/README.md)
+exposes owner preparation, public-only evaluation and owner decrypt_unverified
+with context binding to both trusted data/index heads. Ten boundary tests pass,
+including an explicit in-bounds forged answer that remains UnverifiedAggregate.
+Its extraction adds no latency claim. Index completeness, PIR access privacy
+and malicious-peer arithmetic proofs remain separate contracts.

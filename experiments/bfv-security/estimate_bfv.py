@@ -15,20 +15,28 @@ import sys
 
 ESTIMATOR_REVISION = "53da5982597709ba0fdf94ea37a84d822310fd84"
 FHE_REVISION = "fe47bac2e2abf0077c0e8d95f5c2ce7ce8a40b2a"
-N = 16384
-T = 33292289
-MODULI = (
-    0xFFFFFFFD8001,
-    0xFFFFFFFA0001,
-    0xFFFFFFF00001,
-    0x1FFFFFFF68001,
-    0x1FFFFFFF50001,
-    0x1FFFFFFEE8001,
-    0x1FFFFFFEA0001,
-    0x1FFFFFFE88001,
-    0x1FFFFFFE48001,
-)
-Q = math.prod(MODULI)
+DEFAULT_PROFILE = "n16384-plain25"
+PROFILES = {
+    DEFAULT_PROFILE: {
+        "n": 16384, "t": 33292289,
+        "moduli": (
+            0xFFFFFFFD8001, 0xFFFFFFFA0001, 0xFFFFFFF00001,
+            0x1FFFFFFF68001, 0x1FFFFFFF50001, 0x1FFFFFFEE8001,
+            0x1FFFFFFEA0001, 0x1FFFFFFE88001, 0x1FFFFFFE48001,
+        ),
+        "plaintext_component_bound": 256 * 65535,
+        "output_packing": "whole-u16-sum",
+    },
+    "n8192-byte17": {
+        "n": 8192, "t": 114689,
+        "moduli": (
+            0x7FFFFFD8001, 0x7FFFFFC8001, 0xFFFFFFFC001,
+            0xFFFFFF6C001, 0xFFFFFEBC001,
+        ),
+        "plaintext_component_bound": 256 * 255,
+        "output_packing": "byte-limb-low-high-count",
+    },
+}
 ETA = 20
 ATTACKS = (
     "arora-gb", "bkw", "usvp", "bdd", "bdd_hybrid",
@@ -67,19 +75,24 @@ def verify_estimator(repo: Path, git: str) -> None:
         raise SystemExit("Estimator checkout must be clean, including untracked source")
 
 
-def manifest(samples: str) -> dict:
-    assert N == 16384 and T > 256 * 65535 and T % (2 * N) == 1
-    assert all(q % (2 * N) == 1 for q in MODULI)
+def manifest(samples: str, profile_name: str) -> dict:
+    profile = PROFILES[profile_name]
+    n, t, moduli = profile["n"], profile["t"], profile["moduli"]
+    q = math.prod(moduli)
+    assert t > profile["plaintext_component_bound"] and t % (2 * n) == 1
+    assert all(prime % (2 * n) == 1 for prime in moduli)
     return {
-        "event": "exact_inputs_no_security_result",
+        "event": "exact_inputs_no_security_result", "profile": profile_name,
+        "plaintext_component_bound": profile["plaintext_component_bound"],
+        "output_packing": profile["output_packing"],
         "fhe_package": "fhe=0.1.1", "fhe_revision": FHE_REVISION,
         "estimator_revision": ESTIMATOR_REVISION,
-        "ring": "Z_Q[x]/(x^16384+1), cyclotomic index32768",
-        "generic_lwe_dimension": N, "q_decimal": str(Q),
-        "q_hex": hex(Q), "q_log2": math.log2(Q), "q_bit_length": Q.bit_length(),
-        "coefficient_moduli": list(MODULI),
-        "coefficient_prime_bit_lengths": [q.bit_length() for q in MODULI],
-        "plaintext_modulus": T, "ciphertext_level": 0,
+        "ring": f"Z_Q[x]/(x^{n}+1), cyclotomic index{2*n}",
+        "generic_lwe_dimension": n, "q_decimal": str(q),
+        "q_hex": hex(q), "q_log2": math.log2(q), "q_bit_length": q.bit_length(),
+        "coefficient_moduli": list(moduli),
+        "coefficient_prime_bit_lengths": [prime.bit_length() for prime in moduli],
+        "plaintext_modulus": t, "ciphertext_level": 0,
         "secret_distribution": exact_distribution_check(),
         "error_distribution": exact_distribution_check(),
         "sample_count_model": samples,
@@ -88,8 +101,8 @@ def manifest(samples: str) -> dict:
         "switching_key_exposure": [
             {"selected_rows": k, "rotation_keys": rotations,
              "relinearization_keys": 1,
-             "rns_key_switch_ciphertext_pairs": 9 * (rotations + 1),
-             "scalar_coefficient_relations_inventory_only": N * 9 * (rotations + 1)}
+             "rns_key_switch_ciphertext_pairs": len(moduli) * (rotations + 1),
+             "scalar_coefficient_relations_inventory_only": n * len(moduli) * (rotations + 1)}
             for k, rotations in ((16, 7), (256, 11))
         ],
         "new_query_ciphertext_pairs": {"equal_or_ge": 3, "range": 4},
@@ -100,6 +113,8 @@ def manifest(samples: str) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--profile", choices=tuple(PROFILES), default=DEFAULT_PROFILE,
+                        help="Explicit BFV profile; default preserves N16384/plaintext25")
     parser.add_argument("--estimate", action="store_true",
                         help="Run official Sage estimator; obtain exclusive CPU lease first")
     parser.add_argument("--estimator-root", type=Path)
@@ -108,9 +123,16 @@ def main() -> None:
     parser.add_argument("--samples", default="unlimited",
                         help="unlimited (primary sensitivity model), or integer scalar sample count")
     args = parser.parse_args()
-    if args.samples != "unlimited" and int(args.samples) < N:
-        parser.error("Finite sample sensitivity must contain at least one N-coefficient polynomial")
-    emit(manifest(args.samples))
+    profile = PROFILES[args.profile]
+    n, q = profile["n"], math.prod(profile["moduli"])
+    if args.samples != "unlimited":
+        try:
+            finite_samples = int(args.samples)
+        except ValueError:
+            parser.error("--samples must be unlimited or an integer scalar sample count")
+        if finite_samples < n:
+            parser.error("Finite sample sensitivity must contain at least one N-coefficient polynomial")
+    emit(manifest(args.samples, args.profile))
     if args.estimator_root is not None:
         verify_estimator(args.estimator_root.resolve(), args.git)
     if not args.estimate:
@@ -134,12 +156,12 @@ def main() -> None:
     sample_count = oo if args.samples == "unlimited" else int(args.samples)
     secret, error = ND.CenteredBinomial(ETA), ND.CenteredBinomial(ETA)
     assert secret.bounds == (-20, 20) and abs(float(secret.stddev**2) - 10) < 1e-12
-    params = LWE.Parameters(n=N, q=ZZ(Q), Xs=secret, Xe=error, m=sample_count,
-                            tag="fhe0.1.1-N16384-CBD20-generic-LWE-only")
+    params = LWE.Parameters(n=n, q=ZZ(q), Xs=secret, Xe=error, m=sample_count,
+                            tag=f"fhe0.1.1-{args.profile}-CBD20-generic-LWE-only")
     models = {"matzov": RC.MATZOV, "adps16": RC.ADPS16}
     chosen = models if args.model == "both" else {args.model: models[args.model]}
     for name, model in chosen.items():
-        emit({"event": "estimator_start", "sage_version": SAGE_VERSION,
+        emit({"event": "estimator_start", "profile": args.profile, "sage_version": SAGE_VERSION,
               "python": platform.python_version(), "model": name,
               "model_state": vars(model), "shape": "GSA", "jobs": 1,
               "configured_attacks": ATTACKS, "catch_exceptions": False,
@@ -152,9 +174,9 @@ def main() -> None:
             bits = None if cost["rop"] == oo else float(log(cost["rop"], 2))
             if bits is not None:
                 finite.append(bits)
-            emit({"event": "attack_estimate", "model": name, "attack": attack,
+            emit({"event": "attack_estimate", "profile": args.profile, "model": name, "attack": attack,
                   "rop_log2": bits, "cost_fields": {str(k): str(v) for k, v in cost.items()}})
-        emit({"event": "conditional_lwe_result", "model": name,
+        emit({"event": "conditional_lwe_result", "profile": args.profile, "model": name,
               "minimum_finite_rop_log2": min(finite) if finite else None,
               "returned_attack_names": sorted(results),
               "full_api_prunes_dominated_hybrids": True,
