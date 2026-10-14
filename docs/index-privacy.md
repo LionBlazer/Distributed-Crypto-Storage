@@ -146,6 +146,47 @@ remain a separate RAM cost. This closes the earlier secret-backup framing gap fo
 that pinned profile; it does not retime or replace the frozen single-table ledger,
 provide authenticated durable backup, or establish a combined 2x result.
 
+## Latest retained-table and range comparisons
+
+The [twenty-table experiment](experiment-private-bfv-amortization.md) now keeps
+all independent snapshots and forty native caches live under the decimal 2 GB
+process guard. All 192 full paired EQ reads are exact and below 436 ms. Fixed16
+Visible takes 77–91 ms, Private Cached 297–321 ms and Private Uncached 406–429 ms,
+covering 0/1/4/16 complete candidates and supplied first/middle/last table IDs.
+Two samples per cell are observations, not a percentile latency guarantee.
+
+For 60 MB logical data, canonical images plus shared key/owner known payload are
+1.938696x, or 1.959699x with Merkle payload. All retained NTT overlays alone are
+1.342 GB; canonical once plus known auxiliary representations is 24.729909x,
+before unpartitioned native BFV key/container costs. Native peak RSS/commit is
+1.710/1.717 GB. Therefore the smaller image/key subtotal is not a full-state 2x
+claim. Actual primary files, resident snapshots, native process memory and
+remaining backup limitations are separately accounted in that report.
+
+A [separate Rows256 composition](experiment-private-bfv-range.md) performs 96
+actual reads over one million-row table, with complete posting selection and
+the same private/visible choices. Ranges cover 21 or 256 selected rows; EQ covers
+0/64/256, and GE is tested at 256. Both AddressOnly and Fixed256 are measured:
+
+| Supported operation | Visible ms, both header modes | Private Cached ms | Private Uncached ms |
+| --- | ---: | ---: | ---: |
+| EQ64/256 | 83.67–99.43 | 320.45–330.18 | 436.31–455.34 |
+| GE256 | 125.66–134.83 | 361.53–374.76 | 469.91–482.11 |
+| Ranges21/256 | 208.46–230.59 | 446.75–469.86 | 567.52–590.72 |
+
+All 96 answers are exact, including unsigned COUNT256/SUM16776960. All eight
+private uncached range observations exceed 500 ms; they are retained as failures
+of that latency target. Native peak RSS/commit is 352/357 MB. This Rows256 run has
+its own larger public setup and one-table ledger; its timings cannot be combined
+with the separate twenty-table Rows16 storage subtotal as one measured system.
+
+Both compositions retain the online-owner, complete one-posting-page and
+one-data-page budget, ready native caches and unverified arithmetic. PIR hides
+page choice within the supplied table; table/root identity, public predicate
+kind, timing and rejected budgets remain visible. Network, consensus, general
+SQL, durable complete owner recovery and arithmetic proof costs remain absent.
+Neither leakage policy has been selected.
+
 A range or JOIN may visit many pages even with an index. A hidden point lookup
 does not establish a hidden general SQL planner. A complete comparison must cover
 absent keys, repeated keys, duplicate groups, indexed-field changes, access padding,
