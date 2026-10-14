@@ -116,6 +116,27 @@ the roughly constant memory measurement reflects this tiny workload, not scaling
 to a peer's full storage quota. Larger workloads and alternative FHE execution
 strategies need separate measurements.
 
+### Storage and indexed query optimization
+
+[Optimization research](../../docs/fhe-optimization.md) records the current
+compression preset's structural overhead, larger storage probes, a measured
+aggregation variant and two index privacy models. The targets remain canonical
+encrypted storage at most 2x logical plaintext size and 100 ms indexed queries,
+preferably 50 ms; they are not
+achieved by the current evaluator.
+
+The `storage_size` example measures image growth through 1024 rows without scanning
+the table. `query_layout` compares the current encrypted scan with narrower COUNT
+and specialized multiple-input sums on public fixtures, verifies decrypted answers,
+and reports latency and process peak memory. They use the same TFHE parameters;
+the library's execution algorithm remains unchanged.
+
+```sh
+cargo run --release --locked -p fhe-prototype --example storage_size
+cargo run --release --locked -p fhe-prototype --example query_layout -- 2 3
+cargo run --release --locked -p fhe-prototype --example query_layout -- 8 3
+```
+
 ## Boundaries and unresolved requirements
 
 The evaluator learns the schema, row count/order, comparison operator, operation
