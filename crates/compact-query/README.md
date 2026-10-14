@@ -136,3 +136,11 @@ The [narrower query wire experiment](../../docs/experiment-query-wire.md) record
 exact encrypted widths, operator-shape leakage, unchanged TFHE parameters, traffic
 savings and mixed CPU results. Its 16-row aggregates and multirow updates still
 exceed 500 ms; the data/index compactness result does not establish that query target.
+
+The key_amortization example retains independent encrypted Tables under one
+Owner/Evaluator and counts actual data, indexes, trusted heads, shared keys and
+hashes. The [actual amortization report](../../docs/experiment-key-amortization.md)
+measures 210 million-row tables at 1.975191x canonical material or 1.996193x with
+hashes, with 1.386 GB whole-process peak RSS. Queries use supplied table IDs;
+this does not establish global SQL routing or a bound for every database size.
+Its Windows measurement wrapper constrains only its own headless child process.
