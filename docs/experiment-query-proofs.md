@@ -322,3 +322,8 @@ nor the 500 ms goal.
 5. Only claim the full goal after complete selection, current-head confirmation,
    computation proof, verification, decryption and update publication are measured
    together under the actual peer RAM and network budget.
+
+The subsequent [BFV-specific investigation](research-bfv-verification.md)
+examines complete RNS/key-switch/rounding obligations for the byte-limb core,
+published dCRT proof costs and why sparse NTT spot-checks are insufficient.
+It adds no proof implementation or new end-to-end latency claim.
