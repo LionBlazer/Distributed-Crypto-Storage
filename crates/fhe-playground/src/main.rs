@@ -1,3 +1,6 @@
+mod graph_bundling;
+mod graph_layout;
+mod graph_routing;
 mod ui;
 mod worker;
 
@@ -14,8 +17,8 @@ fn main() -> eframe::Result {
         "DCS | FHE Playground",
         eframe::NativeOptions {
             viewport: eframe::egui::ViewportBuilder::default()
-                .with_inner_size([1280.0, 920.0])
-                .with_min_inner_size([980.0, 720.0]),
+                .with_inner_size([1500.0, 900.0])
+                .with_min_inner_size([1180.0, 720.0]),
             renderer: eframe::Renderer::Glow,
             ..Default::default()
         },

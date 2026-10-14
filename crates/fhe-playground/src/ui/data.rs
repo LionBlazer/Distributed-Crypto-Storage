@@ -1,160 +1,50 @@
 use super::*;
 use fhe_prototype::PlainRow;
-
 impl Playground {
     pub(super) fn data_editor(&mut self, ui: &mut egui::Ui) {
-        egui::Panel::right("data-settings")
-            .default_size(280.0)
-            .size_range(260.0..=350.0)
-            .frame(panel(18))
-            .show(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.label(RichText::new("Database settings").strong());
-                    section(ui, "Name");
-                    ui.add_enabled(
-                        self.available(),
-                        egui::TextEdit::singleline(&mut self.draft_name)
-                            .desired_width(f32::INFINITY),
-                    );
-                    section(ui, "Schema");
-                    for (name, datatype) in [("age", "u8 / 0..255"), ("amount", "u16 / 0..65535")] {
-                        ui.horizontal(|ui| {
-                            icon(ui, Icon::Column, MUTED);
-                            ui.label(name);
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    ui.label(RichText::new(datatype).small().color(MUTED));
-                                },
-                            );
-                        });
-                    }
-                    section(ui, "Fixtures");
-                    ui.add_enabled_ui(self.available(), |ui| {
-                        ui.horizontal(|ui| {
-                            ui.add(
-                                egui::DragValue::new(&mut self.generate_rows)
-                                    .range(0..=MAX_LAB_ROWS)
-                                    .suffix(" rows"),
-                            );
-                            if ui.button("Generate").clicked() {
-                                self.draft_rows = format_rows(
-                                    &sample_rows(self.generate_rows).expect("bounded generator"),
-                                );
-                            }
-                        });
-                        ui.horizontal(|ui| {
-                            if ui.button("Demo").clicked() {
-                                self.draft_rows =
-                                    format_rows(&sample_rows(4).expect("bounded fixture"));
-                            }
-                            if ui.button("Overflow").clicked() {
-                                self.draft_rows = "18,65535\n19,10".into();
-                            }
-                            if ui.button("Empty").clicked() {
-                                self.draft_rows.clear();
-                            }
-                        });
-                    });
-                    ui.add_space(16.0);
-                    ui.separator();
-                    match parse_rows(&self.draft_rows) {
-                        Ok(rows) => {
-                            ui.label(
-                                RichText::new(format!("{} / {MAX_LAB_ROWS} rows", rows.len()))
-                                    .color(MUTED),
-                            );
-                        }
-                        Err(error) => {
-                            ui.colored_label(RED, error.to_string());
-                        }
-                    }
-                    ui.label(
-                        RichText::new(format!("{} peers on creation", self.draft_peers))
-                            .small()
-                            .color(MUTED),
-                    );
-                    ui.label(
-                        RichText::new("Changes stay in the draft until applied.")
-                            .small()
-                            .color(MUTED),
-                    );
-                });
+        egui::CentralPanel::default().frame(egui::Frame::new().fill(EDITOR).inner_margin(12)).show(ui,|ui|{
+            ui.horizontal(|ui|{
+                ui.label("Database");ui.add_enabled(self.available(),egui::TextEdit::singleline(&mut self.draft_name).desired_width(ui.available_width()));
             });
-        egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(EDITOR).inner_margin(18))
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    icon(ui, Icon::Table, GREEN);
-                    ui.heading("records");
-                    badge(ui, "Owner view", ACCENT);
-                    let modified = self.snapshot.as_ref().is_none_or(|s| {
-                        s.name != self.draft_name.trim()
-                            || format_rows(&s.owner_rows) != self.draft_rows
-                    });
-                    if modified {
-                        badge(ui, "Draft", AMBER);
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .add_enabled(
-                                self.available() && parse_rows(&self.draft_rows).is_ok(),
-                                primary("Create / replace"),
-                            )
-                            .clicked()
-                        {
-                            self.create_database();
+            ui.horizontal_wrapped(|ui|{
+                let valid_name=!self.draft_name.trim().is_empty()&&self.draft_name.trim().len()<=64&&!self.draft_name.chars().any(char::is_control);
+                if primary_button(ui,"Create / replace",self.available()&&self.controls_available()&&valid_name&&parse_rows(&self.draft_rows).is_ok()).clicked(){self.create_database();}
+                ui.menu_button("Fixtures",|ui|{
+                    ui.add_enabled_ui(self.available(),|ui|{
+                        ui.horizontal(|ui|{
+                            ui.add(egui::DragValue::new(&mut self.generate_rows).range(0..=MAX_LAB_ROWS).suffix(" rows"));
+                            if ui.button("Generate").clicked(){self.draft_rows=format_rows(&sample_rows(self.generate_rows).expect("bounded generator"));ui.close();}
+                        });
+                        for (name,text)in [("Demo",format_rows(&sample_rows(4).expect("public fixture"))),("Overflow","18,65535\n19,10".into()),("Empty",String::new())]{
+                            if ui.button(name).clicked(){self.draft_rows=text;ui.close();}
                         }
                     });
                 });
-                ui.add_space(12.0);
-                ui.horizontal(|ui| {
-                    if tab_button(ui, "Grid", self.data_view == DataView::Grid).clicked() {
-                        self.data_view = DataView::Grid;
-                    }
-                    if tab_button(ui, "CSV", self.data_view == DataView::Csv).clicked() {
-                        self.data_view = DataView::Csv;
-                    }
-                    if self.data_view == DataView::Grid
-                        && ui
-                            .add_enabled(
-                                self.available()
-                                    && parse_rows(&self.draft_rows)
-                                        .is_ok_and(|r| r.len() < MAX_LAB_ROWS),
-                                egui::Button::new("Add row"),
-                            )
-                            .clicked()
-                    {
-                        let mut rows = parse_rows(&self.draft_rows).expect("validated draft");
-                        rows.push(PlainRow { age: 0, amount: 0 });
-                        self.draft_rows = format_rows(&rows);
-                    }
-                });
-                ui.add_space(10.0);
-                ui.separator();
-                ui.add_enabled_ui(self.available(), |ui| {
-                    if self.data_view == DataView::Csv {
-                        ui.label(RichText::new("age,amount").monospace().color(MUTED));
-                        egui::ScrollArea::both()
-                            .id_salt("fixture-editor")
-                            .show(ui, |ui| {
-                                ui.add(
-                                    egui::TextEdit::multiline(&mut self.draft_rows)
-                                        .code_editor()
-                                        .desired_width(f32::INFINITY)
-                                        .min_size(egui::vec2(
-                                            ui.available_width(),
-                                            ui.available_height().max(100.0),
-                                        )),
-                                );
-                            });
-                    } else {
-                        self.data_grid(ui);
-                    }
-                });
+                if let Ok(rows)=parse_rows(&self.draft_rows){ui.label(RichText::new(format!("{} / {MAX_LAB_ROWS} rows",rows.len())).small().color(MUTED));}
             });
+            if self.draft_name.trim().is_empty() || self.draft_name.trim().len()>64 || self.draft_name.chars().any(char::is_control) {ui.colored_label(RED,"Database name: 1..64 bytes, without control characters.");}
+            if let Err(error)=parse_rows(&self.draft_rows) {ui.colored_label(RED,error.to_string());}
+            ui.add_space(8.0);
+            ui.horizontal_wrapped(|ui|{
+                icon(ui,Icon::Table,GREEN);
+                ui.label("records").on_hover_text("Owner's draft / age:u8 / amount:u16. Edits apply only on Create / replace.");
+                if tab_button(ui,"Grid",self.data_view==DataView::Grid).clicked(){self.data_view=DataView::Grid;}
+                if tab_button(ui,"CSV",self.data_view==DataView::Csv).clicked(){self.data_view=DataView::Csv;}
+                if action_button(ui,"Add row",self.available()&&parse_rows(&self.draft_rows).is_ok_and(|r|r.len()<MAX_LAB_ROWS)).clicked(){
+                    let mut rows=parse_rows(&self.draft_rows).expect("valid draft");rows.push(PlainRow{age:0,amount:0});self.draft_rows=format_rows(&rows);
+                }
+            });
+            ui.separator();
+            ui.add_enabled_ui(self.available(),|ui|{
+                if self.data_view==DataView::Csv{
+                    ui.label(RichText::new("age,amount").monospace().color(MUTED));
+                    egui::ScrollArea::both().id_salt("fixture-editor").show(ui,|ui|{
+                        ui.add(egui::TextEdit::multiline(&mut self.draft_rows).code_editor().desired_width(f32::INFINITY).min_size(egui::vec2(ui.available_width(),ui.available_height().max(100.0))));
+                    });
+                }else{self.data_grid(ui);}
+            });
+        });
     }
-
     fn data_grid(&mut self, ui: &mut egui::Ui) {
         let mut rows = match parse_rows(&self.draft_rows) {
             Ok(rows) => rows,

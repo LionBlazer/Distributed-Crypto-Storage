@@ -146,7 +146,7 @@ fn invalid_replacement_keeps_the_original_database_and_keys_usable() {
     let mut engine = lab(vec![PlainRow { age: 18, amount: 7 }], 1);
 
     let result = engine.create(DatabaseDraft {
-        name: "replacement".into(),
+        name: "".into(),
         rows: vec![],
         peers: vec![],
     });
@@ -156,6 +156,62 @@ fn invalid_replacement_keeps_the_original_database_and_keys_usable() {
     assert_eq!(aggregate(&mut engine, ALL), (1, 7));
     assert!(engine.set_peer_online(0, false).is_err());
     assert!(engine.set_peer_online(2, false).is_err());
+}
+
+#[test]
+fn removing_middle_peer_preserves_surviving_ids_and_updated_owner_data() {
+    let mut engine = lab(sample_rows(3).unwrap(), 3);
+    engine
+        .execute("UPDATE records SET amount = amount + 1")
+        .unwrap();
+    engine
+        .repartition(vec![
+            (1, PeerConfig::numbered(1), true),
+            (3, PeerConfig::numbered(3), true),
+        ])
+        .unwrap();
+    let snapshot = engine.snapshot().unwrap();
+    assert_eq!(
+        snapshot
+            .peers
+            .iter()
+            .map(|peer| peer.id)
+            .collect::<Vec<_>>(),
+        [1, 3]
+    );
+    assert_eq!(aggregate(&mut engine, ALL), (3, 63));
+    engine.set_peer_online(3, false).unwrap();
+    assert!(matches!(engine.execute(ALL),Err(LabError::Unavailable(ids)) if ids==[3]));
+}
+
+#[test]
+fn deleting_last_peer_retains_owner_data_but_cannot_answer_sql_until_explicit_rebuild() {
+    let mut engine = lab(sample_rows(1).unwrap(), 1);
+    engine.repartition(vec![]).unwrap();
+    assert!(engine.snapshot().unwrap().peers.is_empty());
+    assert!(
+        matches!(engine.execute(ALL),Err(LabError::InvalidInput(message)) if message.contains("No storage peers"))
+    );
+    engine
+        .repartition(vec![(9, PeerConfig::numbered(9), true)])
+        .unwrap();
+    assert_eq!(aggregate(&mut engine, ALL), (1, 10));
+    assert_eq!(engine.snapshot().unwrap().peers[0].id, 9);
+}
+
+#[test]
+fn cancelled_staged_update_changes_no_ciphertext_or_owner_revision() {
+    let mut engine = lab(sample_rows(1).unwrap(), 1);
+    let outcome = engine
+        .prepare_query("UPDATE records SET amount = amount + 5", |_| {})
+        .unwrap();
+    assert!(matches!(outcome, QueryOutcome::Updated { committed: true }));
+    assert_eq!(engine.snapshot().unwrap().revision, 0);
+    assert_eq!(engine.snapshot().unwrap().owner_rows[0].amount, 10);
+    engine.discard_prepared();
+    engine.commit_prepared();
+    assert_eq!(aggregate(&mut engine, ALL), (1, 10));
+    assert_eq!(engine.snapshot().unwrap().revision, 0);
 }
 
 #[test]

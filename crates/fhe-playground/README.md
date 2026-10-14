@@ -1,10 +1,11 @@
 # FHE playground
 
 A native **egui / eframe** client and manager for local FHE experiments. This crate
-owns the test UI, a deliberately small SQL frontend, and a logical peer simulation.
-It depends directly on [fhe-prototype](../fhe-prototype/README.md) for encryption,
-encrypted aggregation/updates, and compression. The core library does not depend on
-the GUI. This tool is not a production client or a network protocol.
+owns the test UI, a small SQL frontend, and an in-process transport adapter.
+It composes [fhe-prototype](../fhe-prototype/README.md) for encryption, encrypted
+aggregation/updates and compression, and [peer-protocol](../peer-protocol/README.md)
+for connection/message state. Both reusable libraries are independent of the GUI
+and simulation clock. This is an experiment, not a production distributed database.
 
 ## Launch
 
@@ -32,45 +33,56 @@ old terminal task may reuse its previous command.
 
 ## Explore
 
-The SQL view follows the basic areas of
-[DataGrip's query console](https://www.jetbrains.com/help/datagrip/query-consoles.html):
-database tree on the left, editor on the right, and a resizable result/output pane
-below. The Explorer includes object filtering, schema icons and type badges. The
-editor has line numbers and SQL highlighting. A shared dark palette keeps these
-views consistent with the data manager and network map.
+The left pane switches between **SQL** and **Data**. The right pane always contains
+the network or an opened node inspector. Drag their divider to resize. Buttons,
+tabs, inputs and node cards have distinct hover, pressed, focus and disabled states.
 
-- **SQL:** write a statement, then click **Run** or press **Ctrl+Enter**. The
-  **Presets** menu only fills the editor; selecting a preset never submits a query.
-  SELECT answers appear as a result row. Updates, errors, and history use **Output**.
-- **Data:** edit typed cells in **Grid**, add/delete draft rows, or use **CSV** for
-  bulk input. The settings sidebar contains the database name, schema and synthetic
-  fixtures. **Create / replace** applies the draft with fresh keys; fixtures and cell
-  edits never execute SQL or change the live database automatically.
-- **Infrastructure:** select the client or a peer on the interactive map, pan/zoom,
-  or use **Fit**. Direct client-to-shard routes highlight the worker's active peer.
-  The directory and inspector show availability, compressed sizes and request times.
-  The **Shard** inspector shows that peer's rows from the owner's fixture; peer
-  evaluators still receive no plaintext. **Settings** edits name, compressed-storage
-  quota and artificial request delay. **Add peer** opens a draft; **Add and repartition**
-  applies it. The **Layout** menu adjusts the count in bulk, up to 16 peers.
+- **SQL:** select a client, write a statement, then use **Run** or **Ctrl+Enter**.
+  Presets only fill the editor. The shortcut applies to the SQL editor, never a
+  focused peer setting. Results/history retain the originating client identity.
+  With no clients, SQL submission is disabled.
+- **Data:** edit typed draft cells, add/delete rows, or use CSV. Fixtures only fill
+  the draft. **Create / replace** explicitly applies it with fresh keys; validation
+  errors explain why creation is disabled. Unapplied edits survive queries.
+- **Network:** right-click empty space to add a peer or client; right-click a node
+  to delete it or change availability. Click a client to use it. Double-click a node
+  to open its own inspector tab. The inspector edits a peer's name, storage quota
+  and link delay; **Save settings** applies changes. Its shard rows come from the
+  owner's fixture, while the peer evaluator holds ciphertexts.
+- **Map / Matrix / Auto:** all modes use the same actual connection and packet
+  snapshot. Auto uses a matrix for dense graphs; each undirected connection occupies
+  two mirrored cells, while packet activity is directional (row sends to column).
+  Hover a cell for endpoint names and in-flight messages. The map shares geometric
+  lanes for dense links; selecting/hovering a node highlights its individual paths.
+  These lanes are drawing conventions, not transport relays. No connection is
+  removed to improve the picture. See [layout research](../../docs/graph-layout.md).
+- **Camera / time:** pan and zoom the map; nodes, routes and background dots share
+  world coordinates. Double-click empty space or use its **Fit view** menu item to
+  fit the map. **Speed** and **Pause** control virtual message delivery independently
+  of peer delay and FHE CPU computation. Pausing does not stop an already running
+  cryptographic evaluation; its response still waits for transport to resume.
 
-Layout changes repartition live rows with existing keys, preserve the database
-revision and existing peers' availability, and retain unapplied data drafts. New
-peers start online. Layout slots determine peer IDs and round-robin placement;
-shrinking a layout removes its last slots. Creation retains profiles from matching
-slots but starts the replacement database's peers online. This is a local manager
-operation, not peer discovery or data recovery over a network.
+New nodes initially have no connections. Address discovery schedules actual
+Ping/Pong/Ack deliveries, and a connection appears only when both endpoints finish
+the handshake. The current adapter establishes all peer/peer and client/peer links;
+clients do not connect to other clients. It does not choose a sparse overlay.
+Requests must reach every required shard before evaluation starts, and responses
+must arrive before committing an update. Deleting the requesting client or a
+required peer revokes routes and cancels uncommitted work. A deletion racing an
+already authorized commit is serialized by a commit permit.
 
-Per-peer quotas cover the compressed shard image, including its headers, with a
-range of 1 KiB..64 MiB; they do not constrain TFHE working memory or key allocation.
-Creation, repartitioning, profile edits and encrypted updates reject quota overruns
-without partial changes. Artificial delay is 0..1000 ms per nonempty shard request.
-It is applied on the worker and included in SELECT timings alongside FHE evaluation
-and owner decryption; it is not measured ping. Offline required shards reject both
-reads and updates; empty offline shards do not omit records.
+Peer IDs remain stable when a middle peer is removed. Adding/removing storage peers
+explicitly repartitions rows under the local manager, preserving keys, revision and
+surviving profiles. This is not automatic replication/recovery by the peer protocol.
+Creation retains current topology and availability. Zero peers retains owner state
+but cannot answer queries; failed repartition preserves the old encrypted data.
 
-Ctrl+Enter executes only on the SQL tab. Tab changes never submit operations. The
-small status bar marks this as a local, unverified experiment; details are in tooltips.
+Quotas cover the compressed shard image, including headers (1 KiB..64 MiB), not
+TFHE working memory or key allocation. Creation, repartitioning, profile edits and
+updates reject overruns without partial writes. Peer delay (0..1000 ms) belongs to
+the virtual transport; it is not measured ping. Query wall time includes delivery,
+FHE evaluation and owner decryption; per-shard compute timing excludes virtual delay.
+Offline required shards reject reads/updates, without silently omitting records.
 
 The fixture editor is the owner's plaintext view. Peer evaluations receive only
 opaque ciphertext inputs and evaluation material. The fixture mirrors successful
@@ -106,9 +118,11 @@ that number is not a network freshness certificate.
 
 ## Boundaries and verification
 
-All peers, the owner, and keys live in **one process**. The worker executes requests
-serially away from the UI thread; TFHE uses two Rayon threads. Evaluator clones
-share their key allocation, so memory does not model independent physical machines.
+All peers, the owner, and keys live in **one process**. A network worker advances
+virtual delivery while a separate compute worker serializes FHE jobs; TFHE uses
+two Rayon threads. Evaluator clones share key allocation, so memory does not model
+independent physical machines. Packets carry opaque references to local operations;
+there is no TCP transport or serialized ciphertext request/result wire format yet.
 Taking a peer offline preserves its local ciphertexts and does not model permanent
 data loss, recovery, replication, or adversarial behavior.
 
@@ -118,18 +132,20 @@ not proof of correct, complete, fresh execution by malicious peers. The cryptogr
 limitations and measured costs of the underlying implementation remain as described
 in [fhe-prototype](../fhe-prototype/README.md).
 
-Library entry points are `LabEngine::create`, `configure_peers`, `set_peer_config`,
-`set_peer_online`, `execute`, `execute_with_progress`, `snapshot`, `parse_sql`, and
-fixture helpers. `DatabaseDraft` carries explicit `PeerConfig` profiles; snapshots
-include owner row indices, and `LabProgress` identifies the executing shard.
-The private binary modules own the command worker and UI state; `ui/data`,
-`ui/explorer`, `ui/infrastructure` and `ui/theme` own their views and shared styling.
-API tests exercise real FHE, quota rollback, layout/data preservation, availability
-rejection, overflow rollback, progress routes and SQL/fixture validation.
+Library entry points include `LabEngine::create`, `create_with_peer_ids`,
+`repartition`, `execute`, `prepare_query`, `commit_prepared`, `discard_prepared`,
+`snapshot`, SQL/fixture
+helpers, and `DemoNetwork`'s node, delivery and snapshot operations. The binary owns
+`worker` (composition/cancellation), `ui` (drafts, commands and views), and private
+layout/routing/bundling modules. The reusable protocol owns handshake/message state;
+it never imports the GUI, simulation speed or storage policy.
 
 UI tests render egui in memory and observe its command channel. They exercise preset
-selection without execution, explicit Run/Ctrl+Enter, map selection, peer settings
-and addition, active routes, typed row layout, and draft preservation. They do not
+selection without execution, focused SQL shortcuts, node context menus/inspectors,
+client identity, independent topology/query completion, camera transforms, dense
+connection preservation and discovery traffic. API/worker tests exercise real FHE,
+quota/overflow rollback, stable peer removal, cancellation and transport commit gates.
+They do not
 open native windows, capture the desktop, or inject OS input. An opt-in CPU rasterizer
 exports actual egui meshes and font textures as PPM images of public fixtures to
 the ignored `.local/gui-previews` directory for offline visual review.

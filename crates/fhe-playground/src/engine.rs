@@ -1,5 +1,5 @@
 use std::fmt;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use fhe_prototype::{Comparison, EncryptedTable, Evaluator, Owner, PlainRow};
 
@@ -50,7 +50,7 @@ pub struct DatabaseDraft {
 pub struct PeerConfig {
     pub name: String,
     pub storage_limit_bytes: usize,
-    /// Artificial request delay applied by the worker, not measured network ping.
+    /// Artificial packet delay applied by the demo transport, not measured ping.
     pub delay_ms: u64,
 }
 
@@ -63,7 +63,7 @@ impl PeerConfig {
         }
     }
 
-    fn validate(&self) -> Result<(), LabError> {
+    pub fn validate(&self) -> Result<(), LabError> {
         if self.name.trim().is_empty()
             || self.name.len() > 48
             || self.name.chars().any(char::is_control)
@@ -142,17 +142,20 @@ pub enum QueryOutcome {
 #[derive(Default)]
 pub struct LabEngine {
     database: Option<Database>,
+    prepared: Option<PreparedUpdate>,
 }
 
 struct Database {
     name: String,
     revision: u64,
     owner: Owner,
+    evaluator: Evaluator,
     owner_rows: Vec<PlainRow>,
     peers: Vec<Peer>,
 }
 
 struct Peer {
+    id: usize,
     config: PeerConfig,
     evaluator: Evaluator,
     table: EncryptedTable,
@@ -160,17 +163,38 @@ struct Peer {
     compressed_bytes: usize,
 }
 
+struct PreparedUpdate {
+    tables: Vec<(EncryptedTable, usize)>,
+    rows: Vec<PlainRow>,
+}
+
 impl LabEngine {
     /// Builds replacement state first. Validation or FHE errors retain the old database.
     pub fn create(&mut self, draft: DatabaseDraft) -> Result<LabSnapshot, LabError> {
+        let ids = (1..=draft.peers.len()).collect();
+        self.create_with_peer_ids(draft, ids)
+    }
+
+    /// The manager supplies stable storage identities independently of graph IDs.
+    pub fn create_with_peer_ids(
+        &mut self,
+        draft: DatabaseDraft,
+        ids: Vec<usize>,
+    ) -> Result<LabSnapshot, LabError> {
         let name = draft.name.trim();
         if name.is_empty() || name.len() > 64 || name.chars().any(char::is_control) {
             return Err(LabError::InvalidInput(
                 "Database name must contain 1..64 bytes, without control characters.".into(),
             ));
         }
-        if !(1..=MAX_PEERS).contains(&draft.peers.len()) {
-            return Err(LabError::InvalidInput("Use 1..16 simulated peers.".into()));
+        if draft.peers.len() > MAX_PEERS
+            || ids.len() != draft.peers.len()
+            || ids.contains(&0)
+            || ids.iter().collect::<std::collections::BTreeSet<_>>().len() != ids.len()
+        {
+            return Err(LabError::InvalidInput(
+                "Use at most 16 peers with unique nonzero IDs.".into(),
+            ));
         }
         for config in &draft.peers {
             config.validate()?;
@@ -183,10 +207,12 @@ impl LabEngine {
         let (owner, evaluator) = Owner::generate()?;
         let mut partitions = vec![Vec::new(); draft.peers.len()];
         for (index, row) in draft.rows.iter().copied().enumerate() {
-            partitions[index % draft.peers.len()].push(row);
+            if !partitions.is_empty() {
+                partitions[index % draft.peers.len()].push(row);
+            }
         }
         let mut peers = Vec::with_capacity(draft.peers.len());
-        for (rows, mut config) in partitions.into_iter().zip(draft.peers) {
+        for ((rows, mut config), id) in partitions.into_iter().zip(draft.peers).zip(ids) {
             config.name = config.name.trim().into();
             let table = owner.encrypt_table(&rows)?;
             let image = evaluator.compress_table(&table)?;
@@ -194,6 +220,7 @@ impl LabEngine {
             drop(table);
             let table = evaluator.restore_trusted_image(&image)?;
             peers.push(Peer {
+                id,
                 config,
                 evaluator: evaluator.clone(),
                 table,
@@ -205,9 +232,11 @@ impl LabEngine {
             name: name.into(),
             revision: 0,
             owner,
+            evaluator,
             owner_rows: draft.rows,
             peers,
         });
+        self.prepared = None;
         Ok(self.snapshot().expect("database was just created"))
     }
 
@@ -221,7 +250,7 @@ impl LabEngine {
                 .iter()
                 .enumerate()
                 .map(|(index, peer)| PeerInfo {
-                    id: index + 1,
+                    id: peer.id,
                     config: peer.config.clone(),
                     online: peer.online,
                     rows: peer.table.len(),
@@ -236,24 +265,28 @@ impl LabEngine {
 
     pub fn set_peer_online(&mut self, id: usize, online: bool) -> Result<(), LabError> {
         let db = self.database.as_mut().ok_or(LabError::NoDatabase)?;
-        let peer = id
-            .checked_sub(1)
-            .and_then(|index| db.peers.get_mut(index))
+        let peer = db
+            .peers
+            .iter_mut()
+            .find(|peer| peer.id == id)
             .ok_or_else(|| LabError::InvalidInput("Unknown peer.".into()))?;
         peer.online = online;
+        self.prepared = None;
         Ok(())
     }
 
     pub fn set_peer_config(&mut self, id: usize, mut config: PeerConfig) -> Result<(), LabError> {
         config.validate()?;
         let db = self.database.as_mut().ok_or(LabError::NoDatabase)?;
-        let peer = id
-            .checked_sub(1)
-            .and_then(|index| db.peers.get_mut(index))
+        let peer = db
+            .peers
+            .iter_mut()
+            .find(|peer| peer.id == id)
             .ok_or_else(|| LabError::InvalidInput("Unknown peer.".into()))?;
         config.check_size(peer.compressed_bytes)?;
         config.name = config.name.trim().into();
         peer.config = config;
+        self.prepared = None;
         Ok(())
     }
 
@@ -261,34 +294,73 @@ impl LabEngine {
     /// ciphertexts and quota checks are staged before replacing the layout.
     /// This is manager-driven local rebuilding, not network recovery/replication.
     pub fn configure_peers(&mut self, configs: Vec<PeerConfig>) -> Result<(), LabError> {
-        if !(1..=MAX_PEERS).contains(&configs.len()) {
-            return Err(LabError::InvalidInput("Use 1..16 simulated peers.".into()));
+        let db = self.database.as_ref().ok_or(LabError::NoDatabase)?;
+        let mut next = db.peers.iter().map(|peer| peer.id).max().unwrap_or(0) + 1;
+        let profiles = configs
+            .into_iter()
+            .enumerate()
+            .map(|(index, config)| {
+                if let Some(peer) = db.peers.get(index) {
+                    (peer.id, config, peer.online)
+                } else {
+                    let id = next;
+                    next += 1;
+                    (id, config, true)
+                }
+            })
+            .collect();
+        self.repartition(profiles)
+    }
+
+    /// Explicit local manager operation. Retained owner data can rebuild shards,
+    /// including after the last peer is removed; this is not network recovery.
+    pub fn repartition(
+        &mut self,
+        profiles: Vec<(usize, PeerConfig, bool)>,
+    ) -> Result<(), LabError> {
+        if profiles.len() > MAX_PEERS
+            || profiles.iter().any(|(id, _, _)| *id == 0)
+            || profiles
+                .iter()
+                .map(|(id, _, _)| id)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != profiles.len()
+        {
+            return Err(LabError::InvalidInput(
+                "Use at most 16 peers with unique nonzero IDs.".into(),
+            ));
         }
-        for config in &configs {
+        for (_, config, _) in &profiles {
             config.validate()?;
         }
         let db = self.database.as_mut().ok_or(LabError::NoDatabase)?;
-        let evaluator = db.peers[0].evaluator.clone();
-        let mut partitions = vec![Vec::new(); configs.len()];
+        let evaluator = db.evaluator.clone();
+        let configs_len = profiles.len();
+        let mut partitions = vec![Vec::new(); configs_len];
         for (index, row) in db.owner_rows.iter().copied().enumerate() {
-            partitions[index % configs.len()].push(row);
+            if !partitions.is_empty() {
+                partitions[index % configs_len].push(row);
+            }
         }
-        let mut candidates = Vec::with_capacity(configs.len());
-        for (index, (rows, mut config)) in partitions.into_iter().zip(configs).enumerate() {
+        let mut candidates = Vec::with_capacity(configs_len);
+        for (rows, (id, mut config, online)) in partitions.into_iter().zip(profiles) {
             config.name = config.name.trim().into();
             let table = db.owner.encrypt_table(&rows)?;
             let image = evaluator.compress_table(&table)?;
             config.check_size(image.len())?;
             drop(table);
             candidates.push(Peer {
+                id,
                 config,
                 evaluator: evaluator.clone(),
                 table: evaluator.restore_trusted_image(&image)?,
-                online: db.peers.get(index).is_none_or(|peer| peer.online),
+                online,
                 compressed_bytes: image.len(),
             });
         }
         db.peers = candidates;
+        self.prepared = None;
         Ok(())
     }
 
@@ -301,21 +373,61 @@ impl LabEngine {
         sql: &str,
         progress: impl Fn(LabProgress),
     ) -> Result<QueryOutcome, LabError> {
+        let result = self.prepare_query(sql, progress)?;
+        self.commit_prepared();
+        Ok(result)
+    }
+
+    /// Computes ciphertext results but retains updates until response delivery is
+    /// accepted by the transport controller. Cancellation discards every shard.
+    pub fn prepare_query(
+        &mut self,
+        sql: &str,
+        progress: impl Fn(LabProgress),
+    ) -> Result<QueryOutcome, LabError> {
+        self.prepared = None;
         let plan = parse_sql(sql)?;
         let db = self.database.as_mut().ok_or(LabError::NoDatabase)?;
+        if db.peers.is_empty() {
+            return Err(LabError::InvalidInput(
+                "No storage peers are available. Add a peer to rebuild encrypted shards.".into(),
+            ));
+        }
         let missing: Vec<_> = db
             .peers
             .iter()
-            .enumerate()
-            .filter(|(_, peer)| !peer.online && !peer.table.is_empty())
-            .map(|(index, _)| index + 1)
+            .filter(|peer| !peer.online && !peer.table.is_empty())
+            .map(|peer| peer.id)
             .collect();
         if !missing.is_empty() {
             return Err(LabError::Unavailable(missing));
         }
         match plan {
             QueryPlan::Aggregate { predicate } => db.aggregate(predicate, &progress),
-            QueryPlan::AddAmount { predicate, delta } => db.add_amount(predicate, delta, &progress),
+            QueryPlan::AddAmount { predicate, delta } => {
+                let (result, prepared) = db.add_amount(predicate, delta, &progress)?;
+                self.prepared = prepared;
+                Ok(result)
+            }
+        }
+    }
+
+    pub fn discard_prepared(&mut self) {
+        self.prepared = None;
+    }
+
+    pub fn commit_prepared(&mut self) {
+        if let Some(update) = self.prepared.take() {
+            let db = self
+                .database
+                .as_mut()
+                .expect("prepared update owns database");
+            for (peer, (table, bytes)) in db.peers.iter_mut().zip(update.tables) {
+                peer.table = table;
+                peer.compressed_bytes = bytes;
+            }
+            db.owner_rows = update.rows;
+            db.revision += 1;
         }
     }
 }
@@ -331,27 +443,26 @@ impl Database {
             .encrypt_predicate(predicate.comparison, predicate.threshold)?;
         let mut contributions = Vec::new();
         let (mut count, mut sum) = (0, 0);
-        for (index, peer) in self.peers.iter().enumerate() {
+        for peer in &self.peers {
             if peer.table.is_empty() {
                 continue;
             }
             progress(LabProgress {
-                peer_id: index + 1,
+                peer_id: peer.id,
                 message: format!(
                     "Evaluating encrypted shard on peer {} / {}...",
-                    index + 1,
+                    peer.id,
                     self.peers.len()
                 ),
             });
             let start = Instant::now();
-            std::thread::sleep(Duration::from_millis(peer.config.delay_ms));
             let unverified = peer.evaluator.aggregate(&peer.table, &encrypted)?;
             let (peer_count, peer_sum) =
                 self.owner.decrypt_aggregate_for_experiment(&unverified)?;
             count += peer_count;
             sum += peer_sum;
             contributions.push(PeerAggregate {
-                id: index + 1,
+                id: peer.id,
                 count: peer_count,
                 sum: peer_sum,
                 elapsed_ms: start.elapsed().as_secs_f64() * 1000.0,
@@ -369,7 +480,7 @@ impl Database {
         predicate: Predicate,
         delta: u16,
         progress: &impl Fn(LabProgress),
-    ) -> Result<QueryOutcome, LabError> {
+    ) -> Result<(QueryOutcome, Option<PreparedUpdate>), LabError> {
         let encrypted_predicate = self
             .owner
             .encrypt_predicate(predicate.comparison, predicate.threshold)?;
@@ -377,7 +488,7 @@ impl Database {
         let mut candidates = Vec::with_capacity(self.peers.len());
         // Stage every shard separately. Until all updates and round trips succeed,
         // the original database remains unchanged, including on cross-shard overflow.
-        for (index, peer) in self.peers.iter().enumerate() {
+        for peer in &self.peers {
             let before = peer.evaluator.compress_table(&peer.table)?;
             let mut table = peer.evaluator.restore_trusted_image(&before)?;
             if peer.table.is_empty() {
@@ -385,14 +496,13 @@ impl Database {
                 continue;
             }
             progress(LabProgress {
-                peer_id: index + 1,
+                peer_id: peer.id,
                 message: format!(
                     "Staging encrypted update on peer {} / {}...",
-                    index + 1,
+                    peer.id,
                     self.peers.len()
                 ),
             });
-            std::thread::sleep(Duration::from_millis(peer.config.delay_ms));
             let outcome =
                 peer.evaluator
                     .add_amount(&mut table, &encrypted_predicate, &encrypted_delta)?;
@@ -400,7 +510,7 @@ impl Database {
                 .owner
                 .decrypt_update_rejection_for_experiment(&outcome)?
             {
-                return Ok(QueryOutcome::Updated { committed: false });
+                return Ok((QueryOutcome::Updated { committed: false }, None));
             }
             let after = peer.evaluator.compress_table(&table)?;
             peer.config.check_size(after.len())?;
@@ -419,13 +529,13 @@ impl Database {
                 })?;
             }
         }
-        for (peer, (table, bytes)) in self.peers.iter_mut().zip(candidates) {
-            peer.table = table;
-            peer.compressed_bytes = bytes;
-        }
-        self.owner_rows = owner_rows;
-        self.revision += 1;
-        Ok(QueryOutcome::Updated { committed: true })
+        Ok((
+            QueryOutcome::Updated { committed: true },
+            Some(PreparedUpdate {
+                tables: candidates,
+                rows: owner_rows,
+            }),
+        ))
     }
 }
 

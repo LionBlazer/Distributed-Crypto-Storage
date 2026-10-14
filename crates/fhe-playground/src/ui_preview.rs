@@ -11,24 +11,29 @@ fn export_ui_previews() {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.local/gui-previews");
     std::fs::create_dir_all(&directory).unwrap();
     for (name, tab, peer_count, size) in [
-        ("sql", Tab::Sql, 3, [1280, 920]),
-        ("data", Tab::Data, 3, [1280, 920]),
-        ("network", Tab::Infrastructure, 8, [1280, 920]),
-        ("network-small", Tab::Infrastructure, 16, [980, 720]),
-        ("new-peer", Tab::Infrastructure, 3, [1280, 920]),
+        ("sql", Tab::Sql, 3, [1500, 900]),
+        ("data", Tab::Data, 3, [1500, 900]),
+        ("network", Tab::Sql, 8, [1500, 900]),
+        ("network-small", Tab::Sql, 16, [1180, 720]),
+        ("network-map", Tab::Sql, 16, [1500, 900]),
+        ("network-max", Tab::Sql, 16, [1500, 900]),
+        ("peer-tab", Tab::Sql, 3, [1500, 900]),
     ] {
         let (mut app, _commands, _events) = app();
         app.snapshot = Some(snapshot(peer_count));
+        app.network = Some(network(
+            peer_count,
+            if name == "network-max" { 8 } else { 1 },
+        ));
+        if name == "network-map" {
+            app.network_view = NetworkView::Map;
+        }
         for peer in &mut app.snapshot.as_mut().unwrap().peers {
             peer.compressed_bytes = 1951 + peer.rows * 72;
         }
         app.tab = tab;
-        if tab == Tab::Infrastructure {
-            app.snapshot.as_mut().unwrap().peers[1].online = false;
-            app.select_peer(Some(2));
-        }
-        if name == "new-peer" {
-            app.new_peer = Some(PeerConfig::numbered(4));
+        if name == "peer-tab" {
+            app.open_node(3);
         }
         let ctx = egui::Context::default();
         set_theme(&ctx);

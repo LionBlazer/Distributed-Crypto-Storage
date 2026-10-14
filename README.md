@@ -27,11 +27,17 @@ secret keys are generated in memory and are never written to disk. See the modul
 README for measurement assumptions, limitations, and the API.
 
 The separate [GUI playground](crates/fhe-playground/README.md) provides an egui
-client/manager, editable test data, SQL presets, and 1–16 simulated peers.
+client/manager, editable test data, SQL presets, up to 16 simulated peers and 8 clients.
 It runs actual FHE operations on local encrypted shards. The SQL frontend supports
 only the documented aggregate/update subset; peer simulation runs in one process.
-SQL, data, and infrastructure have separate tabs. Presets fill the editor; execution
-requires Run or Ctrl+Enter.
+SQL/data occupy the left pane, with the network and node inspector tabs on the right.
+The map and dense connection matrix display the same actual links and packet events.
+Presets fill the editor; execution requires Run or Ctrl+Enter.
+
+The separate [peer-protocol](crates/peer-protocol/README.md) crate owns a bounded,
+transport-independent handshake/message state machine. The playground supplies
+virtual time and in-process delivery. Production networking, authentication,
+consensus and automatic replication remain open work.
 
 ```sh
 cargo run --release --locked -p fhe-playground
