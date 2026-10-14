@@ -206,6 +206,18 @@ uncached cases now fit 500 ms, compared with 506–525 ms for TrialsOnly. These 
 ready-cache measurements. Reading files and rebuilding a cache after eviction
 still require a separate full-operation test.
 
+The [disk-backed comparison](experiment-private-bfv-disk.md) now includes those
+costs on three independent million-row tables, with capacity for exactly one
+loaded table/cache pair. All 288 same-table matrix answers are exact. Visible
+queries take 84–254 ms across hits/misses; private cached-header maxima are
+382 ms hit and 437 ms miss. Private uncached-header ranges reach 465 ms hit and
+514 ms miss: two misses still exceed 500 ms. All observations, including the
+slower baseline, are retained. Native peak RSS/commit is 355/361 MB. These are
+application-cache misses through real file APIs with OS cache allowed, an online
+owner and live shared keys; physical cold disk, network and arithmetic proofs
+remain unmeasured. The small three-table files+peak-memory total is 44.01x,
+so this result does not establish full-state 2x.
+
 A range or JOIN may visit many pages even with an index. A hidden point lookup
 does not establish a hidden general SQL planner. A complete comparison must cover
 absent keys, repeated keys, duplicate groups, indexed-field changes, access padding,
