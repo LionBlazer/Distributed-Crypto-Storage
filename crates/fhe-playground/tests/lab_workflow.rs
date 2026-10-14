@@ -1,6 +1,6 @@
 use std::sync::Once;
 
-use fhe_playground::{DatabaseDraft, LabEngine, LabError, QueryOutcome, sample_rows};
+use fhe_playground::{DatabaseDraft, LabEngine, LabError, PeerConfig, QueryOutcome, sample_rows};
 use fhe_prototype::PlainRow;
 
 // Synthetic public fixtures; each test owns fresh, ephemeral FHE keys.
@@ -17,7 +17,7 @@ fn lab(rows: Vec<PlainRow>, peers: usize) -> LabEngine {
         .create(DatabaseDraft {
             name: "test".into(),
             rows,
-            peer_count: peers,
+            peers: (1..=peers).map(PeerConfig::numbered).collect(),
         })
         .unwrap();
     engine
@@ -148,7 +148,7 @@ fn invalid_replacement_keeps_the_original_database_and_keys_usable() {
     let result = engine.create(DatabaseDraft {
         name: "replacement".into(),
         rows: vec![],
-        peer_count: 0,
+        peers: vec![],
     });
 
     assert!(matches!(result, Err(LabError::InvalidInput(_))));
@@ -156,4 +156,99 @@ fn invalid_replacement_keeps_the_original_database_and_keys_usable() {
     assert_eq!(aggregate(&mut engine, ALL), (1, 7));
     assert!(engine.set_peer_online(0, false).is_err());
     assert!(engine.set_peer_online(2, false).is_err());
+}
+
+#[test]
+fn adding_custom_peers_preserves_updated_ciphertexts_revision_and_availability() {
+    let mut engine = lab(sample_rows(2).unwrap(), 1);
+    engine
+        .execute("UPDATE records SET amount = amount + 1")
+        .unwrap();
+    let before = engine.snapshot().unwrap();
+    let mut fast = PeerConfig::numbered(2);
+    fast.name = "Fast SSD".into();
+    fast.delay_ms = 5;
+    let profiles = vec![
+        PeerConfig::numbered(1),
+        fast.clone(),
+        PeerConfig::numbered(3),
+    ];
+
+    engine.configure_peers(profiles).unwrap();
+
+    let after = engine.snapshot().unwrap();
+    assert_eq!(after.revision, before.revision);
+    assert_eq!(after.peers[1].config, fast);
+    assert_eq!(
+        after
+            .peers
+            .iter()
+            .map(|p| p.owner_row_indices.clone())
+            .collect::<Vec<_>>(),
+        [vec![0], vec![1], vec![]]
+    );
+    assert_eq!(aggregate(&mut engine, ALL), (2, 32));
+    engine.set_peer_online(2, false).unwrap();
+    engine
+        .configure_peers((1..=4).map(PeerConfig::numbered).collect())
+        .unwrap();
+    assert!(!engine.snapshot().unwrap().peers[1].online);
+    assert!(matches!(engine.execute(ALL), Err(LabError::Unavailable(ids)) if ids == [2]));
+}
+
+#[test]
+fn a_quota_failure_after_staging_a_shard_keeps_the_entire_original_layout() {
+    let mut engine = lab(sample_rows(2).unwrap(), 1);
+    let before = engine.snapshot().unwrap();
+    let mut tiny = PeerConfig::numbered(2);
+    tiny.storage_limit_bytes = 1024;
+
+    let outcome = engine.configure_peers(vec![PeerConfig::numbered(1), tiny]);
+
+    assert!(
+        matches!(outcome, Err(LabError::InvalidInput(message)) if message.contains("storage quota"))
+    );
+    let after = engine.snapshot().unwrap();
+    assert_eq!(after.peers.len(), 1);
+    assert_eq!(after.revision, before.revision);
+    assert_eq!(
+        after.peers[0].compressed_bytes,
+        before.peers[0].compressed_bytes
+    );
+    assert_eq!(aggregate(&mut engine, ALL), (2, 30));
+}
+
+#[test]
+fn invalid_peer_settings_leave_the_live_profile_and_query_results_unchanged() {
+    let mut engine = lab(sample_rows(1).unwrap(), 1);
+    let original = engine.snapshot().unwrap().peers[0].config.clone();
+    let mut invalid = original.clone();
+    invalid.name = "Rejected settings".into();
+    invalid.storage_limit_bytes = 1024;
+
+    assert!(engine.set_peer_config(1, invalid).is_err());
+
+    assert_eq!(engine.snapshot().unwrap().peers[0].config, original);
+    assert_eq!(aggregate(&mut engine, ALL), (1, 10));
+    let mut invalid_delay = original;
+    invalid_delay.delay_ms = 1001;
+    assert!(engine.set_peer_config(1, invalid_delay).is_err());
+}
+
+#[test]
+fn progress_identifies_only_required_nonempty_shards_in_execution_order() {
+    let mut engine = lab(sample_rows(2).unwrap(), 3);
+    engine.set_peer_online(3, false).unwrap();
+    let visited = std::cell::RefCell::new(Vec::new());
+
+    engine
+        .execute_with_progress(ALL, |progress| visited.borrow_mut().push(progress.peer_id))
+        .unwrap();
+
+    engine
+        .execute_with_progress("UPDATE records SET amount = amount + 1", |progress| {
+            visited.borrow_mut().push(progress.peer_id)
+        })
+        .unwrap();
+    assert_eq!(*visited.borrow(), [1, 2, 1, 2]);
 }

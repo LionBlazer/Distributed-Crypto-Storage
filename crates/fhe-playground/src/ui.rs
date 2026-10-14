@@ -2,20 +2,29 @@ use std::collections::VecDeque;
 
 use eframe::egui::{self, Color32, FontId, RichText, Stroke};
 use fhe_playground::{
-    DatabaseDraft, LabSnapshot, MAX_LAB_ROWS, MAX_PEERS, PRESETS, QueryOutcome, format_rows,
-    parse_rows, sample_rows,
+    DatabaseDraft, LabSnapshot, MAX_LAB_ROWS, MAX_PEERS, PRESETS, PeerConfig, QueryOutcome,
+    format_rows, parse_rows, sample_rows,
 };
 
 use crate::worker::{Command, Event, Outcome, Worker};
 
-const EDITOR: Color32 = Color32::from_rgb(30, 31, 34);
-const PANEL: Color32 = Color32::from_rgb(43, 45, 48);
-const BORDER: Color32 = Color32::from_rgb(58, 60, 64);
-const TEXT: Color32 = Color32::from_rgb(223, 225, 229);
-const MUTED: Color32 = Color32::from_rgb(157, 160, 168);
-const GREEN: Color32 = Color32::from_rgb(106, 171, 115);
-const AMBER: Color32 = Color32::from_rgb(220, 169, 95);
-const RED: Color32 = Color32::from_rgb(232, 112, 112);
+mod data;
+mod explorer;
+mod infrastructure;
+mod theme;
+use theme::*;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DataView {
+    Grid,
+    Csv,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PeerView {
+    Shard,
+    Settings,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tab {
@@ -36,6 +45,7 @@ enum Job {
     Database,
     Layout,
     Availability,
+    PeerSettings,
 }
 
 struct Pending {
@@ -67,6 +77,15 @@ pub struct Playground {
     history: VecDeque<Record>,
     tab: Tab,
     result_tab: ResultTab,
+    data_view: DataView,
+    explorer_filter: String,
+    selected_peer: Option<usize>,
+    peer_view: PeerView,
+    peer_edit: Option<PeerConfig>,
+    new_peer: Option<PeerConfig>,
+    active_peer: Option<usize>,
+    graph_zoom: f32,
+    graph_pan: egui::Vec2,
 }
 
 impl Playground {
@@ -93,6 +112,15 @@ impl Playground {
             history: VecDeque::new(),
             tab: Tab::Sql,
             result_tab: ResultTab::Result,
+            data_view: DataView::Grid,
+            explorer_filter: String::new(),
+            selected_peer: None,
+            peer_view: PeerView::Shard,
+            peer_edit: None,
+            new_peer: None,
+            active_peer: None,
+            graph_zoom: 1.0,
+            graph_pan: egui::Vec2::ZERO,
         }
     }
 
@@ -120,7 +148,7 @@ impl Playground {
                 Command::Create(DatabaseDraft {
                     name: self.draft_name.clone(),
                     rows,
-                    peer_count: self.draft_peers,
+                    peers: self.profiles_for_count(self.draft_peers),
                 }),
                 Job::Database,
                 "Create / replace database".into(),
@@ -130,17 +158,39 @@ impl Playground {
     }
 
     fn apply_layout(&mut self) {
-        if let Some(state) = &self.snapshot {
+        if self.snapshot.is_some() {
             self.submit(
-                Command::Create(DatabaseDraft {
-                    name: state.name.clone(),
-                    rows: state.owner_rows.clone(),
-                    peer_count: self.draft_peers,
-                }),
+                Command::ConfigurePeers(self.profiles_for_count(self.draft_peers)),
                 Job::Layout,
                 "Apply peer layout".into(),
             );
         }
+    }
+
+    fn profiles_for_count(&self, count: usize) -> Vec<PeerConfig> {
+        (0..count)
+            .map(|index| {
+                self.snapshot
+                    .as_ref()
+                    .and_then(|state| state.peers.get(index))
+                    .map(|peer| peer.config.clone())
+                    .unwrap_or_else(|| PeerConfig::numbered(index + 1))
+            })
+            .collect()
+    }
+
+    fn select_peer(&mut self, id: Option<usize>) {
+        if self.selected_peer != id {
+            self.peer_view = PeerView::Shard;
+        }
+        self.selected_peer = id;
+        self.new_peer = None;
+        self.peer_edit = id.and_then(|id| {
+            self.snapshot
+                .as_ref()
+                .and_then(|state| state.peers.iter().find(|peer| peer.id == id))
+                .map(|peer| peer.config.clone())
+        });
     }
 
     fn insert_preset(&mut self, sql: &str) {
@@ -164,6 +214,10 @@ impl Playground {
         loop {
             match self.worker.poll() {
                 Ok(Some(Event::Progress(message))) => self.status = message,
+                Ok(Some(Event::PeerProgress(progress))) => {
+                    self.active_peer = Some(progress.peer_id);
+                    self.status = progress.message;
+                }
                 Ok(Some(Event::Finished {
                     snapshot,
                     outcome,
@@ -173,6 +227,8 @@ impl Playground {
                         continue;
                     };
                     let created = matches!(outcome, Ok(Outcome::Created));
+                    let layout_changed = matches!(outcome, Ok(Outcome::LayoutChanged));
+                    self.active_peer = None;
                     let updated = matches!(
                         outcome,
                         Ok(Outcome::Query(QueryOutcome::Updated { committed: true }))
@@ -188,7 +244,7 @@ impl Playground {
                         self.draft_name = state.name.clone();
                         self.draft_rows = format_rows(&state.owner_rows);
                     }
-                    if created {
+                    if created || layout_changed {
                         self.history.clear();
                         if pending.job == Job::Database && self.tab == Tab::Data {
                             self.tab = Tab::Sql;
@@ -228,10 +284,25 @@ impl Playground {
                     });
                     self.history.truncate(8);
                     self.snapshot = snapshot;
+                    if (created || layout_changed)
+                        && let Some(state) = &self.snapshot
+                    {
+                        self.draft_peers = state.peers.len();
+                        if self.selected_peer.is_some_and(|id| id > state.peers.len()) {
+                            self.select_peer(None);
+                        }
+                    }
+                    if (created || layout_changed || pending.job == Job::PeerSettings)
+                        && self.input_error.is_none()
+                    {
+                        self.new_peer = None;
+                        self.select_peer(self.selected_peer);
+                    }
                 }
                 Ok(None) => break,
                 Err(message) => {
                     self.pending = None;
+                    self.active_peer = None;
                     self.worker_stopped = true;
                     self.input_error = Some(message);
                     break;
@@ -241,15 +312,25 @@ impl Playground {
     }
 
     fn draw(&mut self, ui: &mut egui::Ui) {
-        egui::Panel::top("tabs").frame(panel(8)).show(ui, |ui| {
+        egui::Panel::top("tabs").frame(panel(12)).show(ui, |ui| {
             ui.horizontal(|ui| {
+                ui.label(RichText::new("DCS").strong().color(ACCENT));
+                ui.add_space(18.0);
                 for (tab, label) in [
                     (Tab::Sql, "SQL"),
                     (Tab::Data, "Data"),
                     (Tab::Infrastructure, "Infrastructure"),
                 ] {
-                    ui.selectable_value(&mut self.tab, tab, label);
+                    if tab_button(ui, label, self.tab == tab).clicked() {
+                        self.tab = tab;
+                    }
                 }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if let Some(state) = &self.snapshot {
+                        ui.label(RichText::new(&state.name).color(MUTED));
+                        icon(ui, Icon::Database, MUTED);
+                    }
+                });
             });
         });
         egui::Panel::bottom("status").frame(panel(6)).show(ui, |ui| {
@@ -264,16 +345,8 @@ impl Playground {
         });
         match self.tab {
             Tab::Sql => self.console(ui),
-            Tab::Data => {
-                egui::CentralPanel::default()
-                    .frame(panel(12))
-                    .show(ui, |ui| self.data_editor(ui));
-            }
-            Tab::Infrastructure => {
-                egui::CentralPanel::default()
-                    .frame(panel(12))
-                    .show(ui, |ui| self.infrastructure(ui));
-            }
+            Tab::Data => self.data_editor(ui),
+            Tab::Infrastructure => self.infrastructure(ui),
         }
     }
 
@@ -283,34 +356,7 @@ impl Playground {
         {
             self.run_query();
         }
-        egui::Panel::left("database-tree")
-            .default_size(190.0)
-            .size_range(150.0..=300.0)
-            .frame(panel(8))
-            .show(ui, |ui| {
-                ui.label(RichText::new("Database").strong());
-                ui.separator();
-                if let Some(state) = &self.snapshot {
-                    egui::CollapsingHeader::new(&state.name)
-                        .default_open(true)
-                        .show(ui, |ui| {
-                            egui::CollapsingHeader::new("records")
-                                .default_open(true)
-                                .show(ui, |ui| {
-                                    ui.monospace("age      u8");
-                                    ui.monospace("amount  u16");
-                                });
-                        });
-                    ui.label(
-                        RichText::new(format!("{} rows", state.owner_rows.len()))
-                            .small()
-                            .color(MUTED),
-                    );
-                }
-                if ui.small_button("Edit data").clicked() {
-                    self.tab = Tab::Data;
-                }
-            });
+        self.explorer(ui);
         egui::Panel::bottom("query-results")
             .default_size(220.0)
             .size_range(120.0..=480.0)
@@ -437,113 +483,6 @@ impl Playground {
                 }
             });
     }
-
-    fn infrastructure(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.label("Peers");
-            ui.add_enabled(
-                self.available(),
-                egui::DragValue::new(&mut self.draft_peers).range(1..=MAX_PEERS),
-            );
-            if ui
-                .add_enabled(
-                    self.available() && self.snapshot.is_some(),
-                    egui::Button::new("Apply"),
-                )
-                .on_hover_text("Rebuild shards from current data. Draft data edits are preserved.")
-                .clicked()
-            {
-                self.apply_layout();
-            }
-            if let Some(state) = &self.snapshot {
-                let online = state.peers.iter().filter(|peer| peer.online).count();
-                ui.label(
-                    RichText::new(format!("{online} / {} online", state.peers.len())).color(MUTED),
-                );
-            }
-        });
-        ui.separator();
-        let mut toggle = None;
-        egui::ScrollArea::both()
-            .id_salt("infrastructure-table")
-            .show(ui, |ui| {
-                egui::Grid::new("peers")
-                    .striped(true)
-                    .min_col_width(100.0)
-                    .show(ui, |ui| {
-                        for header in ["Peer", "Online", "Rows", "Compressed", "Last query"] {
-                            ui.label(RichText::new(header).strong());
-                        }
-                        ui.end_row();
-                        if let Some(state) = &self.snapshot {
-                            let contributions =
-                                self.history
-                                    .iter()
-                                    .find_map(|record| match &record.outcome {
-                                        Ok(Outcome::Query(QueryOutcome::Aggregate {
-                                            peers,
-                                            ..
-                                        })) => Some(peers),
-                                        _ => None,
-                                    });
-                            for peer in &state.peers {
-                                ui.monospace(format!("P{:02}", peer.id));
-                                let mut online = peer.online;
-                                if ui
-                                    .add_enabled(
-                                        self.available(),
-                                        egui::Checkbox::without_text(&mut online),
-                                    )
-                                    .changed()
-                                {
-                                    toggle = Some((peer.id, online));
-                                }
-                                ui.monospace(peer.rows.to_string());
-                                ui.monospace(format!("{} B", peer.compressed_bytes));
-                                let timing = contributions
-                                    .and_then(|rows| rows.iter().find(|row| row.id == peer.id))
-                                    .map(|row| format!("{:.0} ms", row.elapsed_ms))
-                                    .unwrap_or_else(|| "-".into());
-                                ui.monospace(timing).on_hover_text(
-                                    "FHE computation plus owner decryption; not network latency.",
-                                );
-                                ui.end_row();
-                            }
-                        }
-                    });
-            });
-        if let Some((id, online)) = toggle {
-            self.submit(
-                Command::SetPeer { id, online },
-                Job::Availability,
-                format!("Peer {id}: {}", if online { "online" } else { "offline" }),
-            );
-        }
-    }
-
-    fn data_editor(&mut self, ui: &mut egui::Ui) {
-        ui.add_enabled_ui(self.available(), |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Database");
-                ui.add(egui::TextEdit::singleline(&mut self.draft_name).desired_width(180.0));
-                if ui.button("Create / replace").clicked() { self.create_database(); }
-            });
-            ui.separator();
-            ui.horizontal(|ui| {
-                ui.label("Sample rows");
-                ui.add(egui::DragValue::new(&mut self.generate_rows).range(0..=MAX_LAB_ROWS));
-                if ui.button("Generate").clicked() { self.draft_rows = format_rows(&sample_rows(self.generate_rows).expect("bounded generator")); }
-                if ui.button("Overflow fixture").clicked() { self.draft_rows = "18,65535\n19,10".into(); }
-                if ui.button("Empty").clicked() { self.draft_rows.clear(); }
-            });
-            ui.label(RichText::new("age,amount").monospace().color(MUTED)).on_hover_text("One row per line, up to 128 rows. Age: 0..255; amount: 0..65535. Creation uses the peer count selected on Infrastructure.");
-            let height = ui.available_height();
-            egui::ScrollArea::both().id_salt("fixture-editor").show(ui, |ui| {
-                ui.add(egui::TextEdit::multiline(&mut self.draft_rows).code_editor().frame(egui::Frame::NONE)
-                    .desired_width(f32::INFINITY).min_size(egui::vec2(ui.available_width(), height)));
-            });
-        });
-    }
 }
 
 impl eframe::App for Playground {
@@ -605,28 +544,6 @@ fn highlight_sql(sql: &str) -> egui::text::LayoutJob {
         );
     }
     job
-}
-
-fn set_theme(ctx: &egui::Context) {
-    let mut style = (*ctx.global_style()).clone();
-    style.visuals = egui::Visuals::dark();
-    style.visuals.override_text_color = Some(TEXT);
-    style.visuals.panel_fill = PANEL;
-    style.visuals.extreme_bg_color = EDITOR;
-    style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, BORDER);
-    style.visuals.widgets.inactive.weak_bg_fill = Color32::from_rgb(53, 55, 59);
-    style.spacing.item_spacing = egui::vec2(8.0, 6.0);
-    style.spacing.button_padding = egui::vec2(8.0, 3.0);
-    style
-        .text_styles
-        .insert(egui::TextStyle::Body, FontId::proportional(13.0));
-    style
-        .text_styles
-        .insert(egui::TextStyle::Button, FontId::proportional(13.0));
-    style
-        .text_styles
-        .insert(egui::TextStyle::Monospace, FontId::monospace(14.0));
-    ctx.set_global_style(style);
 }
 
 #[cfg(test)]

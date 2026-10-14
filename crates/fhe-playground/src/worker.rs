@@ -2,22 +2,28 @@ use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError};
 use std::time::Instant;
 
 use eframe::egui;
-use fhe_playground::{DatabaseDraft, LabEngine, LabError, LabSnapshot, QueryOutcome};
+use fhe_playground::{
+    DatabaseDraft, LabEngine, LabError, LabProgress, LabSnapshot, PeerConfig, QueryOutcome,
+};
 
 pub enum Command {
     Create(DatabaseDraft),
     Query(String),
     SetPeer { id: usize, online: bool },
+    ConfigurePeers(Vec<PeerConfig>),
+    ConfigurePeer { id: usize, config: PeerConfig },
 }
 
 pub enum Outcome {
     Created,
     PeerChanged,
+    LayoutChanged,
     Query(QueryOutcome),
 }
 
 pub enum Event {
     Progress(String),
+    PeerProgress(LabProgress),
     Finished {
         snapshot: Option<LabSnapshot>,
         outcome: Result<Outcome, LabError>,
@@ -59,12 +65,23 @@ impl Worker {
                         }
                         Command::Query(sql) => engine
                             .execute_with_progress(&sql, |message| {
-                                let _ = events.send(Event::Progress(message));
+                                let _ = events.send(Event::PeerProgress(message));
                                 context.request_repaint();
                             })
                             .map(Outcome::Query),
                         Command::SetPeer { id, online } => engine
                             .set_peer_online(id, online)
+                            .map(|_| Outcome::PeerChanged),
+                        Command::ConfigurePeers(configs) => {
+                            let _ = events
+                                .send(Event::Progress("Repartitioning encrypted shards...".into()));
+                            context.request_repaint();
+                            engine
+                                .configure_peers(configs)
+                                .map(|_| Outcome::LayoutChanged)
+                        }
+                        Command::ConfigurePeer { id, config } => engine
+                            .set_peer_config(id, config)
                             .map(|_| Outcome::PeerChanged),
                     };
                     if events
