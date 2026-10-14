@@ -42,6 +42,7 @@ See [earlier measurements](fhe-optimization.md) before repeating experiments.
 | Padded delta-varint age index | [Reviewed V2 format and four-distribution measurement](experiment-index-compression.md) | Data+index 1.743071x; with rebuildable hashes 1.837012x; with all fixed keys and owner state 61.957164x for this 3 MB fixture; no distribution-dependent total length |
 | Narrow encrypted request/output and conditional zero | [Reviewed and integrated kernel](experiment-query-wire.md), unchanged cryptographic parameters | One-row encrypted response 527169→148497 bytes; final 1/4/16-row max 91.73/419.42/1334.40 ms; 100 fresh point updates p95 329.03 ms; timing varies between runs and does not establish a universal speedup |
 | Concealed access via single-server PIR and fresh FHE | [Native retrieval probes](experiment-private-access.md) and [composed known-row pipeline](experiment-private-fhe-pipeline.md) | Million-row private >=/COUNT/SUM read 177.79–203.88 ms warm, 279.91 ms first including key restore; visible 47.16–50.68 ms; combined peak 417.86 MiB; hidden SQL index/proofs still absent |
+| Concealed complete age-index selection + data PIR + fresh FHE | [Measured bounded composition](experiment-private-index-fhe-pipeline.md); 64 real queries and 19 tests passed | Cached private 1/4/16-row groups: 312.55–337.74 / 534.13–550.91 / 1084.82–1095.49 ms. Fixed16 additionally pads public cardinality and takes >1056 ms. Canonical data+index 1.688383x, joint known material 63.913x; peak 449.90 MiB; neither privacy policy selected |
 | Verifiable FHE computation and SQL completeness | [Proof research and actual PBS accounting](experiment-query-proofs.md); no verifier | Instrumented scalar control: 33 PBS for COUNT/SUM, 59/67 for UPDATE at 2/8 workers. Inspected primitive proof systems take seconds, with no TFHE-rs adapter; full 500 ms budget remains unproved |
 
 Experiments use separate managed worktrees, including `private-index-research`,
@@ -93,7 +94,7 @@ timings varied in paired comparisons; 16-row/range queries and multirow updates
 still exceed 500 ms. See the separate report for both comparison pairs and the
 final integration control.
 
-The full goal remains active: reduce index overhead and multi-row latency, compose
-concealed indexed access, and retain the unresolved proof, freshness, resource and
+The full goal remains active: reduce multi-row latency, extend concealed indexed
+access beyond its measured one-page budget, and retain unresolved proof, freshness, resource and
 durable lifecycle requirements. Transport and malicious-peer computation proofs
 remain absent from all local latency measurements.

@@ -50,3 +50,12 @@ writeback and complete PIR cache rebuilding. The evaluator receives no original
 stored bytes, nonce or row/page address. The owner is online and reads its own
 selected plaintext; hidden SQL index navigation and computation proofs remain
 absent. See the [complete pipeline measurements](../../docs/experiment-private-fhe-pipeline.md).
+
+The [indexed private-access probe](README-index-fhe.md) additionally navigates the
+real encrypted PaddedV2 age index before retrieving data. It compares visible and
+private access with both exposed cardinality and a fixed sixteen-slot schedule,
+including authenticated dummy reads, absent/duplicate groups, cached/uncached
+headers and an actual owner-authorized compact replacement with cache rebuilding.
+Its separate codec adaptation and lockfile do not change the main library APIs.
+See [all 64 complete query measurements](../../docs/experiment-private-index-fhe-pipeline.md)
+for the bounded workload, leakage, full byte accounting and missing query proofs.

@@ -14,7 +14,7 @@ encrypted peer data and an independently authenticated snapshot head.
 | Updates | Authenticated index and data changes published atomically | Include oblivious rewriting, state synchronization and hint maintenance |
 | Collusion | Colluding peers combine visible traces | Prefer a single-server construction; a two-server noncollusion assumption is a separate unapproved relaxation |
 | Malicious results | Authenticate selected data and prove complete selection/computation | Same obligations; private retrieval does not establish correct SQL execution |
-| Current local code | [Owner-built age index with genuine FHE and compact updates](experiment-compact-query.md) | [Composed authenticated Spiral page retrieval and fresh FHE](experiment-private-fhe-pipeline.md); no hidden SQL index navigation yet |
+| Current local code | [Owner-built age index with genuine FHE and compact updates](experiment-compact-query.md) | [Real encrypted age-index and data PIR with fresh FHE](experiment-private-index-fhe-pipeline.md), online owner and bounded one-page groups |
 
 These compare protocol families rather than promise a universal latency multiplier.
 The same query, records, selected result size, thread count, memory, cache and
@@ -65,7 +65,7 @@ took 178–204 ms, with a measured combined peak of 418 MiB. This includes both 
 exchanges and all cryptographic work, with network/proofs excluded. The private
 path sends 498,088 bytes across two sequential round trips.
 
-This is an implemented known-row comparison, not a hidden SQL index or computation
+That initial experiment is a known-row comparison, not a hidden SQL index or computation
 proof. The owner is online and sees its selected plaintext. Its availability is an
 explicit experiment assumption, not a newly approved requirement. SQL index
 navigation, authorized input/output proof binding, shard choice, padding, malicious
@@ -73,6 +73,42 @@ feedback/retries and actual transport still need composition work. An accepted
 private FHE increment through cache readiness took 382 ms; including a subsequent
 private FHE read took 621 ms. Reusing selected stored ciphertext in the later FHE
 request would still defeat the intended address privacy.
+
+## Measured indexed comparison
+
+The [next isolated experiment](experiment-private-index-fhe-pipeline.md) now decodes
+complete postings from the real authenticated PaddedV2 age index, then retrieves
+the selected data through native PIR and sends freshly encrypted fields to FHE.
+It compares both access policies on the same million-row fixture, including
+complete groups of 0/1/4/16 rows. All 64 complete operations and 19 focused tests
+passed. The accepted group must fit one posting page and one data page; larger
+groups/pages are explicitly rejected rather than truncated.
+
+With a version-bound 2276-byte owner header cache, visible/private one-row queries
+took 62.785–76.697 / 312.547–337.744 ms, and four-row queries
+274.514–279.046 / 534.128–550.907 ms, two samples per case. These modes expose
+candidate count and request schedule. Sixteen-row private queries took
+1084.819–1095.492 ms. Reading the header privately on every query adds another
+sequential exchange; first-use costs and all per-case results are in the report.
+
+A second profile always performs one posting read, one data read and sixteen FHE
+slots, with freshly encrypted validity bits and actual authenticated dummy PIR
+reads for absent results. All 32 fixed-profile public shapes were checked: sizes,
+slot counts and RPC counts match across these four cases. Cached private queries
+took 1056.427–1222.381 ms and transferred 4,224,082 bytes in three sequential RPCs.
+This hides these groups' public cardinality within the stated budget, not arbitrary
+query timing, rejected budgets, peer/shard choice or writes. Neither privacy
+profile is selected as the final protocol.
+
+Canonical encrypted data plus the padded index occupy 5,065,148 bytes, 1.688383x
+the same 3 MB logical fixture. The two native caches consume 64 MiB RAM, and the
+whole owner+peer process peaked at 449.90 MiB. The known serialized material
+subtotal including fixed keys is 63.913x, with PIR owner-key serialization still
+missing; it is not a <=2x whole-system result. An owner-authorized compact
+replacement, cache/header refresh and fresh private indexed read took 669.100 ms.
+This replacement was not a FHE SQL UPDATE. Computation proofs, active-server
+feedback security, independently trusted freshness and distributed publication
+remain unresolved.
 
 A range or JOIN may visit many pages even with an index. A hidden point lookup
 does not establish a hidden general SQL planner. A complete comparison must cover
