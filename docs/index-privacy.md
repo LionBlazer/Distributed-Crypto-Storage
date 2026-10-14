@@ -196,6 +196,16 @@ candidate uncached observations still fail the 500 ms target. Query expansion
 remains the main cost. Separate independent-request batch results describe
 amortized throughput and do not establish an individual-query latency bound.
 
+A further [query-expansion scheduling comparison](experiment-private-pir-expansion.md)
+keeps the original sequential rounds and runs independent siblings with fewer
+barriers. The SDK already parallelizes within each half; the gain comes from
+scheduling and early-round utilization. All 26 direct expanded-buffer/serialized
+response controls agree with the original implementation. In 32 full range reads,
+Combined private Cached takes 379–393 ms and Uncached 456–465 ms; all four tested
+uncached cases now fit 500 ms, compared with 506–525 ms for TrialsOnly. These are
+ready-cache measurements. Reading files and rebuilding a cache after eviction
+still require a separate full-operation test.
+
 A range or JOIN may visit many pages even with an index. A hidden point lookup
 does not establish a hidden general SQL planner. A complete comparison must cover
 absent keys, repeated keys, duplicate groups, indexed-field changes, access padding,

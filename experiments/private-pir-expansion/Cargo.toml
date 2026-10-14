@@ -1,0 +1,18 @@
+[package]
+name = "private-pir-expansion-composition"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[workspace]
+
+[dependencies]
+compact-bfv-byte-limb-core = { path = "../bfv-byte-limb-core" }
+compact-store = { path = "../../crates/compact-store" }
+spiral-rs = { path = "../../.local/private-access/sdk/lib/spiral-rs", features = ["server"] }
+rayon = "1.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+getrandom = "0.2"
+zeroize = "1"
