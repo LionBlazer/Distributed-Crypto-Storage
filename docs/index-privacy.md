@@ -139,6 +139,13 @@ result. Online-owner, one-page groups, EQ, ready native caches and unverified
 arithmetic remain explicit limits. Cold setup is 2459 ms and the owner compact
 replacement/rebuild/fresh read is 695 ms; no BFV UPDATE is implemented.
 
+The subsequent [owner-state recovery module](experiment-spiral-owner-state.md)
+provides an actual 336-byte secret envelope and tests restored-client PIR reads
+against the retained original 6,029,344-byte public setup. Its live secret matrices
+remain a separate RAM cost. This closes the earlier secret-backup framing gap for
+that pinned profile; it does not retime or replace the frozen single-table ledger,
+provide authenticated durable backup, or establish a combined 2x result.
+
 A range or JOIN may visit many pages even with an index. A hidden point lookup
 does not establish a hidden general SQL planner. A complete comparison must cover
 absent keys, repeated keys, duplicate groups, indexed-field changes, access padding,
