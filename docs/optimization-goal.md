@@ -6,8 +6,8 @@ targets remain stretch targets. These are goals, not established capabilities.
 Arbitrary SQL remains the direction; each result below must identify its actual
 supported query, input size and privacy model.
 
-The prototype branch is `codex/feature/fhe-prototype`. Isolated experiments start
-from `95ed312`; only reviewed, validated improvements are promoted to that branch.
+The prototype branch is `codex/feature/fhe-prototype`. Isolated experiments record
+their base commit; only reviewed, validated improvements are promoted to that branch.
 See [earlier measurements](fhe-optimization.md) before repeating experiments.
 
 ## Acceptance and accounting
@@ -39,10 +39,11 @@ See [earlier measurements](fhe-optimization.md) before repeating experiments.
 | TFHE 1.8.1 compact-to-FHE conversion | Reviewed opt-in [four-mode probe](transciphering-probe.md), actual encrypted COUNT/SUM | AES-radix: 1.033854x page, 1.059896x with owner state before FHE keys; eight-worker 19-warm-sample median/max 117.60/151.78 ms; two-worker max 573.88 ms |
 | Native encrypted PRF mask regeneration | Implemented raw and rerandomized controls in the same probe | No persistent FHE masks; 64-row native preparation takes 5.61/5.88 seconds; rerandomized query exceeds 500 ms; storage/security composition still needs review |
 | Visible authenticated searchable index | Proposed | Direct row-ordinal lookup is not an index for arbitrary SQL predicates |
-| Concealed index via single-server PIR/ORAM | Primary-source comparison | Measure retrieval, index traversal, updates, owner state and subsequent FHE execution together |
+| Concealed access via single-server PIR | [Native DoublePIR and authenticated Spiral page probes](experiment-private-access.md) | Million-row Spiral: 133.73–142.50 ms full-page private retrieval, 1.007861x canonical data, 32 MiB RAM cache; indexed SQL/FHE composition remains unimplemented |
 | Verifiable FHE computation and SQL completeness | [Proof research and actual PBS accounting](experiment-query-proofs.md); no verifier | Point COUNT/SUM uses 33 PBS; UPDATE 59/67 at 2/8 workers. Inspected primitive proof systems take seconds, with no TFHE-rs adapter; full 500 ms budget remains unproved |
 
-Worktrees: `fhe-fast-scan`, `fhe-compact-store`, `fhe-transciphering`. Generated
+Experiments use separate managed worktrees, including `private-index-research`,
+`compact-fhe-query`, `query-proof-research` and `compact-playground`. Generated
 reports and ephemeral test data stay in ignored local directories; no keys or
 database images are committed. The main GUI is not launched by these experiments.
 

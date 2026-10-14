@@ -14,7 +14,7 @@ encrypted peer data and an independently authenticated snapshot head.
 | Updates | Authenticated index and data changes published atomically | Include oblivious rewriting, state synchronization and hint maintenance |
 | Collusion | Colluding peers combine visible traces | Prefer a single-server construction; a two-server noncollusion assumption is a separate unapproved relaxation |
 | Malicious results | Authenticate selected data and prove complete selection/computation | Same obligations; private retrieval does not establish correct SQL execution |
-| Current local code | Direct authenticated row-address retrieval experiment | No measured implementation yet |
+| Current local code | Direct authenticated row-address retrieval experiment | [Native DoublePIR and authenticated Spiral page retrieval](experiment-private-access.md); no complete hidden SQL index yet |
 
 These compare protocol families rather than promise a universal latency multiplier.
 The same query, records, selected result size, thread count, memory, cache and
@@ -37,6 +37,16 @@ PIR implementations under LWE. Their 1 GB reference setting needs respectively
 121/16 MB client hints and 242/345 KB communication per query; server processing
 scans the encoded database. Published throughput is not an end-to-end SQL latency
 or our local measurement. Preprocessing and changing databases need separate tests.
+
+The [native local probes](experiment-private-access.md) now test both families
+without a noncolluding-server assumption. DoublePIR retrieves a raw three-byte
+ciphertext in 215–383 ms, but widening its current geometry to a complete
+authenticated page would require a hint above 12 GB. Spiral instead retrieves an
+authenticated 2048-row page from the same million-row fixture in 134–143 ms.
+It retains a 32 MiB RAM-only NTT cache and about 6 MB serialized public parameters;
+canonical data is 1.007861x, before keys and rebuildable hashes. A replacement,
+full cache rebuild and fresh private read took 245 ms. These are local component
+measurements, with no transport, SQL index navigation or FHE computation proof.
 
 ## Composition with FHE
 
