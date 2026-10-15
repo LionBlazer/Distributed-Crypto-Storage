@@ -26,16 +26,26 @@ fn filename(id: &[u8; 32]) -> String {
         .collect::<String>()
         + ".bundle"
 }
-fn validate(bundle: &Bundle, stored: u64) -> Result<ObjectInfo, RemoteError> {
-    let data = Commitment::decode(&bundle.data_head, Limits::default())
-        .map_err(|_| RemoteError::Integrity)?;
-    Commitment::decode(&bundle.index_head, Limits::default())
-        .map_err(|_| RemoteError::Integrity)?;
-    EncryptedSnapshot::decode_for_head(&bundle.data, &data, Limits::default())
-        .map_err(|_| RemoteError::Integrity)?;
-    if bundle.index.len() > Limits::default().max_image_bytes {
-        return Err(RemoteError::ResourceLimit);
+/// Custody is bounded by authenticated image size rather than a SQL row model.
+/// A typed relation can use row_width=1, where row_count counts encoded bytes.
+/// Every row occupies at least one byte; the unchanged image/page/frame/quota
+/// bounds therefore also bound this geometry before any page allocation.
+pub(crate) fn custody_limits() -> Limits {
+    let limits = Limits::default();
+    Limits {
+        max_rows: limits.max_image_bytes as u64,
+        ..limits
     }
+}
+fn validate(bundle: &Bundle, stored: u64) -> Result<ObjectInfo, RemoteError> {
+    let limits = custody_limits();
+    let data = Commitment::decode(&bundle.data_head, limits).map_err(|_| RemoteError::Integrity)?;
+    let index =
+        Commitment::decode(&bundle.index_head, limits).map_err(|_| RemoteError::Integrity)?;
+    EncryptedSnapshot::decode_for_head(&bundle.data, &data, limits)
+        .map_err(|_| RemoteError::Integrity)?;
+    EncryptedSnapshot::decode_for_head(&bundle.index, &index, limits)
+        .map_err(|_| RemoteError::Integrity)?;
     Ok(ObjectInfo {
         available: true,
         id: bundle.id(),
@@ -433,6 +443,68 @@ mod tests {
             store
                 .get_version(&staged.data_head, &staged.index_head)
                 .is_err()
+        );
+    }
+    #[test]
+    fn custody_rejects_a_corrupt_index_or_an_index_from_another_committed_object() {
+        let directory = Directory::new();
+        let mut store = Store::open(&directory.0, 1024 * 1024).unwrap();
+        let original = bundle();
+        let mut corrupt = original.clone();
+        *corrupt.index.last_mut().unwrap() ^= 1;
+        assert!(matches!(store.put(corrupt), Err(RemoteError::Integrity)));
+        let mut replaced = original.clone();
+        replaced.index = bundle().index;
+        assert!(matches!(store.put(replaced), Err(RemoteError::Integrity)));
+        assert!(store.objects.is_empty());
+        store.put(original).unwrap();
+    }
+    #[test]
+    fn byte_addressed_images_above_one_million_bytes_remain_bounded_and_survive_reopen() {
+        let directory = Directory::new();
+        let owner = compact_store::Owner::generate([7; 16]).unwrap();
+        let original = vec![42; 2 * 1024 * 1024];
+        let snapshot = owner
+            .seal(
+                compact_store::Layout {
+                    schema: [8; 16],
+                    row_width: 1,
+                    rows_per_page: 16 * 1024,
+                    row_count: original.len() as u64,
+                },
+                &original,
+                custody_limits(),
+            )
+            .unwrap();
+        let bundle = Bundle {
+            data_head: snapshot.commitment().encode().to_vec(),
+            index_head: snapshot.commitment().encode().to_vec(),
+            data: snapshot.encode(),
+            index: snapshot.encode(),
+        };
+        let mut store = Store::open(&directory.0, 8 * 1024 * 1024).unwrap();
+
+        let stored = store.put(bundle.clone()).unwrap();
+
+        assert_eq!(stored.logical_bytes, original.len() as u64);
+        assert_eq!(store.get(&stored.id).unwrap(), bundle);
+        assert!(matches!(
+            store.configure(1024),
+            Err(RemoteError::ResourceLimit)
+        ));
+        drop(store);
+        let mut reopened = Store::open(&directory.0, 8 * 1024 * 1024).unwrap();
+        assert_eq!(reopened.get(&stored.id).unwrap(), bundle);
+        let mut hostile = snapshot.commitment().layout();
+        hostile.row_count = custody_limits().max_rows + 1;
+        assert!(hostile.validate(custody_limits()).is_err());
+        assert_eq!(
+            custody_limits().max_image_bytes,
+            Limits::default().max_image_bytes
+        );
+        assert_eq!(
+            custody_limits().max_page_plaintext_bytes,
+            Limits::default().max_page_plaintext_bytes
         );
     }
 }

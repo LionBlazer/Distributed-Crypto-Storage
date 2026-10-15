@@ -166,42 +166,51 @@ The Data panel downloads public SQL scripts on demand to client memory or reads 
 local `.sql` file. It does not ship datasets, launch another database engine, or
 execute script text on the host. Downloads and file reads are capped at 8 MiB;
 preview text is capped at 64 KiB. Network loading runs off the UI thread, with
-HTTPS, redirect and timeout bounds. `samples::prepare_import` uses the same
-`storage_client::SqlScript` preflight as Run: up to 64 KiB, 256 lowered operations
-and 128 input rows. The entire input must declare the supported table and literal
-INSERTs; incompatible input returns no partial rows. Loading or previewing a file
-does not change a draft or create data.
+HTTPS, redirect and timeout bounds. `samples::prepare_import` uses the reusable
+[typed importer](../crates/relational-types/README.md) to validate the entire
+schema and all literal rows, including PK/FK/UNIQUE/CHECK constraints. Unsupported
+input returns no partial database. Loading or previewing a file does not create
+data. There is no 128-row cap; byte/table/column resource budgets remain explicit.
 
-**Import** explicitly initializes a new encrypted Session and its agreed genesis
+**Import** explicitly initializes a new encrypted RelationalSession and its agreed genesis
 from all validated owner-supplied input rows. It creates actual ciphertext copies
 on the managed peers and never replaces an existing database. Initial owner-input
-encryption is not a substitute query answer: future SELECT/INSERT/UPDATE retain
-their normal FHE execution, proof/completeness and confirmed-version checks.
+encryption is not a substitute query answer: subsequent SELECT requires actual
+peer BFV projection, genuine STARK evidence, complete authenticated private-index
+selection and confirmed-version checks. Typed imported catalogs are currently
+immutable: unsupported mutations, joins and aggregates report an error rather
+than executing on plaintext or falling back to the two-column engine.
 
 The catalog contains [Northwind and pubs from Microsoft](https://github.com/microsoft/sql-server-samples/tree/master/samples/databases/northwind-pubs)
 and [Chinook](https://github.com/lerocha/chinook-database/releases/tag/v1.4.5),
-approximately 1 MiB, 123 KiB and 597 KiB of SQL respectively. These full schemas
-**cannot yet be imported**: production SQL/FHE/proof kernels currently support only
-`records(age: u8, amount: u16)`, and the live creation adapter admits 128 rows.
-The catalog labels this limit before download and allows inspection; it never
-renames arbitrary source columns or drops unsupported tables to claim success.
+approximately 1 MiB, 123 KiB and 597 KiB of SQL respectively. The complete official
+Northwind script imports 13 base tables and 3,308 rows without relabeling or
+discarding columns, including dates, money, NULLs, Unicode and binary images.
+Other catalog scripts still undergo the entire typed grammar/constraint preflight;
+their presence in the download catalog is not a promise of every dialect feature.
 [AdventureWorks backups](https://learn.microsoft.com/en-us/sql/samples/adventureworks-install-configure)
 use SQL Server `.bak` restoration and are not SQL text for this importer.
 
-A supported local dump starts with the unsigned schema below (optional
-`IF NOT EXISTS`), then zero or
-more `INSERT INTO records [(age, amount)] VALUES (...)` statements. Comments are
-accepted; constraints beyond these declarations, other types/tables, transactions
-and executable comments are rejected. Both integers are checked without truncation.
+The Data view lists actual imported table schemas/counts. Browse prepares a query;
+the user still presses Run. The SQL table selector and presets use the current
+catalog. Text, exact decimals, NULLs and dates display as typed cells; binary
+fields show their length instead of flooding the result grid with hex. No local
+plaintext imported table is used to answer a query.
 
 ```sql
-CREATE TABLE records (age TINYINT UNSIGNED NOT NULL, amount SMALLINT UNSIGNED NOT NULL);
-INSERT INTO records (age, amount) VALUES (18, 10), (42, 20);
+SELECT CustomerID, CompanyName
+FROM Customers WHERE Country = 'Germany' ORDER BY CustomerID;
+SELECT * FROM [Order Details];
+SELECT ProductID, ProductName, UnitPrice
+FROM Products WHERE UnitPrice >= 50 ORDER BY UnitPrice DESC;
 ```
 
-Supporting a complete multi-megabyte relational sample requires extending the
-encrypted schema, planner, storage layout and computation/completeness proof
-circuits together. Downloading a script alone does not implement that support.
+Rows/cells stream through 8,191-byte BFV blocks; neither 128 rows nor one BFV block
+limits a table. Current client budgets are 8 MiB encoded data and 8 MiB private
+index per table, the explicit network profile's table count, one million result
+cells and 32 MiB projected output. Oversized operations reject without silent
+truncation. The [Northwind verification report](../docs/northwind-typed-import.md)
+records the actual separate-process test and its current performance limits.
 
 ## Dependencies and verification
 
@@ -212,7 +221,9 @@ circuits together. Downloading a script alone does not implement that support.
 profile and confirmed-version reference types;
 [bfv-query-proof](../crates/bfv-query-proof/README.md) owns computation proofs and
 the process's one-time proof backend initialization;
-[sql-plan](../crates/sql-plan/README.md) owns parsing. compact-query/compact-store,
+[sql-plan](../crates/sql-plan/README.md) owns the earlier two-column statement parser;
+[relational-types](../crates/relational-types/README.md) owns typed catalogs, dump
+preflight and schema-bound SELECT planning. compact-query/compact-store,
 replica-store and peer-protocol also remain dependencies of the historical local
 `LabEngine`/`DemoNetwork` library and finite research examples. The live worker
 imports neither local runtime, and core has no reverse playground dependency.

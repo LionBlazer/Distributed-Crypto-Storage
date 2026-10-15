@@ -86,6 +86,9 @@ impl PublicUpdateEvaluator {
                 self.keyset_id,
                 request,
             ),
+            Some(b"BFVBYSQ1") => {
+                typed_projection::request_context(&self.parameters, self.keyset_id, request)
+            }
             _ => Err(Error::InvalidShape),
         }
     }
@@ -151,6 +154,26 @@ impl PublicUpdateEvaluator {
             request,
             output,
         )
+    }
+
+    /// Projects a packed chunk of original encrypted bytes using the public column mask.
+    /// Schema interpretation, complete index selection and freshness belong to the caller.
+    pub fn evaluate_byte_select(&self, request: &[u8]) -> Result<Vec<u8>> {
+        typed_projection::evaluate_public(&self.parameters, self.keyset_id, request)
+    }
+
+    /// Complete canonical ciphertext-by-public-polynomial statement for a byte projection.
+    pub fn byte_select_circuit_request(&self, request: &[u8]) -> Result<Vec<u8>> {
+        typed_projection::circuit_request(&self.parameters, self.keyset_id, request)
+    }
+
+    /// Representation conversion only; the caller must check the exact arithmetic proof.
+    pub fn restore_byte_select_circuit_output(
+        &self,
+        request: &[u8],
+        output: &[u8],
+    ) -> Result<Vec<u8>> {
+        typed_projection::restore_circuit_output(&self.parameters, self.keyset_id, request, output)
     }
 }
 

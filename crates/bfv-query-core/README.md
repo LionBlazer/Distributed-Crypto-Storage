@@ -5,6 +5,29 @@ Experimental owner-online exact BFV roles, extracted from the frozen
 cryptographic implementation; product adapters depend on this crate and never on
 that historical experiment. No production security or query-proof claim follows.
 
+The schema-neutral byte projection path is independent of the historical
+`age/amount` layout. `Owner::prepare_byte_select` encrypts original encoded bytes
+and binds an opaque schema/table/query/chunk/catalog digest plus both storage
+heads. Its public mask selects byte positions corresponding to requested columns;
+it must never encode a plaintext row predicate. Each chunk holds up to
+`BYTE_SELECT_CAPACITY` (8,191) bytes, including arbitrary text, null markers and
+binary data. Streaming callers can split wide rows or large values and have no
+128-row bound in this primitive. One reserved zero lane makes even full projection
+use a nonidentity polynomial; returning the original ciphertext is not the same
+canonical operation.
+
+`PublicUpdateEvaluator::{evaluate_byte_select,byte_select_circuit_request,
+restore_byte_select_circuit_output}` expose genuine ciphertext-by-public-polynomial
+projection and its exact canonical proof statement. The caller independently
+verifies arithmetic through [bfv-query-proof](../bfv-query-proof/README.md).
+`compact-query::byte_select::{check,complete_checked}` composes checked evidence
+with final client decryption. The low-level
+`Owner::decrypt_byte_select_unverified` always returns an explicitly unverified
+result. Pending tokens retain only shape, public masks and bindings, never original
+plaintext values. Complete authenticated indexed selection, schema semantics,
+chunk coverage, authorization and fresh agreed state belong to the storage client.
+The byte kernel does not prove arbitrary SQL comparisons or hide access patterns.
+
 Owner owns the only secret key; PublicSetup contains only original parameters,
 relinearization and rotation keys; PeerEvaluator restores public material only.
 Inputs are fresh encrypted selected fields. Public contracts include generic

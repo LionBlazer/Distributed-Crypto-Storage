@@ -9,6 +9,27 @@ Historical completion methods return unverified results. The separate proved BFV
 completion path below verifies genuine arithmetic evidence and complete authenticated
 index selection; global agreement and freshness belong to the network client.
 
+## Generic byte projection proof composition
+
+With `bfv-experiment`, `byte_select::check` verifies the serialized genuine
+BFV ciphertext-by-public-polynomial proof against the trusted original byte
+request. `byte_select::complete_checked` rebinds its unforgeable checked marker
+to the exact request/output before reconstructing and decrypting the actual peer
+ciphertext. The returned `VerifiedByteSelection` exposes only decrypted bytes
+and the checked arithmetic evidence. It cannot be constructed from owner fixtures
+or an unverified network response.
+
+This path accepts [bfv-query-core](../bfv-query-core/README.md)'s schema-neutral
+8,191-byte chunk contract rather than `records(age,amount)` fields. Its caller
+authenticates complete typed indexes and original compact rows, binds all chunks
+to schema/table/query/version, and checks fresh agreed state separately. The
+kernel's public mask encodes column projection, while exact matching rows come
+from the authenticated index. Neither the wrapper nor arithmetic proof silently
+claims arbitrary homomorphic SQL predicate evaluation or hidden access patterns.
+The direct dependencies are the existing `bfv-query-core` representation adapter
+and `bfv-query-proof` STARK verifier; no GUI, SQL parser or network policy enters
+this reusable completion boundary.
+
 ## Explicit BFV composition
 
 [bfv-query-core](../bfv-query-core/README.md) owns unchanged BFV arithmetic/wire/key

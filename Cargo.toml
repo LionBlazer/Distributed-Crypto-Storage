@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/relational-types",
     "crates/peer-protocol",
     "crates/compact-store",
     "crates/compact-query",
@@ -22,6 +23,7 @@ members = [
     "experiments/core-workloads",
 ]
 default-members = [
+    "crates/relational-types",
     "crates/peer-protocol",
     "crates/compact-store",
     "crates/compact-query",

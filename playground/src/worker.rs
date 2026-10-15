@@ -18,7 +18,7 @@ use std::{
 
 pub enum Command {
     Create(DatabaseDraft),
-    Import(DatabaseDraft),
+    ImportRelational(relational_types::ImportedDatabase),
     Query { client_id: NodeId, sql: String },
     AddPeer(PeerConfig),
     AddClient { name: String },
@@ -31,6 +31,7 @@ pub enum Command {
 
 #[derive(Debug)]
 pub enum Outcome {
+    TypedSelected(storage_client::relational::Selected),
     Created,
     TableReady {
         created: bool,
@@ -176,6 +177,7 @@ pub enum Event {
     Traffic(Observation),
     Network(NetworkSnapshot),
     Peers(Vec<crate::process_backend::PeerProfile>),
+    Catalog(Vec<(relational_types::TableSchema, usize)>),
     Snapshot(LabSnapshot),
     Progress(String),
     Finished {
@@ -373,13 +375,21 @@ fn run(
                 };
                 let finished = matches!(
                     &command,
-                    Command::Create(_) | Command::Import(_) | Command::Query { .. }
+                    Command::Create(_) | Command::ImportRelational(_) | Command::Query { .. }
                 );
                 let outcome = match command {
                     Command::Create(draft) => backend.create(draft).map(|_| Outcome::Created),
-                    Command::Import(draft) => backend.import(draft).map(|_| Outcome::Created),
+                    Command::ImportRelational(database) => backend
+                        .import_relational(database)
+                        .map(|_| Outcome::Created),
                     Command::Query { client_id, sql } => {
-                        backend.execute_sql(client_id, &sql).map(Outcome::script)
+                        if backend.has_relational() {
+                            backend
+                                .execute_typed(client_id, &sql)
+                                .map(Outcome::TypedSelected)
+                        } else {
+                            backend.execute_sql(client_id, &sql).map(Outcome::script)
+                        }
                     }
                     Command::AddPeer(config) => {
                         backend.add_peer(config).map(|id| Outcome::NodeAdded { id })
@@ -405,6 +415,7 @@ fn run(
                 };
                 backend.refresh();
                 events.send(Event::Peers(backend.peer_profiles()));
+                events.send(Event::Catalog(backend.catalog()));
                 let snapshot = backend.snapshot();
                 let event = if finished {
                     Event::Finished {

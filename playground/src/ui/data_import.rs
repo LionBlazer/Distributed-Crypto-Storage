@@ -3,7 +3,7 @@ use super::super::*;
 use crate::samples::{
     CATALOG, DownloadedDump, PreparedImport, download_sample, load_local_dump, prepare_import,
 };
-use fhe_playground::PlainRow;
+use relational_types::ImportedDatabase;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
 const MAX_SQL_PREVIEW_BYTES: usize = 64 * 1024;
@@ -93,7 +93,7 @@ impl DataImport {
         &mut self,
         ui: &mut egui::Ui,
         can_import: bool,
-    ) -> Option<(Vec<PlainRow>, String)> {
+    ) -> Option<(ImportedDatabase, String)> {
         self.poll();
         let mut import = None;
         egui::CollapsingHeader::new("Import SQL")
@@ -109,10 +109,7 @@ impl DataImport {
                             .hint_text("Local .sql file path")
                             .desired_width(width),
                     )
-                    .on_hover_text(format!(
-                        "{}\nFollow with INSERT INTO records VALUES (...);\nThe entire SQL file must be supported. Import creates a new encrypted database; it never replaces an existing database.",
-                        crate::samples::SUPPORTED_SCHEMA
-                    ));
+                    .on_hover_text("A UTF-8 SQL dump with typed CREATE TABLE and literal INSERT statements. Import encrypts every validated table on real peer processes. Existing databases are preserved.");
                     if action_button(
                         ui,
                         "Open SQL",
@@ -152,21 +149,30 @@ impl DataImport {
                                         "Encrypt the validated rows and create a new database on real peer processes",
                                     )
                                     .on_disabled_hover_text(
-                                        "Import needs a new database, an active client and an idle workspace. Existing databases are preserved; use SQL to change them.",
+                                        "Import needs a new database, an active client and an idle workspace. Existing encrypted databases are preserved.",
                                     )
                                     .clicked()
                                 {
-                                    import = Some((prepared.rows.clone(), loaded.sample_id.clone()));
+                                    import = Some((prepared.database.clone(), loaded.sample_id.clone()));
                                 }
                                 ui.label(
                                     RichText::new(format!(
-                                        "{} rows · {} operations ready",
-                                        prepared.rows.len(), prepared.statements
+                                        "{} tables · {} rows ready",
+                                        prepared.database.tables.len(), prepared.database.row_count()
                                     ))
                                     .small()
                                     .color(GREEN),
-                                );
+                                ).on_hover_text(format!("{} validated table and row items", prepared.statements));
                             });
+                            if !prepared.database.notices.is_empty() {
+                                egui::CollapsingHeader::new("Import notes")
+                                    .id_salt("sql-import-notices")
+                                    .show(ui, |ui| {
+                                        for notice in &prepared.database.notices {
+                                            ui.label(RichText::new(notice).small().color(MUTED));
+                                        }
+                                    });
+                            }
                         }
                         Err(error) => {
                             ui.colored_label(RED, error);
@@ -204,7 +210,7 @@ impl DataImport {
     }
 
     fn sources(&mut self, ui: &mut egui::Ui) {
-        egui::CollapsingHeader::new("Public samples · download and inspect only")
+        egui::CollapsingHeader::new("Public sample databases")
             .id_salt("sql-sample-sources")
             .show(ui, |ui| {
                 let selected = &CATALOG[self.selected.min(CATALOG.len() - 1)];
@@ -239,7 +245,7 @@ impl DataImport {
                     .on_hover_text("Microsoft SQL Server binary backup, not a SQL text file.");
                 });
                 ui.label(
-                    RichText::new("These schemas cannot be imported by the encrypted engine yet.")
+                    RichText::new("Download SQL, validate the full schema, then import.")
                         .small()
                         .color(AMBER),
                 )
@@ -255,6 +261,7 @@ impl DataImport {
 mod tests {
     use super::*;
     use crate::worker::{Command, Worker};
+    use fhe_playground::PlainRow;
 
     fn completed_loader(app: &mut Playground, sql: String) {
         let (sender, receiver) = mpsc::sync_channel(1);
@@ -333,10 +340,7 @@ mod tests {
     }
 
     fn supported_sql() -> String {
-        format!(
-            "{}\nINSERT INTO records VALUES (18, 10), (42, 20);",
-            crate::samples::SUPPORTED_SCHEMA
-        )
+        "CREATE TABLE Customers (CustomerID INT NOT NULL, CompanyName NVARCHAR(80) NOT NULL);\nINSERT INTO Customers VALUES (18, 'Alfreds'), (42, 'Berglunds');".into()
     }
 
     #[test]
@@ -360,7 +364,7 @@ mod tests {
         click(&mut app, &context, "Import");
 
         assert!(
-            matches!(commands.try_recv(), Ok(Command::Import(draft)) if draft.rows == vec![PlainRow {age:18, amount:10}, PlainRow {age:42, amount:20}])
+            matches!(commands.try_recv(), Ok(Command::ImportRelational(database)) if database.tables.len() == 1 && database.row_count() == 2 && database.tables[0].schema.name == "Customers")
         );
     }
 
@@ -370,7 +374,7 @@ mod tests {
         let mut app = Playground::with_worker(worker);
         app.active_client = Some(1);
         app.draft_rows = "19,42".into();
-        completed_loader(&mut app, "CREATE TABLE Customers (CustomerID TEXT);".into());
+        completed_loader(&mut app, "CREATE TABLE Customers (Shape GEOMETRY);".into());
         let context = egui::Context::default();
 
         let text = draw_data(&mut app, &context, vec![]);

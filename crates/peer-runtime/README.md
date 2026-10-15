@@ -42,6 +42,10 @@ Objects are immutable, addressed by the complete bundle hash. `FetchVersion` use
 an exact data/index-head pair cache and still reads/authenticates the physical
 bundle. Missing or modified data is rejected; cached names do not prove custody.
 `Copy` transfers actual encrypted bytes directly between authenticated processes.
+Custody does not assume a SQL row shape: byte-addressed typed images can exceed
+one million encoded bytes. The geometry count is bounded by the unchanged 64 MiB
+image cap, while page, transport-frame and participant disk-quota limits still
+apply before allocation. This is a byte budget, not an unbounded SQL row limit.
 
 ## Computation and proof boundary
 
@@ -53,7 +57,14 @@ diagnostic `Evaluate` route, whose response remains `UnverifiedCiphertext`.
 the actual ciphertext request to the canonical circuit and runs `bfv_query_proof`.
 `ProofReply` contains the complete canonical encrypted output and serialized genuine
 STARK. Supported proved operations are exact-index `SELECT`, `INSERT` and additive
-`UPDATE`; aggregate proofs are explicitly unsupported here. This service does not
+`UPDATE`, plus schema-independent `ByteSelect` over bounded encrypted byte chunks;
+aggregate proofs are explicitly unsupported here. `ByteSelect` carries its own
+schema/query/table/page binding and uses the same full-residue public-mask product
+proof. The caller authenticates complete page/row coverage and checks the exact
+trusted request before completing the encrypted result. The service enforces the
+stored object's original data/index heads for typed reads as for other operations.
+Typed reads have no legacy unverified `Evaluate` route and cannot appear in a
+mutation manifest. This service does not
 decrypt, generate answers from fixtures or accept SQL for the client.
 
 One atomic admission permit covers proving, public proof verification and mining

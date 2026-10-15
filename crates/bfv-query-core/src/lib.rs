@@ -4,9 +4,13 @@ mod canonical;
 mod exact_index;
 mod indexed_insert;
 mod indexed_select;
+mod typed_projection;
 pub use indexed_insert::{
     EvaluatedIndexedInsert, IndexedInsertStats, InsertedRow, PendingIndexedInsert,
     PreparedIndexedInsert, UnverifiedInsertedRows,
+};
+pub use typed_projection::{
+    BYTE_SELECT_CAPACITY, PendingByteSelect, PreparedByteSelect, UnverifiedByteSelection,
 };
 mod indexed_update;
 pub use exact_index::{PendingIndexedAggregate, PreparedIndexedAggregate};

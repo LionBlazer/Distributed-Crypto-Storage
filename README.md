@@ -41,7 +41,17 @@ actual RPC observations. Virtual delivery is not used by the live GUI.
 Alt+Left/Right and mouse side buttons navigate between views; middle-click closes
 inspector tabs.
 
-The SQL frontend supports row SELECT/projections with age filters and LIMIT,
+Northwind can be downloaded on demand in Data and imported in full: 13 base tables
+and 3,308 rows, including Unicode text, NULLs, dates, exact decimals and binary
+images. The typed catalog supports SELECT, named projections, comparisons,
+AND/OR/NOT, IN/BETWEEN, IS NULL, ORDER BY and TOP/LIMIT over its actual tables.
+Original rows are projected homomorphically in streamed BFV blocks with genuine
+STARKs, complete authenticated private indices and confirmed-version checks.
+There is no 128-row import/query cap. Imported catalogs are currently immutable;
+typed mutations, joins, aggregates and transactions reject until their separate
+proof/transition paths exist. See the [typed client contract](crates/storage-client/README.md).
+
+The earlier two-column SQL frontend supports row SELECT/projections with age filters and LIMIT,
 single-row INSERT and amount addition on `age: u8, amount: u16`; it is not an arbitrary-SQL
 database. Row projection uses actual BFV encrypted masking. The client authenticates
 complete private index selection, verifies exact peer arithmetic, then rechecks the
@@ -61,6 +71,7 @@ reject rather than truncate. Owner secret keys stay outside peer role objects.
 | [peer-runtime](crates/peer-runtime/README.md) | Peer-owned disk objects, public FHE evaluator, neighbor probes and real copies |
 | [storage-client](crates/storage-client/README.md) | Owner preparation, proof-first SELECT/mutations and confirmed version checks |
 | [sql-plan](crates/sql-plan/README.md) | Backend-independent SQL parser, typed statement inputs and plans |
+| [relational-types](crates/relational-types/README.md) | Typed multi-table dump import, canonical value codec and schema-bound SELECT planning |
 | [compact-query](crates/compact-query/README.md) | Complete index selection, fresh FHE projections/aggregates and checked compact updates; explicit BFV backend plus retained legacy TFHE module |
 | [bfv-query-core](crates/bfv-query-core/README.md) | Reusable owner/public-peer BFV arithmetic and wire contracts; no storage or GUI dependency |
 | [bfv-linear-circuit](crates/bfv-linear-circuit/README.md) | Canonical full-residue BFV addition statement for proof consumers |

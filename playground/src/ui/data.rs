@@ -19,7 +19,11 @@ impl Playground {
                                 ui.label(
                                     RichText::new(format!(
                                         "{} rows / v{}",
-                                        state.owner_rows.len(),
+                                        if self.catalog.is_empty() {
+                                            state.owner_rows.len()
+                                        } else {
+                                            self.catalog.iter().map(|(_, rows)| rows).sum()
+                                        },
                                         state.revision
                                     ))
                                     .small()
@@ -33,12 +37,14 @@ impl Playground {
                             && self.controls_available()
                             && self.snapshot.is_none()
                             && self.active_client.is_some();
-                        if let Some((rows, label)) = self.data_import.show(ui, can_import) {
-                            self.import_database(rows, label);
+                        if let Some((database, label)) = self.data_import.show(ui, can_import) {
+                            self.import_relational(database, label);
                         }
                         ui.add_space(8.0);
                         ui.separator();
-                        if let Some(state) = &self.snapshot {
+                        if !self.catalog.is_empty() {
+                            self.catalog_tables(ui);
+                        } else if let Some(state) = &self.snapshot {
                             self.current_table(ui, state);
                         } else {
                             ui.add_space(16.0);
@@ -51,11 +57,63 @@ impl Playground {
                             );
                         }
                         ui.add_space(16.0);
-                        egui::CollapsingHeader::new("Manual data draft")
-                            .id_salt("manual-data-draft")
-                            .show(ui, |ui| self.data_draft(ui));
+                        if self.catalog.is_empty() {
+                            egui::CollapsingHeader::new("Manual data draft")
+                                .id_salt("manual-data-draft")
+                                .show(ui, |ui| self.data_draft(ui));
+                        }
                     });
             });
+    }
+    fn catalog_tables(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            icon(ui, Icon::Database, ACCENT);
+            ui.label(RichText::new(format!("{} encrypted tables", self.catalog.len())).strong());
+        });
+        ui.label(
+            RichText::new(
+                "Choose a table to prepare a query in SQL. Results require proved peer execution.",
+            )
+            .small()
+            .color(MUTED),
+        );
+        let mut selected = None;
+        for (index, (schema, rows)) in self.catalog.iter().enumerate() {
+            egui::CollapsingHeader::new(format!("{} · {} rows", schema.name, rows))
+                .id_salt(("typed-table", index))
+                .show(ui, |ui| {
+                    if action_button(ui, "Browse in SQL", self.available()).clicked() {
+                        selected = Some(index);
+                    }
+                    egui::Grid::new(("typed-columns", index))
+                        .striped(true)
+                        .min_col_width(100.0)
+                        .show(ui, |ui| {
+                            for column in &schema.columns {
+                                ui.label(&column.name);
+                                ui.label(
+                                    RichText::new(format!("{:?}", column.data_type))
+                                        .small()
+                                        .color(MUTED),
+                                );
+                                ui.label(
+                                    RichText::new(if column.nullable {
+                                        "NULL"
+                                    } else {
+                                        "NOT NULL"
+                                    })
+                                    .small()
+                                    .color(MUTED),
+                                );
+                                ui.end_row();
+                            }
+                        });
+                });
+        }
+        if let Some(index) = selected {
+            self.select_catalog_table(index);
+            self.navigate(Tab::Sql, self.right_tab);
+        }
     }
     fn current_table(&self, ui: &mut egui::Ui, state: &LabSnapshot) {
         ui.horizontal(|ui| {

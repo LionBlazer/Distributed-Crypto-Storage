@@ -59,7 +59,10 @@ fn heads(info: &ShardInfo) -> HeadPair {
 
 // A peer's bounded heavy-operation permit can be occupied by real gossip work.
 // Only that explicit resource response is retried, never invalid proofs or signatures.
-fn call_bounded(remote: &RemotePeer, make_request: impl Fn() -> Request) -> io::Result<Response> {
+pub(super) fn call_bounded(
+    remote: &RemotePeer,
+    make_request: impl Fn() -> Request,
+) -> io::Result<Response> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
     loop {
         match remote.call(make_request()) {

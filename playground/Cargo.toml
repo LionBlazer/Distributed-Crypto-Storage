@@ -6,6 +6,7 @@ rust-version = "1.99"
 publish = false
 
 [dependencies]
+relational-types = { path = "../crates/relational-types" }
 bfv-query-proof = { path = "../crates/bfv-query-proof" }
 peer-runtime = { path = "../crates/peer-runtime" }
 peer-transport = { path = "../crates/peer-transport" }

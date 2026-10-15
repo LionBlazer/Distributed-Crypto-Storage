@@ -99,6 +99,11 @@ pub(super) fn dispatch(shared: &Arc<Shared>, request: Request) -> Result<Respons
             operation,
             ciphertext,
         } => {
+            // Typed reads have only the proved route. Do not construct a large
+            // legacy evaluator or offer an unverified fallback for this request.
+            if operation == Operation::ByteSelect {
+                return Err(RemoteError::InvalidRequest);
+            }
             let _permit = ProofPermit::acquire(&shared.proof_busy)?;
             let setup = {
                 let mut state = shared.state.lock().map_err(io_error)?;
@@ -131,6 +136,7 @@ pub(super) fn dispatch(shared: &Arc<Shared>, request: Request) -> Result<Respons
                 Operation::Update => evaluator
                     .evaluate_indexed_update(&ciphertext)
                     .map(|v| v.output),
+                Operation::ByteSelect => unreachable!("typed reads require a computation proof"),
             }
             .map_err(crypto)?;
             Ok(Response::UnverifiedCiphertext(output))

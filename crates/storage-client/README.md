@@ -8,13 +8,59 @@ evaluator answering SQL and no dependency on the playground or its fixtures.
 | Direct project dependency | Responsibility |
 | --- | --- |
 | [sql-plan](../sql-plan/README.md) | Typed statement plans, without plaintext execution |
+| [relational-types](../relational-types/README.md) | Typed schemas, complete dump validation and schema-bound SELECT plans |
 | [compact-query](../compact-query/README.md) | Complete authenticated selection, proof-first BFV completion and compact finalization |
 | [compact-store](../compact-store/README.md) | Exact trusted heads and bounded canonical formats |
 | [peer-runtime](../peer-runtime/README.md) | Remote object transfer, FHE replies, copies and metrics |
 | [bfv-query-core](../bfv-query-core/README.md) | Public parameter descriptor |
 | [version-journal](../version-journal/README.md) | Work, signatures, confirmed heads and ancestry |
 
-## Verified network path
+## Typed imported catalogs
+
+`relational::RelationalSession::import(database, participants, profile)` imports a
+validated multi-table `relational_types::ImportedDatabase` as a new encrypted
+genesis. Column names, types, NULLs, text, exact decimals, dates and binary fields
+are retained. The authenticated encrypted catalog also preserves source views,
+procedures and import notices; stored programs are metadata, not executable plans.
+Each table is a distinct bounded ciphertext shard, replicated on two peers when
+available. All tables share one owner key authority and public BFV setup.
+
+`select(sql)` supports actual table/column names, projections, typed comparisons,
+AND/OR/NOT, IN/BETWEEN, NULL predicates, ORDER BY and TOP/LIMIT. Complete per-column
+private postings are authenticated against the agreed index head; equality/range
+selection uses binary bounds over sorted postings. This is the existing explicit
+owner-online, visible-access index model, not a claim of a secret predicate circuit.
+The session retains no imported plaintext row-answer cache.
+
+The client authenticates source pages and encrypts **every original cell of each
+selected row** before the peer applies the column mask homomorphically. Unselected
+columns are zeroed in BFV; the client never prepares a projected plaintext answer
+for a peer to echo. Each block has a genuine full-residue STARK bound to the exact
+schema, SQL, initial confirmed head, table, complete ordinals, projection and block
+position/count. Empty results still require a proved encrypted operation. A second
+work-journal/freshness check precedes acceptance. Returned `Selected.version` is
+the exact confirmed head used by the proof binding, even if newer empty blocks
+appear while the query executes.
+
+The 8,191-byte BFV block size is not a row limit: arbitrary-width cells and tables
+stream over multiple blocks. Current resource budgets are 8 MiB per encoded table
+and per encrypted-index plaintext, the caller's `profile.max_shards` table count,
+one million result cells and 32 MiB projected output. Budgets reject explicitly;
+no rows are truncated except an explicit SQL TOP/LIMIT. The full source/index
+snapshot is fetched as ciphertext; only selected data pages are decrypted.
+
+Typed imported catalogs are currently immutable. INSERT/UPDATE/DELETE, joins,
+aggregates and transactions require further typed computation/transition circuits
+and are rejected before execution. The older two-column writable Session below
+remains separate; it cannot silently answer or mutate typed catalog tables.
+
+`schemas`, `shards`, `rows`, `version`, `replace_participant` and `copy_shard`
+expose catalog metadata and real custody/restart/repair operations. The core never
+starts processes or supplies local consensus parameters. Owner restart/key recovery,
+publicly verifiable AEAD-to-FHE conversion, production consensus and 50–100 ms
+full-operation latency remain unimplemented targets.
+
+## Two-column verified network path
 
 `Session::create(name, rows, participants, profile)` encrypts owner input, stores it
 on real peers, creates an Ed25519 write authority and pins the genesis/profile.
@@ -107,7 +153,7 @@ Full-query latency still exceeds the 50–100 ms target.
 
 The earlier `Database::execute` remains an unverified diagnostic path: it rejects
 with `MissingComputationProof`, and `AcceptedResult` is uninhabited. The live GUI
-uses Session. No unverified diagnostic result can convert to accepted evidence.
+uses the corresponding typed or two-column Session. No unverified diagnostic result can convert to accepted evidence.
 
 ## Verification
 
@@ -115,6 +161,7 @@ From the repository root:
 
 ```sh
 cargo test --release --locked -p storage-client --lib
+cargo test --release --locked -p storage-client --test relational -- --test-threads=1
 cargo test --release --locked -p dcs-peer --test proved_sql -- --test-threads=1 --nocapture
 cargo test --release --locked -p dcs-peer --test proved_faults -- --test-threads=1
 cargo test --release --locked -p dcs-peer --test process_transport -- --test-threads=1

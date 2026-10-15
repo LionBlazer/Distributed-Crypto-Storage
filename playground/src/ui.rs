@@ -9,6 +9,7 @@ use fhe_playground::{
     DatabaseDraft, LabSnapshot, MAX_LAB_ROWS, MAX_PEERS, NetworkSnapshot, NodeId, NodeRole,
     PRESETS, PeerConfig, QueryOutcome, format_rows, parse_rows,
 };
+use relational_types::{ImportedDatabase, TableSchema, Value};
 use sql_plan::Column;
 use std::collections::{HashMap, VecDeque};
 mod camera;
@@ -91,6 +92,8 @@ enum Control {
 pub struct Playground {
     worker: Worker,
     snapshot: Option<LabSnapshot>,
+    catalog: Vec<(TableSchema, usize)>,
+    selected_table: usize,
     network: Option<NetworkSnapshot>,
     peer_inventory: Vec<crate::process_backend::PeerProfile>,
     sql: String,
@@ -143,6 +146,8 @@ impl Playground {
         Self {
             worker,
             snapshot: None,
+            catalog: Vec::new(),
+            selected_table: 0,
             network: None,
             peer_inventory: Vec::new(),
             sql: STARTUP_SQL.into(),
@@ -298,9 +303,9 @@ impl Playground {
     fn insert_preset(&mut self, sql: &str) {
         self.sql = sql.into();
     }
-    fn import_database(&mut self, rows: Vec<fhe_playground::PlainRow>, label: String) {
+    fn import_relational(&mut self, database: ImportedDatabase, label: String) {
         self.catch_up_display();
-        if self.snapshot.is_some() {
+        if self.snapshot.is_some() || !self.catalog.is_empty() {
             self.input_error = Some(
                 "Import requires a new empty workspace; existing encrypted data was not replaced."
                     .into(),
@@ -308,11 +313,7 @@ impl Playground {
             return;
         }
         self.submit(
-            Command::Import(DatabaseDraft {
-                name: self.draft_name.clone(),
-                rows,
-                peers: self.profiles(),
-            }),
+            Command::ImportRelational(database),
             Job::Database,
             format!("Import {label}"),
         );
@@ -399,7 +400,11 @@ impl Playground {
             self.playback.omitted += self.timeline.trim_optional(|event| {
                 matches!(
                     event,
-                    Event::Snapshot(_) | Event::Network(_) | Event::Peers(_) | Event::Progress(_)
+                    Event::Snapshot(_)
+                        | Event::Catalog(_)
+                        | Event::Network(_)
+                        | Event::Peers(_)
+                        | Event::Progress(_)
                 )
             });
             self.playback.omitted += self
@@ -456,6 +461,15 @@ impl Playground {
             Event::Traffic(observation) => self.playback.observe_io(&observation),
             Event::Snapshot(snapshot) => {
                 self.snapshot = Some(snapshot);
+            }
+            Event::Catalog(catalog) => {
+                self.catalog = catalog;
+                self.selected_table = self
+                    .selected_table
+                    .min(self.catalog.len().saturating_sub(1));
+                if !self.catalog.is_empty() && self.sql == STARTUP_SQL {
+                    self.select_catalog_table(self.selected_table);
+                }
             }
             Event::Peers(peers) => {
                 self.peer_inventory = peers;
@@ -567,6 +581,9 @@ impl Playground {
                 }
                 if pending.job == Job::Query {
                     self.result_tab = if matches!(
+                        outcome.as_ref().ok().map(Outcome::terminal),
+                        Some(Outcome::TypedSelected(_))
+                    ) || matches!(
                         outcome.as_ref().ok().and_then(Outcome::query),
                         Some(
                             QueryOutcome::Aggregate { .. }
@@ -599,6 +616,11 @@ impl Playground {
                 ) = outcome.as_ref().ok().map(Outcome::terminal)
                 {
                     revision = version.height;
+                }
+                if let Some(Outcome::TypedSelected(selected)) =
+                    outcome.as_ref().ok().map(Outcome::terminal)
+                {
+                    revision = selected.version.height;
                 }
                 self.history.push_front(Record {
                     job: pending.job,
@@ -736,18 +758,24 @@ impl Playground {
                     ui.menu_button("Presets", |ui| {
                         ui.spacing_mut().item_spacing.y = 3.0;
                         ui.spacing_mut().interact_size.y = 24.0;
-                        let mut group = None;
-                        for preset in PRESETS {
-                            if group != Some(preset.group) {
-                                if group.is_some() {
-                                    ui.separator();
+                        if !self.catalog.is_empty() {
+                            self.catalog_presets(ui);
+                        } else {
+                            let mut group = None;
+                            for preset in PRESETS {
+                                if group != Some(preset.group) {
+                                    if group.is_some() {
+                                        ui.separator();
+                                    }
+                                    ui.label(
+                                        RichText::new(preset.group.label()).small().color(MUTED),
+                                    );
+                                    group = Some(preset.group);
                                 }
-                                ui.label(RichText::new(preset.group.label()).small().color(MUTED));
-                                group = Some(preset.group);
-                            }
-                            if ui.button(preset.name).on_hover_text(preset.sql).clicked() {
-                                self.insert_preset(preset.sql);
-                                ui.close();
+                                if ui.button(preset.name).on_hover_text(preset.sql).clicked() {
+                                    self.insert_preset(preset.sql);
+                                    ui.close();
+                                }
                             }
                         }
                     });
@@ -878,6 +906,13 @@ impl Playground {
                 } else if let Some(record) =
                     self.history.iter().find(|record| record.job == Job::Query)
                 {
+                    if let Some(Outcome::TypedSelected(selected)) = record.outcome.as_ref().ok().map(Outcome::terminal) {
+                        ui.label(RichText::new(format!("Encrypted SELECT · verified · v{} · {} proof blocks", selected.version.height, selected.proof_blocks)).small().color(GREEN))
+                            .on_hover_text("The client checked every FHE projection proof, complete authenticated indexed selection and a confirmed agreed head before accepting this result. This local playground uses the explicit test work profile.");
+                        typed_result_table(ui, &selected.columns, &selected.rows);
+                        ui.label(RichText::new(format!("{} rows", selected.rows.len())).small().color(MUTED));
+                        return;
+                    }
                     match record.outcome.as_ref().ok().and_then(Outcome::query) {
                         Some(QueryOutcome::Aggregate { count, sum, .. }) => {
                             result_table(ui, &["COUNT(*)", "SUM(amount)"], &[vec![*count, *sum]]);
@@ -933,6 +968,40 @@ fn result_table(ui: &mut egui::Ui, columns: &[&str], rows: &[Vec<u32>]) {
         });
 }
 
+fn typed_result_table(ui: &mut egui::Ui, columns: &[String], rows: &[relational_types::Row]) {
+    egui::Grid::new("typed-query-result-table")
+        .striped(true)
+        .min_col_width(90.0)
+        .max_col_width(260.0)
+        .show(ui, |ui| {
+            ui.label(RichText::new("#").strong().color(MUTED));
+            for column in columns {
+                ui.label(RichText::new(column).strong());
+            }
+            ui.end_row();
+            for (index, row) in rows.iter().enumerate() {
+                ui.label(RichText::new((index + 1).to_string()).color(MUTED));
+                for value in row {
+                    let text = match value {
+                        Value::Binary(bytes) => format!("BINARY · {} bytes", bytes.len()),
+                        _ => value.to_string(),
+                    };
+                    ui.add(
+                        egui::Label::new(RichText::new(text).monospace().color(
+                            if matches!(value, Value::Null) {
+                                MUTED
+                            } else {
+                                TEXT
+                            },
+                        ))
+                        .truncate(),
+                    );
+                }
+                ui.end_row();
+            }
+        });
+}
+
 impl eframe::App for Playground {
     fn logic(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll();
@@ -953,6 +1022,17 @@ fn outcome_message(outcome: &Result<Outcome, String>) -> (String, Color32) {
     }
 }
 fn outcome_summary(outcome: &Outcome) -> (String, Color32) {
+    if let Outcome::TypedSelected(selected) = outcome.terminal() {
+        return (
+            format!(
+                "Selected {} rows · confirmed v{} · {} proof blocks",
+                selected.rows.len(),
+                selected.version.height,
+                selected.proof_blocks
+            ),
+            GREEN,
+        );
+    }
     if let Outcome::Script {
         completed, last, ..
     } = outcome
@@ -1066,3 +1146,7 @@ mod timeline_tests;
 
 #[cfg(test)]
 mod peer_inventory_tests;
+
+#[cfg(test)]
+#[path = "ui/typed_catalog_tests.rs"]
+mod typed_catalog_tests;

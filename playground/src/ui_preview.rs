@@ -23,6 +23,8 @@ fn export_ui_previews() {
         ("tabs-aligned", Tab::Sql, 3, [1500, 900]),
         ("tabs-narrow", Tab::Sql, 16, [1180, 720]),
         ("data", Tab::Data, 3, [1500, 900]),
+        ("typed-catalog", Tab::Data, 3, [1500, 900]),
+        ("typed-sql", Tab::Sql, 3, [1500, 900]),
         ("empty-workspace", Tab::Data, 3, [1500, 900]),
         ("empty-sql", Tab::Sql, 3, [1500, 900]),
         ("network", Tab::Sql, 8, [1500, 900]),
@@ -47,6 +49,24 @@ fn export_ui_previews() {
             app.network = Some(network(0, 1));
             app.draft_rows.clear();
             app.draft_name = "database".into();
+        }
+        if name.starts_with("typed-") {
+            // Public owner schema metadata fixture only. No peer response or
+            // computation proof is fabricated for visual review.
+            let fixture = relational_types::import_database_dump(
+                "CREATE TABLE Customers (CustomerID NCHAR(5) NOT NULL, CompanyName NVARCHAR(80) NOT NULL, City NVARCHAR(40) NULL); CREATE TABLE Orders (OrderID INT NOT NULL, CustomerID NCHAR(5) NULL, Freight MONEY NULL); CREATE TABLE [Order Details] (OrderID INT NOT NULL, ProductID INT NOT NULL, UnitPrice MONEY NULL);",
+                relational_types::ImportLimits::default(),
+            ).unwrap();
+            app.catalog = fixture
+                .tables
+                .into_iter()
+                .map(|table| (table.schema, table.rows.len()))
+                .collect();
+            app.select_catalog_table(0);
+            if let Some(state) = &mut app.snapshot {
+                state.name = "Public typed schema fixture".into();
+                state.owner_rows.clear();
+            }
         }
         if name == "network-map" {
             app.network_view = NetworkView::Map;

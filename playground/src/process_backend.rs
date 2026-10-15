@@ -197,6 +197,7 @@ pub(super) struct ProcessBackend {
     next_peer: usize,
     next_node: NodeId,
     database: Option<Session>,
+    relational: Option<storage_client::relational::RelationalSession>,
     retained_databases: Vec<Session>,
     owner_rows: Vec<compact_query::PlainRow>,
     desired: usize,
@@ -239,6 +240,7 @@ impl ProcessBackend {
             next_peer: 1,
             next_node: 2,
             database: None,
+            relational: None,
             retained_databases: Vec::new(),
             owner_rows: vec![],
             desired: 1,
@@ -381,9 +383,9 @@ impl ProcessBackend {
         }
     }
     pub fn create(&mut self, draft: DatabaseDraft) -> Result<(), LabError> {
-        if draft.rows.len() > 128 {
+        if self.relational.is_some() {
             return Err(error(
-                "The current encrypted database import permits at most 128 rows",
+                "An imported typed catalog already exists; it was not replaced",
             ));
         }
         if !self.retained_databases.is_empty() {
@@ -437,19 +439,97 @@ impl ProcessBackend {
         }
         Ok(result)
     }
+    #[cfg(test)]
     pub fn import(&mut self, draft: DatabaseDraft) -> Result<(), LabError> {
-        if self.database.is_some() {
+        if self.database.is_some() || self.relational.is_some() {
             return Err(error(
                 "A database already exists. Import requires a new empty workspace; existing encrypted data was not replaced.",
             ));
         }
         self.create(draft)
     }
+    pub fn import_relational(
+        &mut self,
+        database: relational_types::ImportedDatabase,
+    ) -> Result<(), LabError> {
+        if self.database.is_some() || self.relational.is_some() {
+            return Err(error(
+                "Import requires an empty workspace; existing encrypted data was not replaced",
+            ));
+        }
+        if self.peers.is_empty() {
+            for id in 1..=3 {
+                self.add_peer(default_peer_config(id))?;
+            }
+        }
+        let participants = self
+            .peers
+            .iter_mut()
+            .filter_map(|(id, peer)| {
+                peer.process.running().then(|| Participant {
+                    id: *id as u64,
+                    remote: peer.remote.clone(),
+                })
+            })
+            .collect();
+        let session = storage_client::relational::RelationalSession::import(
+            database,
+            participants,
+            playground_profile(),
+        )
+        .map_err(error)?;
+        self.desired = if self.peers.len() > 1 { 2 } else { 1 };
+        self.relational = Some(session);
+        self.owner_rows.clear();
+        self.refresh();
+        Ok(())
+    }
+    pub fn catalog(&self) -> Vec<(relational_types::TableSchema, usize)> {
+        self.relational
+            .as_ref()
+            .map(|db| {
+                db.schemas()
+                    .into_iter()
+                    .zip(db.shards().iter().map(|s| s.rows))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+    pub fn has_relational(&self) -> bool {
+        self.relational.is_some()
+    }
+    pub fn execute_typed(
+        &mut self,
+        client: NodeId,
+        sql: &str,
+    ) -> Result<storage_client::relational::Selected, LabError> {
+        if !self.clients.contains_key(&client) {
+            return Err(error("Requesting client session was removed"));
+        }
+        self.session.store(client, Ordering::Release);
+        self.relational
+            .as_mut()
+            .ok_or(LabError::NoDatabase)?
+            .select(sql)
+            .map_err(error)
+    }
+    fn shards(&self) -> Vec<storage_client::ShardInfo> {
+        self.relational
+            .as_ref()
+            .map(|db| db.shards())
+            .or_else(|| self.database.as_ref().map(|db| db.shards()))
+            .unwrap_or_default()
+    }
     pub fn execute_sql(
         &mut self,
         client: NodeId,
         sql: &str,
     ) -> Result<storage_client::ScriptResult, LabError> {
+        if self.relational.is_some() {
+            return Err(error(
+                "Use the typed SQL execution path for the imported catalog",
+            ));
+        }
         if !self.clients.contains_key(&client) {
             return Err(error("Requesting client session was removed"));
         }
@@ -556,6 +636,13 @@ impl ProcessBackend {
             if let Some(db) = &mut self.database {
                 db.replace_participant(Participant {
                     id: id as u64,
+                    remote: remote.clone(),
+                })
+                .map_err(error)?;
+            }
+            if let Some(db) = &mut self.relational {
+                db.replace_participant(Participant {
+                    id: id as u64,
                     remote,
                 })
                 .map_err(error)?;
@@ -593,9 +680,12 @@ impl ProcessBackend {
         self.repair_to(self.desired)
     }
     fn repair_to(&mut self, copies: usize) -> Result<(usize, usize), LabError> {
-        let db = self.database.as_mut().ok_or(LabError::NoDatabase)?;
+        if self.database.is_none() && self.relational.is_none() {
+            return Err(LabError::NoDatabase);
+        }
+        let shards = self.shards();
         let mut total = 0;
-        for shard in db.shards() {
+        for shard in shards {
             let mut live: Vec<u64> = shard
                 .holders
                 .iter()
@@ -616,16 +706,19 @@ impl ProcessBackend {
                     break;
                 }
                 if !live.contains(&(*id as u64)) && peer.process.running() {
-                    if db
-                        .copy_shard(
-                            shard.id,
-                            Participant {
-                                id: *id as u64,
-                                remote: peer.remote.clone(),
-                            },
-                        )
-                        .is_err()
-                    {
+                    let target = Participant {
+                        id: *id as u64,
+                        remote: peer.remote.clone(),
+                    };
+                    let copied = if let Some(db) = &mut self.relational {
+                        db.copy_shard(shard.id, target)
+                    } else {
+                        self.database
+                            .as_mut()
+                            .expect("checked database")
+                            .copy_shard(shard.id, target)
+                    };
+                    if copied.is_err() {
                         continue;
                     }
                     peer.status = Some(peer.remote.status().map_err(error)?);
@@ -753,8 +846,13 @@ impl ProcessBackend {
         }
     }
     pub fn snapshot(&self) -> Option<LabSnapshot> {
-        let db = self.database.as_ref()?;
-        let shards = db.shards();
+        let (name, revision) = if let Some(db) = &self.relational {
+            (db.name(), db.version().height)
+        } else {
+            let db = self.database.as_ref()?;
+            (db.name(), db.version().height)
+        };
+        let shards = self.shards();
         let peers = self
             .peers
             .iter()
@@ -779,7 +877,15 @@ impl ProcessBackend {
                     id: *id,
                     config: p.config.clone(),
                     online: p.status.is_some(),
-                    rows: objects.iter().map(|o| o.rows as usize).sum(),
+                    rows: if self.relational.is_some() {
+                        shards
+                            .iter()
+                            .filter(|s| objects.iter().any(|o| o.id == s.object && o.available))
+                            .map(|s| s.rows)
+                            .sum()
+                    } else {
+                        objects.iter().map(|o| o.rows as usize).sum()
+                    },
                     logical_bytes: objects.iter().map(|o| o.logical_bytes as usize).sum(),
                     data_bytes: objects.iter().map(|o| o.data_bytes as usize).sum(),
                     index_bytes: objects.iter().map(|o| o.index_bytes as usize).sum(),
@@ -856,8 +962,8 @@ impl ProcessBackend {
             .into_iter()
             .collect();
         Some(LabSnapshot {
-            name: db.name().into(),
-            revision: db.version().height,
+            name: name.into(),
+            revision,
             owner_rows: self.owner_rows.clone(),
             peers,
             replication: Some(ReplicationInfo {
@@ -981,13 +1087,16 @@ mod tests {
     #[test]
     #[ignore = "starts owned peer daemons; build dcs-peer and set DCS_PEER_BIN"]
     fn real_process_views_follow_verified_sql_copies_failover_and_restart() {
-        // Public SQL import input; the same preflight used by the client UI.
-        let rows = crate::samples::prepare_import(&format!(
-            "{} INSERT INTO records(age, amount) VALUES (18,20),(42,30);",
-            crate::samples::SUPPORTED_SCHEMA
-        ))
-        .unwrap()
-        .rows;
+        let rows = vec![
+            compact_query::PlainRow {
+                age: 18,
+                amount: 20,
+            },
+            compact_query::PlainRow {
+                age: 42,
+                amount: 30,
+            },
+        ];
         let mut backend = ProcessBackend::new().unwrap();
         backend
             .create(DatabaseDraft {
@@ -1331,17 +1440,21 @@ mod tests {
     #[test]
     #[ignore = "starts owned peer daemons; build dcs-peer and set DCS_PEER_BIN"]
     fn validated_import_creates_real_ciphertext_and_never_replaces_an_existing_database() {
-        let imported = crate::samples::prepare_import(&format!(
-            "{} INSERT INTO records VALUES (18,20),(42,30);",
-            crate::samples::SUPPORTED_SCHEMA
-        ))
-        .unwrap();
         let mut backend = ProcessBackend::new().unwrap();
 
         backend
             .import(DatabaseDraft {
                 name: "imported".into(),
-                rows: imported.rows,
+                rows: vec![
+                    compact_query::PlainRow {
+                        age: 18,
+                        amount: 20,
+                    },
+                    compact_query::PlainRow {
+                        age: 42,
+                        amount: 30,
+                    },
+                ],
                 peers: vec![default_peer_config(1), default_peer_config(2)],
             })
             .unwrap();
@@ -1382,6 +1495,112 @@ mod tests {
         assert_eq!(backend.database.as_ref().unwrap().genesis(), &genesis);
         assert_eq!(backend.database.as_ref().unwrap().version(), version);
         assert_eq!(backend.owner_rows.len(), 2);
+    }
+
+    #[test]
+    #[ignore = "starts owned peer daemons; build dcs-peer and set DCS_PEER_BIN"]
+    fn official_northwind_import_and_typed_select_use_independent_peer_processes() {
+        if let Some(directory) = std::env::var_os("DCS_TEST_PROOF_KERNEL_DIR") {
+            let backend =
+                bfv_query_proof::initialize_backend(&std::path::PathBuf::from(directory)).unwrap();
+            eprintln!("Client proof backend: {backend:?}");
+        }
+        let path = std::env::var("DCS_NORTHWIND_SQL")
+            .expect("set the path of the official downloaded Microsoft instnwnd.sql");
+        let sql = std::fs::read_to_string(path).unwrap();
+        let prepared = crate::samples::prepare_import(&sql).expect("complete official dump");
+        assert_eq!(prepared.database.tables.len(), 13);
+        assert_eq!(prepared.database.row_count(), 3308);
+        let detail_schema = prepared
+            .database
+            .table("Order Details")
+            .unwrap()
+            .schema
+            .clone();
+        let expected_details = prepared
+            .database
+            .table("Order Details")
+            .unwrap()
+            .rows
+            .clone();
+        let mut backend = ProcessBackend::new().unwrap();
+        let imported = Instant::now();
+        backend.import_relational(prepared.database).unwrap();
+        eprintln!("Northwind encrypted import: {:?}", imported.elapsed());
+        let pids: std::collections::BTreeSet<_> = backend
+            .peers
+            .values()
+            .map(|p| p.process.pid().unwrap())
+            .collect();
+        assert_eq!(pids.len(), 3);
+        assert!(!pids.contains(&std::process::id()));
+        assert_eq!(
+            backend
+                .catalog()
+                .iter()
+                .map(|(_, rows)| rows)
+                .sum::<usize>(),
+            3308
+        );
+        assert!(
+            backend.owner_rows.is_empty(),
+            "no plaintext imported answer cache"
+        );
+
+        let answer=backend.execute_typed(1,"SELECT CustomerID, CompanyName FROM Customers WHERE Country = 'Germany' ORDER BY CustomerID;").unwrap();
+        eprintln!(
+            "German customers: {:?}, {} proof blocks",
+            answer.elapsed, answer.proof_blocks
+        );
+        assert_eq!(answer.rows.len(), 11);
+        assert_eq!(
+            answer.rows[0][0],
+            relational_types::Value::Text("ALFKI".into())
+        );
+        assert_eq!(answer.columns, ["CustomerID", "CompanyName"]);
+
+        let answer = backend
+            .execute_typed(1, "SELECT * FROM [Order Details];")
+            .unwrap();
+        eprintln!(
+            "All order details: {:?}, {} rows, {} proof blocks",
+            answer.elapsed,
+            answer.rows.len(),
+            answer.proof_blocks
+        );
+        assert_eq!(answer.rows, expected_details);
+        assert_eq!(answer.rows.len(), 2155);
+        assert!(answer.proof_blocks > 1);
+        assert_eq!(
+            answer.columns,
+            detail_schema
+                .columns
+                .iter()
+                .map(|c| c.name.clone())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            backend
+                .snapshot()
+                .unwrap()
+                .peers
+                .iter()
+                .map(|p| p.rows)
+                .sum::<usize>()
+                >= 3308
+        );
+
+        let answer=backend.execute_typed(1,"SELECT ProductID, ProductName, UnitPrice FROM Products WHERE UnitPrice >= 50 ORDER BY UnitPrice DESC;").unwrap();
+        assert!(!answer.rows.is_empty());
+        assert_eq!(
+            answer.rows[0][1],
+            relational_types::Value::Text("Côte de Blaye".into())
+        );
+        assert!(
+            backend
+                .execute_typed(1, "UPDATE Products SET UnitPrice = 1;")
+                .is_err()
+        );
     }
 
     #[test]

@@ -9,7 +9,8 @@ executables. The root Cargo default members select this layer only.
 | --- | --- | --- |
 | [peer-transport](peer-transport/README.md) | Authenticated TLS/TCP and bounded frames | None |
 | [peer-runtime](peer-runtime/README.md) | Peer-owned custody, proving, work/journal RPC and copies | peer-transport, compact-store, bfv-query-core, bfv-query-proof, version-journal |
-| [storage-client](storage-client/README.md) | Proof-first SQL acceptance, owner-finalized writes and confirmed freshness | peer-runtime, compact-query, compact-store, sql-plan, bfv-query-core, version-journal |
+| [storage-client](storage-client/README.md) | Proof-first SQL acceptance, typed catalogs, owner-finalized writes and confirmed freshness | peer-runtime, compact-query, compact-store, sql-plan, relational-types, bfv-query-core, version-journal |
+| [relational-types](relational-types/README.md) | Owner-side typed schema, lossless SQL dump validation and SELECT plans | None |
 | [sql-plan](sql-plan/README.md) | Parse the supported SQL subset into typed plans | None |
 | [compact-store](compact-store/README.md) | Owner keys, encrypted pages and authenticated version roots | None |
 | [bfv-linear-circuit](bfv-linear-circuit/README.md) | Canonical full-residue BFV addition relation for proof consumers | None |

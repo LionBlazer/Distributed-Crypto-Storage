@@ -36,6 +36,9 @@ pub enum Operation {
     Select,
     Insert,
     Update,
+    /// Read-only typed byte projection. Its request binds the original encrypted
+    /// table/page and schema; it is never a permitted journal mutation operation.
+    ByteSelect,
 }
 #[derive(Serialize, Deserialize)]
 pub enum Request {

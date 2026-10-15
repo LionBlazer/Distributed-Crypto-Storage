@@ -6,7 +6,7 @@ use std::{
 };
 
 use bfv_query_core::{PublicUpdateEvaluator, PublicUpdateParameters};
-use compact_store::{Commitment, Limits};
+use compact_store::Commitment;
 use sha2::{Digest, Sha256};
 use version_journal::{HeadPair, ShardState, TransitionStatement, TransitionVerifier};
 
@@ -327,6 +327,7 @@ pub(crate) fn circuit_request(
         Operation::Select => evaluator.select_circuit_request(request),
         Operation::Insert => evaluator.insert_circuit_request(request),
         Operation::Update => evaluator.circuit_request(request),
+        Operation::ByteSelect => evaluator.byte_select_circuit_request(request),
         Operation::Aggregate => return Err(invalid()),
     }
     .map_err(crypto)
@@ -393,8 +394,8 @@ fn check_head_change(
     database: [u8; 16],
 ) -> Result<(), RemoteError> {
     for (before, after, data) in [(old.data, new.data, true), (old.index, new.index, false)] {
-        let old = Commitment::decode(&before, Limits::default()).map_err(crypto)?;
-        let new = Commitment::decode(&after, Limits::default()).map_err(crypto)?;
+        let old = Commitment::decode(&before, crate::store::custody_limits()).map_err(crypto)?;
+        let new = Commitment::decode(&after, crate::store::custody_limits()).map_err(crypto)?;
         if old.database() != database
             || new.database() != database
             || old.key_domain() != new.key_domain()
@@ -484,6 +485,37 @@ mod tests {
         assert!(manifest.encode().is_err());
     }
     #[test]
+    fn a_proved_read_can_never_be_encoded_as_a_database_mutation() {
+        let mut manifest = manifest();
+        for operation in [
+            Operation::Select,
+            Operation::ByteSelect,
+            Operation::Aggregate,
+        ] {
+            manifest.operation = operation;
+            assert!(matches!(
+                manifest.encode(),
+                Err(RemoteError::InvalidRequest)
+            ));
+        }
+
+        // These wire operation tags belong only to actual mutating circuits.
+        // An invented read tag must also fail when bypassing the public encoder.
+        let mut bytes = MutationManifest {
+            operation: Operation::Update,
+            ..manifest
+        }
+        .encode()
+        .unwrap();
+        for tag in [0, 3, 4, u8::MAX] {
+            bytes[40] = tag;
+            assert!(matches!(
+                MutationManifest::decode(&bytes),
+                Err(RemoteError::InvalidRequest)
+            ));
+        }
+    }
+    #[test]
     fn hostile_manifest_lengths_and_trailing_data_fail_before_allocation() {
         let bytes = manifest().encode().unwrap();
         for length in 0..bytes.len() {
@@ -559,6 +591,58 @@ mod tests {
         let end = wrong_proof.proof.len() - 1;
         wrong_proof.proof[end] ^= 1;
         assert!(verifier.verify_arithmetic(&input, &wrong_proof).is_err());
+        assert_eq!(verifier.verified.lock().unwrap().entries.len(), 1);
+    }
+    #[test]
+    fn typed_byte_reads_require_their_exact_proved_operation_and_original_request() {
+        use bfv_query_core::{Geometry, Owner, QueryContext};
+        // Public fixture bytes stand in for an owner's authenticated page. This
+        // boundary proves arithmetic; catalog completeness/freshness is checked
+        // independently by the storage client before accepting a SQL result.
+        let (owner, setup) = Owner::generate(Geometry::Rows256).unwrap();
+        let verifier = JobVerifier::new(setup.update_parameters().unwrap()).unwrap();
+        let prepared = owner
+            .prepare_byte_select(
+                QueryContext::new([1; 16], [2; 112], [3; 112]),
+                [4; 32],
+                &[0, 127, 128, 255, b'A', b'B'],
+                &[true, true, true, true, false, false],
+            )
+            .unwrap();
+
+        let input = verifier
+            .circuit_request(Operation::ByteSelect, &prepared.request)
+            .unwrap();
+        let genuine = bfv_query_proof::prove(&input).unwrap();
+        let reply = ProofReply {
+            output: genuine.output().to_vec(),
+            proof: genuine.proof().to_vec(),
+        };
+        verifier.verify_arithmetic(&input, &reply).unwrap();
+
+        for wrong in [
+            Operation::Select,
+            Operation::Insert,
+            Operation::Update,
+            Operation::Aggregate,
+        ] {
+            assert!(verifier.circuit_request(wrong, &prepared.request).is_err());
+        }
+        let other = owner
+            .prepare_byte_select(
+                QueryContext::new([1; 16], [2; 112], [3; 112]),
+                [5; 32],
+                &[0, 127, 128, 255, b'A', b'B'],
+                &[true, true, true, true, false, false],
+            )
+            .unwrap();
+        let rebound = verifier
+            .circuit_request(Operation::ByteSelect, &other.request)
+            .unwrap();
+        assert!(verifier.verify_arithmetic(&rebound, &reply).is_err());
+        let mut tampered = reply;
+        tampered.output[40] ^= 1;
+        assert!(verifier.verify_arithmetic(&input, &tampered).is_err());
         assert_eq!(verifier.verified.lock().unwrap().entries.len(), 1);
     }
     #[test]

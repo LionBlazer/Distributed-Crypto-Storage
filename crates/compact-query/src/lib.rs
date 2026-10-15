@@ -4,6 +4,8 @@
 #![forbid(unsafe_code)]
 #[cfg(feature = "bfv-experiment")]
 pub mod bfv;
+#[cfg(feature = "bfv-experiment")]
+pub mod byte_select;
 #[cfg(feature = "tfhe-backend")]
 mod evaluator;
 mod index;

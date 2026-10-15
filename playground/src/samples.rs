@@ -3,16 +3,16 @@
 //! Downloaded SQL is input data, never a script executed by the host. A prepared
 //! import retains every validated literal row. The worker may initialize a new
 //! encrypted database genesis from owner input, never replace an existing database
-//! or use those rows to answer SQL. Reads and later writes keep Session proofs.
-use compact_query::PlainRow;
+//! or use those rows to answer SQL. Accepted queries remain proof-checked;
+//! unsupported typed transitions are rejected by the storage client.
+use relational_types::{ImportLimits, ImportedDatabase, import_database_dump};
 use std::{fs::File, io::Read, time::Duration};
-use storage_client::{SqlScript, SqlStatement};
 
 pub const MAX_DUMP_BYTES: usize = 8 * 1024 * 1024;
-pub const MAX_IMPORT_ROWS: usize = 128;
+#[cfg(test)]
 pub const SUPPORTED_SCHEMA: &str =
     "CREATE TABLE records (age TINYINT UNSIGNED NOT NULL, amount SMALLINT UNSIGNED NOT NULL);";
-const SCHEMA_NOTE: &str = "Full import requires multiple tables, text/decimal/date types and SQL constraints, which the encrypted engine does not yet support. Download and inspect only; nothing is silently converted.";
+const SCHEMA_NOTE: &str = "Typed tables are encrypted on import. SELECT uses authenticated indexes and proved FHE projection. Unsupported SQL is rejected; imported views and procedures are metadata, not executable queries.";
 
 #[derive(Clone, Copy, Debug)]
 pub struct SampleDatabase {
@@ -136,184 +136,114 @@ fn decode_dump(sample_id: String, bytes: Vec<u8>) -> Result<DownloadedDump, Stri
     })
 }
 
-/// Fully validated owner input for a new encrypted genesis. These rows may be
-/// supplied to Session::create only for a new database. They are never a peer SQL
-/// answer source or a replacement for proof-checked mutations of existing state.
+/// Fully validated typed owner input for a new encrypted genesis. No table or row
+/// is truncated to fit the historical age/amount experiment.
 #[derive(Debug)]
 pub struct PreparedImport {
     pub sql: String,
-    pub rows: Vec<PlainRow>,
-    /// Counts lowered single-row INSERT operations as separate statements.
+    pub database: ImportedDatabase,
+    /// Informational count of imported tables and rows; not executed SQL operations.
     pub statements: usize,
 }
 
-/// Validate the entire dump with the same parser used by the SQL console.
-///
-/// A dump creates exactly the currently supported table, followed by INSERTs.
-/// Comments, IF NOT EXISTS, case differences and multi-row VALUES use the shared
-/// script grammar. Unsupported trailing statements reject the entire input before
-/// any mutation; no columns, constraints, records or tables are silently dropped.
-/// This preflight has no storage handle. The caller must explicitly create a new
-/// encrypted genesis after it succeeds; it must reject an existing database rather
-/// than silently replacing it or applying a partially validated dump.
+/// Parse the complete source with the typed importer before starting network work.
+/// SQL installation directives are interpreted as import format metadata; external
+/// host programs are never invoked. Unsupported schema/values fail as a whole.
 pub fn prepare_import(sql: &str) -> Result<PreparedImport, String> {
     if sql.len() > MAX_DUMP_BYTES {
         return Err("SQL dump exceeds the 8 MiB client input limit".into());
     }
-    let script = SqlScript::parse(sql).map_err(|error| format!("Not imported: {error}"))?;
-    let mut statements = script.statements().iter();
-    if !matches!(statements.next(), Some(SqlStatement::CreateTable { .. })) {
-        return Err("SQL import must begin with CREATE TABLE records; nothing was imported".into());
-    }
-    let mut rows = Vec::new();
-    for statement in statements {
-        let SqlStatement::Query {
-            plan: sql_plan::QueryPlan::Insert { row },
-            ..
-        } = statement
-        else {
-            return Err("SQL import accepts one CREATE TABLE followed only by INSERT statements; nothing was imported".into());
-        };
-        rows.push(PlainRow {
-            age: row.age,
-            amount: row.amount,
-        });
-    }
-    if rows.len() > MAX_IMPORT_ROWS {
-        return Err(format!(
-            "SQL dump exceeds the current encrypted import limit of {MAX_IMPORT_ROWS} rows; nothing was imported"
-        ));
-    }
+    let database = import_database_dump(sql, ImportLimits::default())
+        .map_err(|error| format!("Not imported: {error}"))?;
+    let statements = database.tables.len() + database.row_count();
     Ok(PreparedImport {
         sql: sql.into(),
-        rows,
-        statements: script.statement_count(),
+        database,
+        statements,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use relational_types::Value;
 
     #[test]
-    fn compatible_dump_preserves_every_literal_for_new_encrypted_genesis() {
-        let sql = format!(
-            "\u{feff}-- Owner-provided SQL\n{SUPPORTED_SCHEMA}\nINSERT INTO records (age, amount) VALUES (0, 0), (255, 65535); /* complete */ INSERT INTO records VALUES (18, 20);"
-        );
+    fn typed_import_preserves_multiple_tables_null_text_and_exact_money() {
+        let sql = "CREATE TABLE Customers (CustomerID NCHAR(5) NOT NULL PRIMARY KEY, CompanyName NVARCHAR(80) NULL); INSERT INTO Customers VALUES (N'ALFKI',N'Alfreds'),(N'EMPTY',NULL); CREATE TABLE Products (ProductID INT NOT NULL, UnitPrice MONEY NULL); INSERT INTO Products VALUES (1,18.5);";
 
-        let prepared = prepare_import(&sql).expect("supported input");
+        let prepared = prepare_import(sql).expect("typed public fixture");
 
         assert_eq!(prepared.sql, sql);
+        assert_eq!(prepared.database.tables.len(), 2);
+        assert_eq!(prepared.database.row_count(), 3);
         assert_eq!(
-            prepared.rows,
-            vec![
-                PlainRow { age: 0, amount: 0 },
-                PlainRow {
-                    age: 255,
-                    amount: 65535
-                },
-                PlainRow {
-                    age: 18,
-                    amount: 20
-                }
-            ]
-        );
-        assert_eq!(prepared.statements, 4);
-    }
-
-    #[test]
-    fn console_and_dump_share_create_comments_and_insert_preflight() {
-        let sql = "/* schema */ create table if not exists records (age tinyint unsigned not null, amount smallint unsigned not null); -- rows\ninsert into records values (18,20),(42,30);";
-
-        let prepared = prepare_import(sql).expect("shared console grammar");
-
-        assert_eq!(
-            prepared.rows,
-            vec![
-                PlainRow {
-                    age: 18,
-                    amount: 20
-                },
-                PlainRow {
-                    age: 42,
-                    amount: 30
-                }
-            ]
+            prepared.database.table("Customers").unwrap().rows[1][1],
+            Value::Null
         );
         assert_eq!(
-            SqlScript::parse(&prepared.sql).unwrap().statement_count(),
-            3
+            prepared.database.table("Products").unwrap().rows[0][1],
+            Value::Decimal {
+                unscaled: 185000,
+                scale: 4
+            }
         );
     }
 
     #[test]
-    fn unsupported_trailing_statement_rejects_the_entire_import() {
-        let sql = format!(
-            "{SUPPORTED_SCHEMA} INSERT INTO records VALUES (18,20); CREATE TABLE customers (name TEXT);"
-        );
-
-        assert!(prepare_import(&sql).is_err());
-    }
-
-    #[test]
-    fn dump_preflight_does_not_turn_reads_or_updates_into_imported_rows() {
-        for tail in [
-            "SELECT * FROM records;",
-            "UPDATE records SET amount = amount + 1;",
-        ] {
-            let sql = format!("{SUPPORTED_SCHEMA} {tail}");
-            assert!(prepare_import(&sql).unwrap_err().contains("only by INSERT"));
-        }
-        assert!(
-            prepare_import("INSERT INTO records VALUES (18,20);")
-                .unwrap_err()
-                .contains("begin with CREATE")
-        );
-    }
-
-    #[test]
-    fn incompatible_schema_and_values_are_not_reinterpreted_or_truncated() {
-        for sql in [
-            "CREATE TABLE customers (age TINYINT UNSIGNED NOT NULL, amount SMALLINT UNSIGNED NOT NULL);".into(),
-            "CREATE TABLE records (age TINYINT, amount SMALLINT);".into(),
-            format!("{SUPPORTED_SCHEMA} INSERT INTO records VALUES (256,1);"),
-            format!("{SUPPORTED_SCHEMA} INSERT INTO records VALUES (1,65536);"),
-            format!("{SUPPORTED_SCHEMA} INSERT INTO records VALUES (-1,2);"),
-            format!("{SUPPORTED_SCHEMA} INSERT INTO records VALUES (1,'2');"),
-            format!("{SUPPORTED_SCHEMA} INSERT INTO records (amount, age) VALUES (1,2);"),
-            format!("{SUPPORTED_SCHEMA} /*! DROP TABLE records; */"),
-            format!("{SUPPORTED_SCHEMA} /*M! DROP TABLE records; */"),
-            format!("{SUPPORTED_SCHEMA} /* unterminated"),
-            format!("{SUPPORTED_SCHEMA} /*/"),
-        ] {
-            assert!(prepare_import(&sql).is_err(), "accepted unsupported SQL: {sql}");
-        }
-    }
-
-    #[test]
-    fn row_and_input_bounds_fail_without_partial_output() {
-        let rows = std::iter::repeat_n("(18,20)", MAX_IMPORT_ROWS + 1)
+    fn import_keeps_every_row_beyond_the_historical_128_limit() {
+        let rows = (0..400)
+            .map(|n| format!("({n},'Customer {n}')"))
             .collect::<Vec<_>>()
             .join(",");
-        let sql = format!("{SUPPORTED_SCHEMA} INSERT INTO records VALUES {rows};");
-        assert!(prepare_import(&sql).unwrap_err().contains("128 rows"));
+        let sql = format!(
+            "CREATE TABLE Customers (ID INT NOT NULL, Name NVARCHAR(80) NOT NULL); INSERT INTO Customers VALUES {rows};"
+        );
+
+        let prepared = prepare_import(&sql).unwrap();
+
+        assert_eq!(prepared.database.row_count(), 400);
+        assert_eq!(
+            prepared.database.tables[0].rows[399][0],
+            Value::Integer(399)
+        );
+    }
+
+    #[test]
+    fn malformed_values_and_unsupported_trailing_execution_fail_without_partial_import() {
+        for sql in [
+            "CREATE TABLE Customers (ID INT NOT NULL); INSERT INTO Customers VALUES ('not an integer');",
+            "CREATE TABLE Customers (ID INT NOT NULL); EXEC xp_cmdshell 'command';",
+            "CREATE TABLE Customers (ID INT NOT NULL); INSERT INTO Customers VALUES (1); SELECT * FROM Customers;",
+            "CREATE TABLE Customers (ID INT NOT NULL); /* unterminated",
+        ] {
+            assert!(
+                prepare_import(sql).is_err(),
+                "accepted unsupported import: {sql}"
+            );
+        }
+    }
+
+    #[test]
+    fn input_bounds_and_binary_backups_fail_before_parsing_or_network_work() {
         assert!(read_bounded(std::io::repeat(b' ').take(MAX_DUMP_BYTES as u64 + 1)).is_err());
         assert!(decode_dump("local".into(), vec![0xff, 0xfe]).is_err());
         assert!(decode_dump("local".into(), b"SELECT\0".to_vec()).is_err());
     }
 
     #[test]
-    #[ignore = "downloads current public upstream SQL over HTTPS; no dataset is retained"]
-    fn public_catalog_downloads_are_sql_text_and_cannot_fake_a_supported_import() {
-        for sample in CATALOG {
-            let dump = download_sample(sample.id).expect("download official upstream SQL");
-            assert_eq!(dump.sample_id, sample.id);
-            assert!(dump.bytes > 100_000 && dump.bytes <= MAX_DUMP_BYTES);
-            assert!(dump.sql.to_ascii_uppercase().contains("CREATE TABLE"));
-            assert!(
-                prepare_import(&dump.sql).is_err(),
-                "full relational samples need missing engine/proof capabilities"
-            );
-        }
+    #[ignore = "downloads the official Northwind script over HTTPS; no dataset is retained"]
+    fn official_northwind_download_has_all_tables_and_more_than_128_rows() {
+        let dump = download_sample("northwind").expect("download official upstream SQL");
+
+        let prepared = prepare_import(&dump.sql).expect("complete typed Northwind import");
+
+        assert_eq!(prepared.database.tables.len(), 13);
+        assert_eq!(prepared.database.table("Customers").unwrap().rows.len(), 91);
+        assert_eq!(prepared.database.table("Orders").unwrap().rows.len(), 830);
+        assert_eq!(
+            prepared.database.table("Order Details").unwrap().rows.len(),
+            2155
+        );
     }
 }
