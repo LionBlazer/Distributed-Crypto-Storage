@@ -9,11 +9,15 @@ in ignored `.local/`, not in the library source tree.
   packaged with compact-store and compact-query.
 - [fhe-prototype](fhe-prototype/README.md) retains the original TFHE relational and
   compression experiment.
+- [bfv-addition-proof](bfv-addition-proof/README.md) is a standalone, pinned Plonky3
+  proof of exact BFV ciphertext addition. It verifies serialized proofs against
+  independently committed public inputs; it does not accept SQL or authorize writes.
 - Other directories keep their own manifests, reproduction scripts and README
   files. Some deliberately export pinned historical source revisions into an
   isolated local workspace; these are research candidates, not core imports.
 
-The two named packages above belong to the root workspace and are selected
-explicitly with `-p`; other probes document their standalone commands. The
+The first two packages belong to the root workspace and are selected
+explicitly with `-p`; the addition-proof experiment and other probes document their
+standalone commands. The
 [playground](../playground/README.md) is the separate interactive GUI consumer.
 Measured results and remaining limits are recorded in [research reports](../docs/).
