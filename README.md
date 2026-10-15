@@ -80,6 +80,13 @@ takes at most 316.162 ms, and the compound including readiness and a separate fr
 SELECT reaches 635.367 ms. The [full report](docs/experiment-private-bfv-update-disk.md)
 retains every slow mode and the same unverified, online-owner, local-transport limits.
 
+The separate [owner recovery candidate](experiments/owner-recovery-candidate/README.md)
+restores dropped original owners from a sealed checkpoint and reuses the same
+encrypted files and original BFV/PIR public setups. Its 66 runtime tests and two
+doctests pass; cross-process restart and durable checkpoint publication remain
+separate work. The [validation report](docs/proposal-owner-recovery-candidate.md)
+records external wrapping-key custody and the bounded three-table fixture.
+
 The integration branch is `master`. [AGENTS.md](AGENTS.md) defines task branches,
 automatic commit and push after each completed change, synchronization from master,
 and explicitly requested promotion back to master. Project skills live in

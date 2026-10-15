@@ -1,8 +1,16 @@
 # Same-owner restart: missing recovery boundary
 
-Source-only assessment; no backup implementation, keys, benchmark or recovery claim.
-The retained 1,000-table files cannot restart the same owner after its live secrets
-are lost. Recreating fixtures/keys would create another database, not recover it.
+The original source-only assessment below identifies the missing owner checkpoint
+boundary. A separate [validated candidate](proposal-owner-recovery-candidate.md)
+now restores dropped original compact/BFV/PIR owners from a sealed checkpoint in
+one process: 66 runtime tests, two doctests and strict Clippy pass. It preserves the
+same encrypted files and original public evaluation keys. Its external wrapping
+key remains in RAM; full process restart and durable publication are not established.
+
+The older retained 1,000-table files still cannot restart the same owner after their
+unsaved secrets were lost. Recreating fixtures/keys would create another database,
+not recover it. The table below describes the unchanged baseline library APIs;
+candidate adapters apply only to new isolated source copies.
 
 ## Existing state and APIs
 
