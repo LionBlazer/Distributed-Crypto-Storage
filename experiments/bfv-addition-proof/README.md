@@ -46,6 +46,19 @@ The boundary tests reuse one genuine full-profile proof and reject corruption,
 truncation, missing/trailing/oversized frames, a changed final output residue,
 omitted output data, and a rebound request identity in both matching headers.
 
+The test-only direct dependency [compact-query](../../crates/compact-query/README.md)
+uses its BFV feature with TFHE disabled. `compact_selection_boundary` creates a real
+compact encrypted table and owner-built encrypted index, authenticates the complete
+242-row exact range selection, and bridges the unchanged `PreparedUpdate::request()`
+to the arithmetic prover/verifier. It retains the opaque preparation throughout;
+there is no plaintext reconstruction of the proof inputs or call to owner-local
+`apply` as a substitute for verification. The same proof is rejected for a fresh
+pending operation, a different delta and different actual data/index heads, even
+when the claimed output's binding header is rebound to match the new request.
+Selection was already authenticated owner-side under the existing index-build
+contract; this test supplies no independently proven SQL-completeness marker,
+agreed/current head or live mutation acceptance.
+
 Measure the **whole** operation. The CLI reports independent verifier public
 preprocessing, cryptographic verification, their sum and full decoding-inclusive
 verification separately. Milliseconds for the final verifier call alone do not

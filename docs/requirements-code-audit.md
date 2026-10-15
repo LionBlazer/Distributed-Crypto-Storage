@@ -115,8 +115,8 @@ actual result is empty, follow authenticated selection and encrypted evaluation.
 | 4, 6, 10 | Storage/RAM/latency measurements apply to their recorded configurations. They do not establish a general 2x ratio, a whole-process 2 GB bound, persistent 10–30 GB peers or a 50–100 ms SQL/WAN guarantee. |
 | 8 | Repair uses actual ciphertext survivors, but fault-domain labels are supplied facts. No proof of independent domains, malicious availability or durable GUI/key recovery is implemented. |
 | 9 | AEAD/root authentication exists. Session IDs and request tokens do not authenticate users, establish write authorization or resist Sybil identities. |
-| 11–12 | FHE results remain explicitly unverified. Tests demonstrate that an in-bounds malicious arithmetic forgery can pass metadata/bounds checks; no computation/completeness proof is implemented. |
-| 13 | Locally expected data/index heads are checked. Decentralized agreement on the latest authorized heads and durable anti-rollback authority remain external. |
+| 11–12 | Live SQL results remain explicitly unverified. Tests demonstrate that an in-bounds malicious arithmetic forgery can pass metadata/bounds checks. A standalone full-residue addition STARK now exists, but no complete SQL computation/completeness proof is implemented. |
+| 13 | Locally expected data/index heads are checked. Decentralized agreement on the latest authorized heads and durable anti-rollback authority remain unimplemented. |
 | 14–17 | No reward subsystem is enabled or claimed. |
 
 These are unimplemented requirements, not optional guarantees silently waived by
@@ -153,3 +153,14 @@ settling menu animation. Storage previews use actual encrypted-engine accounting
 No native GUI or user-desktop input is required. Requirements-mirror consistency and relative
 documentation links are checked separately. These tests are correctness/regression
 evidence, not new latency, storage-ratio, security or query-proof measurements.
+
+## Subsequent arithmetic-proof boundary
+
+The opt-in [BFV addition experiment](experiment-bfv-addition-proof.md) subsequently
+added a genuine Plonky3 proof covering all residues of the existing homomorphic
+amount-addition operator. Its serialized verification boundary rejects corruption,
+missing data, rebound requests and changed outputs. It uses independent verifier
+preprocessing rather than a peer-supplied key. This is a new, narrower arithmetic
+result, not a retrospective proof of the SQL workloads above. Proof costs and the
+remaining SQL selection, mutation and freshness obligations are recorded separately.
+No live acceptance gate was removed.

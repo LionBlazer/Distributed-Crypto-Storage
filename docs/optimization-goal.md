@@ -83,6 +83,16 @@ See [earlier measurements](fhe-optimization.md) before repeating experiments.
 | Whole encrypted snapshot retrieval for sparse groups | [Actual bulk alternative](experiment-private-bfv-bulk-disk.md); six owning tests, strict Clippy and all 18 paired Disk/Resident operations pass | Complete 0/1/256 selections include 256 distinct data pages and maximum SUM. Owning compact-query restores/authenticates full snapshots and performs fresh BFV; no PIR, selected addresses or owner answer cache. Local maximum 31.541 ms, constant 5,736,091 B total traffic. Full original BFV/PIR material remains counted: tiny 3 MB files plus peak commit =94.909507x. Ideal serial 100 Mbps/10 ms RTT model is 506–510 ms, not measured WAN; actual scale remains a separate gate |
 | Actual bulk scale with sparse complete selections | [1,000 fresh tables under one DB owner](experiment-private-bfv-bulk-scale.md); nine owning tests, strict Clippy, all 54 real operations and all 2,000 physical head/length checks pass | Same-run all 2,001 files plus observed native peak commit =1.782226215x of 3 GB. Complete EQ0/1/256 including 256 data pages take 26.672–30.329 ms locally; each call reads/authenticates full snapshots and performs fresh BFV. All original BFV and unused PIR material stays counted; no resident/owner response cache or DB NTT. Fixed 5,736,091 B/query; ideal 100 Mbps/10 ms RTT model exceeds 500 ms for all 54. Supplied-table, owner-online, read-only scope; no restart-bundle compatibility, GUI-private, arbitrary SQL or arithmetic-proof claim |
 
+The subsequent [full-residue addition STARK](experiment-bfv-addition-proof.md)
+proves all 81,920 residues with the original BFV parameters. The portable
+fresh-owner CLI measured a complete prover at 1,085 ms, full verification at
+504 ms and a 549,469 B proof. A separate CPU-specific ciphertext-fixture run
+measured full verification at 110 ms, the proof workflow at 362 ms and isolated
+process peak at 108.6 MiB. Neither is a complete SQL/network operation; selection
+completeness, fresh agreed heads and write acceptance remain open. The experiment
+rejects hostile serialized proof changes; it does not change the historical
+measurements above or meet the original latency target.
+
 Experiments use separate managed worktrees, including `private-index-research`,
 `compact-fhe-query`, `query-proof-research` and `compact-playground`. Generated
 reports and ephemeral test data stay in ignored local directories; no keys or

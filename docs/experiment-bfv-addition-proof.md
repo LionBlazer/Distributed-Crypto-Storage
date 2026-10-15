@@ -78,6 +78,14 @@ trip took 1,953 ms. Proof sizes vary with the committed instance and sampled pat
 the earlier table and this CLI run are separate measurements. Six boundary tests
 exercise this same full cryptographic profile, without reduced test parameters.
 
+A seventh integration test seals 6,040 public records into a real compact encrypted
+table and index, authenticates all 242 matching records across posting/data pages,
+and proves the unchanged opaque `PreparedUpdate` request. The preparation remains
+alive through serialized verification. Replay against a fresh request, a different
+delta or a genuinely different pair of table/index heads fails cryptographically,
+including when both canonical binding headers are rewritten to match. No owner-local
+sum recheck or mutation application is used as the proof verifier.
+
 Earlier local RISC Zero 3.0.6 trials returned no verified receipt within the tested
 CPU/time/virtual-address limits, including 16/17-bit execution segments. An 18-bit
 trial hit a 1.75 GiB address-space guard; that is stricter than an RSS limit and is
@@ -98,3 +106,13 @@ matching row set, a valid `old_root -> new_root` storage transition or current
 decentralized agreement. Those obligations, authorization and the
 [selected consensus model](consensus-model.md) remain separate. No arithmetic
 marker alone authorizes a network SQL result or a database mutation.
+
+The existing owner-built index can authenticate a complete bounded selection
+relative to its exact data/index heads. Connecting that selection to the addition
+proof does not establish a network-wide query contract: the canonical SQL plan,
+complete shard set, per-shard proofs, ordering/LIMIT semantics and global overflow
+outcome must be bound before accepting a SQL result. SELECT additionally requires
+proof of the real ciphertext multiplication, BFV scale-and-round and key switching.
+INSERT also rotates its encrypted incoming row; addition evidence alone cannot
+prove that placement. Existing owner-side diagnostic rechecks of every updated sum
+must not be renamed succinct verification.
