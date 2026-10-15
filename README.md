@@ -30,8 +30,15 @@ reject rather than truncate. Owner secret keys stay outside peer role objects.
 | [compact-query](crates/compact-query/README.md) | Complete index selection, fresh FHE aggregates and checked compact updates; explicit BFV backend plus retained legacy TFHE module |
 | [bfv-query-core](crates/bfv-query-core/README.md) | Reusable owner/public-peer BFV arithmetic and wire contracts; no storage or GUI dependency |
 | [compact-store](crates/compact-store/README.md) | Owner-only symmetric keys, opaque authenticated pages, independently trusted version roots and constant-size replacements |
+| [replica-store](crates/replica-store/README.md) | Bounded ciphertext replicas, fault-domain placement and atomic local repair batches |
 | [peer-protocol](crates/peer-protocol/README.md) | Bounded transport-independent handshake/message state machine |
 | [fhe-prototype](crates/fhe-prototype/README.md) | Original standalone TFHE experiment and historical baseline |
+
+Replica repair currently composes local ciphertext-only peer stores. It copies and
+validates real encrypted data/index images against caller-supplied current heads,
+respects quotas and declared failure domains, and rejects an incomplete repair batch.
+Head agreement, trustworthy domain labels, network failure detection and durable
+publication remain outside that module; the GUI still uses its single-copy shards.
 
 The [measurement ledger](docs/optimization-goal.md) preserves successful and failed
 experiments. Private retrieval and process recovery currently live in standalone

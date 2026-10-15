@@ -1,0 +1,12 @@
+[package]
+name = "replica-store"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+compact-store = { path = "../compact-store" }
+
+[dev-dependencies]
+compact-query = { path = "../compact-query", default-features = false, features = ["bfv-experiment"] }
