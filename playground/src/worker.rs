@@ -18,6 +18,7 @@ use std::{
 
 pub enum Command {
     Create(DatabaseDraft),
+    Import(DatabaseDraft),
     Query { client_id: NodeId, sql: String },
     AddPeer(PeerConfig),
     AddClient { name: String },
@@ -31,6 +32,16 @@ pub enum Command {
 #[derive(Debug)]
 pub enum Outcome {
     Created,
+    TableReady {
+        created: bool,
+        version: version_journal::HeadRef,
+    },
+    Script {
+        completed: usize,
+        created: bool,
+        changed: bool,
+        last: Box<Outcome>,
+    },
     PeerChanged,
     NodeAdded {
         id: NodeId,
@@ -59,10 +70,67 @@ pub enum Outcome {
 }
 
 impl Outcome {
-    pub fn query(&self) -> Option<&QueryOutcome> {
+    pub fn terminal(&self) -> &Self {
         match self {
+            Self::Script { last, .. } => last.terminal(),
+            _ => self,
+        }
+    }
+    pub fn created(&self) -> bool {
+        matches!(
+            self,
+            Self::Created
+                | Self::Script { created: true, .. }
+                | Self::TableReady { created: true, .. }
+        )
+    }
+    pub fn changed(&self) -> bool {
+        matches!(self, Self::Script { changed: true, .. })
+            || matches!(
+                self.query(),
+                Some(QueryOutcome::Updated { committed: true } | QueryOutcome::Inserted { .. })
+            )
+    }
+    pub fn query(&self) -> Option<&QueryOutcome> {
+        match self.terminal() {
             Self::Query(outcome) | Self::VerifiedQuery { outcome, .. } => Some(outcome),
             _ => None,
+        }
+    }
+    fn script(result: storage_client::ScriptResult) -> Self {
+        use storage_client::{StatementResult, VerifiedResult};
+        let completed = result.statements.len();
+        let created = result
+            .statements
+            .iter()
+            .any(|s| matches!(s.result, StatementResult::Created { created: true, .. }));
+        let changed = result.statements.iter().any(|s| {
+            matches!(
+                s.result,
+                StatementResult::Executed(
+                    VerifiedResult::Updated { .. } | VerifiedResult::Inserted { .. }
+                )
+            )
+        });
+        let last = match result
+            .statements
+            .into_iter()
+            .last()
+            .expect("nonempty validated SQL script")
+            .result
+        {
+            StatementResult::Created { created, version } => Self::TableReady { created, version },
+            StatementResult::Executed(result) => Self::verified(result),
+        };
+        if completed == 1 {
+            last
+        } else {
+            Self::Script {
+                completed,
+                created,
+                changed,
+                last: Box::new(last),
+            }
         }
     }
     fn verified(result: storage_client::VerifiedResult) -> Self {
@@ -281,6 +349,13 @@ fn run(
         observations.send(Event::Traffic(observation));
         repaint.request_repaint();
     }));
+    let topology = events.clone();
+    let repaint = context.clone();
+    backend.observe_topology = Some(Arc::new(move |peers, network| {
+        topology.send(Event::Peers(peers));
+        topology.send(Event::Network(network));
+        repaint.request_repaint();
+    }));
     while !stop.load(Ordering::Acquire) {
         match commands.recv_timeout(Duration::from_millis(500)) {
             Ok(command) => {
@@ -296,11 +371,15 @@ fn run(
                     Command::Query { client_id, .. } => Some(*client_id),
                     _ => None,
                 };
-                let finished = matches!(&command, Command::Create(_) | Command::Query { .. });
+                let finished = matches!(
+                    &command,
+                    Command::Create(_) | Command::Import(_) | Command::Query { .. }
+                );
                 let outcome = match command {
                     Command::Create(draft) => backend.create(draft).map(|_| Outcome::Created),
+                    Command::Import(draft) => backend.import(draft).map(|_| Outcome::Created),
                     Command::Query { client_id, sql } => {
-                        backend.query(client_id, &sql).map(Outcome::verified)
+                        backend.execute_sql(client_id, &sql).map(Outcome::script)
                     }
                     Command::AddPeer(config) => {
                         backend.add_peer(config).map(|id| Outcome::NodeAdded { id })

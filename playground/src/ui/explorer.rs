@@ -17,10 +17,7 @@ impl Playground {
                     .color(MUTED),
                 );
             } else {
-                ui.label("No database");
-                if ui.small_button("Open Data").clicked() {
-                    self.navigate(Tab::Data, self.right_tab);
-                }
+                ui.label("No tables").on_hover_text("Run CREATE TABLE to initialize encrypted storage. SQL errors appear in Output.");
             }
         });
     }

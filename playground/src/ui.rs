@@ -23,6 +23,8 @@ use camera::Camera;
 use navigation::Navigation;
 use theme::*;
 
+const STARTUP_SQL: &str = "CREATE TABLE IF NOT EXISTS records (\n    age TINYINT UNSIGNED NOT NULL,\n    amount SMALLINT UNSIGNED NOT NULL\n);\nSELECT * FROM records;";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Tab {
     Sql,
@@ -134,8 +136,7 @@ impl Playground {
     pub fn new(ctx: &egui::Context) -> Result<Self, std::io::Error> {
         set_theme(ctx);
         let mut app = Self::with_worker(Worker::start(ctx.clone())?);
-        app.tab = Tab::Data;
-        app.status = "Choose a SQL dump or create an empty database".into();
+        app.status = "Run the SQL script to create an empty table".into();
         Ok(app)
     }
     fn with_worker(worker: Worker) -> Self {
@@ -144,11 +145,7 @@ impl Playground {
             snapshot: None,
             network: None,
             peer_inventory: Vec::new(),
-            sql: PRESETS
-                .first()
-                .expect("public presets are nonempty")
-                .sql
-                .into(),
+            sql: STARTUP_SQL.into(),
             draft_name: "database".into(),
             draft_rows: String::new(),
             data_import: data::DataImport::default(),
@@ -203,10 +200,6 @@ impl Playground {
         self.available()
             && !self.source_stopped
             && self.controls_available()
-            && self
-                .snapshot
-                .as_ref()
-                .is_some_and(|state| state.replication.is_some())
             && self.active_client.is_some_and(|id| {
                 self.network.as_ref().is_some_and(|net| {
                     net.nodes
@@ -289,13 +282,6 @@ impl Playground {
             })
     }
     fn create_database(&mut self) {
-        if self.data_import.blocks_creation() {
-            self.input_error = Some(
-                "SQL import is not ready. Load a compatible dump or choose Use manual draft."
-                    .into(),
-            );
-            return;
-        }
         match parse_rows(&self.draft_rows) {
             Ok(rows) => self.submit(
                 Command::Create(DatabaseDraft {
@@ -311,6 +297,25 @@ impl Playground {
     }
     fn insert_preset(&mut self, sql: &str) {
         self.sql = sql.into();
+    }
+    fn import_database(&mut self, rows: Vec<fhe_playground::PlainRow>, label: String) {
+        self.catch_up_display();
+        if self.snapshot.is_some() {
+            self.input_error = Some(
+                "Import requires a new empty workspace; existing encrypted data was not replaced."
+                    .into(),
+            );
+            return;
+        }
+        self.submit(
+            Command::Import(DatabaseDraft {
+                name: self.draft_name.clone(),
+                rows,
+                peers: self.profiles(),
+            }),
+            Job::Database,
+            format!("Import {label}"),
+        );
     }
     fn run_query(&mut self) {
         // A user action starts at the latest observed state, retaining their speed.
@@ -544,11 +549,8 @@ impl Playground {
                     return;
                 };
                 self.completion_waiting = false;
-                let created = matches!(outcome, Ok(Outcome::Created));
-                let updated = matches!(
-                    outcome.as_ref().ok().and_then(Outcome::query),
-                    Some(QueryOutcome::Updated { committed: true } | QueryOutcome::Inserted { .. })
-                );
+                let created = outcome.as_ref().is_ok_and(Outcome::created);
+                let updated = outcome.as_ref().is_ok_and(Outcome::changed);
                 let current_draft = self.snapshot.as_ref().is_some_and(|s| {
                     self.draft_name.trim() == s.name
                         && self.draft_rows == format_rows(&s.owner_rows)
@@ -592,7 +594,10 @@ impl Playground {
                     .as_ref()
                     .map(|s| (s.name.clone(), s.revision))
                     .unwrap_or_default();
-                if let Ok(Outcome::VerifiedQuery { version, .. }) = &outcome {
+                if let Some(
+                    Outcome::VerifiedQuery { version, .. } | Outcome::TableReady { version, .. },
+                ) = outcome.as_ref().ok().map(Outcome::terminal)
+                {
                     revision = version.height;
                 }
                 self.history.push_front(Record {
@@ -799,7 +804,7 @@ impl Playground {
             });
     }
     fn run_disabled_reason(&self) -> Option<&'static str> {
-        if self.worker_stopped {
+        if self.worker_stopped || self.source_stopped {
             Some("Worker stopped")
         } else if self.pending.is_some() && !self.completion_waiting {
             Some("Operation running…")
@@ -807,14 +812,6 @@ impl Playground {
             Some("Applying network changes…")
         } else if self.completion_waiting && !self.source_stopped {
             None
-        } else if self.snapshot.is_none() {
-            Some("Create a database in Data")
-        } else if self
-            .snapshot
-            .as_ref()
-            .is_some_and(|state| state.replication.is_none())
-        {
-            Some("Storage state unavailable")
         } else if self.active_client.is_none() {
             Some("Add a client from the Network context menu")
         } else if !self.can_query() {
@@ -892,7 +889,7 @@ impl Playground {
                             result_table(ui, &["SUM(amount)"], &[vec![*sum]]);
                         }
                         Some(QueryOutcome::Selected { columns, rows }) => {
-                            if let Ok(Outcome::VerifiedQuery { version, .. }) = &record.outcome {
+                            if let Some(Outcome::VerifiedQuery { version, .. }) = record.outcome.as_ref().ok().map(Outcome::terminal) {
                                 ui.label(RichText::new(format!("Encrypted SELECT · verified · v{}", version.height)).small().color(GREEN))
                                     .on_hover_text("The client checked the FHE computation/completeness proof and a confirmed agreed version before decrypting. Confirmation uses the explicit local test work profile; production attack resistance is unvalidated.");
                             } else {
@@ -952,31 +949,69 @@ fn panel(margin: i8) -> egui::Frame {
 fn outcome_message(outcome: &Result<Outcome, String>) -> (String, Color32) {
     match outcome {
         Err(message) => (message.clone(), RED),
-        Ok(outcome) => match outcome.query() {
-            Some(QueryOutcome::Updated { committed: false }) => {
-                ("Rejected: amount overflow; no changes".into(), AMBER)
+        Ok(outcome) => outcome_summary(outcome),
+    }
+}
+fn outcome_summary(outcome: &Outcome) -> (String, Color32) {
+    if let Outcome::Script {
+        completed, last, ..
+    } = outcome
+    {
+        let (message, color) = outcome_summary(last);
+        return (
+            format!("{completed} operations completed · {message}"),
+            color,
+        );
+    }
+    match outcome.query() {
+        Some(QueryOutcome::Updated { committed: false }) => {
+            ("Rejected: amount overflow; no changes".into(), AMBER)
+        }
+        Some(QueryOutcome::Updated { committed: true }) => {
+            let message = if let Outcome::VerifiedQuery {
+                changed_rows: Some(count),
+                version,
+                ..
+            } = outcome.terminal()
+            {
+                format!("Updated {count} rows · confirmed v{}", version.height)
+            } else {
+                "Updated".into()
+            };
+            (message, GREEN)
+        }
+        Some(QueryOutcome::Inserted { count }) => {
+            let mut message = format!("Inserted {count} row{}", if *count == 1 { "" } else { "s" });
+            if let Outcome::VerifiedQuery { version, .. } = outcome.terminal() {
+                message.push_str(&format!(" · confirmed v{}", version.height));
             }
-            Some(QueryOutcome::Updated { committed: true }) => {
-                let message = if let Outcome::VerifiedQuery {
-                    changed_rows: Some(count),
-                    version,
-                    ..
-                } = outcome
-                {
-                    format!("Updated {count} rows · confirmed v{}", version.height)
-                } else {
-                    "Updated".into()
-                };
-                (message, GREEN)
+            (message, GREEN)
+        }
+        Some(QueryOutcome::Selected { rows, .. }) => {
+            let mut message = format!(
+                "Selected {} row{}",
+                rows.len(),
+                if rows.len() == 1 { "" } else { "s" }
+            );
+            if let Outcome::VerifiedQuery { version, .. } = outcome.terminal() {
+                message.push_str(&format!(" · confirmed v{}", version.height));
             }
-            Some(QueryOutcome::Inserted { count }) => {
-                let mut message =
-                    format!("Inserted {count} row{}", if *count == 1 { "" } else { "s" });
-                if let Outcome::VerifiedQuery { version, .. } = outcome {
-                    message.push_str(&format!(" · confirmed v{}", version.height));
-                }
-                (message, GREEN)
-            }
+            (message, GREEN)
+        }
+        _ => match outcome.terminal() {
+            Outcome::TableReady { created, version } => (
+                format!(
+                    "Table records {} · v{}",
+                    if *created {
+                        "created"
+                    } else {
+                        "already exists"
+                    },
+                    version.height
+                ),
+                GREEN,
+            ),
+            Outcome::Created => ("Encrypted database created".into(), GREEN),
             _ => ("OK".into(), TEXT),
         },
     }
@@ -991,7 +1026,8 @@ fn highlight_sql(sql: &str) -> egui::text::LayoutJob {
             .trim_end_matches(|character: char| !character.is_alphanumeric() && character != '_');
         let color = match word.to_ascii_uppercase().as_str() {
             "SELECT" | "FROM" | "WHERE" | "INSERT" | "INTO" | "VALUES" | "UPDATE" | "SET"
-            | "BETWEEN" | "AND" | "LIMIT" => Color32::from_rgb(207, 142, 109),
+            | "BETWEEN" | "AND" | "LIMIT" | "CREATE" | "TABLE" | "IF" | "NOT" | "EXISTS"
+            | "NULL" | "UNSIGNED" | "TINYINT" | "SMALLINT" => Color32::from_rgb(207, 142, 109),
             "COUNT" | "SUM" => Color32::from_rgb(86, 168, 245),
             _ if !word.is_empty() && word.chars().all(|character| character.is_ascii_digit()) => {
                 Color32::from_rgb(106, 171, 115)

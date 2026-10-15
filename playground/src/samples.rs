@@ -1,9 +1,12 @@
-//! Client-side SQL dump acquisition and complete validation before encrypted upload.
+//! Client-side SQL acquisition and shared proof-supported script preflight.
 //!
-//! Downloaded SQL is data to inspect, never a script executed by the host. Import
-//! accepts only the exact schema the encrypted engine can currently preserve.
+//! Downloaded SQL is input data, never a script executed by the host. A prepared
+//! import retains every validated literal row. The worker may initialize a new
+//! encrypted database genesis from owner input, never replace an existing database
+//! or use those rows to answer SQL. Reads and later writes keep Session proofs.
 use compact_query::PlainRow;
 use std::{fs::File, io::Read, time::Duration};
+use storage_client::{SqlScript, SqlStatement};
 
 pub const MAX_DUMP_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_IMPORT_ROWS: usize = 128;
@@ -133,148 +136,59 @@ fn decode_dump(sample_id: String, bytes: Vec<u8>) -> Result<DownloadedDump, Stri
     })
 }
 
-/// Validates the entire script and returns owner-supplied input rows only when
-/// every statement is supported. The caller may then explicitly create a new
-/// encrypted database through the normal Session path. Errors return no partial
-/// rows, and this parser has no storage/network handle with which to mutate data.
+/// Fully validated owner input for a new encrypted genesis. These rows may be
+/// supplied to Session::create only for a new database. They are never a peer SQL
+/// answer source or a replacement for proof-checked mutations of existing state.
+#[derive(Debug)]
+pub struct PreparedImport {
+    pub sql: String,
+    pub rows: Vec<PlainRow>,
+    /// Counts lowered single-row INSERT operations as separate statements.
+    pub statements: usize,
+}
+
+/// Validate the entire dump with the same parser used by the SQL console.
 ///
-/// Grammar: one exact CREATE TABLE declaration, followed by zero or more INSERTs
-/// into records, each with an optional `(age, amount)` list and one or more value
-/// tuples. Statements require semicolons. SQL comments are allowed. Other DDL,
-/// constraints, transactions, expressions and types are rejected, never skipped.
-pub fn parse_dump(sql: &str) -> Result<Vec<PlainRow>, String> {
+/// A dump creates exactly the currently supported table, followed by INSERTs.
+/// Comments, IF NOT EXISTS, case differences and multi-row VALUES use the shared
+/// script grammar. Unsupported trailing statements reject the entire input before
+/// any mutation; no columns, constraints, records or tables are silently dropped.
+/// This preflight has no storage handle. The caller must explicitly create a new
+/// encrypted genesis after it succeeds; it must reject an existing database rather
+/// than silently replacing it or applying a partially validated dump.
+pub fn prepare_import(sql: &str) -> Result<PreparedImport, String> {
     if sql.len() > MAX_DUMP_BYTES {
         return Err("SQL dump exceeds the 8 MiB client input limit".into());
     }
-    let mut parser = DumpParser {
-        source: sql.trim_start_matches('\u{feff}'),
-        offset: 0,
-    };
-    for token in [
-        "CREATE", "TABLE", "records", "(", "age", "TINYINT", "UNSIGNED", "NOT", "NULL", ",",
-        "amount", "SMALLINT", "UNSIGNED", "NOT", "NULL", ")", ";",
-    ] {
-        parser.expect(token)?;
+    let script = SqlScript::parse(sql).map_err(|error| format!("Not imported: {error}"))?;
+    let mut statements = script.statements().iter();
+    if !matches!(statements.next(), Some(SqlStatement::CreateTable { .. })) {
+        return Err("SQL import must begin with CREATE TABLE records; nothing was imported".into());
     }
     let mut rows = Vec::new();
-    while parser.peek()?.is_some() {
-        for token in ["INSERT", "INTO", "records"] {
-            parser.expect(token)?;
-        }
-        if parser.take("(")? {
-            for token in ["age", ",", "amount", ")"] {
-                parser.expect(token)?;
-            }
-        }
-        parser.expect("VALUES")?;
-        loop {
-            parser.expect("(")?;
-            let age = parser.number::<u8>("age must be an unsigned integer in 0..=255")?;
-            parser.expect(",")?;
-            let amount = parser.number::<u16>("amount must be an unsigned integer in 0..=65535")?;
-            parser.expect(")")?;
-            if rows.len() == MAX_IMPORT_ROWS {
-                return Err(format!(
-                    "SQL dump exceeds the current encrypted import limit of {MAX_IMPORT_ROWS} rows; no rows were imported"
-                ));
-            }
-            rows.push(PlainRow { age, amount });
-            if !parser.take(",")? {
-                break;
-            }
-        }
-        parser.expect(";")?;
+    for statement in statements {
+        let SqlStatement::Query {
+            plan: sql_plan::QueryPlan::Insert { row },
+            ..
+        } = statement
+        else {
+            return Err("SQL import accepts one CREATE TABLE followed only by INSERT statements; nothing was imported".into());
+        };
+        rows.push(PlainRow {
+            age: row.age,
+            amount: row.amount,
+        });
     }
-    Ok(rows)
-}
-
-struct DumpParser<'a> {
-    source: &'a str,
-    offset: usize,
-}
-impl<'a> DumpParser<'a> {
-    fn next(&mut self) -> Result<Option<&'a str>, String> {
-        let bytes = self.source.as_bytes();
-        loop {
-            while bytes.get(self.offset).is_some_and(u8::is_ascii_whitespace) {
-                self.offset += 1;
-            }
-            let rest = &self.source[self.offset..];
-            if rest.starts_with("--") {
-                self.offset += rest.find('\n').unwrap_or(rest.len());
-            } else if let Some(comment) = rest.strip_prefix("/*") {
-                let end = comment
-                    .find("*/")
-                    .ok_or_else(|| self.error("unterminated comment"))?;
-                if comment[..end].contains("/*")
-                    || comment.starts_with('!')
-                    || comment.starts_with("M!")
-                    || comment.starts_with("m!")
-                {
-                    return Err(self.error("nested or executable comments are unsupported"));
-                }
-                self.offset += end + 4;
-            } else {
-                break;
-            }
-        }
-        let start = self.offset;
-        match bytes.get(start) {
-            None => return Ok(None),
-            Some(byte) if byte.is_ascii_alphanumeric() || *byte == b'_' => {
-                while bytes
-                    .get(self.offset)
-                    .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
-                {
-                    self.offset += 1;
-                }
-            }
-            Some(byte) if b"(),;".contains(byte) => self.offset += 1,
-            _ => {
-                return Err(self.error(
-                    "quoted identifiers, strings, expressions or unsupported SQL punctuation",
-                ));
-            }
-        }
-        Ok(Some(&self.source[start..self.offset]))
+    if rows.len() > MAX_IMPORT_ROWS {
+        return Err(format!(
+            "SQL dump exceeds the current encrypted import limit of {MAX_IMPORT_ROWS} rows; nothing was imported"
+        ));
     }
-    fn peek(&mut self) -> Result<Option<&'a str>, String> {
-        let offset = self.offset;
-        let result = self.next();
-        self.offset = offset;
-        result
-    }
-    fn take(&mut self, expected: &str) -> Result<bool, String> {
-        if self
-            .peek()?
-            .is_some_and(|token| token.eq_ignore_ascii_case(expected))
-        {
-            self.next()?;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-    fn expect(&mut self, expected: &str) -> Result<(), String> {
-        if self.take(expected)? {
-            Ok(())
-        } else {
-            Err(self.error(&format!("expected {expected}")))
-        }
-    }
-    fn number<T: std::str::FromStr>(&mut self, message: &str) -> Result<T, String> {
-        let token = self.next()?.ok_or_else(|| self.error(message))?;
-        if token.is_empty() || !token.bytes().all(|byte| byte.is_ascii_digit()) {
-            return Err(self.error(message));
-        }
-        token.parse().map_err(|_| self.error(message))
-    }
-    fn error(&self, message: &str) -> String {
-        format!(
-            "Unsupported SQL dump near byte {}: {message}. Current encrypted schema: records(age: u8, amount: u16), at most {MAX_IMPORT_ROWS} rows. Nothing was imported; arbitrary tables, text, constraints and SQL Server batches require encrypted engine/proof support.",
-            self.offset
-        )
-    }
+    Ok(PreparedImport {
+        sql: sql.into(),
+        rows,
+        statements: script.statement_count(),
+    })
 }
 
 #[cfg(test)]
@@ -282,13 +196,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn complete_supported_dump_preserves_values_and_column_order() {
+    fn compatible_dump_preserves_every_literal_for_new_encrypted_genesis() {
         let sql = format!(
             "\u{feff}-- Owner-provided SQL\n{SUPPORTED_SCHEMA}\nINSERT INTO records (age, amount) VALUES (0, 0), (255, 65535); /* complete */ INSERT INTO records VALUES (18, 20);"
         );
-        let rows = parse_dump(&sql).expect("supported owner input");
+
+        let prepared = prepare_import(&sql).expect("supported input");
+
+        assert_eq!(prepared.sql, sql);
         assert_eq!(
-            rows,
+            prepared.rows,
             vec![
                 PlainRow { age: 0, amount: 0 },
                 PlainRow {
@@ -301,6 +218,32 @@ mod tests {
                 }
             ]
         );
+        assert_eq!(prepared.statements, 4);
+    }
+
+    #[test]
+    fn console_and_dump_share_create_comments_and_insert_preflight() {
+        let sql = "/* schema */ create table if not exists records (age tinyint unsigned not null, amount smallint unsigned not null); -- rows\ninsert into records values (18,20),(42,30);";
+
+        let prepared = prepare_import(sql).expect("shared console grammar");
+
+        assert_eq!(
+            prepared.rows,
+            vec![
+                PlainRow {
+                    age: 18,
+                    amount: 20
+                },
+                PlainRow {
+                    age: 42,
+                    amount: 30
+                }
+            ]
+        );
+        assert_eq!(
+            SqlScript::parse(&prepared.sql).unwrap().statement_count(),
+            3
+        );
     }
 
     #[test]
@@ -308,8 +251,24 @@ mod tests {
         let sql = format!(
             "{SUPPORTED_SCHEMA} INSERT INTO records VALUES (18,20); CREATE TABLE customers (name TEXT);"
         );
-        let error = parse_dump(&sql).expect_err("must not return valid prefix rows");
-        assert!(error.contains("Nothing was imported"));
+
+        assert!(prepare_import(&sql).is_err());
+    }
+
+    #[test]
+    fn dump_preflight_does_not_turn_reads_or_updates_into_imported_rows() {
+        for tail in [
+            "SELECT * FROM records;",
+            "UPDATE records SET amount = amount + 1;",
+        ] {
+            let sql = format!("{SUPPORTED_SCHEMA} {tail}");
+            assert!(prepare_import(&sql).unwrap_err().contains("only by INSERT"));
+        }
+        assert!(
+            prepare_import("INSERT INTO records VALUES (18,20);")
+                .unwrap_err()
+                .contains("begin with CREATE")
+        );
     }
 
     #[test]
@@ -322,13 +281,12 @@ mod tests {
             format!("{SUPPORTED_SCHEMA} INSERT INTO records VALUES (-1,2);"),
             format!("{SUPPORTED_SCHEMA} INSERT INTO records VALUES (1,'2');"),
             format!("{SUPPORTED_SCHEMA} INSERT INTO records (amount, age) VALUES (1,2);"),
-            format!("{SUPPORTED_SCHEMA} INSERT INTO records VALUES (1,2)"),
             format!("{SUPPORTED_SCHEMA} /*! DROP TABLE records; */"),
             format!("{SUPPORTED_SCHEMA} /*M! DROP TABLE records; */"),
             format!("{SUPPORTED_SCHEMA} /* unterminated"),
             format!("{SUPPORTED_SCHEMA} /*/"),
         ] {
-            assert!(parse_dump(&sql).is_err(), "accepted unsupported SQL: {sql}");
+            assert!(prepare_import(&sql).is_err(), "accepted unsupported SQL: {sql}");
         }
     }
 
@@ -338,7 +296,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join(",");
         let sql = format!("{SUPPORTED_SCHEMA} INSERT INTO records VALUES {rows};");
-        assert!(parse_dump(&sql).unwrap_err().contains("128 rows"));
+        assert!(prepare_import(&sql).unwrap_err().contains("128 rows"));
         assert!(read_bounded(std::io::repeat(b' ').take(MAX_DUMP_BYTES as u64 + 1)).is_err());
         assert!(decode_dump("local".into(), vec![0xff, 0xfe]).is_err());
         assert!(decode_dump("local".into(), b"SELECT\0".to_vec()).is_err());
@@ -353,7 +311,7 @@ mod tests {
             assert!(dump.bytes > 100_000 && dump.bytes <= MAX_DUMP_BYTES);
             assert!(dump.sql.to_ascii_uppercase().contains("CREATE TABLE"));
             assert!(
-                parse_dump(&dump.sql).is_err(),
+                prepare_import(&dump.sql).is_err(),
                 "full relational samples need missing engine/proof capabilities"
             );
         }

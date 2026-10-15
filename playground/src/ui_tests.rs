@@ -31,6 +31,64 @@ fn a_new_workspace_has_no_canned_rows_or_automatic_database_command() {
         assert!(!text.iter().any(|item| item.text == removed));
     }
 }
+
+#[test]
+fn run_is_available_before_a_database_exists_and_dispatches_the_startup_script() {
+    let (worker, commands, events) = Worker::test_channel();
+    let mut app = Playground::with_worker(worker);
+    events.send(Event::Network(network(0, 1))).unwrap();
+    app.poll();
+    assert!(app.snapshot.is_none());
+    assert!(app.can_query());
+    assert_eq!(app.run_disabled_reason(), None);
+    assert!(
+        storage_client::SqlScript::parse(&app.sql)
+            .unwrap()
+            .has_create()
+    );
+    let context = egui::Context::default();
+    set_theme(&context);
+
+    click(&context, &mut app, "Run");
+
+    assert!(
+        matches!(commands.try_recv(), Ok(Command::Query {client_id:1, sql}) if sql == STARTUP_SQL)
+    );
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn a_missing_table_error_from_the_worker_is_shown_in_output() {
+    let (worker, commands, events) = Worker::test_channel();
+    let mut app = Playground::with_worker(worker);
+    events.send(Event::Network(network(0, 1))).unwrap();
+    app.poll();
+    app.sql = "SELECT * FROM records;".into();
+    app.run_query();
+    assert!(matches!(commands.try_recv(), Ok(Command::Query { .. })));
+    events
+        .send(Event::Finished {
+            snapshot: None,
+            outcome: Err(fhe_playground::LabError::InvalidInput(
+                "Statement 1: table records does not exist".into(),
+            )),
+            elapsed_ms: 1.0,
+            client_id: Some(1),
+        })
+        .unwrap();
+
+    app.poll();
+
+    let context = egui::Context::default();
+    set_theme(&context);
+    assert_eq!(app.result_tab, ResultTab::Output);
+    let text = render(&context, &mut app, vec![]);
+    assert!(
+        text.iter()
+            .any(|item| item.text.contains("table records does not exist"))
+    );
+    assert!(app.snapshot.is_none());
+}
 fn snapshot(peers: usize) -> LabSnapshot {
     // Public synthetic rows, but real default custody/physical accounting. Cache
     // only the non-secret snapshot so headless UI examples share no live engine.
@@ -270,7 +328,7 @@ fn confirming_existing_one_copy_keeps_default_fixed_custody_without_a_rebuild() 
 }
 
 #[test]
-fn missing_custody_metadata_disables_policy_and_sql_without_a_legacy_fallback() {
+fn missing_custody_metadata_disables_policy_but_sql_reports_through_the_real_worker() {
     let (mut app, commands, _events) = app();
     app.snapshot.as_mut().unwrap().replication = None;
     app.right_tab = RightTab::Settings;
@@ -287,9 +345,13 @@ fn missing_custody_metadata_disables_policy_and_sql_without_a_legacy_fallback() 
             .iter()
             .any(|text| text.text == "Min copies 1" || text.text.contains("Legacy"))
     );
-    assert!(!app.can_query());
+    assert!(app.can_query());
     app.run_query();
-    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+    assert!(matches!(
+        commands.try_recv(),
+        Ok(Command::Query { client_id: 1, .. })
+    ));
+    assert!(app.history.is_empty());
 }
 
 #[test]
@@ -620,7 +682,8 @@ fn network_remains_beside_both_sql_and_data_without_old_sidebars() {
     click(&ctx, &mut app, "Data");
     let texts = render(&ctx, &mut app, vec![]);
     assert!(texts.iter().any(|t| t.text == "Network"));
-    assert!(texts.iter().any(|t| t.text == "Add row"));
+    assert!(texts.iter().any(|t| t.text == "records"));
+    assert!(!texts.iter().any(|t| t.text == "Add row"));
     assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
 }
 
@@ -1256,7 +1319,7 @@ fn journal_bytes_count_toward_physical_quota_while_public_setup_remains_memory_m
 fn grouped_presets_start_with_simple_rows_then_filters_and_writes_without_execution() {
     let (mut app, commands, _events) = app();
     assert_eq!(PRESETS.first().unwrap().name, "All rows");
-    assert_eq!(app.sql, "SELECT * FROM records;");
+    assert_eq!(app.sql, STARTUP_SQL);
     let ctx = egui::Context::default();
     set_theme(&ctx);
     click(&ctx, &mut app, "Presets");
@@ -1548,47 +1611,60 @@ fn selected_results_render_requested_column_order_and_worker_values() {
 fn verified_network_selection_displays_its_confirmed_version_without_promoting_historical_fixtures()
 {
     // Public renderer fixture only; real proof acceptance is exercised by process_backend tests.
-    let (mut app, commands, events) = app();
-    let ctx = egui::Context::default();
-    set_theme(&ctx);
-    app.run_query();
-    let _ = commands.try_recv().unwrap();
-    events
-        .send(Event::Finished {
-            snapshot: Some(snapshot(3)),
-            outcome: Ok(Outcome::VerifiedQuery {
-                outcome: QueryOutcome::Selected {
-                    columns: vec![Column::Age],
-                    rows: vec![vec![42]],
-                },
-                version: version_journal::HeadRef {
-                    genesis: [1; 32],
-                    database: [2; 16],
-                    block: [3; 32],
-                    height: 7,
-                    state_root: [4; 32],
-                },
-                changed_rows: None,
-            }),
-            elapsed_ms: 12.0,
-            client_id: Some(1),
-        })
-        .unwrap();
-    app.poll();
-    let texts = render(&ctx, &mut app, vec![]);
-    assert!(
-        texts
-            .iter()
-            .any(|text| text.text == "Encrypted SELECT · verified · v7")
-    );
-    assert_eq!(app.history.front().unwrap().revision, 7);
-    assert!(
-        !texts
-            .iter()
-            .any(|text| text.text == "Encrypted SELECT · unverified")
-    );
-    assert_eq!(app.result_tab, ResultTab::Result);
-    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+    for batch in [false, true] {
+        let (mut app, commands, events) = app();
+        let ctx = egui::Context::default();
+        set_theme(&ctx);
+        app.run_query();
+        let _ = commands.try_recv().unwrap();
+        let outcome = Outcome::VerifiedQuery {
+            outcome: QueryOutcome::Selected {
+                columns: vec![Column::Age],
+                rows: vec![vec![42]],
+            },
+            version: version_journal::HeadRef {
+                genesis: [1; 32],
+                database: [2; 16],
+                block: [3; 32],
+                height: 7,
+                state_root: [4; 32],
+            },
+            changed_rows: None,
+        };
+        let outcome = if batch {
+            Outcome::Script {
+                completed: 2,
+                created: false,
+                changed: false,
+                last: Box::new(outcome),
+            }
+        } else {
+            outcome
+        };
+        events
+            .send(Event::Finished {
+                snapshot: Some(snapshot(3)),
+                outcome: Ok(outcome),
+                elapsed_ms: 12.0,
+                client_id: Some(1),
+            })
+            .unwrap();
+        app.poll();
+        let texts = render(&ctx, &mut app, vec![]);
+        assert!(
+            texts
+                .iter()
+                .any(|text| text.text == "Encrypted SELECT · verified · v7")
+        );
+        assert_eq!(app.history.front().unwrap().revision, 7);
+        assert!(
+            !texts
+                .iter()
+                .any(|text| text.text == "Encrypted SELECT · unverified")
+        );
+        assert_eq!(app.result_tab, ResultTab::Result);
+        assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+    }
 }
 
 #[test]
@@ -1975,6 +2051,8 @@ fn peer_settings_and_data_drafts_require_explicit_apply() {
         matches!(commands.try_recv(),Ok(Command::ConfigurePeer{id:2,config})if config.name=="Fast SSD")
     );
     app.tab = Tab::Data;
+    ctx.global_style_mut(|style| style.animation_time = 0.0);
+    click(&ctx, &mut app, "Manual data draft");
     click(&ctx, &mut app, "Add row");
     assert_eq!(parse_rows(&app.draft_rows).unwrap().len(), 5);
     assert_eq!(app.snapshot.as_ref().unwrap().owner_rows.len(), 4);
@@ -2027,6 +2105,8 @@ fn malformed_csv_and_empty_database_name_explain_disabled_creation() {
     app.tab = Tab::Data;
     app.data_view = DataView::Csv;
     app.draft_rows = "18,x".into();
+    ctx.global_style_mut(|style| style.animation_time = 0.0);
+    click(&ctx, &mut app, "Manual data draft");
     let texts = render(&ctx, &mut app, vec![]);
     assert!(texts.iter().any(|t| t.text.contains("Line 1:")));
     click(&ctx, &mut app, "Create / replace");

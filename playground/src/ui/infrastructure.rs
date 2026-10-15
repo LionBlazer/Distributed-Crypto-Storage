@@ -1134,11 +1134,36 @@ fn draw_node(
     visuals: egui::style::WidgetVisuals,
     scale: f32,
 ) {
-    p.rect_filled(rect, 7, visuals.weak_bg_fill);
-    p.rect_stroke(rect, 7, visuals.bg_stroke, egui::StrokeKind::Inside);
-    let p = p.with_clip_rect(rect.shrink(4.0));
-    let left = rect.left() + 12.0 * scale;
-    let top = rect.top() + 16.0 * scale;
+    // Lay out one card in world units, then transform every shape together.
+    // In particular, text must not retain a minimum screen-space font size when
+    // its card shrinks, or labels spill over neighboring nodes at distant zoom.
+    let transform = egui::emath::TSTransform::new(rect.min.to_vec2(), scale);
+    let add = |mut shape: egui::Shape| {
+        shape.transform(transform);
+        p.add(shape);
+    };
+    let local = egui::Rect::from_min_size(egui::Pos2::ZERO, NODE_SIZE);
+    add(egui::Shape::rect_filled(local, 7, visuals.weak_bg_fill));
+    add(egui::Shape::rect_stroke(
+        local,
+        7,
+        visuals.bg_stroke,
+        egui::StrokeKind::Inside,
+    ));
+    let p = p.with_clip_rect(rect.shrink(4.0 * scale));
+    let add = |mut shape: egui::Shape| {
+        shape.transform(transform);
+        p.add(shape);
+    };
+    let text = |position: egui::Pos2, value: String, size: f32, color: Color32| {
+        let galley = p.layout_no_wrap(value, FontId::proportional(size), color);
+        let origin = egui::Align2::LEFT_CENTER
+            .anchor_size(position, galley.size())
+            .min;
+        add(egui::Shape::galley(origin, galley, color));
+    };
+    let left = 12.0;
+    let top = 16.0;
     let color = if !node.online {
         RED
     } else if node.role == NodeRole::Client {
@@ -1146,81 +1171,15 @@ fn draw_node(
     } else {
         GREEN
     };
-    let font = |size: f32| FontId::proportional((size * scale).clamp(6.0, 20.0));
     let title = if let Some(peer) = node.peer_id {
         format!("P{peer:02}")
     } else {
         format!("C{:02}", node.id)
     };
-    if scale < 0.72 {
-        // Semantic zoom: keep identifiers legible instead of shrinking the full
-        // inspector into microscopic text. Exact sizes remain in the tooltip.
-        let origin = rect.min + egui::vec2(6.0, 5.0);
-        p.text(
-            origin,
-            egui::Align2::LEFT_TOP,
-            title,
-            FontId::monospace(11.0),
-            color,
-        );
-        if rect.height() > 38.0 {
-            p.text(
-                origin + egui::vec2(0.0, 16.0),
-                egui::Align2::LEFT_TOP,
-                &node.name,
-                FontId::proportional(10.0),
-                TEXT,
-            );
-        }
-        if let Some(peer) = node
-            .peer_id
-            .and_then(|id| state.and_then(|state| state.peers.iter().find(|peer| peer.id == id)))
-        {
-            if rect.height() > 58.0 {
-                p.text(
-                    origin + egui::vec2(0.0, 30.0),
-                    egui::Align2::LEFT_TOP,
-                    format!("{} rows · {} B", peer.rows, peer.logical_bytes),
-                    FontId::proportional(9.0),
-                    MUTED,
-                );
-            }
-            let track = egui::Rect::from_min_size(
-                egui::pos2(rect.left() + 6.0, rect.bottom() - 7.0),
-                egui::vec2((rect.width() - 12.0).max(0.0), 3.0),
-            );
-            p.rect_filled(track, 1, EDITOR);
-            let ratio = (peer.stored_bytes as f32 / peer.config.storage_limit_bytes.max(1) as f32)
-                .clamp(0.0, 1.0);
-            p.rect_filled(
-                egui::Rect::from_min_size(track.min, egui::vec2(track.width() * ratio, 3.0)),
-                1,
-                GREEN,
-            );
-        }
-        p.circle_filled(
-            egui::pos2(rect.right() - 8.0, rect.top() + 10.0),
-            2.5,
-            if !node.online {
-                RED
-            } else if connected {
-                GREEN
-            } else {
-                AMBER
-            },
-        );
-        return;
-    }
-    p.text(
-        egui::pos2(left, top),
-        egui::Align2::LEFT_CENTER,
-        title,
-        font(13.0),
-        color,
-    );
-    p.circle_filled(
-        egui::pos2(rect.right() - 14.0 * scale, top),
-        3.0 * scale,
+    text(egui::pos2(left, top), title, 13.0, color);
+    add(egui::Shape::circle_filled(
+        egui::pos2(local.right() - 14.0, top),
+        3.0,
         if !node.online {
             RED
         } else if connected {
@@ -1228,14 +1187,8 @@ fn draw_node(
         } else {
             AMBER
         },
-    );
-    p.text(
-        egui::pos2(left, top + 22.0 * scale),
-        egui::Align2::LEFT_CENTER,
-        &node.name,
-        font(12.0),
-        TEXT,
-    );
+    ));
+    text(egui::pos2(left, top + 22.0), node.name.clone(), 12.0, TEXT);
     let status = if !node.online {
         "Offline"
     } else if connected {
@@ -1247,41 +1200,43 @@ fn draw_node(
         .peer_id
         .and_then(|id| state.and_then(|s| s.peers.iter().find(|p| p.id == id)))
     {
-        p.text(
-            egui::pos2(left, top + 45.0 * scale),
-            egui::Align2::LEFT_CENTER,
+        text(
+            egui::pos2(left, top + 45.0),
             format!(
                 "Payload {} B · {} {}",
                 peer.logical_bytes,
                 peer.rows,
                 row_word(peer.rows)
             ),
-            font(10.0),
+            10.0,
             TEXT,
         );
-        p.text(
-            egui::pos2(left, top + 63.0 * scale),
-            egui::Align2::LEFT_CENTER,
+        text(
+            egui::pos2(left, top + 63.0),
             format!(
                 "Stored {} / {} B",
                 peer.stored_bytes, peer.config.storage_limit_bytes
             ),
-            font(10.0),
+            10.0,
             MUTED,
         );
         let ratio = (peer.stored_bytes as f32 / peer.config.storage_limit_bytes.max(1) as f32)
             .clamp(0.0, 1.0);
         let track = egui::Rect::from_min_size(
-            egui::pos2(left, top + 75.0 * scale),
-            egui::vec2(rect.width() - 24.0 * scale, 5.0 * scale),
+            egui::pos2(left, top + 75.0),
+            egui::vec2(local.width() - 24.0, 5.0),
         );
-        p.rect_filled(track, 2, EDITOR);
+        add(egui::Shape::rect_filled(track, 2, EDITOR));
         if peer.stored_bytes > 0 {
             let filled = egui::Rect::from_min_size(
                 track.min,
                 egui::vec2(track.width() * ratio, track.height()),
             );
-            p.rect_filled(filled, 2, if ratio >= 0.9 { AMBER } else { GREEN });
+            add(egui::Shape::rect_filled(
+                filled,
+                2,
+                if ratio >= 0.9 { AMBER } else { GREEN },
+            ));
         }
         let detail = state
             .and_then(|state| copy_counts(state, peer.id))
@@ -1289,31 +1244,33 @@ fn draw_node(
                 || status.to_string(),
                 |(current, stale)| format!("{current} current / {stale} stale · {status}"),
             );
-        p.text(
-            egui::pos2(left, top + 96.0 * scale),
-            egui::Align2::LEFT_CENTER,
+        text(
+            egui::pos2(left, top + 96.0),
             detail,
-            font(9.0),
+            9.0,
             if node.online { MUTED } else { RED },
         );
     } else {
-        p.text(
-            egui::pos2(left, top + 45.0 * scale),
-            egui::Align2::LEFT_CENTER,
+        text(
+            egui::pos2(left, top + 45.0),
             if node.role == NodeRole::Client {
                 "SQL client"
             } else {
                 "Storage pending"
-            },
-            font(10.0),
+            }
+            .into(),
+            10.0,
             MUTED,
         );
-        p.text(
-            egui::pos2(left, top + 66.0 * scale),
-            egui::Align2::LEFT_CENTER,
-            status,
-            font(10.0),
+        text(
+            egui::pos2(left, top + 66.0),
+            status.into(),
+            10.0,
             if node.online { MUTED } else { RED },
         );
     }
 }
+
+#[cfg(test)]
+#[path = "node_zoom_tests.rs"]
+mod node_zoom_tests;

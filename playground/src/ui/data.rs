@@ -12,13 +12,76 @@ impl Playground {
                     .id_salt("data-workspace")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        if let Some(rows) = self.data_import.show(ui) {
-                            self.draft_rows = format_rows(&rows);
+                        ui.horizontal_wrapped(|ui| {
+                            icon(ui, Icon::Database, ACCENT);
+                            if let Some(state) = &self.snapshot {
+                                ui.label(RichText::new(&state.name).strong());
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{} rows / v{}",
+                                        state.owner_rows.len(),
+                                        state.revision
+                                    ))
+                                    .small()
+                                    .color(MUTED),
+                                );
+                            } else {
+                                ui.label("No database");
+                            }
+                        });
+                        let can_import = self.available()
+                            && self.controls_available()
+                            && self.snapshot.is_none()
+                            && self.active_client.is_some();
+                        if let Some((rows, label)) = self.data_import.show(ui, can_import) {
+                            self.import_database(rows, label);
                         }
                         ui.add_space(8.0);
                         ui.separator();
-                        self.data_draft(ui);
+                        if let Some(state) = &self.snapshot {
+                            self.current_table(ui, state);
+                        } else {
+                            ui.add_space(16.0);
+                            ui.label(RichText::new("Start with an empty database").strong());
+                            ui.label(
+                                RichText::new(
+                                    "Run the starter SQL, or import a compatible SQL file above.",
+                                )
+                                .color(MUTED),
+                            );
+                        }
+                        ui.add_space(16.0);
+                        egui::CollapsingHeader::new("Manual data draft")
+                            .id_salt("manual-data-draft")
+                            .show(ui, |ui| self.data_draft(ui));
                     });
+            });
+    }
+    fn current_table(&self, ui: &mut egui::Ui, state: &LabSnapshot) {
+        ui.horizontal(|ui| {
+            icon(ui, Icon::Table, GREEN);
+            ui.label(RichText::new("records").strong())
+                .on_hover_text("Encrypted schema: age:u8, amount:u16. Change rows with SQL.");
+        });
+        if state.owner_rows.is_empty() {
+            ui.label(RichText::new("No records yet. Use INSERT in SQL to add rows.").color(MUTED));
+            return;
+        }
+        egui::Grid::new("current-database-records")
+            .striped(true)
+            .min_row_height(30.0)
+            .min_col_width((ui.available_width() - 45.0).max(120.0) / 3.0)
+            .show(ui, |ui| {
+                for header in ["#", "age", "amount"] {
+                    ui.label(RichText::new(header).strong().color(MUTED));
+                }
+                ui.end_row();
+                for (index, row) in state.owner_rows.iter().enumerate() {
+                    ui.label(RichText::new((index + 1).to_string()).color(MUTED));
+                    ui.label(RichText::new(row.age.to_string()).monospace());
+                    ui.label(RichText::new(row.amount.to_string()).monospace());
+                    ui.end_row();
+                }
             });
     }
     fn data_draft(&mut self, ui: &mut egui::Ui) {
@@ -39,7 +102,6 @@ impl Playground {
                 "Create / replace",
                 self.available()
                     && self.controls_available()
-                    && !self.data_import.blocks_creation()
                     && valid_name
                     && parse_rows(&self.draft_rows).is_ok(),
             )

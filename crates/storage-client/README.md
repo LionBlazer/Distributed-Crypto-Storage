@@ -27,6 +27,28 @@ holders/executors without becoming a voting committee.
 filters, LIMIT, single-row INSERT and additive amount UPDATE on
 `records(age: u8, amount: u16)`. COUNT/SUM and unsupported SQL reject explicitly.
 
+`SqlScript::parse(sql)` validates a bounded script before any network operation.
+It supports ordinary comments, the exact non-null unsigned `records` schema,
+`CREATE TABLE IF NOT EXISTS`, and the proof-supported Session statements. Multi-row
+literal INSERTs lower into individual verified INSERTs. The public `statements()`
+view exposes validated plans for import tooling, never stored plaintext or answers.
+Scripts are limited to 64 KiB and 256 operations after INSERT expansion.
+
+`script.execute(&mut Option<Session>, create_empty)` owns no process policy: the
+caller supplies an actual empty-Session creator with its participants and protocol
+profile. A missing table requires CREATE; duplicate unconditional CREATE rejects
+before any statement executes. IF NOT EXISTS preserves the existing table, keys
+and journal. A valid CREATE followed by SELECT performs a real proved read even
+when the table has no rows. Unsupported schema, COUNT/SUM, transactions and
+`SELECT FOR UPDATE` reject during planning rather than dropping their semantics.
+
+Execution is sequential, not transactional. `ScriptResult` retains each DDL or
+verified query outcome. A later runtime `ScriptError` includes its source statement
+number and completed outcomes; those writes remain committed. It never rolls back
+or automatically replays earlier statements. Session retains an ambiguous mutation
+for the existing `resume_pending` recovery contract. Ordinary syntax and table
+lifecycle errors are caught before the creator or any query executes.
+
 Every successful SELECT follows:
 
 1. Synchronize and independently validate work, bodies, authorization and job proofs.
@@ -92,6 +114,7 @@ uses Session. No unverified diagnostic result can convert to accepted evidence.
 From the repository root:
 
 ```sh
+cargo test --release --locked -p storage-client --lib
 cargo test --release --locked -p dcs-peer --test proved_sql -- --test-threads=1 --nocapture
 cargo test --release --locked -p dcs-peer --test proved_faults -- --test-threads=1
 cargo test --release --locked -p dcs-peer --test process_transport -- --test-threads=1

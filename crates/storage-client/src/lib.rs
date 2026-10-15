@@ -7,7 +7,12 @@ use compact_store::{Commitment, Limits};
 use peer_runtime::{Bundle, Operation, RemotePeer, Request, Response, Status};
 use sql_plan::{Projection, QueryPlan};
 use std::{fmt, io};
+mod script;
 mod session;
+pub use script::{
+    MAX_SCRIPT_BYTES, MAX_SCRIPT_STATEMENTS, ScriptError, ScriptResult, SqlScript, SqlStatement,
+    StatementOutcome, StatementResult,
+};
 pub use session::{Session, VerifiedResult};
 
 #[derive(Debug)]

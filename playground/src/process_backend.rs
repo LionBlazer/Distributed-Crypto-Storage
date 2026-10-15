@@ -187,6 +187,7 @@ pub(crate) struct PeerProfile {
     pub id: usize,
     pub config: PeerConfig,
 }
+type TopologyObserver = Arc<dyn Fn(Vec<PeerProfile>, NetworkSnapshot) + Send + Sync>;
 pub(super) struct ProcessBackend {
     owner: Identity,
     connector: Connector,
@@ -209,6 +210,7 @@ pub(super) struct ProcessBackend {
     pub(super) traffic: LiveTraffic,
     pub(super) wake_traffic: Option<Arc<dyn Fn() + Send + Sync>>,
     pub(super) observe_traffic: Option<Arc<dyn Fn(Observation) + Send + Sync>>,
+    pub(super) observe_topology: Option<TopologyObserver>,
 }
 fn error(e: impl std::fmt::Display) -> LabError {
     LabError::InvalidInput(e.to_string())
@@ -250,6 +252,7 @@ impl ProcessBackend {
             traffic: Arc::default(),
             wake_traffic: None,
             observe_traffic: None,
+            observe_topology: None,
         })
     }
     fn remote(&self, endpoint: Endpoint, node: NodeId) -> RemotePeer {
@@ -355,6 +358,9 @@ impl ProcessBackend {
             },
         );
         self.mesh();
+        if let Some(observe) = self.observe_topology.clone() {
+            observe(self.peer_profiles(), self.network());
+        }
         Ok(node)
     }
     fn mesh(&mut self) {
@@ -410,6 +416,7 @@ impl ProcessBackend {
         self.refresh();
         Ok(())
     }
+    #[cfg(test)]
     pub fn query(&mut self, client: NodeId, sql: &str) -> Result<VerifiedResult, LabError> {
         if !self.clients.contains_key(&client) {
             return Err(error("Requesting client session was removed"));
@@ -429,6 +436,71 @@ impl ProcessBackend {
             })?;
         }
         Ok(result)
+    }
+    pub fn import(&mut self, draft: DatabaseDraft) -> Result<(), LabError> {
+        if self.database.is_some() {
+            return Err(error(
+                "A database already exists. Import requires a new empty workspace; existing encrypted data was not replaced.",
+            ));
+        }
+        self.create(draft)
+    }
+    pub fn execute_sql(
+        &mut self,
+        client: NodeId,
+        sql: &str,
+    ) -> Result<storage_client::ScriptResult, LabError> {
+        if !self.clients.contains_key(&client) {
+            return Err(error("Requesting client session was removed"));
+        }
+        let script = storage_client::SqlScript::parse(sql).map_err(error)?;
+        self.session.store(client, Ordering::Release);
+        let had_database = self.database.is_some();
+        let mut database = self.database.take();
+        let result = script.execute(&mut database, || {
+            if self.peers.is_empty() {
+                for id in 1..=3 {
+                    self.add_peer(default_peer_config(id))
+                        .map_err(|e| storage_client::Error::InvalidInput(e.to_string()))?;
+                }
+            }
+            let participants = self
+                .peers
+                .iter_mut()
+                .filter_map(|(id, peer)| {
+                    peer.process.running().then(|| Participant {
+                        id: *id as u64,
+                        remote: peer.remote.clone(),
+                    })
+                })
+                .collect();
+            Session::create("database".into(), &[], participants, playground_profile())
+        });
+        // Runtime failures may follow committed statements; retain the actual
+        // session and head. SQL scripts are deliberately not transactions.
+        self.database = database;
+        let completed = match &result {
+            Ok(result) => &result.statements,
+            Err(error) => &error.completed,
+        };
+        let changed = !had_database
+            || completed.iter().any(|statement| {
+                matches!(
+                    statement.result,
+                    storage_client::StatementResult::Executed(
+                        VerifiedResult::Updated { .. } | VerifiedResult::Inserted { .. }
+                    )
+                )
+            });
+        if let Some(database) = &self.database
+            && changed
+        {
+            if !had_database {
+                self.desired = if database.shards().len() > 1 { 2 } else { 1 };
+            }
+            self.owner_rows = database.inspect_rows().map_err(|e| error(format!("SQL finished at confirmed version {}, but refreshing the owner view failed: {e}", database.version().height)))?;
+        }
+        result.map_err(error)
     }
     pub fn add_client(&mut self, name: String) -> Result<NodeId, LabError> {
         if self.clients.len() >= 8
@@ -910,11 +982,12 @@ mod tests {
     #[ignore = "starts owned peer daemons; build dcs-peer and set DCS_PEER_BIN"]
     fn real_process_views_follow_verified_sql_copies_failover_and_restart() {
         // Public SQL import input; the same preflight used by the client UI.
-        let rows = crate::samples::parse_dump(&format!(
+        let rows = crate::samples::prepare_import(&format!(
             "{} INSERT INTO records(age, amount) VALUES (18,20),(42,30);",
             crate::samples::SUPPORTED_SCHEMA
         ))
-        .unwrap();
+        .unwrap()
+        .rows;
         let mut backend = ProcessBackend::new().unwrap();
         backend
             .create(DatabaseDraft {
@@ -1077,6 +1150,240 @@ mod tests {
         backend.remove(1).unwrap();
         assert!(backend.query(1, "SELECT * FROM records").is_err());
     }
+    #[test]
+    #[ignore = "starts owned peer daemons; build dcs-peer and set DCS_PEER_BIN"]
+    fn sql_bootstrap_from_an_empty_workspace_returns_a_proved_empty_table_and_preserves_later_writes()
+     {
+        let startup = format!(
+            "{} SELECT * FROM records;",
+            crate::samples::SUPPORTED_SCHEMA.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS")
+        );
+        let mut backend = ProcessBackend::new().unwrap();
+
+        let missing = backend.execute_sql(1, "SELECT * FROM records").unwrap_err();
+
+        assert!(missing.to_string().contains("No database/table exists"));
+        assert!(backend.database.is_none());
+        assert!(backend.peers.is_empty());
+
+        let created = backend.execute_sql(1, &startup).unwrap();
+
+        assert!(matches!(
+            created.statements[0].result,
+            storage_client::StatementResult::Created { created: true, .. }
+        ));
+        let storage_client::StatementResult::Executed(VerifiedResult::Selected {
+            ref rows,
+            ref columns,
+            version: initial,
+        }) = created.statements[1].result
+        else {
+            panic!("Bootstrap must return a verified SELECT, not an owner-built empty answer");
+        };
+        assert!(rows.is_empty());
+        assert_eq!(columns, &[sql_plan::Column::Age, sql_plan::Column::Amount]);
+        let genesis = backend.database.as_ref().unwrap().genesis().clone();
+        let pids: std::collections::BTreeSet<_> = backend
+            .peers
+            .values()
+            .map(|peer| peer.process.pid().unwrap())
+            .collect();
+        assert_eq!(pids.len(), 3);
+        assert!(!pids.contains(&std::process::id()));
+        assert!(backend.traffic.lock().unwrap().iter().any(|event| {
+            event.operation == "fhe-proof" && event.packet.kind == PacketKind::Response
+        }));
+
+        let changed = backend
+            .execute_sql(
+                1,
+                "INSERT INTO records VALUES (18,20),(42,30); UPDATE records SET amount = amount + 5 WHERE age = 18; SELECT * FROM records;",
+            )
+            .unwrap();
+
+        assert_eq!(changed.statements.len(), 4);
+        for outcome in &changed.statements[..2] {
+            assert!(matches!(
+                outcome.result,
+                storage_client::StatementResult::Executed(VerifiedResult::Inserted { count: 1, version })
+                    if version.height > initial.height
+            ));
+        }
+        assert!(matches!(
+            changed.statements[2].result,
+            storage_client::StatementResult::Executed(VerifiedResult::Updated {
+                changed_rows: 1,
+                ..
+            })
+        ));
+        let storage_client::StatementResult::Executed(VerifiedResult::Selected {
+            ref rows,
+            version: written,
+            ..
+        }) = changed.statements[3].result
+        else {
+            panic!("The final script statement must return verified updated rows");
+        };
+        let mut actual = rows.clone();
+        actual.sort();
+        assert_eq!(actual, [vec![18, 25], vec![42, 30]]);
+
+        let repeated = backend.execute_sql(1, &startup).unwrap();
+
+        assert!(matches!(
+            repeated.statements[0].result,
+            storage_client::StatementResult::Created { created: false, .. }
+        ));
+        let storage_client::StatementResult::Executed(VerifiedResult::Selected {
+            ref rows,
+            version,
+            ..
+        }) = repeated.statements[1].result
+        else {
+            panic!("Repeated IF NOT EXISTS must preserve the actual table");
+        };
+        let mut actual = rows.clone();
+        actual.sort();
+        assert_eq!(actual, [vec![18, 25], vec![42, 30]]);
+        assert!(version.height >= written.height);
+        assert_eq!(backend.database.as_ref().unwrap().genesis(), &genesis);
+    }
+
+    #[test]
+    #[ignore = "starts owned peer daemons; build dcs-peer and set DCS_PEER_BIN"]
+    fn sql_script_preflight_rejects_unsupported_locks_and_runtime_failure_retains_preceding_commits()
+     {
+        let mut backend = ProcessBackend::new().unwrap();
+        backend
+            .import(DatabaseDraft {
+                name: "partial-script".into(),
+                rows: vec![compact_query::PlainRow {
+                    age: 18,
+                    amount: 65_534,
+                }],
+                peers: vec![default_peer_config(1)],
+            })
+            .unwrap();
+        let initial = backend.database.as_ref().unwrap().version();
+        let heads: Vec<_> = backend
+            .database
+            .as_ref()
+            .unwrap()
+            .shards()
+            .into_iter()
+            .map(|shard| (shard.object, shard.data_head, shard.index_head))
+            .collect();
+
+        let unsupported = backend
+            .execute_sql(
+                1,
+                "UPDATE records SET amount = amount + 1; SELECT * FROM records FOR UPDATE;",
+            )
+            .unwrap_err();
+
+        assert!(unsupported.to_string().contains("row locking"));
+        assert_eq!(backend.database.as_ref().unwrap().version(), initial);
+        assert_eq!(
+            backend
+                .database
+                .as_ref()
+                .unwrap()
+                .shards()
+                .into_iter()
+                .map(|shard| (shard.object, shard.data_head, shard.index_head))
+                .collect::<Vec<_>>(),
+            heads
+        );
+
+        let failed = backend
+            .execute_sql(
+                1,
+                "UPDATE records SET amount = amount + 1; UPDATE records SET amount = amount + 1; SELECT * FROM records;",
+            )
+            .unwrap_err();
+
+        let message = failed.to_string();
+        assert!(message.contains("Statement 2"), "{message}");
+        assert!(message.contains("overflowed"), "{message}");
+        assert!(
+            message.contains("1 preceding operation(s) completed"),
+            "{message}"
+        );
+        assert!(message.contains("not a transaction"), "{message}");
+        assert!(backend.database.as_ref().unwrap().version().height > initial.height);
+        assert_eq!(
+            backend.owner_rows,
+            [compact_query::PlainRow {
+                age: 18,
+                amount: 65_535
+            }]
+        );
+        let actual = backend.execute_sql(1, "SELECT * FROM records;").unwrap();
+        let storage_client::StatementResult::Executed(VerifiedResult::Selected {
+            ref rows, ..
+        }) = actual.statements[0].result
+        else {
+            panic!("Expected a verified read of the committed first UPDATE");
+        };
+        assert_eq!(rows, &[vec![18, 65_535]]);
+    }
+
+    #[test]
+    #[ignore = "starts owned peer daemons; build dcs-peer and set DCS_PEER_BIN"]
+    fn validated_import_creates_real_ciphertext_and_never_replaces_an_existing_database() {
+        let imported = crate::samples::prepare_import(&format!(
+            "{} INSERT INTO records VALUES (18,20),(42,30);",
+            crate::samples::SUPPORTED_SCHEMA
+        ))
+        .unwrap();
+        let mut backend = ProcessBackend::new().unwrap();
+
+        backend
+            .import(DatabaseDraft {
+                name: "imported".into(),
+                rows: imported.rows,
+                peers: vec![default_peer_config(1), default_peer_config(2)],
+            })
+            .unwrap();
+
+        let genesis = backend.database.as_ref().unwrap().genesis().clone();
+        let selected = backend.execute_sql(1, "SELECT * FROM records;").unwrap();
+        let storage_client::StatementResult::Executed(VerifiedResult::Selected {
+            ref rows,
+            version,
+            ..
+        }) = selected.statements[0].result
+        else {
+            panic!("Imported owner input must be read back through the verified peer path");
+        };
+        let mut actual = rows.clone();
+        actual.sort();
+        assert_eq!(actual, [vec![18, 20], vec![42, 30]]);
+        assert!(
+            backend
+                .database
+                .as_ref()
+                .unwrap()
+                .shards()
+                .iter()
+                .all(|shard| shard.holders.len() == 2)
+        );
+
+        let rejected = backend
+            .import(DatabaseDraft {
+                name: "replacement".into(),
+                rows: vec![compact_query::PlainRow { age: 7, amount: 99 }],
+                peers: vec![],
+            })
+            .unwrap_err();
+
+        assert!(rejected.to_string().contains("already exists"));
+        assert_eq!(backend.database.as_ref().unwrap().name(), "imported");
+        assert_eq!(backend.database.as_ref().unwrap().genesis(), &genesis);
+        assert_eq!(backend.database.as_ref().unwrap().version(), version);
+        assert_eq!(backend.owner_rows.len(), 2);
+    }
+
     #[test]
     #[ignore = "starts owned peer daemons; build dcs-peer and set DCS_PEER_BIN"]
     fn dropping_the_manager_stops_its_owned_processes_and_never_leaves_a_simulated_fallback() {

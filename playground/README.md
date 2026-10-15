@@ -130,9 +130,19 @@ complete owner/key recovery remains a separate unresolved requirement.
   remain labeled unverified. TLS and decryption do not substitute for query proofs.
 - Results start at half the window height, resize from their upper edge and scroll
   at the pane's right edge. Output records real elapsed operations and failures.
-- Startup opens **Data** with an empty owner draft; no example database is created
-  automatically. **Data** edits an owner draft. Create/replace sends encrypted initial data to peer
-  storage. One previous database and its owner keys are retained in the current
+- Startup opens **SQL** with `CREATE TABLE IF NOT EXISTS records (...)` followed
+  by `SELECT * FROM records`. No sample rows or database are created until Run.
+  Run works before a table exists; missing tables and unsupported SQL report in
+  Output. The first CREATE starts three real local peers if none were configured,
+  initializes an empty encrypted Session, then SELECT requires the ordinary proof.
+  An existing table is retained by IF NOT EXISTS. Scripts are preflighted as a
+  whole, then executed sequentially; a runtime failure reports earlier commits
+  without claiming rollback. `SELECT FOR UPDATE` is rejected because row locking
+  and transactions are not implemented.
+- **Data** shows authenticated current rows. Import SQL, sources and preview are
+  collapsible; the optional **Manual data draft** is closed by default. Its explicit
+  Create/replace action sends encrypted initial data to peers. One previous database
+  and its owner keys are retained in the current
   session; previous remote objects are not deleted. The runtime currently permits
   two public setups, so a third owner state is rejected before replacement.
   The owner editor refreshes from authenticated encrypted network data through
@@ -145,6 +155,8 @@ complete owner/key recovery remains a separate unresolved requirement.
   physical counters are explicitly labeled as last observed; they are never a
   fallback source for a query.
 - Left/middle/right drag pans the camera, including its world-aligned grid.
+  Every map card, glyph, indicator, border and storage bar shares one world-space
+  transform. Zoom never switches card contents or fixes label sizes in screen pixels.
   Dense networks can use the complete connection matrix; links are never removed
   merely to simplify the picture. See [layout research](../docs/graph-layout.md).
 
@@ -154,9 +166,17 @@ The Data panel downloads public SQL scripts on demand to client memory or reads 
 local `.sql` file. It does not ship datasets, launch another database engine, or
 execute script text on the host. Downloads and file reads are capped at 8 MiB;
 preview text is capped at 64 KiB. Network loading runs off the UI thread, with
-HTTPS, redirect and timeout bounds. `samples::parse_dump` checks the entire input
-before staging an owner draft. Create/replace is still an explicit action through
-the normal encrypted `Session` path; unsupported statements return no partial rows.
+HTTPS, redirect and timeout bounds. `samples::prepare_import` uses the same
+`storage_client::SqlScript` preflight as Run: up to 64 KiB, 256 lowered operations
+and 128 input rows. The entire input must declare the supported table and literal
+INSERTs; incompatible input returns no partial rows. Loading or previewing a file
+does not change a draft or create data.
+
+**Import** explicitly initializes a new encrypted Session and its agreed genesis
+from all validated owner-supplied input rows. It creates actual ciphertext copies
+on the managed peers and never replaces an existing database. Initial owner-input
+encryption is not a substitute query answer: future SELECT/INSERT/UPDATE retain
+their normal FHE execution, proof/completeness and confirmed-version checks.
 
 The catalog contains [Northwind and pubs from Microsoft](https://github.com/microsoft/sql-server-samples/tree/master/samples/databases/northwind-pubs)
 and [Chinook](https://github.com/lerocha/chinook-database/releases/tag/v1.4.5),
@@ -168,13 +188,15 @@ renames arbitrary source columns or drops unsupported tables to claim success.
 [AdventureWorks backups](https://learn.microsoft.com/en-us/sql/samples/adventureworks-install-configure)
 use SQL Server `.bak` restoration and are not SQL text for this importer.
 
-A supported local dump starts with the exact unsigned schema below, then zero or
+A supported local dump starts with the unsigned schema below (optional
+`IF NOT EXISTS`), then zero or
 more `INSERT INTO records [(age, amount)] VALUES (...)` statements. Comments are
 accepted; constraints beyond these declarations, other types/tables, transactions
 and executable comments are rejected. Both integers are checked without truncation.
 
 ```sql
 CREATE TABLE records (age TINYINT UNSIGNED NOT NULL, amount SMALLINT UNSIGNED NOT NULL);
+INSERT INTO records (age, amount) VALUES (18, 10), (42, 20);
 ```
 
 Supporting a complete multi-megabyte relational sample requires extending the
