@@ -2,15 +2,23 @@
 //! Owner-assisted index selection and writeback are explicit experimental policy.
 //! Outputs carry no proof of correct or complete computation.
 #![forbid(unsafe_code)]
+#[cfg(feature = "bfv-experiment")]
+pub mod bfv;
+#[cfg(feature = "tfhe-backend")]
 mod evaluator;
 mod index;
+#[cfg(feature = "tfhe-backend")]
 mod owner;
+mod storage;
+#[cfg(feature = "tfhe-backend")]
 mod wire;
 
 use compact_store::{Commitment, EncryptedSnapshot};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "tfhe-backend")]
 use tfhe::{ClientKey, ServerKey};
 
+#[cfg(feature = "tfhe-backend")]
 pub use wire::{PreparedQuery, UnverifiedOutput};
 /// Hard materialization limit, checked before owner mask encryption.
 pub const MAX_ROWS: usize = 256;
@@ -19,6 +27,7 @@ pub const ROW_BYTES: u32 = 3;
 pub const SCHEMA: [u8; 16] = *b"CQAGEAMOUNT00001";
 const INDEX_SCHEMA: [u8; 16] = *b"CQAGEINDEX000002";
 const INDEX_HEADER_BYTES: usize = compact_store::MANIFEST_BYTES + (256 + 257) * 4;
+#[cfg(feature = "tfhe-backend")]
 const MAX_WIRE_BYTES: u64 = 128 * 1024 * 1024;
 const _: () = assert!((MAX_ROWS as u64) * (u16::MAX as u64) <= u32::MAX as u64);
 
@@ -105,12 +114,14 @@ pub struct AppliedUpdate {
 
 /// Secret keys stay solely here; one owner/evaluator pair may serve many tables.
 /// No key export, serialization or Clone API is provided.
+#[cfg(feature = "tfhe-backend")]
 pub struct Owner {
     store: compact_store::Owner,
     key: ClientKey,
     domain: [u8; 16],
 }
 /// Peer role: evaluation material only. No plaintext decryption capability.
+#[cfg(feature = "tfhe-backend")]
 #[derive(Clone)]
 pub struct Evaluator {
     server_key: ServerKey,
@@ -174,6 +185,7 @@ pub struct Stages {
     pub output_serialize_ms: f64,
     pub output_bytes: usize,
 }
+#[cfg(feature = "tfhe-backend")]
 fn ms(start: std::time::Instant) -> f64 {
     start.elapsed().as_secs_f64() * 1000.0
 }
@@ -192,5 +204,12 @@ fn check_schema(head: &Commitment) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "tfhe-backend"))]
 mod tests;
+
+#[cfg(feature = "bfv-experiment")]
+impl From<bfv_query_core::Error> for Error {
+    fn from(error: bfv_query_core::Error) -> Self {
+        Self::Codec(format!("BFV experiment: {error}"))
+    }
+}

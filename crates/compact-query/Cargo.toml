@@ -5,9 +5,15 @@ edition.workspace = true
 rust-version.workspace = true
 publish = false
 
+[features]
+default = ["tfhe-backend"]
+tfhe-backend = ["dep:tfhe"]
+bfv-experiment = ["dep:bfv-query-core"]
+
 [dependencies]
 compact-store = { path = "../compact-store" }
-tfhe = { workspace = true, features = ["extended-types"] }
+tfhe = { workspace = true, features = ["extended-types"], optional = true }
+bfv-query-core = { path = "../bfv-query-core", optional = true }
 serde.workspace = true
 bincode = "1.3"
 getrandom = "0.2"
@@ -16,3 +22,19 @@ zeroize = "1"
 [dev-dependencies]
 rayon.workspace = true
 serde_json.workspace = true
+
+[[example]]
+name = "compact_query"
+required-features = ["tfhe-backend"]
+
+[[example]]
+name = "index_storage"
+required-features = ["tfhe-backend"]
+
+[[example]]
+name = "key_amortization"
+required-features = ["tfhe-backend"]
+
+[[example]]
+name = "disk_tables"
+required-features = ["tfhe-backend"]

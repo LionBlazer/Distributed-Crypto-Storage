@@ -10,7 +10,7 @@ state. These libraries are independent of the GUI and simulation clock. This is 
 
 ## Launch
 
-From the [workspace root](../../README.md), with Rust **1.95 or newer**:
+From the [workspace root](../../README.md), with Rust **1.99 or newer**:
 
 ```sh
 cargo run --release --locked -p fhe-playground
@@ -80,11 +80,11 @@ but cannot answer queries; failed repartition preserves the old encrypted data.
 
 Quotas cover canonical encrypted data plus the complete encrypted index and its
 headers (1 KiB..64 MiB), not
-TFHE working memory, shared keys or rebuildable in-memory Merkle hashes. The node
+BFV working memory, shared keys or rebuildable in-memory Merkle hashes. The node
 inspector shows data and index bytes separately. Creation, repartitioning, profile edits and
 updates reject overruns without partial writes. Peer delay (0..1000 ms) belongs to
 the virtual transport; it is not measured ping. Query wall time includes delivery,
-index selection, fresh encrypted masks, request/output serialization, FHE evaluation and owner decryption; per-shard query timing excludes virtual delay.
+index selection, fresh encrypted selected byte/COUNT weights, request/output serialization, FHE evaluation and owner decryption; per-shard query timing excludes virtual delay.
 Offline required shards reject reads/updates, without silently omitting records.
 
 The fixture editor is the owner's plaintext view. Peer evaluations receive only
@@ -113,8 +113,10 @@ operators, clauses, aliases, comments, quoted identifiers, and multiple statemen
 are rejected. CREATE/INSERT/DELETE, CREATE INDEX, joins and transactions are not supported
 as SQL; database creation and fixture replacement are GUI manager actions.
 
-The current backend uses its owner-built encrypted age posting index for complete
-equality/range candidates. Peers observe selected addresses and cardinality. This
+The BFV backend uses its owner-built authenticated encrypted age posting index for
+complete exact equality/range selection and rejects every selected age mismatch.
+The peer rotates/adds freshly encrypted byte/COUNT weights; it does not run a
+redundant encrypted age comparator for this explicit exact-index operation. Peers observe selected addresses and cardinality. This
 is an explicit experimental visible-access case; the final leakage policy is open.
 
 Updates stage compact data/index copies for every shard. The owner decrypts and
@@ -127,8 +129,8 @@ that number is not a network freshness certificate.
 ## Boundaries and verification
 
 All peers, the owner, and keys live in **one process**. A network worker advances
-virtual delivery while a separate compute worker serializes FHE jobs; TFHE uses
-eight shared Rayon threads and up to eight extra scoped row initiators per phase.
+virtual delivery while a separate compute worker serializes FHE jobs. BFV uses
+one fixed Rows256 SIMD operation per shard, with no TFHE keys or row workers.
 Evaluator clones share key allocation, so memory does not model
 independent physical machines. Packets carry opaque references to local operations;
 there is no TCP transport. The cryptographic backend actually serializes and decodes encrypted requests/results, but the virtual network does not yet model their byte-dependent transmission time.
@@ -168,3 +170,21 @@ cargo run --release --locked -p fhe-playground --example sql_workload -- 128 8 5
 ```
 
 The sql_workload example exercises the actual SQL/manager boundary without opening a GUI: indexed point, duplicate-group and absent queries, then compact UPDATE. It emits public-fixture JSON timings and storage counters; network/proofs are excluded. Tiny tables may exceed 2x once fixed metadata and the encrypted index are counted.
+
+The BFV owning library is [bfv-query-core](../bfv-query-core/README.md). Its inherited
+profile is experimental and independently unvalidated for security/noise/CCA.
+Release/locked/offline validation passed all 80 headless GUI/SQL/worker tests (one
+preview-export test remains ignored). The finite public 128-row workload runs all 16
+cases three times on1/3/16peers plus three late-overflow controls:147 exact full
+operations, zero observed >500ms, maximum 383.8544ms. This measures the visible local
+LabEngine boundary with setup/virtual network/rendering/proofs excluded; it is not a
+general SLA or privacy/security claim. See the [integration report](../../docs/experiment-bfv-gui-integration.md)
+for full timer scope, keys, native memory, canonical sizes and source/raw hashes.
+
+```sh
+cargo run --release --locked -p fhe-playground --example bfv_sql_workload -- 3
+```
+
+`LabEngine::backend_info_for_experiment` exposes public profile/setup counts and the
+owner secret serialization COUNT only; `peer_heads_for_experiment` exposes opaque
+commitment copies for failure-model checks. Neither returns secret key bytes.

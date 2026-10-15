@@ -45,7 +45,7 @@ cargo run --release --locked -p fhe-playground
 ```
 
 In Zed, use `task: spawn` and select **FHE: Open GUI playground** from
-[.zed/tasks.json](.zed/tasks.json). The GUI requires Rust 1.95 or newer; the Zed task
+[.zed/tasks.json](.zed/tasks.json). The GUI requires Rust 1.99 or newer; the Zed task
 uses the built-in Windows PowerShell and rustup.
 
 The experimental [compact-store](crates/compact-store/README.md) crate separates
@@ -57,14 +57,24 @@ access.
 
 The [compact-query](crates/compact-query/README.md) crate composes those pages with
 complete age-index selection, genuine FHE COUNT/SUM and overflow-safe amount
-updates, followed by compact owner-assisted writeback. The GUI uses this backend.
+updates, followed by compact owner-assisted writeback. The GUI selects its explicit
+BFV exact-index module and shares public evaluation keys across simulated peers.
+The reusable [BFV core](crates/bfv-query-core/README.md) owns the arithmetic;
+the legacy TFHE module retains its broader full-scan/coarse-candidate semantics.
 It remains an explicitly unverified local experiment with visible addresses;
 owner availability, general SQL, concealed index execution and computation proofs
 remain open. See the [measurement ledger](docs/optimization-goal.md) for measured
 costs, including indexes, keys and memory.
 
+The [headless GUI/SQL measurement](docs/experiment-bfv-gui-integration.md) exercises
+the actual LabEngine on 128 public fixture rows with 1, 3 and 16 peers. All 147
+aggregate/update/overflow operations are exact and below 500 ms, maximum 383.8544 ms;
+native peak process commit is 246,702,080 B. Setup is separate, virtual network delay
+is zero, and the fixture oracle runs after the query timer. This is a visible-access
+SQL subset measurement; its tiny-table metadata/key overhead is not a new 2x result.
+
 The separate [exact-index BFV disk probe](experiments/private-bfv-exact-disk/README.md)
-is the latest measured read path; the GUI still uses compact-query. On 1,000
+measures private PIR and capacity-one disk loading separately from the GUI. On 1,000
 independent million-row tables (3 GB logical), actual files plus native peak process
 commit total 1.816303x. Its 384 exact-index queries take at most 45.008 ms with
 visible access and 351.110 ms with private PIR, including application-cache misses.

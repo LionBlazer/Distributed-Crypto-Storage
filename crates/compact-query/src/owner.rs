@@ -1,10 +1,10 @@
 use crate::wire::{CountCipher, EncryptedPredicate, MaskedRow, Request, SumCipher};
 use crate::{
-    AgeRange, Aggregate, AppliedUpdate, Error, Evaluator, MAX_ROWS, MAX_TABLE_ROWS, Operation,
-    Owner, PlainRow, PreparedQuery, ROW_BYTES, Result, SCHEMA, Selection, Stages, Table,
-    UnverifiedOutput, check_schema, index, ms, random_id,
+    AgeRange, Aggregate, AppliedUpdate, Error, Evaluator, MAX_ROWS, Operation, Owner, PlainRow,
+    PreparedQuery, ROW_BYTES, Result, Selection, Stages, Table, UnverifiedOutput, check_schema,
+    index, ms, random_id,
 };
-use compact_store::{Commitment, EncryptedSnapshot, Layout, Limits, LookupResponse};
+use compact_store::{Commitment, Limits, LookupResponse};
 use std::collections::BTreeMap;
 use tfhe::prelude::*;
 use tfhe::shortint::parameters::PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
@@ -30,29 +30,7 @@ impl Owner {
     }
     /// Independent trusted table handles share this owner's keys and no global head.
     pub fn seal(&self, rows: &[PlainRow], rows_per_page: u32, limits: Limits) -> Result<Table> {
-        if rows.len() > MAX_TABLE_ROWS {
-            return Err(Error::SelectionBudget {
-                selected: rows.len(),
-                budget: MAX_TABLE_ROWS,
-            });
-        }
-        let mut plain = Zeroizing::new(Vec::with_capacity(rows.len() * ROW_BYTES as usize));
-        for row in rows {
-            plain.push(row.age);
-            plain.extend_from_slice(&row.amount.to_le_bytes());
-        }
-        let data = self.store.seal(
-            Layout {
-                schema: SCHEMA,
-                row_width: ROW_BYTES,
-                rows_per_page,
-                row_count: rows.len() as u64,
-            },
-            &plain,
-            limits,
-        )?;
-        let index = index::build(&self.store, rows, data.commitment())?;
-        Ok(Table { data, index })
+        crate::storage::seal(&self.store, rows, rows_per_page, limits)
     }
     /// In-memory restart with the same live key authority. The expected heads must
     /// come independently of the encoded peer data. This is not durable key recovery.
@@ -64,14 +42,14 @@ impl Owner {
         expected_index: &Commitment,
         limits: Limits,
     ) -> Result<Table> {
-        let data = EncryptedSnapshot::decode(data, limits)?;
-        let index = EncryptedSnapshot::decode(index_bytes, index::index_limits())?;
-        if data.commitment() != expected_data || index.commitment() != expected_index {
-            return Err(Error::WrongVersion);
-        }
-        check_schema(data.commitment())?;
-        index::check_binding(&self.store, &index, data.commitment())?;
-        Ok(Table { data, index })
+        crate::storage::restore(
+            &self.store,
+            data,
+            index_bytes,
+            expected_data,
+            expected_index,
+            limits,
+        )
     }
     pub fn prepare(
         &self,
@@ -289,17 +267,15 @@ impl Owner {
                 changed_rows,
             });
         }
-        let mut data = table.data.clone();
-        let replacements: Vec<_> = pages
-            .iter()
-            .map(|(index, bytes)| (*index, bytes.as_slice()))
-            .collect();
-        let next = self
-            .store
-            .replace_pages(&mut data, &old, &replacements, limits)?;
-        let index = index::rebound(&self.store, &table.index, &old, &next)?;
-        table.data = data;
-        table.index = index;
+        let staged = crate::storage::replace_amount_pages(
+            &self.store,
+            table,
+            &old,
+            table.index_commitment(),
+            &pages,
+            limits,
+        )?;
+        *table = staged;
         Ok(AppliedUpdate {
             rejected,
             changed_rows,
@@ -311,18 +287,7 @@ impl Owner {
         ordinal: u64,
         limits: Limits,
     ) -> Result<PlainRow> {
-        let address = table.commitment().layout().address_of(ordinal)?;
-        let verified = table.data.lookup(address.page_index, limits)?.verify(
-            table.commitment(),
-            address.page_index,
-            limits,
-        )?;
-        let plain = self.store.decrypt(&verified)?;
-        let bytes = &plain.as_bytes()[address.byte_offset..address.byte_offset + 3];
-        Ok(PlainRow {
-            age: bytes[0],
-            amount: u16::from_le_bytes([bytes[1], bytes[2]]),
-        })
+        crate::storage::row(&self.store, table, ordinal, limits)
     }
     pub fn secret_key_serialized_bytes(&self) -> Result<u64> {
         bincode::serialized_size(&self.key).map_err(|e| Error::Codec(e.to_string()))

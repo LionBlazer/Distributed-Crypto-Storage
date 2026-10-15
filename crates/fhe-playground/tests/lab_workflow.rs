@@ -112,6 +112,7 @@ fn overflow_on_a_later_shard_rolls_back_the_already_staged_shards() {
         2,
     );
 
+    let before_heads = engine.peer_heads_for_experiment().unwrap();
     let outcome = engine
         .execute("UPDATE records SET amount = amount + 1")
         .unwrap();
@@ -120,6 +121,7 @@ fn overflow_on_a_later_shard_rolls_back_the_already_staged_shards() {
         outcome,
         QueryOutcome::Updated { committed: false }
     ));
+    assert_eq!(engine.peer_heads_for_experiment().unwrap(), before_heads);
     assert_eq!(engine.snapshot().unwrap().revision, 0);
     assert_eq!(aggregate(&mut engine, ALL), (2, 65_545));
 }
@@ -304,4 +306,42 @@ fn progress_identifies_only_required_nonempty_shards_in_execution_order() {
         })
         .unwrap();
     assert_eq!(*visited.borrow(), [1, 2, 1, 2]);
+}
+
+#[test]
+fn bfv_full128_no_where_and_duplicate_selection_use_actual_shards_and_writeback() {
+    let rows: Vec<_> = (0..128)
+        .map(|amount| PlainRow {
+            age: if amount % 2 == 0 { 18 } else { 17 },
+            amount,
+        })
+        .collect();
+    let mut engine = lab(rows.clone(), 3);
+    assert_eq!(aggregate(&mut engine, ALL), (128, 8128));
+    assert_eq!(
+        aggregate(
+            &mut engine,
+            "SELECT COUNT(*), SUM(amount) FROM records WHERE age = 18"
+        ),
+        (64, 4032)
+    );
+    assert_eq!(
+        aggregate(
+            &mut engine,
+            "SELECT COUNT(*), SUM(amount) FROM records WHERE age = 255"
+        ),
+        (0, 0)
+    );
+    assert!(matches!(
+        engine
+            .execute("UPDATE records SET amount = amount + 1")
+            .unwrap(),
+        QueryOutcome::Updated { committed: true }
+    ));
+    assert_eq!(aggregate(&mut engine, ALL), (128, 8256));
+    let snapshot = engine.snapshot().unwrap();
+    for (actual, original) in snapshot.owner_rows.iter().zip(&rows) {
+        assert_eq!(actual.age, original.age);
+        assert_eq!(actual.amount, original.amount + 1);
+    }
 }

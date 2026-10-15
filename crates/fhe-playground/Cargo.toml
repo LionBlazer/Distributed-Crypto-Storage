@@ -2,12 +2,15 @@
 name = "fhe-playground"
 version = "0.1.0"
 edition.workspace = true
-rust-version = "1.95"
+rust-version = "1.99"
 publish = false
 
 [dependencies]
-compact-query = { path = "../compact-query" }
+compact-query = { path = "../compact-query", default-features = false, features = ["bfv-experiment"] }
 compact-store = { path = "../compact-store" }
 peer-protocol = { path = "../peer-protocol" }
 eframe = { version = "=0.36.2", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
 rayon.workspace = true
+
+[dev-dependencies]
+serde_json = '=1.0.154'

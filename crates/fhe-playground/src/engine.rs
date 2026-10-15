@@ -2,7 +2,8 @@ use std::fmt;
 use std::time::Instant;
 
 use crate::{Comparison, PlainRow};
-use compact_query::{self as cq, AgeRange, Operation, Selection, Table, UnverifiedOutput};
+use compact_query::bfv as backend;
+use compact_query::{self as cq, AgeRange, Table};
 use compact_store::Limits;
 
 use crate::{Predicate, QueryPlan, parse_sql};
@@ -115,6 +116,19 @@ pub struct LabSnapshot {
     pub owner_rows: Vec<PlainRow>,
     pub peers: Vec<PeerInfo>,
 }
+/// Opaque current commitments for headless failure-model checks; no plaintext or key material.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PeerHeads {
+    pub id: usize,
+    pub data: compact_store::Commitment,
+    pub index: compact_store::Commitment,
+}
+/// Public parameter/key counts only; no secret bytes are exposed or retained.
+pub struct BackendInfo {
+    pub profile: backend::ParameterProfile,
+    pub public_setup_bytes: backend::PublicSetupBytes,
+    pub secret_key_serialized_bytes: usize,
+}
 #[derive(Clone, Debug)]
 pub struct PeerAggregate {
     pub id: usize,
@@ -144,15 +158,15 @@ pub struct LabEngine {
 struct Database {
     name: String,
     revision: u64,
-    owner: cq::Owner,
-    evaluator: cq::Evaluator,
+    owner: backend::Owner,
+    evaluator: backend::Evaluator,
     owner_rows: Vec<PlainRow>,
     peers: Vec<Peer>,
 }
 struct Peer {
     id: usize,
     config: PeerConfig,
-    evaluator: cq::Evaluator,
+    evaluator: backend::Evaluator,
     table: Table,
     online: bool,
 }
@@ -192,8 +206,7 @@ impl LabEngine {
                 "The GUI experiment allows at most 128 rows.".into(),
             ));
         }
-        let (owner, evaluator) = cq::Owner::generate(*b"playground-db-v1")?;
-        let evaluator = evaluator.with_row_workers_for_experiment(8)?;
+        let (owner, evaluator) = backend::Owner::generate(*b"playground-db-v1")?;
         let profiles = ids
             .into_iter()
             .zip(draft.peers)
@@ -233,6 +246,28 @@ impl LabEngine {
                         .collect(),
                 })
                 .collect(),
+        })
+    }
+    /// Public current heads only; diagnostic copies are outside query timing.
+    pub fn peer_heads_for_experiment(&self) -> Result<Vec<PeerHeads>, LabError> {
+        let db = self.database.as_ref().ok_or(LabError::NoDatabase)?;
+        Ok(db
+            .peers
+            .iter()
+            .map(|peer| PeerHeads {
+                id: peer.id,
+                data: peer.table.commitment().clone(),
+                index: peer.table.index_commitment().clone(),
+            })
+            .collect())
+    }
+    /// Diagnostic accounting outside query timers. Peers share the same public setup via Arc.
+    pub fn backend_info_for_experiment(&self) -> Result<BackendInfo, LabError> {
+        let db = self.database.as_ref().ok_or(LabError::NoDatabase)?;
+        Ok(BackendInfo {
+            profile: db.owner.profile(),
+            public_setup_bytes: db.evaluator.public_setup_bytes()?,
+            secret_key_serialized_bytes: db.owner.secret_key_serialized_bytes(),
         })
     }
     pub fn set_peer_online(&mut self, id: usize, online: bool) -> Result<(), LabError> {
@@ -379,23 +414,20 @@ impl Database {
                 ),
             });
             let start = Instant::now();
-            let mut query = self.owner.prepare(
+            let query = self.owner.prepare_exact_aggregate_for_experiment(
                 &peer.table,
-                Selection::IndexedAgeRange(range),
                 range,
-                Operation::CountSum,
                 MAX_LAB_ROWS,
                 Limits::default(),
             )?;
-            let request = query.encode_request()?;
-            let mut output =
-                peer.evaluator
-                    .evaluate(peer.table.snapshot(), &request, Limits::default())?;
-            let wire = output.encode()?;
-            let output = UnverifiedOutput::decode(&wire)?;
-            let result =
-                self.owner
-                    .decrypt_aggregate_for_experiment(&peer.table, &query, &output)?;
+            let evaluated = peer.evaluator.evaluate_exact_aggregate(query.request())?;
+            let result = self
+                .owner
+                .complete_exact_aggregate_unverified_for_experiment(
+                    &peer.table,
+                    query,
+                    &evaluated.output,
+                )?;
             count += result.count;
             sum += result.sum;
             contributions.push(PeerAggregate {
@@ -430,24 +462,18 @@ impl Database {
                         self.peers.len()
                     ),
                 });
-                let mut query = self.owner.prepare(
+                let query = self.owner.prepare_exact_update_for_experiment(
                     &peer.table,
-                    Selection::IndexedAgeRange(range),
                     range,
-                    Operation::AddAmount(delta),
+                    delta,
                     MAX_LAB_ROWS,
                     Limits::default(),
                 )?;
-                let request = query.encode_request()?;
-                let mut output =
-                    peer.evaluator
-                        .evaluate(peer.table.snapshot(), &request, Limits::default())?;
-                let wire = output.encode()?;
-                let output = UnverifiedOutput::decode(&wire)?;
-                let applied = self.owner.apply_update_for_experiment(
+                let evaluated = peer.evaluator.evaluate_indexed_update(query.request())?;
+                let applied = self.owner.apply_exact_update_checked_for_experiment(
                     &mut table,
-                    &query,
-                    &output,
+                    query,
+                    &evaluated.output,
                     Limits::default(),
                 )?;
                 if applied.rejected {
@@ -498,8 +524,8 @@ fn validate_profiles(configs: &[PeerConfig], ids: &[usize]) -> Result<(), LabErr
     Ok(())
 }
 fn build_peers(
-    owner: &cq::Owner,
-    evaluator: &cq::Evaluator,
+    owner: &backend::Owner,
+    evaluator: &backend::Evaluator,
     rows: &[PlainRow],
     profiles: Vec<(usize, PeerConfig, bool)>,
 ) -> Result<Vec<Peer>, LabError> {

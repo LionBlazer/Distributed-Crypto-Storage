@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         peers: vec![PeerConfig::numbered(1)],
     })?;
     println!(
-        "{{\"kind\":\"setup\",\"rows\":{rows},\"threads\":{threads},\"row_worker_budget\":8,\"logical_bytes\":{},\"canonical_data_bytes\":{},\"encrypted_index_bytes\":{},\"stored_bytes\":{},\"setup_ms\":{:.4}}}",
+        "{{\"kind\":\"setup\",\"rows\":{rows},\"threads\":{threads},\"backend\":\"BFV exact-index\",\"geometry\":256,\"logical_bytes\":{},\"canonical_data_bytes\":{},\"encrypted_index_bytes\":{},\"stored_bytes\":{},\"setup_ms\":{:.4}}}",
         rows * 3,
         snapshot
             .peers

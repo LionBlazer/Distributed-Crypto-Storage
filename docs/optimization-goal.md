@@ -71,6 +71,7 @@ See [earlier measurements](fhe-optimization.md) before repeating experiments.
 | Exact-index BFV with actual private disk scale | [Paired 1,000-table experiment](experiment-private-bfv-exact-disk.md), 31 owning tests, strict Clippy, 774 genuine operations and 13 before-BFV rejections | Same 3 GB logical dataset/keyset: actual files plus native peak process commit 1.816302709x. All 384 ExactIndex matrix queries <352 ms, visible maximum 45.008 ms; FullPredicate retains nine failures >500 ms, maximum 562.224 ms. Complete authenticated exact selections/age checks precede eight encrypted rotate/add steps. Both privacy policies remain; 256 rows/one posting+data page, online owner, OS cache allowed; network/proofs/general SQL/restart excluded |
 | Genuine indexed BFV UPDATE through compact disk writeback | [Actual 1,000-table lifecycle](experiment-private-bfv-update-disk.md), 42 owning tests, strict Clippy, 359 peer operations plus 126 diagnostic preparations | 100 point cycles, 24 positive multirow/range controls and two carry/endpoint commits preserve canonical/catalog sizes; 16 no-ops, nine global overflows and public echo rejection retain their explicit outcomes. Actual files plus native peak commit = 1.814284747x of 3 GB. Main-cycle commit/invalidation maximum 316.162 ms; compound with readiness/diagnostics/separate SELECT maximum 635.367 ms, all 25 private uncached cycles >500 retained. No private-write, durable recovery, arithmetic proof or general SQL claim |
 | Sealed original-owner reconstruction candidate | [Executed owning contracts and composition](proposal-owner-recovery-candidate.md), 66 runtime tests, two doctests and strict Clippy across three isolated packages | After all original owner handles drop, the candidate decrypts original data/index files, retrieves original first/middle/last PIR records and evaluates a fresh BFV predicate using original rotation/product/relinearization keys. Three-table files include a 9,996 B sealed checkpoint; native peak commit 376,266,752 B. External wrapping key stays in RAM. Same-process functionality only; no restart-latency, 1,000-table, anti-rollback or durability claim |
+| BFV backend in the actual GUI/SQL engine | [Headless full-operation workload](experiment-bfv-gui-integration.md); 37 BFV-core, 19 BFV-storage, 23 retained TFHE and 80 GUI/SQL runtime checks, three doctests and strict Clippy | All 144 unique matrix cells and three late-shard overflow controls pass on 128 public rows across 1/3/16 peers. Maximum full SQL operation 383.8544 ms, native peak commit 246,702,080 B. The GUI generates no TFHE keys; public BFV material is shared. Exact selection/age authentication, real wire/FHE, checked compact updates and all-shard publication are timed. Visible access, zero virtual delay, no window opened; tiny-table overhead is not a new 2x result |
 
 Experiments use separate managed worktrees, including `private-index-research`,
 `compact-fhe-query`, `query-proof-research` and `compact-playground`. Generated
@@ -126,8 +127,8 @@ amortized below 2x in one configuration, without counting projections or cloned
 tables. It does not remove the earlier small-table costs, multirow latency or
 the need to account for a real distributed SQL planner and routing structures.
 
-The full goal remains active: integrate the measured BFV path into the interactive
-prototype, implement same-owner restart, extend concealed indexed access beyond its
-measured one-page budget, and retain unresolved proof, freshness, resource and durable
+The full goal remains active: implement same-owner process restart, extend concealed
+indexed access beyond its measured one-page budget, and retain unresolved proof,
+freshness, resource and durable
 lifecycle requirements. Transport and malicious-peer computation proofs remain
 absent from all local latency measurements.

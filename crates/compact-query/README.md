@@ -1,5 +1,56 @@
 # Compact query
 
+Two explicit experimental storage/FHE contracts share the same canonical Table and
+owner-built encrypted index. `tfhe-backend` is the legacy default and retains its
+FullScan/coarse-candidate encrypted predicate and conditional UPDATE semantics.
+`bfv-experiment` selects the explicit `compact_query::bfv` module; callers cannot
+pass FullScan or coarse candidates into its exact-index API. The GUI uses BFV only.
+Neither backend provides a cryptographic computation/completeness proof.
+
+## Explicit BFV composition
+
+[bfv-query-core](../bfv-query-core/README.md) owns unchanged BFV arithmetic/wire/key
+roles. This module owns storage schema, complete authenticated index selection,
+every selected age check, current data+index heads and owner-local checked UPDATE
+writeback. Live selected field slots and page buffers are zeroized when owner query
+state drops. Fields reserve their complete bounded capacity before plaintext is
+pushed; this is not a guarantee about every compiler, stack or allocator copy. No
+persistent plaintext/FHE cache is introduced.
+
+`bfv::Owner::generate` returns one secret owner and an Evaluator whose clones share
+public material through Arc. It generates no TFHE keys. Owner::seal/restore and Table
+reuse the canonical storage lifecycle. `prepare_exact_aggregate_for_experiment`
+accepts one exact AgeRange, not separate predicate/candidate ranges; peer evaluation
+rotates/adds fresh byte/COUNT weights and completion returns UnverifiedAggregate.
+`prepare_exact_update_for_experiment` freshly encrypts original amounts and deltas;
+peer addition precedes owner unverified decode and local checked-add validation of
+ALL selected rows. Only then can apply_exact_update_checked_for_experiment stage
+all affected compact pages and the index binding before publishing both images.
+A global u16 overflow changes neither image. Slot/order/limb mismatches reject.
+
+Selection is bounded to min(caller budget,256) before input encryption; every posting
+and data page is Merkle/AEAD authenticated, duplicates and every age mismatch reject
+without filtering. Multiple posting/data pages remain supported. Exact aggregate
+uses fixed Rows256 and encrypted zero weights even for absent matches; no owner
+COUNT/SUM answer is substituted. Input authentication does not prove output
+arithmetic; core outputs remain ProofStatus::Unavailable.
+
+The low-level crate carries Rust 1.99 and the exact N8192/Q218/t114689/full-keyset
+profile. Independent security/noise/CCA gates remain unresolved. Retained public
+setup bytes, expanded public keys, owner secret and temporary fields/wire must be
+counted; public evaluator cloning does not imply free key material. This composition
+is visible access: no Spiral, hidden-address, disk durability or owner-key recovery
+is added. GUI transport/cancellation and all-shard atomic publication stay outside.
+
+Release/locked/offline validation passed 19 BFV-only runtime tests (8 storage
+composition tests and 11 canonical-index tests) and one compile-fail doctest. The
+legacy default TFHE backend retained all 23 passing tests, including full-scan/coarse
+selection. Strict all-target Clippy passed with both backends and with BFV only.
+Use --no-default-features --features bfv-experiment when validating BFV-only storage
+and GUI consumers. The existing default backend's broader semantics/tests remain.
+
+## Legacy TFHE backend
+
 An owner-assisted selective FHE experiment over compact authenticated pages. The
 peer's canonical table is a [compact-store](../compact-store/README.md)
 EncryptedSnapshot, with age:u8 and amount:u16 packed into three bytes per row.
