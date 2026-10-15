@@ -70,15 +70,24 @@ Failed connection attempts do not generate sent-frame markers. Peer-to-peer
 observations come from peer status telemetry. Byte counters exclude TLS/TCP
 overhead; receiving a frame does not establish proof validity.
 
-**Trace speed** is a full-width 0–1 slider: zero freezes visual playback, one
-animates an observation over 1.1 seconds. It never delays transport, FHE, proof
-checks or results. Adjacent **Live** skips the pending visual tail and resumes at
-100%; skipped snapshot IDs stay deduplicated. It does not replay SQL. Blue means
-request, green means reply; optional amber health
-checks include probes and status polling. Timelines are explanatory playback,
-not measured packet travel. Deduplication prevents repeated snapshots from
-restarting animation; the view retains at most 256 markers and reports visual
-overflow. Data/FHE timing remains wall-clock timing.
+The compact **Speed** slider beside the view controls sets one display clock for
+observed frame events, logs, topology/storage snapshots and completed SQL results.
+Zero pauses this whole observed view. Actual transport, FHE, proofs and commits
+continue in real time; their measured operation durations stay wall-clock values.
+Live producers enqueue timestamped events through one ordered bus, so a displayed
+result cannot overtake its earlier frame observations. **Run catches up before
+submitting a new query and preserves the selected speed**, avoiding a wait behind
+old background traffic. **Live** applies all waiting results/state and resumes at
+100%; it never discards an accepted SQL result or repeats the statement.
+
+Blue endpoint pulses mean a complete application frame was written; green pulses
+mean a complete reply was read. They fade over half a display second rather than
+pretending to measure one-way packet travel. Peer-reported observations mark the
+receiving endpoint when status telemetry reaches the manager. Optional amber
+health checks include probes and status polling. Marker deduplication and bounds
+remain display-only. If the display backlog fills, old optional telemetry is
+omitted with an explicit gap indication; a paused view stays paused and accepted
+SQL/control results remain queued for display.
 
 Map defaults to selected-node connections and active observations; **All links**
 is explicit. Filtering never changes the observed topology or protocol. Above
@@ -109,7 +118,8 @@ complete owner/key recovery remains a separate unresolved requirement.
 - **SQL/Data** on the left, **Network/Settings/peer inspectors** on the right.
   Document tabs share one baseline; middle-click or their inset cross closes a
   peer inspector. Alt+Left/Right and mouse side buttons follow view history.
-- Presets are ordered from SELECT through filters/aggregates to INSERT/UPDATE.
+- Four presets cover SELECT, filtering, INSERT and UPDATE; operations whose
+  computation proofs are not implemented are not offered as live presets.
   They fill the editor; Run or Ctrl+Enter submits the actual encrypted operation.
 - **Strict acceptance:** supported SELECT, INSERT and UPDATE operations use actual
   network FHE execution, computation/completeness verification and the validated
@@ -120,7 +130,8 @@ complete owner/key recovery remains a separate unresolved requirement.
   remain labeled unverified. TLS and decryption do not substitute for query proofs.
 - Results start at half the window height, resize from their upper edge and scroll
   at the pane's right edge. Output records real elapsed operations and failures.
-- **Data** edits an owner draft. Create/replace sends encrypted initial data to peer
+- Startup opens **Data** with an empty owner draft; no example database is created
+  automatically. **Data** edits an owner draft. Create/replace sends encrypted initial data to peer
   storage. One previous database and its owner keys are retained in the current
   session; previous remote objects are not deleted. The runtime currently permits
   two public setups, so a third owner state is rejected before replacement.
@@ -136,6 +147,39 @@ complete owner/key recovery remains a separate unresolved requirement.
 - Left/middle/right drag pans the camera, including its world-aligned grid.
   Dense networks can use the complete connection matrix; links are never removed
   merely to simplify the picture. See [layout research](../docs/graph-layout.md).
+
+## SQL dump import
+
+The Data panel downloads public SQL scripts on demand to client memory or reads a
+local `.sql` file. It does not ship datasets, launch another database engine, or
+execute script text on the host. Downloads and file reads are capped at 8 MiB;
+preview text is capped at 64 KiB. Network loading runs off the UI thread, with
+HTTPS, redirect and timeout bounds. `samples::parse_dump` checks the entire input
+before staging an owner draft. Create/replace is still an explicit action through
+the normal encrypted `Session` path; unsupported statements return no partial rows.
+
+The catalog contains [Northwind and pubs from Microsoft](https://github.com/microsoft/sql-server-samples/tree/master/samples/databases/northwind-pubs)
+and [Chinook](https://github.com/lerocha/chinook-database/releases/tag/v1.4.5),
+approximately 1 MiB, 123 KiB and 597 KiB of SQL respectively. These full schemas
+**cannot yet be imported**: production SQL/FHE/proof kernels currently support only
+`records(age: u8, amount: u16)`, and the live creation adapter admits 128 rows.
+The catalog labels this limit before download and allows inspection; it never
+renames arbitrary source columns or drops unsupported tables to claim success.
+[AdventureWorks backups](https://learn.microsoft.com/en-us/sql/samples/adventureworks-install-configure)
+use SQL Server `.bak` restoration and are not SQL text for this importer.
+
+A supported local dump starts with the exact unsigned schema below, then zero or
+more `INSERT INTO records [(age, amount)] VALUES (...)` statements. Comments are
+accepted; constraints beyond these declarations, other types/tables, transactions
+and executable comments are rejected. Both integers are checked without truncation.
+
+```sql
+CREATE TABLE records (age TINYINT UNSIGNED NOT NULL, amount SMALLINT UNSIGNED NOT NULL);
+```
+
+Supporting a complete multi-megabyte relational sample requires extending the
+encrypted schema, planner, storage layout and computation/completeness proof
+circuits together. Downloading a script alone does not implement that support.
 
 ## Dependencies and verification
 

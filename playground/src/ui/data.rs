@@ -1,48 +1,108 @@
 use super::*;
 use fhe_playground::PlainRow;
+#[path = "data_import.rs"]
+mod import;
+pub(super) use import::DataImport;
 impl Playground {
     pub(super) fn data_editor(&mut self, ui: &mut egui::Ui) {
-        egui::CentralPanel::default().frame(egui::Frame::new().fill(EDITOR).inner_margin(12)).show(ui,|ui|{
-            ui.horizontal(|ui|{
-                ui.label("Database");ui.add_enabled(self.available(),egui::TextEdit::singleline(&mut self.draft_name).desired_width(ui.available_width()));
-            });
-            ui.horizontal_wrapped(|ui|{
-                let valid_name=!self.draft_name.trim().is_empty()&&self.draft_name.trim().len()<=64&&!self.draft_name.chars().any(char::is_control);
-                if primary_button(ui,"Create / replace",self.available()&&self.controls_available()&&valid_name&&parse_rows(&self.draft_rows).is_ok()).clicked(){self.create_database();}
-                ui.menu_button("Fixtures",|ui|{
-                    ui.add_enabled_ui(self.available(),|ui|{
-                        ui.horizontal(|ui|{
-                            ui.add(egui::DragValue::new(&mut self.generate_rows).range(0..=MAX_LAB_ROWS).suffix(" rows"));
-                            if ui.button("Generate").clicked(){self.draft_rows=format_rows(&sample_rows(self.generate_rows).expect("bounded generator"));ui.close();}
-                        });
-                        for (name,text)in [("Demo",format_rows(&sample_rows(4).expect("public fixture"))),("Overflow","18,65535\n19,10".into()),("Empty",String::new())]{
-                            if ui.button(name).clicked(){self.draft_rows=text;ui.close();}
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(EDITOR).inner_margin(12))
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("data-workspace")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        if let Some(rows) = self.data_import.show(ui) {
+                            self.draft_rows = format_rows(&rows);
                         }
+                        ui.add_space(8.0);
+                        ui.separator();
+                        self.data_draft(ui);
                     });
-                });
-                if let Ok(rows)=parse_rows(&self.draft_rows){ui.label(RichText::new(format!("{} / {MAX_LAB_ROWS} rows",rows.len())).small().color(MUTED));}
             });
-            if self.draft_name.trim().is_empty() || self.draft_name.trim().len()>64 || self.draft_name.chars().any(char::is_control) {ui.colored_label(RED,"Database name: 1..64 bytes, without control characters.");}
-            if let Err(error)=parse_rows(&self.draft_rows) {ui.colored_label(RED,error.to_string());}
-            ui.add_space(8.0);
-            ui.horizontal_wrapped(|ui|{
-                icon(ui,Icon::Table,GREEN);
-                ui.label("records").on_hover_text("Owner's draft / age:u8 / amount:u16. Edits apply only on Create / replace.");
-                if tab_button(ui,"Grid",self.data_view==DataView::Grid).clicked(){self.data_view=DataView::Grid;}
-                if tab_button(ui,"CSV",self.data_view==DataView::Csv).clicked(){self.data_view=DataView::Csv;}
-                if action_button(ui,"Add row",self.available()&&parse_rows(&self.draft_rows).is_ok_and(|r|r.len()<MAX_LAB_ROWS)).clicked(){
-                    let mut rows=parse_rows(&self.draft_rows).expect("valid draft");rows.push(PlainRow{age:0,amount:0});self.draft_rows=format_rows(&rows);
-                }
-            });
-            ui.separator();
-            ui.add_enabled_ui(self.available(),|ui|{
-                if self.data_view==DataView::Csv{
-                    ui.label(RichText::new("age,amount").monospace().color(MUTED));
-                    egui::ScrollArea::both().id_salt("fixture-editor").show(ui,|ui|{
-                        ui.add(egui::TextEdit::multiline(&mut self.draft_rows).code_editor().desired_width(f32::INFINITY).min_size(egui::vec2(ui.available_width(),ui.available_height().max(100.0))));
-                    });
-                }else{self.data_grid(ui);}
-            });
+    }
+    fn data_draft(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Database");
+            ui.add_enabled(
+                self.available(),
+                egui::TextEdit::singleline(&mut self.draft_name)
+                    .desired_width(ui.available_width()),
+            );
+        });
+        let valid_name = !self.draft_name.trim().is_empty()
+            && self.draft_name.trim().len() <= 64
+            && !self.draft_name.chars().any(char::is_control);
+        ui.horizontal_wrapped(|ui| {
+            if primary_button(
+                ui,
+                "Create / replace",
+                self.available()
+                    && self.controls_available()
+                    && !self.data_import.blocks_creation()
+                    && valid_name
+                    && parse_rows(&self.draft_rows).is_ok(),
+            )
+            .on_hover_text("Encrypt this owner draft and create it on real peer processes")
+            .clicked()
+            {
+                self.create_database();
+            }
+            if let Ok(rows) = parse_rows(&self.draft_rows) {
+                ui.label(
+                    RichText::new(format!("{} / {MAX_LAB_ROWS} rows", rows.len()))
+                        .small()
+                        .color(MUTED),
+                );
+            }
+        });
+        if !valid_name {
+            ui.colored_label(
+                RED,
+                "Database name: 1..64 bytes, without control characters.",
+            );
+        }
+        if let Err(error) = parse_rows(&self.draft_rows) {
+            ui.colored_label(RED, error.to_string());
+        }
+        ui.add_space(8.0);
+        ui.horizontal_wrapped(|ui| {
+            icon(ui, Icon::Table, GREEN);
+            ui.label("records").on_hover_text(
+                "Owner draft / age:u8 / amount:u16. Edits apply only on Create / replace.",
+            );
+            if tab_button(ui, "Grid", self.data_view == DataView::Grid).clicked() {
+                self.data_view = DataView::Grid;
+            }
+            if tab_button(ui, "CSV", self.data_view == DataView::Csv).clicked() {
+                self.data_view = DataView::Csv;
+            }
+            if action_button(
+                ui,
+                "Add row",
+                self.available()
+                    && parse_rows(&self.draft_rows).is_ok_and(|rows| rows.len() < MAX_LAB_ROWS),
+            )
+            .clicked()
+            {
+                let mut rows = parse_rows(&self.draft_rows).expect("valid owner draft");
+                rows.push(PlainRow { age: 0, amount: 0 });
+                self.draft_rows = format_rows(&rows);
+            }
+        });
+        ui.separator();
+        ui.add_enabled_ui(self.available(), |ui| {
+            if self.data_view == DataView::Csv {
+                ui.label(RichText::new("age,amount").monospace().color(MUTED));
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.draft_rows)
+                        .code_editor()
+                        .desired_width(f32::INFINITY)
+                        .desired_rows(10),
+                );
+            } else {
+                self.data_grid(ui);
+            }
         });
     }
     fn data_grid(&mut self, ui: &mut egui::Ui) {
@@ -57,12 +117,15 @@ impl Playground {
             }
         };
         if rows.is_empty() {
-            ui.label(RichText::new("No records. Add a row or load a fixture.").color(MUTED));
+            ui.label(
+                RichText::new("No records. Add rows or open a compatible SQL dump.").color(MUTED),
+            );
         }
         let mut changed = false;
         let mut delete = None;
         egui::ScrollArea::vertical()
             .id_salt("data-grid")
+            .max_height(360.0)
             .show(ui, |ui| {
                 egui::Grid::new("editable-records")
                     .striped(true)

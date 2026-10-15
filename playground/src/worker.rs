@@ -1,6 +1,6 @@
 //! The GUI supervises actual child processes. It never executes a peer FHE job.
 use crate::process_backend::ProcessBackend;
-use crate::traffic::{LiveTraffic, Observation};
+use crate::traffic::Observation;
 use eframe::egui;
 use fhe_playground::{
     DatabaseDraft, LabError, LabSnapshot, NetworkSnapshot, NodeId, PeerConfig, QueryOutcome,
@@ -98,8 +98,16 @@ impl Outcome {
 }
 
 pub enum Event {
+    /// Timestamped at the actual observation producer, before display queuing.
+    Stamped {
+        at: Instant,
+        event: Box<Event>,
+    },
+    DisplayGap(usize),
+    Stopped(String),
     Traffic(Observation),
     Network(NetworkSnapshot),
+    Peers(Vec<crate::process_backend::PeerProfile>),
     Snapshot(LabSnapshot),
     Progress(String),
     Finished {
@@ -114,13 +122,65 @@ pub enum Event {
     },
 }
 
+/// All live producers share this queue and stamp while holding its lock. A
+/// completion therefore cannot overtake the I/O observations that preceded it.
+#[derive(Clone, Default)]
+struct EventBus(Arc<Mutex<VecDeque<(Instant, Event)>>>);
+impl EventBus {
+    fn send(&self, event: Event) {
+        if let Ok(mut queue) = self.0.lock() {
+            // The GUI is optional observation. Bound telemetry without blocking
+            // a real RPC callback or dropping an accepted SQL result.
+            if queue.len() >= 4096
+                && let Some(index) = queue
+                    .iter()
+                    .position(|(_, event)| {
+                        matches!(
+                            event,
+                            Event::Snapshot(_)
+                                | Event::Network(_)
+                                | Event::Peers(_)
+                                | Event::Progress(_)
+                        )
+                    })
+                    .or_else(|| {
+                        queue
+                            .iter()
+                            .position(|(_, event)| matches!(event, Event::Traffic(_)))
+                    })
+            {
+                queue.remove(index);
+                if let Some((_, Event::DisplayGap(count))) = queue
+                    .iter_mut()
+                    .find(|(_, e)| matches!(e, Event::DisplayGap(_)))
+                {
+                    *count += 1;
+                } else {
+                    queue.push_back((Instant::now(), Event::DisplayGap(1)));
+                }
+            }
+            queue.push_back((Instant::now(), event));
+        }
+    }
+    fn pop(&self) -> Option<Event> {
+        self.0
+            .lock()
+            .ok()?
+            .pop_front()
+            .map(|(at, event)| Event::Stamped {
+                at,
+                event: Box::new(event),
+            })
+    }
+}
+
 pub struct Worker {
     sender: Option<SyncSender<Command>>,
     receiver: Receiver<Event>,
-    latest: Arc<Mutex<VecDeque<Event>>>,
+    bus: EventBus,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
-    traffic: LiveTraffic,
+    _events: Option<mpsc::Sender<Event>>,
 }
 impl Drop for Worker {
     fn drop(&mut self) {
@@ -140,10 +200,10 @@ impl Worker {
             Self {
                 sender: Some(sender),
                 receiver,
-                latest: Arc::default(),
+                bus: EventBus::default(),
                 stop: Arc::default(),
                 thread: None,
-                traffic: Arc::default(),
+                _events: None,
             },
             commands,
             events,
@@ -152,22 +212,20 @@ impl Worker {
     pub fn start(context: egui::Context) -> std::io::Result<Self> {
         let (sender, commands) = mpsc::sync_channel(32);
         let (events, receiver) = mpsc::channel();
-        let latest = Arc::new(Mutex::new(VecDeque::new()));
-        let views = latest.clone();
+        let bus = EventBus::default();
+        let views = bus.clone();
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = stop.clone();
-        let traffic = LiveTraffic::default();
-        let observing = traffic.clone();
         let thread = std::thread::Builder::new()
             .name("dcs-process-manager".into())
-            .spawn(move || run(commands, events, views, context, stopping, observing))?;
+            .spawn(move || run(commands, views, context, stopping))?;
         Ok(Self {
             sender: Some(sender),
             receiver,
-            latest,
+            bus,
             stop,
             thread: Some(thread),
-            traffic,
+            _events: Some(events),
         })
     }
     pub fn send(&self, command: Command) -> Result<(), String> {
@@ -177,14 +235,8 @@ impl Worker {
             .try_send(command)
             .map_err(|e| format!("Cannot submit operation: {e}"))
     }
-    pub fn discard_traffic_tail(&self) {
-        // Only visual observations, never commands, SQL completions or snapshots.
-        if let Ok(mut pending) = self.traffic.lock() {
-            pending.clear();
-        }
-    }
     pub fn poll(&self) -> Result<Option<Event>, String> {
-        // Real command outcomes take priority over optional visual playback.
+        // Bare events are retained only for the explicit public test channel.
         match self.receiver.try_recv() {
             Ok(event) => return Ok(Some(event)),
             Err(TryRecvError::Disconnected) => {
@@ -192,32 +244,29 @@ impl Worker {
             }
             Err(TryRecvError::Empty) => {}
         }
-        if let Some(observation) = self
-            .traffic
-            .lock()
-            .map_err(|_| "Traffic view lock failed".to_string())?
-            .pop_front()
-        {
-            return Ok(Some(Event::Traffic(observation)));
+        if let Some(event) = self.bus.pop() {
+            return Ok(Some(event));
         }
-        self.latest
-            .lock()
-            .map_err(|_| "Process view lock failed".to_string())
-            .map(|mut events| events.pop_front())
+        if self
+            .thread
+            .as_ref()
+            .is_some_and(|thread| thread.is_finished())
+        {
+            return Err("Peer manager stopped; child processes were closed".into());
+        }
+        Ok(None)
     }
 }
 fn run(
     commands: Receiver<Command>,
-    events: mpsc::Sender<Event>,
-    latest: Arc<Mutex<VecDeque<Event>>>,
+    events: EventBus,
     context: egui::Context,
     stop: Arc<AtomicBool>,
-    traffic: LiveTraffic,
 ) {
     let mut backend = match ProcessBackend::new() {
         Ok(backend) => backend,
         Err(error) => {
-            let _ = events.send(Event::Finished {
+            events.send(Event::Finished {
                 snapshot: None,
                 outcome: Err(LabError::InvalidInput(error.to_string())),
                 elapsed_ms: 0.0,
@@ -226,16 +275,19 @@ fn run(
             return;
         }
     };
-    backend.traffic = traffic;
     let repaint = context.clone();
-    backend.wake_traffic = Some(Arc::new(move || repaint.request_repaint()));
+    let observations = events.clone();
+    backend.observe_traffic = Some(Arc::new(move |observation| {
+        observations.send(Event::Traffic(observation));
+        repaint.request_repaint();
+    }));
     while !stop.load(Ordering::Acquire) {
         match commands.recv_timeout(Duration::from_millis(500)) {
             Ok(command) => {
                 if stop.load(Ordering::Acquire) {
                     return;
                 }
-                let _ = events.send(Event::Progress(
+                events.send(Event::Progress(
                     "Communicating with authenticated peer processes…".into(),
                 ));
                 context.request_repaint();
@@ -273,6 +325,7 @@ fn run(
                         .map(|(current, stale)| Outcome::ReplicasRepaired { current, stale }),
                 };
                 backend.refresh();
+                events.send(Event::Peers(backend.peer_profiles()));
                 let snapshot = backend.snapshot();
                 let event = if finished {
                     Event::Finished {
@@ -284,20 +337,16 @@ fn run(
                 } else {
                     Event::ControlFinished { snapshot, outcome }
                 };
-                if events.send(event).is_err() {
-                    return;
-                }
+                events.send(event);
             }
             Err(mpsc::RecvTimeoutError::Timeout) => backend.refresh(),
             Err(mpsc::RecvTimeoutError::Disconnected) => return,
         }
-        if let Ok(mut views) = latest.lock() {
-            views.clear();
-            if let Some(snapshot) = backend.snapshot() {
-                views.push_back(Event::Snapshot(snapshot));
-            }
-            views.push_back(Event::Network(backend.network()));
+        if let Some(snapshot) = backend.snapshot() {
+            events.send(Event::Snapshot(snapshot));
         }
+        events.send(Event::Peers(backend.peer_profiles()));
+        events.send(Event::Network(backend.network()));
         context.request_repaint();
     }
 }
@@ -306,9 +355,39 @@ fn run(
 mod tests {
     use super::*;
     #[test]
-    fn live_sync_discards_visual_tail_without_erasing_a_waiting_sql_completion() {
-        let (worker, _commands, events) = Worker::test_channel();
-        worker.traffic.lock().unwrap().push_back(Observation {
+    fn bounded_observation_backlog_retains_the_command_result_and_reports_a_gap() {
+        let events = EventBus::default();
+        events.send(Event::Finished {
+            snapshot: None,
+            outcome: Err(LabError::InvalidInput("public rejected result".into())),
+            elapsed_ms: 1.0,
+            client_id: Some(1),
+        });
+        for _ in 0..5000 {
+            events.send(Event::Progress("public status fixture".into()));
+        }
+        let mut result_seen = false;
+        let mut gap = 0;
+        let mut observations = 0;
+        let mut previous = None;
+        while let Some(Event::Stamped { at, event }) = events.pop() {
+            assert!(previous.is_none_or(|previous| previous <= at));
+            previous = Some(at);
+            observations += 1;
+            match *event {
+                Event::Finished { .. } => result_seen = true,
+                Event::DisplayGap(count) => gap += count,
+                _ => {}
+            }
+        }
+        assert!(result_seen);
+        assert!(gap > 0);
+        assert!(observations <= 4097);
+    }
+    #[test]
+    fn actual_frame_observations_precede_the_sql_completion_in_the_display_stream() {
+        let events = EventBus::default();
+        events.send(Event::Traffic(Observation {
             packet: fhe_playground::NetworkPacket {
                 id: 1,
                 from: 1,
@@ -319,26 +398,33 @@ mod tests {
             },
             operation: "public telemetry fixture".into(),
             bytes: 123,
+        }));
+        events.send(Event::Finished {
+            snapshot: None,
+            outcome: Err(LabError::InvalidInput("public failure fixture".into())),
+            elapsed_ms: 1.0,
+            client_id: Some(1),
         });
-        events
-            .send(Event::Finished {
-                snapshot: None,
-                outcome: Err(LabError::InvalidInput("public failure fixture".into())),
-                elapsed_ms: 1.0,
-                client_id: Some(1),
-            })
-            .unwrap();
-
-        worker.discard_traffic_tail();
-
+        let Some(Event::Stamped { at: sent, event }) = events.pop() else {
+            panic!("missing sent event")
+        };
+        assert!(matches!(*event, Event::Traffic(_)));
+        let Some(Event::Stamped {
+            at: finished,
+            event,
+        }) = events.pop()
+        else {
+            panic!("missing result")
+        };
         assert!(matches!(
-            worker.poll().unwrap(),
-            Some(Event::Finished {
+            *event,
+            Event::Finished {
                 client_id: Some(1),
                 ..
-            })
+            }
         ));
-        assert!(worker.poll().unwrap().is_none());
+        assert!(sent <= finished);
+        assert!(events.pop().is_none());
     }
 
     fn public_version(height: u64) -> version_journal::HeadRef {
@@ -404,10 +490,10 @@ mod tests {
         let worker = Worker {
             sender: Some(sender),
             receiver,
-            latest: Arc::default(),
+            bus: EventBus::default(),
             stop: Arc::default(),
             thread: Some(thread),
-            traffic: Arc::default(),
+            _events: None,
         };
         drop(worker);
         assert!(released.load(Ordering::Acquire));

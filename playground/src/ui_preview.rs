@@ -23,6 +23,7 @@ fn export_ui_previews() {
         ("tabs-aligned", Tab::Sql, 3, [1500, 900]),
         ("tabs-narrow", Tab::Sql, 16, [1180, 720]),
         ("data", Tab::Data, 3, [1500, 900]),
+        ("empty-workspace", Tab::Data, 3, [1500, 900]),
         ("network", Tab::Sql, 8, [1500, 900]),
         ("network-small", Tab::Sql, 16, [1180, 720]),
         ("network-map", Tab::Sql, 16, [1500, 900]),
@@ -40,6 +41,12 @@ fn export_ui_previews() {
             peer_count,
             if name == "network-max" { 8 } else { 1 },
         ));
+        if name == "empty-workspace" {
+            app.snapshot = None;
+            app.network = Some(network(0, 1));
+            app.draft_rows.clear();
+            app.draft_name = "database".into();
+        }
         if name == "network-map" {
             app.network_view = NetworkView::Map;
         }
@@ -61,9 +68,6 @@ fn export_ui_previews() {
                     progress: 1.0,
                     request_id: Some(9),
                 });
-            }
-            for tick in 0..6 {
-                app.playback.advance(f64::from(tick) * 0.1);
             }
         }
         if name.starts_with("peer-storage") {

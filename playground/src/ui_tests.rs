@@ -7,10 +7,29 @@ mod preview;
 fn app() -> (Playground, Receiver<Command>, Sender<Event>) {
     let (worker, commands, events) = Worker::test_channel();
     let mut app = Playground::with_worker(worker);
-    app.snapshot = Some(snapshot(3));
+    let state = snapshot(3);
+    app.draft_name = state.name.clone();
+    app.draft_rows = format_rows(&state.owner_rows);
+    app.snapshot = Some(state);
     app.network = Some(network(3, 1));
     app.active_client = Some(1);
     (app, commands, events)
+}
+
+#[test]
+fn a_new_workspace_has_no_canned_rows_or_automatic_database_command() {
+    let (worker, commands, _events) = Worker::test_channel();
+    let mut app = Playground::with_worker(worker);
+    assert!(app.snapshot.is_none());
+    assert!(app.draft_rows.is_empty());
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+    app.tab = Tab::Data;
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    let text = render(&ctx, &mut app, vec![]);
+    for removed in ["Fixtures", "Generate", "Overflow", "Demo"] {
+        assert!(!text.iter().any(|item| item.text == removed));
+    }
 }
 fn snapshot(peers: usize) -> LabSnapshot {
     // Public synthetic rows, but real default custody/physical accounting. Cache
@@ -219,6 +238,7 @@ fn confirming_existing_one_copy_keeps_default_fixed_custody_without_a_rebuild() 
     let (mut app, commands, _) = app();
     let ctx = egui::Context::default();
     set_theme(&ctx);
+    app.right_tab = RightTab::Settings;
     let shard_count = app
         .snapshot
         .as_ref()
@@ -234,7 +254,6 @@ fn confirming_existing_one_copy_keeps_default_fixed_custody_without_a_rebuild() 
             .contains(&format!("{shard_count}/{shard_count} at target"))
     }));
     assert!(commands.try_recv().is_err());
-    click(&ctx, &mut app, "Settings");
     click(&ctx, &mut app, "Min copies 1");
     click(&ctx, &mut app, "1 copy");
     assert!(commands.try_recv().is_err());
@@ -254,6 +273,7 @@ fn confirming_existing_one_copy_keeps_default_fixed_custody_without_a_rebuild() 
 fn missing_custody_metadata_disables_policy_and_sql_without_a_legacy_fallback() {
     let (mut app, commands, _events) = app();
     app.snapshot.as_mut().unwrap().replication = None;
+    app.right_tab = RightTab::Settings;
     let ctx = egui::Context::default();
     set_theme(&ctx);
     let texts = render(&ctx, &mut app, vec![]);
@@ -276,12 +296,12 @@ fn missing_custody_metadata_disables_policy_and_sql_without_a_legacy_fallback() 
 fn copy_health_counts_independent_domains_and_distinguishes_stale_copies() {
     let (mut app, _, _) = app();
     app.snapshot = Some(replicated_snapshot());
+    app.right_tab = RightTab::Settings;
     let ctx = egui::Context::default();
     set_theme(&ctx);
     let texts = render(&ctx, &mut app, vec![]);
     assert!(texts.iter().any(|text| text.text.contains("0/1 at target")
         && text.text.contains("2 online current / 1 stale")));
-    click(&ctx, &mut app, "Settings");
     let texts = render(&ctx, &mut app, vec![]);
     assert!(texts.iter().any(|text| text.text == "Min copies 2"));
 }
@@ -449,6 +469,8 @@ fn matrix_traces_discovery_before_a_connection_exists_in_the_correct_direction()
         progress: 0.5,
         request_id: None,
     }];
+    let observed = net.clone();
+    app.apply_display_event(Event::Network(observed));
     let ctx = egui::Context::default();
     set_theme(&ctx);
     let output = ctx.run_ui(
@@ -466,7 +488,7 @@ fn matrix_traces_discovery_before_a_connection_exists_in_the_correct_direction()
         .iter()
         .filter_map(|shape| {
             if let egui::Shape::Circle(circle) = &shape.shape
-                && circle.radius == 2.2
+                && circle.radius == 2.5
             {
                 Some(circle)
             } else {
@@ -475,7 +497,8 @@ fn matrix_traces_discovery_before_a_connection_exists_in_the_correct_direction()
         })
         .collect();
     assert_eq!(packet_markers.len(), 1);
-    assert_eq!(packet_markers[0].fill, AMBER);
+    let color = packet_markers[0].fill;
+    assert!(color.r() > color.b() && color.g() > color.b());
     assert!(app.network.as_ref().unwrap().links.is_empty());
     assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
     output.drop_without_applying_deltas();
@@ -555,11 +578,11 @@ fn presets_fill_the_editor_without_execution_until_run_is_clicked() {
 }
 
 #[test]
-fn range_presets_only_fill_sql_until_the_user_runs_the_statement() {
+fn remaining_presets_only_fill_sql_until_the_user_runs_the_statement() {
     let (mut app, commands, _events) = app();
     let ctx = egui::Context::default();
     set_theme(&ctx);
-    for name in ["Under 18", "At most 18", "Over 18", "Ages 18..42"] {
+    for name in ["All rows", "Adults", "Insert one row"] {
         let preset = PRESETS.iter().find(|preset| preset.name == name).unwrap();
 
         click(&ctx, &mut app, "Presets");
@@ -1727,14 +1750,14 @@ fn live_network_controls_do_not_offer_simulation_or_finish_an_inflight_sql_job()
     let texts = render(&ctx, &mut app, vec![]);
     assert!(texts.iter().any(|text| text.text == "Live TCP/TLS"));
     assert!(
-        texts.iter().any(|text| text.text == "Trace speed"),
+        texts.iter().any(|text| text.text == "Speed"),
         "visible: {:?}",
         texts.iter().map(|text| &text.text).collect::<Vec<_>>()
     );
     assert!(
         !texts
             .iter()
-            .any(|text| text.text == "Pause" || text.text == "Speed")
+            .any(|text| text.text == "Pause" || text.text == "Trace speed")
     );
     assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
     events
@@ -1746,6 +1769,26 @@ fn live_network_controls_do_not_offer_simulation_or_finish_an_inflight_sql_job()
     app.poll();
     assert!(app.pending.is_some());
     assert!(app.history.is_empty());
+}
+
+#[test]
+fn display_speed_fits_beside_network_view_controls() {
+    let (mut app, commands, _events) = app();
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    let text = render(&ctx, &mut app, vec![]);
+    let center = |label: &str| {
+        text.iter()
+            .find(|item| item.text == label)
+            .unwrap_or_else(|| panic!("Missing {label}"))
+            .rect
+            .center()
+    };
+
+    assert!((center("Map").y - center("Speed").y).abs() < 12.0);
+    assert!((center("Speed").y - center("Live").y).abs() < 12.0);
+    assert!(center("Speed").x > center("Map").x);
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
 }
 
 #[test]

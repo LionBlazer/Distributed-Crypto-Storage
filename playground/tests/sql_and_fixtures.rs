@@ -5,7 +5,12 @@ use sql_plan::{QueryPlan, parse_sql};
 fn every_one_click_preset_has_a_supported_plan() {
     for preset in PRESETS {
         assert!(
-            parse_sql(preset.sql).is_ok(),
+            matches!(
+                parse_sql(preset.sql),
+                Ok(QueryPlan::Select { .. }
+                    | QueryPlan::AddAmount { .. }
+                    | QueryPlan::Insert { .. })
+            ),
             "{}: {}",
             preset.name,
             preset.sql
@@ -14,7 +19,7 @@ fn every_one_click_preset_has_a_supported_plan() {
 }
 
 #[test]
-fn presets_progress_from_reading_to_filtering_and_summary_then_real_writes() {
+fn presets_cover_proven_reading_filtering_and_writes_without_redundant_variants() {
     use fhe_playground::PresetGroup;
     assert!(matches!(
         parse_sql(PRESETS.first().unwrap().sql),
@@ -35,11 +40,11 @@ fn presets_progress_from_reading_to_filtering_and_summary_then_real_writes() {
         vec![
             PresetGroup::Select,
             PresetGroup::Filter,
-            PresetGroup::Aggregate,
             PresetGroup::Insert,
-            PresetGroup::Update
+            PresetGroup::Update,
         ]
     );
+    assert_eq!(PRESETS.len(), 4);
     let insert = PRESETS
         .iter()
         .find(|preset| preset.group == PresetGroup::Insert)

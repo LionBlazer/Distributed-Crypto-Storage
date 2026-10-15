@@ -1,5 +1,5 @@
 //! Dense-network view of the same snapshot used by the map; no topology policy.
-use super::infrastructure::{GraphAction, packet_color};
+use super::infrastructure::GraphAction;
 use super::*;
 use fhe_playground::{NetworkNode, NetworkPacket};
 use std::collections::{BTreeMap, BTreeSet};
@@ -210,14 +210,14 @@ impl Playground {
                                 });
                                 for packet in packets {
                                     ui.label(format!(
-                                        "{:?} #{} · {:.0}%{}",
+                                        "{:?} #{}{}",
                                         packet.kind,
                                         packet.id,
-                                        packet.progress * 100.0,
                                         packet
                                             .request_id
                                             .map_or(String::new(), |id| format!(" · request {id}"))
                                     ));
+                                    ui.label(self.playback.description(packet.id));
                                 }
                             });
                         }
@@ -280,14 +280,20 @@ fn node_code(node: &NetworkNode) -> String {
 }
 fn paint_packets(p: &egui::Painter, rect: egui::Rect, packets: &[&NetworkPacket]) {
     for (index, packet) in packets.iter().take(3).enumerate() {
-        let color = packet_color(packet.kind);
+        let color = super::infrastructure::observed_color(packet);
         let top = rect.top() + 4.0 + index as f32 * 5.0;
         let start = egui::pos2(rect.left() + 3.0, top);
         let end = egui::pos2(rect.right() - 3.0, top);
-        p.line_segment([start, end], Stroke::new(1.0, color.gamma_multiply(0.35)));
+        let color = color.gamma_multiply(1.0 - 0.7 * packet.progress.clamp(0.0, 1.0));
+        p.arrow(start, end - start, Stroke::new(1.4, color));
+        let observed_at = crate::traffic::Playback::observed_endpoint(packet);
         p.circle_filled(
-            start + (end - start) * packet.progress.clamp(0.0, 1.0),
-            2.2,
+            if observed_at == packet.from {
+                start
+            } else {
+                end
+            },
+            2.5,
             color,
         );
     }

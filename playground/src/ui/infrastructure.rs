@@ -72,14 +72,8 @@ impl Playground {
             });
         match self.right_tab {
             RightTab::Network => {
-                egui::Panel::top("network-controls").default_size(156.0).frame(panel(10)).show(ui,|ui| {
+                egui::Panel::top("network-controls").default_size(92.0).frame(panel(8)).show(ui,|ui| {
                     ui.horizontal_wrapped(|ui| {
-                        ui.label(RichText::new("Live TCP/TLS").small().color(GREEN)).on_hover_text("Peers are independent OS processes. Arrows replay observed application-frame writes/reads, not invented packets or measured wire travel.");
-                        if let Some(net)=&self.network {
-                            ui.label(RichText::new(format!("{} nodes / {} connections",net.nodes.len(),super::overview::connections(net).len())).small().color(MUTED));
-                        }
-                        self.replication_summary(ui);
-                        ui.separator();
                         for (view,label) in [(NetworkView::Auto,"Auto"),(NetworkView::Map,"Map"),(NetworkView::Overview,"Overview"),(NetworkView::Matrix,"Matrix")] {
                             if tab_button(ui,label,self.network_view==view).on_hover_text(match view {
                                 NetworkView::Auto=>"Map for small networks; grouped overview for large networks. Display filters never change real connections.",
@@ -88,21 +82,23 @@ impl Playground {
                                 NetworkView::Matrix=>"Every connection in a cell. Rows send; columns receive.",
                             }).clicked() {self.network_view=view;}
                         }
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Trace speed").on_hover_text("Visual playback only. 0 pauses arrows; 1 plays each observed frame over 1.1 seconds. SQL, TLS, proofs and measured latency are unaffected.");
-                        ui.spacing_mut().slider_width = (ui.available_width() - 132.0).max(80.0);
+                        ui.separator();
+                        ui.label("Speed").on_hover_text("One display clock for observed messages, network state, logs and SQL results. Zero pauses the display; real peer processes keep running. Run catches up first and preserves this speed.");
+                        ui.spacing_mut().slider_width = 120.0;
                         if ui.add(egui::Slider::new(&mut self.playback.speed, 0.0..=1.0).step_by(0.01).show_value(false)).changed() {ui.ctx().request_repaint();}
-                        ui.label(if self.playback.speed == 0.0 {"Paused".to_string()} else {format!("{:.0}%", self.playback.speed * 100.0)});
-                        if primary_button(ui,"Live",self.playback.can_sync()).on_hover_text(format!("Catch up to current observations: skip {} queued visual markers and resume at 100%.",self.playback.queued())).clicked() {
-                            self.worker.discard_traffic_tail();
-                            self.playback.sync_live();
-                            ui.ctx().request_repaint();
+                        ui.label(RichText::new(if self.playback.speed == 0.0 {"Paused".to_string()} else {format!("{:.0}%", self.playback.speed * 100.0)}).small().monospace());
+                        if primary_button(ui,"Live",self.display_is_behind() || self.playback.speed < 1.0).on_hover_text(format!("Show current state and all completed results; resume at 100%. Display is {:.1}s behind, {} events queued.",self.display_lag_seconds(),self.display_queued())).clicked() {
+                            self.sync_live();
                         }
                     });
                     ui.horizontal_wrapped(|ui| {
-                        ui.colored_label(ACCENT, "Request");
-                        ui.colored_label(GREEN, "Reply");
+                        ui.label(RichText::new("Live TCP/TLS").small().color(GREEN)).on_hover_text("Independent OS processes. The displayed timeline may lag behind real execution; Live catches it up.");
+                        if let Some(net)=&self.network {
+                            ui.label(RichText::new(format!("{} nodes / {} links",net.nodes.len(),super::overview::connections(net).len())).small().color(MUTED));
+                        }
+                        ui.colored_label(ACCENT, "Sent").on_hover_text("A complete application frame was written at this endpoint. This does not confirm arrival or proof acceptance.");
+                        ui.colored_label(GREEN, "Received").on_hover_text("A complete reply was read at this endpoint. SQL succeeds only after proof and freshness verification.");
+                        ui.colored_label(AMBER, "Reported").on_hover_text("A peer's status report confirms an earlier received RPC. The display knows when this report was collected, not the original packet's travel time.");
                         ui.checkbox(&mut self.playback.health, "Health checks").on_hover_text("Show actual probes and status polling in amber. Hidden by default to keep SQL traffic readable.");
                         if !self.uses_overview() && !self.uses_matrix() {
                             egui::ComboBox::from_id_salt("link-visibility").selected_text(if self.link_view == LinkView::Relevant {"Relevant links"}else{"All links"}).width(115.0).show_ui(ui, |ui| {
@@ -110,7 +106,8 @@ impl Playground {
                                 ui.selectable_value(&mut self.link_view, LinkView::All, "All links");
                             }).response.on_hover_text("Relevant = selected node plus currently replayed traffic. Other real connections remain in Matrix and node inspectors.");
                         }
-                        if self.playback.omitted > 0 { ui.label(RichText::new(format!("{} older markers omitted", self.playback.omitted)).small().color(MUTED)).on_hover_text("Only the bounded visual replay drops old markers; network execution and results are unchanged."); }
+                        if self.display_lag_seconds() > 0.1 {ui.label(RichText::new(format!("-{:.1}s",self.display_lag_seconds())).small().color(AMBER)).on_hover_text("The whole panel is showing this earlier observed time. Run catches up before submitting a new SQL statement.");}
+                        if self.playback.omitted > 0 { ui.label(RichText::new(format!("{} older events omitted", self.playback.omitted)).small().color(MUTED)).on_hover_text("Display history is bounded. Execution and verified results are retained."); }
                     });
                 });
                 egui::CentralPanel::default()
@@ -283,13 +280,13 @@ impl Playground {
                 .as_ref()
                 .and_then(|s| s.peers.iter().find(|p| p.id == peer_id))
                 .cloned();
-            if let Some(peer) = peer {
+            if let Some(actual_config) = self.peer_config(id) {
                 section(ui, "Settings");
                 let enabled = self.controls_available();
                 let config = self
                     .peer_edits
                     .entry(id)
-                    .or_insert_with(|| peer.config.clone());
+                    .or_insert_with(|| actual_config.clone());
                 ui.add_enabled_ui(enabled, |ui| {
                     ui.label("Name");
                     ui.add(
@@ -315,7 +312,7 @@ impl Playground {
                         ui.label(RichText::new("TCP/TLS").small().color(MUTED));
                     });
                 });
-                let modified = *config != peer.config;
+                let modified = *config != actual_config;
                 if primary_button(ui, "Save settings", enabled && modified).clicked() {
                     let config = self.peer_edits[&id].clone();
                     self.control(
@@ -331,6 +328,8 @@ impl Playground {
                         .small()
                         .color(MUTED),
                 );
+            }
+            if let Some(peer) = peer {
                 section(ui, "Encrypted shard");
                 if !peer.online {
                     ui.label(
@@ -414,6 +413,14 @@ impl Playground {
                             }
                         });
                 }
+            } else {
+                ui.label(
+                    RichText::new(
+                        "No database assigned. Peer process settings are available above.",
+                    )
+                    .small()
+                    .color(MUTED),
+                );
             }
         }
         section(ui, "Connections");
@@ -658,21 +665,26 @@ impl Playground {
                 .iter()
                 .map(|p| self.camera.world_to_screen(canvas, egui::pos2(p.x, p.y)))
                 .collect();
-            if let Some(point) = point_on_route(&screen, packet.progress) {
-                let color = packet_color(packet.kind);
-                let previous = point_on_route(&screen, (packet.progress - 0.035).max(0.0));
+            let observed_at = crate::traffic::Playback::observed_endpoint(packet);
+            let endpoint = if observed_at == packet.from { 0.0 } else { 1.0 };
+            if let Some(point) = point_on_route(&screen, endpoint) {
+                let fade = 1.0 - packet.progress.clamp(0.0, 1.0);
+                let color = observed_color(packet).gamma_multiply(0.3 + 0.7 * fade);
                 p.add(egui::Shape::line(
-                    screen,
+                    screen.clone(),
                     Stroke::new(1.0, color.gamma_multiply(0.25)),
                 ));
-                p.circle_filled(point, 8.0, color.gamma_multiply(0.12));
+                // A pulse marks an observed write/read at an endpoint. Its age
+                // is never presented as unmeasured packet transit progress.
+                p.circle_stroke(point, 5.0 + packet.progress * 7.0, Stroke::new(1.6, color));
                 p.circle_filled(point, 3.5, color);
-                if let Some(previous) = previous
-                    && point.distance(previous) > 1.0
+                if let (Some(previous), Some(next)) =
+                    (point_on_route(&screen, 0.46), point_on_route(&screen, 0.54))
+                    && next.distance(previous) > 1.0
                 {
-                    let direction = (point - previous).normalized();
+                    let direction = (next - previous).normalized();
                     p.arrow(
-                        point - direction * 12.0,
+                        previous + (next - previous) * 0.5 - direction * 6.0,
                         direction * 12.0,
                         Stroke::new(1.6, color),
                     );
@@ -683,13 +695,13 @@ impl Playground {
                     egui::Sense::hover(),
                 )
                 .on_hover_text(format!(
-                    "{}\n{:?} #{} · {} -> {} · visual {:.0}%",
+                    "{}\n{:?} #{} · {} -> {}\nObserved at {}. Pulse age is display time, not transmission progress.",
                     self.playback.description(packet.id),
                     packet.kind,
                     packet.id,
                     self.node_name(packet.from),
                     self.node_name(packet.to),
-                    packet.progress * 100.0
+                    self.node_name(observed_at)
                 ));
             }
         }
@@ -982,9 +994,12 @@ impl Playground {
             }
             GraphAction::AddPeer(position) => {
                 let id = self
-                    .snapshot
+                    .network
                     .as_ref()
-                    .and_then(|s| s.peers.iter().map(|p| p.id).max())
+                    .and_then(|network| network.nodes.iter().filter_map(|node| node.peer_id).max())
+                    .into_iter()
+                    .chain(self.peer_inventory.iter().map(|peer| peer.id))
+                    .max()
                     .unwrap_or(0)
                     + 1;
                 self.control(
@@ -1036,6 +1051,14 @@ pub(super) fn packet_color(kind: PacketKind) -> Color32 {
         PacketKind::Request => ACCENT,
         PacketKind::Response => GREEN,
         PacketKind::Cancel => Color32::from_rgb(232, 120, 105),
+    }
+}
+
+pub(super) fn observed_color(packet: &fhe_playground::NetworkPacket) -> Color32 {
+    if packet.request_id.is_none() {
+        AMBER
+    } else {
+        packet_color(packet.kind)
     }
 }
 

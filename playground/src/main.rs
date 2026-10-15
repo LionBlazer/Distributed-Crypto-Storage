@@ -2,6 +2,7 @@ mod graph_bundling;
 mod graph_layout;
 mod graph_routing;
 mod process_backend;
+mod samples;
 mod traffic;
 mod ui;
 mod worker;

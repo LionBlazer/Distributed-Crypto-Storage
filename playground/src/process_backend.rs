@@ -180,6 +180,13 @@ struct Peer {
     last_status: Option<Status>,
     seen: u64,
 }
+/// Manager-owned process settings, available before any database exists.
+#[derive(Clone, Debug)]
+pub(crate) struct PeerProfile {
+    pub node: NodeId,
+    pub id: usize,
+    pub config: PeerConfig,
+}
 pub(super) struct ProcessBackend {
     owner: Identity,
     connector: Connector,
@@ -201,6 +208,7 @@ pub(super) struct ProcessBackend {
     next_packet: Arc<AtomicU64>,
     pub(super) traffic: LiveTraffic,
     pub(super) wake_traffic: Option<Arc<dyn Fn() + Send + Sync>>,
+    pub(super) observe_traffic: Option<Arc<dyn Fn(Observation) + Send + Sync>>,
 }
 fn error(e: impl std::fmt::Display) -> LabError {
     LabError::InvalidInput(e.to_string())
@@ -241,6 +249,7 @@ impl ProcessBackend {
             next_packet: Arc::new(AtomicU64::new(1)),
             traffic: Arc::default(),
             wake_traffic: None,
+            observe_traffic: None,
         })
     }
     fn remote(&self, endpoint: Endpoint, node: NodeId) -> RemotePeer {
@@ -249,6 +258,7 @@ impl ProcessBackend {
         let session = self.session.clone();
         let sequence = self.next_packet.clone();
         let wake = self.wake_traffic.clone();
+        let observe = self.observe_traffic.clone();
         RemotePeer::new(endpoint, self.connector.clone())
             .with_activity(Arc::new(move |activity| {
                 let source = session.load(Ordering::Acquire);
@@ -275,15 +285,18 @@ impl ProcessBackend {
                     progress: 1.0,
                     request_id: Some(activity.request_id),
                 };
-                if let Ok(mut pending) = traffic.lock() {
+                let observation = Observation {
+                    packet,
+                    operation: activity.operation,
+                    bytes: activity.bytes,
+                };
+                if let Some(observe) = &observe {
+                    observe(observation);
+                } else if let Ok(mut pending) = traffic.lock() {
                     if pending.len() == MAX_OBSERVATIONS {
                         pending.pop_front();
                     }
-                    pending.push_back(Observation {
-                        packet,
-                        operation: activity.operation,
-                        bytes: activity.bytes,
-                    });
+                    pending.push_back(observation);
                 }
                 if let Some(wake) = &wake {
                     wake();
@@ -364,7 +377,7 @@ impl ProcessBackend {
     pub fn create(&mut self, draft: DatabaseDraft) -> Result<(), LabError> {
         if draft.rows.len() > 128 {
             return Err(error(
-                "The interactive fixture editor permits at most 128 rows",
+                "The current encrypted database import permits at most 128 rows",
             ));
         }
         if !self.retained_databases.is_empty() {
@@ -600,21 +613,29 @@ impl ProcessBackend {
                 else {
                     continue;
                 };
-                self.packets.push_back((
-                    Instant::now(),
-                    NetworkPacket {
-                        id,
-                        from: source,
-                        to: target,
-                        kind: if event.operation == "probe" {
-                            PacketKind::Ping
-                        } else {
-                            PacketKind::Request
-                        },
-                        progress: 1.0,
-                        request_id: None,
+                let packet = NetworkPacket {
+                    id,
+                    from: source,
+                    to: target,
+                    kind: if matches!(
+                        event.operation.as_str(),
+                        "probe" | "status" | "neighbors" | "journal-sync"
+                    ) {
+                        PacketKind::Ping
+                    } else {
+                        PacketKind::Request
                     },
-                ));
+                    progress: 1.0,
+                    request_id: None,
+                };
+                self.packets.push_back((Instant::now(), packet.clone()));
+                if let Some(observe) = &self.observe_traffic {
+                    observe(Observation {
+                        packet,
+                        operation: format!("Peer reported completed {}", event.operation),
+                        bytes: event.received_bytes,
+                    });
+                }
                 self.logs.push_back(NetworkLog{time_ms:self.started.elapsed().as_secs_f64()*1000.0,message:format!("Peer node {source} → {target}: {} / {} received application bytes / {} sent reply bytes",event.operation,event.received_bytes,event.sent_bytes)});
             }
         }
@@ -777,6 +798,16 @@ impl ProcessBackend {
             }),
         })
     }
+    pub fn peer_profiles(&self) -> Vec<PeerProfile> {
+        self.peers
+            .iter()
+            .map(|(id, peer)| PeerProfile {
+                node: peer.node,
+                id: *id,
+                config: peer.config.clone(),
+            })
+            .collect()
+    }
     pub fn network(&mut self) -> NetworkSnapshot {
         self.drain_observations();
         let mut nodes = self
@@ -841,21 +872,54 @@ mod tests {
     use super::*;
     #[test]
     #[ignore = "starts owned peer daemons; build dcs-peer and set DCS_PEER_BIN"]
+    fn real_peer_inventory_and_configuration_exist_before_database_creation() {
+        let mut backend = ProcessBackend::new().unwrap();
+        let first = backend.add_peer(default_peer_config(1)).unwrap();
+        let second = backend.add_peer(default_peer_config(2)).unwrap();
+        assert!(backend.snapshot().is_none());
+        let profiles = backend.peer_profiles();
+        assert_eq!(
+            profiles
+                .iter()
+                .map(|peer| (peer.node, peer.config.name.as_str()))
+                .collect::<Vec<_>>(),
+            vec![(first, "Peer 01"), (second, "Peer 02")]
+        );
+        let config = PeerConfig {
+            name: "Configured before storage".into(),
+            storage_limit_bytes: 32 * 1024 * 1024,
+            ..profiles[1].config.clone()
+        };
+
+        backend.configure(2, config.clone()).unwrap();
+
+        assert!(backend.snapshot().is_none());
+        assert_eq!(backend.peer_profiles()[1].config, config);
+        let network = backend.network();
+        let configured = network.nodes.iter().find(|node| node.id == second).unwrap();
+        assert_eq!(configured.name, "Configured before storage");
+        assert!(
+            configured
+                .process_id
+                .is_some_and(|pid| pid != std::process::id())
+        );
+        backend.remove(first).unwrap();
+        assert_eq!(backend.peer_profiles().len(), 1);
+    }
+    #[test]
+    #[ignore = "starts owned peer daemons; build dcs-peer and set DCS_PEER_BIN"]
     fn real_process_views_follow_verified_sql_copies_failover_and_restart() {
+        // Public SQL import input; the same preflight used by the client UI.
+        let rows = crate::samples::parse_dump(&format!(
+            "{} INSERT INTO records(age, amount) VALUES (18,20),(42,30);",
+            crate::samples::SUPPORTED_SCHEMA
+        ))
+        .unwrap();
         let mut backend = ProcessBackend::new().unwrap();
         backend
             .create(DatabaseDraft {
                 name: "network-view".into(),
-                rows: vec![
-                    compact_query::PlainRow {
-                        age: 18,
-                        amount: 20,
-                    },
-                    compact_query::PlainRow {
-                        age: 42,
-                        amount: 30,
-                    },
-                ],
+                rows,
                 peers: vec![default_peer_config(1), default_peer_config(2)],
             })
             .unwrap();

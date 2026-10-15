@@ -25,9 +25,6 @@ impl Playground {
     }
     pub(super) fn display_network(&mut self) -> Option<NetworkSnapshot> {
         let mut network = self.network.clone()?;
-        for packet in &network.packets {
-            self.playback.observe(packet);
-        }
         let ids: BTreeSet<_> = network.nodes.iter().map(|node| node.id).collect();
         network.packets = self
             .playback

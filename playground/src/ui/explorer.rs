@@ -17,7 +17,10 @@ impl Playground {
                     .color(MUTED),
                 );
             } else {
-                ui.label("Preparing database...");
+                ui.label("No database");
+                if ui.small_button("Open Data").clicked() {
+                    self.navigate(Tab::Data, self.right_tab);
+                }
             }
         });
     }

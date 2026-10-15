@@ -3,9 +3,11 @@ use crate::{
     worker::{Command, Event, Outcome, Worker},
 };
 use eframe::egui::{self, Color32, FontId, RichText, Stroke};
+#[cfg(test)]
+use fhe_playground::sample_rows;
 use fhe_playground::{
     DatabaseDraft, LabSnapshot, MAX_LAB_ROWS, MAX_PEERS, NetworkSnapshot, NodeId, NodeRole,
-    PRESETS, PeerConfig, QueryOutcome, format_rows, parse_rows, sample_rows,
+    PRESETS, PeerConfig, QueryOutcome, format_rows, parse_rows,
 };
 use sql_plan::Column;
 use std::collections::{HashMap, VecDeque};
@@ -88,13 +90,16 @@ pub struct Playground {
     worker: Worker,
     snapshot: Option<LabSnapshot>,
     network: Option<NetworkSnapshot>,
+    peer_inventory: Vec<crate::process_backend::PeerProfile>,
     sql: String,
     draft_name: String,
     draft_rows: String,
-    generate_rows: usize,
+    data_import: data::DataImport,
     pending: Option<Pending>,
+    completion_waiting: bool,
     control_pending: Option<Control>,
     worker_stopped: bool,
+    source_stopped: bool,
     status: String,
     input_error: Option<String>,
     history: VecDeque<Record>,
@@ -109,6 +114,7 @@ pub struct Playground {
     network_view: NetworkView,
     link_view: LinkView,
     playback: crate::traffic::Playback,
+    timeline: crate::traffic::timeline::Timeline<Event>,
     overview_search: String,
     overview_members: Option<Vec<NodeId>>,
     peer_edits: HashMap<NodeId, PeerConfig>,
@@ -128,7 +134,8 @@ impl Playground {
     pub fn new(ctx: &egui::Context) -> Result<Self, std::io::Error> {
         set_theme(ctx);
         let mut app = Self::with_worker(Worker::start(ctx.clone())?);
-        app.create_database();
+        app.tab = Tab::Data;
+        app.status = "Choose a SQL dump or create an empty database".into();
         Ok(app)
     }
     fn with_worker(worker: Worker) -> Self {
@@ -136,17 +143,20 @@ impl Playground {
             worker,
             snapshot: None,
             network: None,
+            peer_inventory: Vec::new(),
             sql: PRESETS
                 .first()
                 .expect("public presets are nonempty")
                 .sql
                 .into(),
-            draft_name: "demo".into(),
-            draft_rows: format_rows(&sample_rows(4).expect("bounded sample")),
-            generate_rows: 4,
+            draft_name: "database".into(),
+            draft_rows: String::new(),
+            data_import: data::DataImport::default(),
             pending: None,
+            completion_waiting: false,
             control_pending: None,
             worker_stopped: false,
+            source_stopped: false,
             status: "Preparing...".into(),
             input_error: None,
             history: VecDeque::new(),
@@ -161,6 +171,7 @@ impl Playground {
             network_view: NetworkView::Auto,
             link_view: LinkView::Relevant,
             playback: crate::traffic::Playback::default(),
+            timeline: crate::traffic::timeline::Timeline::default(),
             overview_search: String::new(),
             overview_members: None,
             peer_edits: HashMap::new(),
@@ -183,7 +194,14 @@ impl Playground {
         self.control_pending.is_none() && !self.worker_stopped
     }
     fn can_query(&self) -> bool {
+        // Run may catch up a completed creation whose first database/client
+        // snapshot is still queued. Dispatch rechecks all ordinary guards after
+        // catch_up_display applies that state; this grants no invented database.
+        if self.completion_waiting && !self.source_stopped && self.controls_available() {
+            return true;
+        }
         self.available()
+            && !self.source_stopped
             && self.controls_available()
             && self
                 .snapshot
@@ -208,6 +226,7 @@ impl Playground {
         };
         match self.worker.send(command) {
             Ok(()) => {
+                self.completion_waiting = false;
                 self.pending = Some(Pending {
                     job,
                     label,
@@ -232,6 +251,13 @@ impl Playground {
         }
     }
     fn profiles(&self) -> Vec<PeerConfig> {
+        if !self.peer_inventory.is_empty() {
+            return self
+                .peer_inventory
+                .iter()
+                .map(|peer| peer.config.clone())
+                .collect();
+        }
         self.snapshot
             .as_ref()
             .map(|s| s.peers.iter().map(|peer| peer.config.clone()).collect())
@@ -241,7 +267,35 @@ impl Playground {
                     .collect()
             })
     }
+    fn peer_config(&self, id: NodeId) -> Option<PeerConfig> {
+        self.peer_inventory
+            .iter()
+            .find(|peer| peer.node == id)
+            .map(|peer| peer.config.clone())
+            .or_else(|| {
+                let peer_id = self
+                    .network
+                    .as_ref()?
+                    .nodes
+                    .iter()
+                    .find(|node| node.id == id)?
+                    .peer_id?;
+                self.snapshot
+                    .as_ref()?
+                    .peers
+                    .iter()
+                    .find(|peer| peer.id == peer_id)
+                    .map(|peer| peer.config.clone())
+            })
+    }
     fn create_database(&mut self) {
+        if self.data_import.blocks_creation() {
+            self.input_error = Some(
+                "SQL import is not ready. Load a compatible dump or choose Use manual draft."
+                    .into(),
+            );
+            return;
+        }
         match parse_rows(&self.draft_rows) {
             Ok(rows) => self.submit(
                 Command::Create(DatabaseDraft {
@@ -259,6 +313,8 @@ impl Playground {
         self.sql = sql.into();
     }
     fn run_query(&mut self) {
+        // A user action starts at the latest observed state, retaining their speed.
+        self.catch_up_display();
         if self.can_query()
             && let Some(client_id) = self.active_client
         {
@@ -293,195 +349,262 @@ impl Playground {
             if node.role == NodeRole::Client {
                 self.active_client = Some(id);
             }
-            if let Some(peer_id) = node.peer_id
-                && let Some(peer) = self
-                    .snapshot
-                    .as_ref()
-                    .and_then(|s| s.peers.iter().find(|p| p.id == peer_id))
-            {
-                self.peer_edits
-                    .entry(id)
-                    .or_insert_with(|| peer.config.clone());
+            if let Some(config) = self.peer_config(id) {
+                self.peer_edits.entry(id).or_insert(config);
             }
         }
     }
-    fn poll(&mut self) {
-        if self.worker_stopped {
+    fn collect_display_events(&mut self) {
+        if self.source_stopped {
             return;
         }
         loop {
             match self.worker.poll() {
-                Ok(Some(Event::Traffic(observation))) => self.playback.observe_io(&observation),
-                Ok(Some(Event::Snapshot(snapshot))) => {
-                    self.snapshot = Some(snapshot);
-                }
-                Ok(Some(Event::Network(net))) => {
-                    if !self.active_client.is_some_and(|id| {
-                        net.nodes
-                            .iter()
-                            .any(|n| n.id == id && n.role == NodeRole::Client)
-                    }) {
-                        self.active_client = net
-                            .nodes
-                            .iter()
-                            .find(|n| n.role == NodeRole::Client)
-                            .map(|n| n.id);
-                    }
-                    self.node_tabs
-                        .retain(|id| net.nodes.iter().any(|n| n.id == *id));
-                    self.peer_edits
-                        .retain(|id, _| net.nodes.iter().any(|n| n.id == *id));
-                    self.graph_seeds.retain(|id, _| {
-                        net.nodes.iter().any(|n| n.id == *id)
-                            || !self
-                                .network
-                                .as_ref()
-                                .is_some_and(|old| old.nodes.iter().any(|n| n.id == *id))
-                    });
-                    if let RightTab::Node(id) = self.right_tab
-                        && !net.nodes.iter().any(|n| n.id == id)
-                    {
-                        self.right_tab = RightTab::Network;
-                    }
-                    if self.selected_node.is_some_and(|id| {
-                        !net.nodes
-                            .iter()
-                            .any(|n| Some(n.id) == self.selected_node && n.id == id)
-                    }) {
-                        self.selected_node = None;
-                    }
-                    self.network = Some(net);
-                    self.prune_navigation();
-                }
-                Ok(Some(Event::Progress(message))) => self.status = message,
-                Ok(Some(Event::ControlFinished { snapshot, outcome })) => {
-                    let intent = self.control_pending.take();
-                    if matches!(intent, Some(Control::Repair)) {
-                        self.snapshot = snapshot;
-                        self.record_maintenance(outcome);
+                Ok(Some(Event::Stamped { at, event })) => {
+                    if let Event::DisplayGap(count) = event.as_ref() {
+                        // This is a replay-integrity warning, not future network
+                        // state. Surface lost observation counts even while paused.
+                        self.playback.omitted += count;
                         continue;
                     }
-                    if outcome.is_ok() {
-                        self.snapshot = snapshot;
-                        match (intent, &outcome) {
-                            (Some(Control::Add { position }), Ok(Outcome::NodeAdded { id })) => {
-                                self.graph_seeds.insert(*id, position);
-                            }
-                            (Some(Control::Profile(id)), _) => {
-                                if let Some(peer_id) = self
-                                    .network
-                                    .as_ref()
-                                    .and_then(|n| n.nodes.iter().find(|n| n.id == id))
-                                    .and_then(|n| n.peer_id)
-                                    && let Some(peer) = self
-                                        .snapshot
-                                        .as_ref()
-                                        .and_then(|s| s.peers.iter().find(|p| p.id == peer_id))
-                                {
-                                    self.peer_edits.insert(id, peer.config.clone());
-                                }
-                            }
-                            (Some(Control::Delete(expected)), Ok(Outcome::NodeRemoved { id }))
-                                if expected == *id =>
-                            {
-                                self.graph_seeds.remove(id);
-                                self.close_node_tab(*id);
-                            }
-                            _ => {}
-                        }
-                    } else if let Err(error) = outcome {
-                        self.input_error = Some(error.to_string());
+                    if let Event::Finished { client_id, .. } = event.as_ref()
+                        && self
+                            .pending
+                            .as_ref()
+                            .is_some_and(|pending| pending.client_id == *client_id)
+                    {
+                        // Scheduling uses actual completion; presentation stays
+                        // on the shared delayed clock until Run or Live catches up.
+                        self.completion_waiting = true;
                     }
+                    self.timeline.record(at, *event);
                 }
-                Ok(Some(Event::Finished {
-                    snapshot,
-                    outcome,
-                    elapsed_ms,
-                    client_id,
-                })) => {
-                    if !self
-                        .pending
-                        .as_ref()
-                        .is_some_and(|pending| pending.client_id == client_id)
-                    {
-                        continue;
-                    }
-                    let Some(pending) = self.pending.take() else {
-                        continue;
-                    };
-                    let created = matches!(outcome, Ok(Outcome::Created));
-                    let updated = matches!(
-                        outcome.as_ref().ok().and_then(Outcome::query),
-                        Some(
-                            QueryOutcome::Updated { committed: true }
-                                | QueryOutcome::Inserted { .. }
-                        )
-                    );
-                    let current_draft = self.snapshot.as_ref().is_some_and(|s| {
-                        self.draft_name.trim() == s.name
-                            && self.draft_rows == format_rows(&s.owner_rows)
-                    });
-                    if let Some(state) = &snapshot
-                        && (created || (updated && current_draft))
-                    {
-                        self.draft_name = state.name.clone();
-                        self.draft_rows = format_rows(&state.owner_rows);
-                    }
-                    if created {
-                        self.history.clear();
-                        self.maintenance_status.clear();
-                    }
-                    if pending.job == Job::Query {
-                        self.result_tab = if matches!(
-                            outcome.as_ref().ok().and_then(Outcome::query),
-                            Some(
-                                QueryOutcome::Aggregate { .. }
-                                    | QueryOutcome::Count { .. }
-                                    | QueryOutcome::Sum { .. }
-                                    | QueryOutcome::Selected { .. }
-                            )
-                        ) {
-                            ResultTab::Result
-                        } else {
-                            ResultTab::Output
-                        };
-                    }
-                    self.status = if outcome.is_ok() {
-                        "Ready".into()
-                    } else {
-                        "Operation failed".into()
-                    };
-                    if pending.job != Job::Query
-                        && let Err(error) = &outcome
-                    {
-                        self.input_error = Some(error.to_string());
-                    }
-                    let (database, mut revision) = snapshot
-                        .as_ref()
-                        .map(|s| (s.name.clone(), s.revision))
-                        .unwrap_or_default();
-                    if let Ok(Outcome::VerifiedQuery { version, .. }) = &outcome {
-                        revision = version.height;
-                    }
-                    self.history.push_front(Record {
-                        job: pending.job,
-                        label: pending.label,
-                        database,
-                        revision,
-                        elapsed_ms,
-                        outcome: outcome.map_err(|e| e.to_string()),
-                    });
-                    self.history.truncate(8);
-                    self.snapshot = snapshot;
-                }
+                // Only explicit renderer/unit-test channels emit unstamped events.
+                Ok(Some(event)) => self.apply_display_event(event),
                 Ok(None) => break,
                 Err(error) => {
-                    self.pending = None;
-                    self.control_pending = None;
-                    self.worker_stopped = true;
-                    self.input_error = Some(error);
+                    self.source_stopped = true;
+                    self.timeline
+                        .record(std::time::Instant::now(), Event::Stopped(error));
                     break;
                 }
+            }
+            // Bound optional history without changing the chosen time position.
+            // Every accepted result/control completion stays in timestamp order.
+            self.playback.omitted += self.timeline.trim_optional(|event| {
+                matches!(
+                    event,
+                    Event::Snapshot(_) | Event::Network(_) | Event::Peers(_) | Event::Progress(_)
+                )
+            });
+            self.playback.omitted += self
+                .timeline
+                .trim_optional(|event| matches!(event, Event::Traffic(_)));
+        }
+    }
+    fn poll(&mut self) {
+        self.collect_display_events();
+        self.advance_display(std::time::Instant::now());
+    }
+    fn advance_display(&mut self, now: std::time::Instant) {
+        self.timeline.advance(now, self.playback.speed);
+        while let Some((at, event)) = self.timeline.pop_ready() {
+            self.playback.set_position(at);
+            self.apply_display_event(event);
+        }
+        self.playback.set_position(self.timeline.position());
+    }
+    fn display_is_behind(&self) -> bool {
+        self.timeline.queued() > 0 || self.timeline.lag() > 0.05
+    }
+    fn display_queued(&self) -> usize {
+        self.timeline.queued()
+    }
+    fn display_lag_seconds(&self) -> f64 {
+        self.timeline.lag()
+    }
+    fn catch_up_display(&mut self) {
+        self.collect_display_events();
+        while let Some((at, event)) = self.timeline.pop_any() {
+            self.playback.set_position(at);
+            self.apply_display_event(event);
+        }
+        self.timeline.catch_up(std::time::Instant::now());
+        self.playback.sync_live();
+        self.playback.set_position(self.timeline.position());
+    }
+    fn sync_live(&mut self) {
+        self.catch_up_display();
+        self.playback.speed = 1.0;
+    }
+    fn apply_display_event(&mut self, event: Event) {
+        match event {
+            Event::Stamped { at, event } => self.timeline.record(at, *event),
+            Event::DisplayGap(count) => self.playback.omitted += count,
+            Event::Stopped(error) => {
+                self.completion_waiting = false;
+                self.pending = None;
+                self.control_pending = None;
+                self.worker_stopped = true;
+                self.input_error = Some(error);
+            }
+            Event::Traffic(observation) => self.playback.observe_io(&observation),
+            Event::Snapshot(snapshot) => {
+                self.snapshot = Some(snapshot);
+            }
+            Event::Peers(peers) => {
+                self.peer_inventory = peers;
+            }
+            Event::Network(net) => {
+                for packet in &net.packets {
+                    self.playback.observe(packet);
+                }
+                if !self.active_client.is_some_and(|id| {
+                    net.nodes
+                        .iter()
+                        .any(|n| n.id == id && n.role == NodeRole::Client)
+                }) {
+                    self.active_client = net
+                        .nodes
+                        .iter()
+                        .find(|n| n.role == NodeRole::Client)
+                        .map(|n| n.id);
+                }
+                self.node_tabs
+                    .retain(|id| net.nodes.iter().any(|n| n.id == *id));
+                self.peer_edits
+                    .retain(|id, _| net.nodes.iter().any(|n| n.id == *id));
+                self.graph_seeds.retain(|id, _| {
+                    net.nodes.iter().any(|n| n.id == *id)
+                        || !self
+                            .network
+                            .as_ref()
+                            .is_some_and(|old| old.nodes.iter().any(|n| n.id == *id))
+                });
+                if let RightTab::Node(id) = self.right_tab
+                    && !net.nodes.iter().any(|n| n.id == id)
+                {
+                    self.right_tab = RightTab::Network;
+                }
+                if self.selected_node.is_some_and(|id| {
+                    !net.nodes
+                        .iter()
+                        .any(|n| Some(n.id) == self.selected_node && n.id == id)
+                }) {
+                    self.selected_node = None;
+                }
+                self.network = Some(net);
+                self.prune_navigation();
+            }
+            Event::Progress(message) => self.status = message,
+            Event::ControlFinished { snapshot, outcome } => {
+                let intent = self.control_pending.take();
+                if matches!(intent, Some(Control::Repair)) {
+                    self.snapshot = snapshot;
+                    self.record_maintenance(outcome);
+                    return;
+                }
+                if outcome.is_ok() {
+                    self.snapshot = snapshot;
+                    match (intent, &outcome) {
+                        (Some(Control::Add { position }), Ok(Outcome::NodeAdded { id })) => {
+                            self.graph_seeds.insert(*id, position);
+                        }
+                        (Some(Control::Profile(id)), _) => {
+                            if let Some(config) = self.peer_config(id) {
+                                self.peer_edits.insert(id, config);
+                            }
+                        }
+                        (Some(Control::Delete(expected)), Ok(Outcome::NodeRemoved { id }))
+                            if expected == *id =>
+                        {
+                            self.graph_seeds.remove(id);
+                            self.close_node_tab(*id);
+                        }
+                        _ => {}
+                    }
+                } else if let Err(error) = outcome {
+                    self.input_error = Some(error.to_string());
+                }
+            }
+            Event::Finished {
+                snapshot,
+                outcome,
+                elapsed_ms,
+                client_id,
+            } => {
+                if !self
+                    .pending
+                    .as_ref()
+                    .is_some_and(|pending| pending.client_id == client_id)
+                {
+                    return;
+                }
+                let Some(pending) = self.pending.take() else {
+                    return;
+                };
+                self.completion_waiting = false;
+                let created = matches!(outcome, Ok(Outcome::Created));
+                let updated = matches!(
+                    outcome.as_ref().ok().and_then(Outcome::query),
+                    Some(QueryOutcome::Updated { committed: true } | QueryOutcome::Inserted { .. })
+                );
+                let current_draft = self.snapshot.as_ref().is_some_and(|s| {
+                    self.draft_name.trim() == s.name
+                        && self.draft_rows == format_rows(&s.owner_rows)
+                });
+                if let Some(state) = &snapshot
+                    && (created || (updated && current_draft))
+                {
+                    self.draft_name = state.name.clone();
+                    self.draft_rows = format_rows(&state.owner_rows);
+                }
+                if created {
+                    self.history.clear();
+                    self.maintenance_status.clear();
+                }
+                if pending.job == Job::Query {
+                    self.result_tab = if matches!(
+                        outcome.as_ref().ok().and_then(Outcome::query),
+                        Some(
+                            QueryOutcome::Aggregate { .. }
+                                | QueryOutcome::Count { .. }
+                                | QueryOutcome::Sum { .. }
+                                | QueryOutcome::Selected { .. }
+                        )
+                    ) {
+                        ResultTab::Result
+                    } else {
+                        ResultTab::Output
+                    };
+                }
+                self.status = if outcome.is_ok() {
+                    "Ready".into()
+                } else {
+                    "Operation failed".into()
+                };
+                if pending.job != Job::Query
+                    && let Err(error) = &outcome
+                {
+                    self.input_error = Some(error.to_string());
+                }
+                let (database, mut revision) = snapshot
+                    .as_ref()
+                    .map(|s| (s.name.clone(), s.revision))
+                    .unwrap_or_default();
+                if let Ok(Outcome::VerifiedQuery { version, .. }) = &outcome {
+                    revision = version.height;
+                }
+                self.history.push_front(Record {
+                    job: pending.job,
+                    label: pending.label,
+                    database,
+                    revision,
+                    elapsed_ms,
+                    outcome: outcome.map_err(|e| e.to_string()),
+                });
+                self.history.truncate(8);
+                self.snapshot = snapshot;
             }
         }
     }
@@ -509,8 +632,8 @@ impl Playground {
         self.history.truncate(8);
     }
     fn draw(&mut self, ui: &mut egui::Ui) {
-        self.playback.advance(ui.input(|input| input.time));
-        if self.playback.playing() {
+        self.advance_display(std::time::Instant::now());
+        if self.playback.playing() || (self.playback.speed > 0.0 && self.display_queued() > 0) {
             ui.ctx().request_repaint();
         }
         self.navigation_shortcuts(ui.ctx());
@@ -678,10 +801,12 @@ impl Playground {
     fn run_disabled_reason(&self) -> Option<&'static str> {
         if self.worker_stopped {
             Some("Worker stopped")
-        } else if self.pending.is_some() {
+        } else if self.pending.is_some() && !self.completion_waiting {
             Some("Operation running…")
         } else if self.control_pending.is_some() {
             Some("Applying network changes…")
+        } else if self.completion_waiting && !self.source_stopped {
+            None
         } else if self.snapshot.is_none() {
             Some("Create a database in Data")
         } else if self
@@ -898,3 +1023,10 @@ fn highlight_sql(sql: &str) -> egui::text::LayoutJob {
 #[cfg(test)]
 #[path = "ui_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "timeline_tests.rs"]
+mod timeline_tests;
+
+#[cfg(test)]
+mod peer_inventory_tests;
