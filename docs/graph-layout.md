@@ -25,7 +25,7 @@ zero-crossing promise would be incorrect.
 
 ## Sparse placement
 
-[`graph_layout.rs`](../crates/fhe-playground/src/graph_layout.rs) is a small,
+[`graph_layout.rs`](../playground/src/graph_layout.rs) is a small,
 dependency-free incremental spring layout inspired by the force-directed family.
 It is not a port or a full implementation of WebCola, ELK or Graphviz.
 
@@ -83,7 +83,7 @@ many distinct actual undirected links as nodes. It changes presentation only:
   ring, retaining their angular order. Its radius accounts for the largest padded
   card diagonal, so the settled ring has room for every rectangle. Every intermediate
   solver call also resolves rectangle overlaps.
-- [`graph_bundling.rs`](../crates/fhe-playground/src/graph_bundling.rs) retains every
+- [`graph_bundling.rs`](../playground/src/graph_bundling.rs) retains every
   supplied actual edge ID pair. Each path attaches to a shared rectangle outside
   all node cards, follows its shorter perimeter direction, and returns to its
   destination. The lane and its attachment points are geometric conventions,
@@ -97,7 +97,7 @@ many distinct actual undirected links as nodes. It changes presentation only:
 
 ## Card-safe geometric routes
 
-[`graph_routing.rs`](../crates/fhe-playground/src/graph_routing.rs) builds a shared
+[`graph_routing.rs`](../playground/src/graph_routing.rs) builds a shared
 rectangle-corner visibility graph with six units of clearance around cards. It
 returns an individual obstacle-safe polyline clipped to the source and target
 card boundaries. Dense bundle attachments reuse that geometry. Both individual

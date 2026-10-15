@@ -2,8 +2,8 @@
 
 #[test]
 fn agent_instructions_mirror_the_canonical_requirements() {
-    let canonical = include_str!("../../../REQUIREMENTS.md").replace("\r\n", "\n");
-    let instructions = include_str!("../../../AGENTS.md").replace("\r\n", "\n");
+    let canonical = include_str!("../../REQUIREMENTS.md").replace("\r\n", "\n");
+    let instructions = include_str!("../../AGENTS.md").replace("\r\n", "\n");
     let begin = "<!-- requirements:begin -->";
     let end = "<!-- requirements:end -->";
     assert_eq!(instructions.matches(begin).count(), 1, "one mirror start");

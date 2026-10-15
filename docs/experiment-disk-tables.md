@@ -14,7 +14,7 @@ backend used in these disk measurements.
 
 ## Storage and lifecycle
 
-The new [disk_tables example](../crates/compact-query/examples/disk_tables.rs)
+The new [disk_tables example](../experiments/core-workloads/examples/disk_tables.rs)
 generates varied explicitly public rows, seals one table, writes both actual
 encrypted canonical images, calls sync_all and drops that table before creating
 the next. Every table has a distinct root and a table-specific rare age250 row.
@@ -95,8 +95,8 @@ From repository root on Windows, use a dedicated target for this experiment:
 
 ~~~powershell
 $env:CARGO_TARGET_DIR = Join-Path $PWD 'target/disk-tables'
-cargo build --release --locked --offline -p compact-query --example disk_tables --jobs 2
-cargo clippy --release --locked --offline -p compact-query --example disk_tables --no-deps -- -D warnings
+cargo build --release --locked --offline -p core-workloads --example disk_tables --jobs 2
+cargo clippy --release --locked --offline -p core-workloads --example disk_tables --no-deps -- -D warnings
 $output = Join-Path $PWD '.local/fhe-research/disk-tables'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 & "$env:CARGO_TARGET_DIR/release/examples/disk_tables.exe" $output 2

@@ -1,7 +1,6 @@
 //! Public synthetic fixtures; results must come from encrypted current table copies.
-use fhe_playground::{
-    Column, DatabaseDraft, LabEngine, LabError, PeerConfig, PlainRow, QueryOutcome,
-};
+use fhe_playground::{DatabaseDraft, LabEngine, LabError, PeerConfig, PlainRow, QueryOutcome};
+use sql_plan::Column;
 
 fn lab() -> LabEngine {
     let mut engine = LabEngine::default();

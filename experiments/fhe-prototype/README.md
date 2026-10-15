@@ -19,8 +19,8 @@ not change production acceptance or the library's Owner/Evaluator APIs.
 
 There are no direct dependencies on other project modules. Its binary and API tests
 exercise this original full-table FHE path. The
-[GUI playground](../fhe-playground/README.md) now uses the separate
-[compact-query](../compact-query/README.md) backend.
+[GUI playground](../../playground/README.md) now uses the separate
+[compact-query](../../crates/compact-query/README.md) backend.
 TFHE-rs 1.8.1 is pinned as an experimental dependency;
 the production cryptographic stack remains undecided. Consult its
 [license and patent terms](https://github.com/zama-ai/tfhe-rs/blob/tfhe-rs-1.8.1/LICENSE)

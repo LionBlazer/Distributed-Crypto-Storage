@@ -6,10 +6,11 @@ rust-version = "1.99"
 publish = false
 
 [dependencies]
-compact-query = { path = "../compact-query", default-features = false, features = ["bfv-experiment"] }
-compact-store = { path = "../compact-store" }
-peer-protocol = { path = "../peer-protocol" }
-replica-store = { path = "../replica-store" }
+sql-plan = { path = "../crates/sql-plan" }
+compact-query = { path = "../crates/compact-query", default-features = false, features = ["bfv-experiment"] }
+compact-store = { path = "../crates/compact-store" }
+peer-protocol = { path = "../crates/peer-protocol" }
+replica-store = { path = "../crates/replica-store" }
 eframe = { version = "=0.36.2", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
 rayon.workspace = true
 

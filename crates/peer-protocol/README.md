@@ -1,6 +1,6 @@
 # Peer protocol experiment
 
-A dependency-free state machine used by the [local playground](../fhe-playground/README.md).
+A dependency-free state machine used by the [local playground](../../playground/README.md).
 `ProtocolNode` owns connection and request lifecycle state. `Envelope`, `Message`,
 `RequestToken` and `ProtocolEvent` form the transport boundary; the crate has no
 project-module dependencies, GUI, storage or cryptographic keys.

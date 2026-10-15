@@ -1,17 +1,25 @@
 # FHE playground
 
 A native **egui / eframe** client and manager for local FHE experiments. This crate
-owns the test UI, a small SQL frontend, and an in-process transport adapter.
-It composes [compact-query](../compact-query/README.md) for compact authenticated
+owns the test UI, presets/fixtures, a local owner/manager, and an in-process
+transport adapter. [sql-plan](../crates/sql-plan/README.md) owns SQL parsing and
+typed plans independently of the GUI and FHE backend.
+It composes [compact-query](../crates/compact-query/README.md) for compact authenticated
 storage, an owner-assisted encrypted age index, real FHE projection/aggregation/inserts/updates and
-compact writeback; [compact-store](../compact-store/README.md) supplies the page
-limits, [replica-store](../replica-store/README.md) places related ciphertext images
-together, and [peer-protocol](../peer-protocol/README.md) owns connection/message
+compact writeback; [compact-store](../crates/compact-store/README.md) supplies the page
+limits, [replica-store](../crates/replica-store/README.md) places related ciphertext images
+together, and [peer-protocol](../crates/peer-protocol/README.md) owns connection/message
 state. These libraries are independent of the GUI and simulation clock. This is an experiment, not a production distributed database.
+
+The dependency direction is playground → core libraries. `LabEngine` remains
+here because it owns the complete local test deployment and owner-only inspector
+rows. `fixtures.rs` and `presets.rs` own test data and editor shortcuts; they are
+not imported by core. GUI/worker and deployment tests stay here; parser behavior
+tests live with sql-plan. The architecture test rejects reverse dependencies.
 
 ## Launch
 
-From the [workspace root](../../README.md), with Rust **1.99 or newer**:
+From the [workspace root](../README.md), with Rust **1.99 or newer**:
 
 ```sh
 cargo run --release --locked -p fhe-playground
@@ -23,7 +31,7 @@ compiles GUI dependencies. Opening the window starts a public four-row `demo`
 database with three simulated peers; key generation runs in the background.
 
 In **Zed**, run `task: spawn` from the command palette and choose
-**FHE: Open GUI playground**, defined in [`.zed/tasks.json`](../../.zed/tasks.json).
+**FHE: Open GUI playground**, defined in [`.zed/tasks.json`](../.zed/tasks.json).
 This Windows task uses the built-in `powershell.exe` and `rustup which cargo` to
 select the active Rust toolchain rather than a different `cargo` executable earlier
 on PATH. The command runs directly in the task shell, without nested `-Command`
@@ -79,7 +87,7 @@ pinned while inspector tabs scroll horizontally; closing stays inside each tab.
   Hover a cell for endpoint names and in-flight messages. The map shares geometric
   lanes for dense links; selecting/hovering a node highlights its individual paths.
   These lanes are drawing conventions, not transport relays. No connection is
-  removed to improve the picture. See [layout research](../../docs/graph-layout.md).
+  removed to improve the picture. See [layout research](../docs/graph-layout.md).
 - **Camera / time:** pan with left/right/middle drag and zoom the map; a right-click
   without dragging opens the context menu. Nodes, routes and background dots share
   world coordinates. Double-click empty space or use its **Fit view** menu item to
@@ -121,7 +129,7 @@ after actual peer routes have formed. It copies authenticated ciphertext pairs f
 survivors and reports completion or failure in history. **Repair replicas** in the
 graph context menu retries manually. This local copy step does not model full wire
 transfer or bandwidth, and does not invent packet animations. See the
-[replicated SQL model](../../docs/replicated-sql-prototype.md) for its failure limits.
+[replicated SQL model](../docs/replicated-sql-prototype.md) for its failure limits.
 
 Quotas cover canonical encrypted data plus the complete encrypted index and its
 headers (1 KiB..64 MiB), plus 16 bytes of replica record metadata per physical
@@ -238,7 +246,7 @@ The database, keys, drafts, and history are ephemeral and are never saved. Closi
 the app loses the experiment. Results remain **unverified**: FHE confidentiality is
 not proof of correct, complete, fresh execution by malicious peers. The cryptographic
 limitations and measured costs of the underlying implementation remain as described
-in [compact-query](../compact-query/README.md). Owner-side update checking repeats selected plaintext work and is not a succinct single-peer computation proof.
+in [compact-query](../crates/compact-query/README.md). Owner-side update checking repeats selected plaintext work and is not a succinct single-peer computation proof.
 
 Library entry points include `parse_sql`, `Predicate::age_range`, `LabEngine::create`, `create_with_peer_ids`,
 `repartition`, `set_replication`, `set_failure_domain`, `repair_replicas`,
@@ -269,7 +277,7 @@ cargo run --release --locked -p fhe-playground --example sql_workload -- 128 8 5
 
 The sql_workload example exercises the actual SQL/manager boundary without opening a GUI: indexed point, duplicate-group and absent queries, then compact UPDATE. It emits public-fixture JSON timings and storage counters; network/proofs are excluded. Tiny tables may exceed 2x once fixed metadata and the encrypted index are counted.
 
-The BFV owning library is [bfv-query-core](../bfv-query-core/README.md). Its inherited
+The BFV owning library is [bfv-query-core](../crates/bfv-query-core/README.md). Its inherited
 profile is experimental and independently unvalidated for security/noise/CCA.
 Initial BFV integration release/locked/offline validation passed all 80 headless GUI/SQL/worker tests (one
 preview-export test remains ignored). The finite public 128-row workload runs all 16
@@ -277,7 +285,7 @@ cases three times on1/3/16peers plus three late-overflow controls:147 exact full
 operations, zero observed >500ms, maximum 383.8544ms. This measures the visible local
 LabEngine boundary with setup/virtual network/rendering/proofs excluded; it is not a
 general SLA or privacy/security claim. These historical workload timings predate
-the added strict/BETWEEN grammar. See the [integration report](../../docs/experiment-bfv-gui-integration.md)
+the added strict/BETWEEN grammar. See the [integration report](../docs/experiment-bfv-gui-integration.md)
 for full timer scope, keys, native memory, canonical sizes and source/raw hashes.
 
 ```sh

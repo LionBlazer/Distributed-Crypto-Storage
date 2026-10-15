@@ -1,18 +1,4 @@
-use fhe_playground::{
-    MAX_LAB_ROWS, PRESETS, QueryPlan, format_rows, parse_rows, parse_sql, sample_rows,
-};
-
-#[test]
-fn every_one_click_preset_has_a_supported_plan() {
-    for preset in PRESETS {
-        assert!(
-            parse_sql(preset.sql).is_ok(),
-            "{}: {}",
-            preset.name,
-            preset.sql
-        );
-    }
-}
+use sql_plan::{QueryPlan, parse_sql};
 
 #[test]
 fn keywords_are_case_insensitive_and_whitespace_is_optional_around_symbols() {
@@ -52,7 +38,6 @@ fn unsupported_clauses_and_extra_statements_are_never_ignored() {
         "SELECT age, age FROM records",
         "SELECT age, amount, age FROM records",
         "SELECT amount AS total FROM records",
-        "SELECT * FROM records LIMIT 129",
         "SELECT * FROM records LIMIT -1",
         "SELECT * FROM records LIMIT 1 OFFSET 1",
         "SELECT * FROM records LIMIT 1 WHERE age = 18",
@@ -73,7 +58,7 @@ fn unsupported_clauses_and_extra_statements_are_never_ignored() {
 
 #[test]
 fn row_projections_and_limits_have_explicit_plans_and_requested_column_order() {
-    use fhe_playground::{Predicate, Projection};
+    use sql_plan::{Predicate, Projection};
     for (sql, projection, limit) in [
         ("SELECT * FROM records", Projection::AgeAmount, None),
         (
@@ -194,11 +179,11 @@ fn oversized_sql_is_rejected_before_tokenization() {
 }
 #[test]
 fn insert_has_bounded_typed_values_and_never_ignores_extra_rows_or_clauses() {
-    use fhe_playground::PlainRow;
+    use sql_plan::RowValues;
     assert_eq!(
         parse_sql("INSERT INTO records (age, amount) VALUES (255,65535);").unwrap(),
         QueryPlan::Insert {
-            row: PlainRow {
+            row: RowValues {
                 age: 255,
                 amount: 65535
             }
@@ -207,7 +192,7 @@ fn insert_has_bounded_typed_values_and_never_ignores_extra_rows_or_clauses() {
     assert_eq!(
         parse_sql("insert into records values(0,0)").unwrap(),
         QueryPlan::Insert {
-            row: PlainRow { age: 0, amount: 0 }
+            row: RowValues { age: 0, amount: 0 }
         }
     );
     for sql in [
@@ -225,60 +210,10 @@ fn insert_has_bounded_typed_values_and_never_ignores_extra_rows_or_clauses() {
     }
 }
 #[test]
-fn presets_progress_from_reading_to_filtering_and_summary_then_real_writes() {
-    use fhe_playground::PresetGroup;
-    assert!(matches!(
-        parse_sql(PRESETS.first().unwrap().sql),
-        Ok(QueryPlan::Select { .. })
-    ));
-    let groups: Vec<_> =
-        PRESETS
-            .iter()
-            .map(|preset| preset.group)
-            .fold(Vec::new(), |mut groups, group| {
-                if groups.last() != Some(&group) {
-                    groups.push(group)
-                }
-                groups
-            });
-    assert_eq!(
-        groups,
-        vec![
-            PresetGroup::Select,
-            PresetGroup::Filter,
-            PresetGroup::Aggregate,
-            PresetGroup::Insert,
-            PresetGroup::Update
-        ]
-    );
-    let insert = PRESETS
-        .iter()
-        .find(|preset| preset.group == PresetGroup::Insert)
-        .unwrap();
-    assert!(matches!(
-        parse_sql(insert.sql),
-        Ok(QueryPlan::Insert { .. })
-    ));
-}
-
-#[test]
-fn owner_fixtures_round_trip_and_allow_an_empty_database() {
-    let rows = parse_rows(" 0,0\n255,65535\n\n18,20 ").unwrap();
-
-    assert_eq!(parse_rows(&format_rows(&rows)).unwrap(), rows);
-    assert!(parse_rows(" \n").unwrap().is_empty());
-    assert_eq!(sample_rows(4).unwrap().len(), 4);
-}
-
-#[test]
-fn invalid_fixture_values_or_resource_limits_are_rejected() {
-    for text in ["256,1", "1,65536", "-1,1", "18", "18,1,2", "age,amount"] {
-        assert!(
-            parse_rows(text).is_err(),
-            "invalid fixture was accepted: {text}"
-        );
-    }
-    assert!(parse_rows(&"18,1\n".repeat(MAX_LAB_ROWS + 1)).is_err());
-    assert!(parse_rows(&" ".repeat(16385)).is_err());
-    assert!(sample_rows(MAX_LAB_ROWS + 1).is_err());
+fn output_limit_is_not_coupled_to_a_playground_row_cap() {
+    let QueryPlan::Select { limit, .. } = parse_sql("SELECT * FROM records LIMIT 1000000").unwrap()
+    else {
+        panic!("row selection expected")
+    };
+    assert_eq!(limit, Some(1000000));
 }

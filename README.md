@@ -5,6 +5,12 @@ computers. [REQUIREMENTS.md](REQUIREMENTS.md) defines the intended distributed
 system; production networking, consensus and verifiable malicious-peer execution
 remain unfinished. The current implementation is a local experiment.
 
+The repository has two dependency layers: the [reusable core](crates/README.md),
+and its test/research consumers in [playground](playground/README.md) and
+[experiments](experiments/README.md). `crates/` contains libraries only; GUI, virtual time,
+fixtures, presets and executable measurements live outside it. A default Cargo
+build selects core libraries; the GUI is an explicit package target.
+
 Use Rust 1.99 or newer, from the repository root:
 
 ```sh
@@ -13,7 +19,7 @@ cargo test --workspace --release --locked -- --test-threads=1
 ```
 
 In Zed, spawn **FHE: Open GUI playground** from [.zed/tasks.json](.zed/tasks.json).
-The [egui playground](crates/fhe-playground/README.md) has SQL/data on the left and
+The [egui playground](playground/README.md) has SQL/data on the left and
 network/node inspectors on the right, up to 16 simulated peers and 8 clients.
 Presets fill the editor; Run or Ctrl+Enter executes them. Graph and connection
 matrix reflect the same protocol links/events. Virtual delivery is in one process.
@@ -30,13 +36,14 @@ reject rather than truncate. Owner secret keys stay outside peer role objects.
 
 | Module | Responsibility |
 | --- | --- |
-| [fhe-playground](crates/fhe-playground/README.md) | Test client/manager, SQL frontend, worker and virtual network visualization |
+| [fhe-playground](playground/README.md) | GUI, presets, fixtures, local owner/manager, worker and virtual network visualization |
+| [sql-plan](crates/sql-plan/README.md) | Backend-independent SQL parser, typed statement inputs and plans |
 | [compact-query](crates/compact-query/README.md) | Complete index selection, fresh FHE projections/aggregates and checked compact updates; explicit BFV backend plus retained legacy TFHE module |
 | [bfv-query-core](crates/bfv-query-core/README.md) | Reusable owner/public-peer BFV arithmetic and wire contracts; no storage or GUI dependency |
 | [compact-store](crates/compact-store/README.md) | Owner-only symmetric keys, opaque authenticated pages, independently trusted version roots and constant-size replacements |
 | [replica-store](crates/replica-store/README.md) | Bounded ciphertext replicas, fault-domain placement and atomic local repair batches |
 | [peer-protocol](crates/peer-protocol/README.md) | Bounded transport-independent handshake/message state machine |
-| [fhe-prototype](crates/fhe-prototype/README.md) | Original standalone TFHE experiment and historical baseline |
+| [fhe-prototype](experiments/fhe-prototype/README.md) | Original standalone TFHE experiment and historical baseline |
 
 New GUI databases use fixed encrypted shards with a minimum of one copy. **Min
 copies** adjusts that target; read failover, stale-copy exclusion after INSERT/UPDATE

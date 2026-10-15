@@ -7,7 +7,7 @@ amount, so neither result can overflow its type. The first four public fixtures
 cover nonmatch, equality, a matching maximum u16, and another nonmatch; remaining
 rows vary deterministically.
 
-The [example](../crates/fhe-prototype/examples/transcipher_query.rs) uses pinned
+The [example](../experiments/fhe-prototype/examples/transcipher_query.rs) uses pinned
 TFHE-rs 1.8.1 with the existing PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128,
 a dedicated OPRF key and an explicit Rayon budget (two threads by default). It does not change the prototype's
 Owner/Evaluator APIs. It generates ephemeral keys and public synthetic fixtures

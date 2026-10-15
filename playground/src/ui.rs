@@ -4,9 +4,10 @@ use crate::{
 };
 use eframe::egui::{self, Color32, FontId, RichText, Stroke};
 use fhe_playground::{
-    Column, DatabaseDraft, LabSnapshot, MAX_LAB_ROWS, MAX_PEERS, NetworkSnapshot, NodeId, NodeRole,
+    DatabaseDraft, LabSnapshot, MAX_LAB_ROWS, MAX_PEERS, NetworkSnapshot, NodeId, NodeRole,
     PRESETS, PeerConfig, QueryOutcome, format_rows, parse_rows, sample_rows,
 };
+use sql_plan::Column;
 use std::collections::{HashMap, VecDeque};
 mod camera;
 mod data;

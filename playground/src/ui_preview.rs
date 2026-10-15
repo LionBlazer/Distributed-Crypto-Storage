@@ -7,8 +7,7 @@ use super::*;
 #[test]
 #[ignore = "writes public-fixture UI previews to .local/gui-previews"]
 fn export_ui_previews() {
-    let directory =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.local/gui-previews");
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.local/gui-previews");
     std::fs::create_dir_all(&directory).unwrap();
     for (name, tab, peer_count, size) in [
         ("sql", Tab::Sql, 3, [1500, 900]),

@@ -12,13 +12,13 @@ All seven workspace crates were traced through their owning boundaries:
 
 | Crate | Reviewed behavior |
 | --- | --- |
-| [fhe-playground](../crates/fhe-playground/README.md) | SQL planning, worker dispatch/commit, actual replica custody, owner view, UI actions and virtual transport |
+| [fhe-playground](../playground/README.md) | SQL planning, worker dispatch/commit, actual replica custody, owner view, UI actions and virtual transport |
 | [bfv-query-core](../crates/bfv-query-core/README.md) | Owner/public evaluator separation, encrypted predicates/aggregates/projection/insertion/addition, wire and completion bindings |
 | [compact-query](../crates/compact-query/README.md) | BFV and retained TFHE paths, authenticated index selection, current heads, compact writeback |
 | [compact-store](../crates/compact-store/README.md) | Owner-only AEAD keys, canonical images, bounded decoding, page proofs and replacement/growth |
 | [replica-store](../crates/replica-store/README.md) | Actual ciphertext records, quotas, complete data/index bundles, survivor repair and publication |
 | [peer-protocol](../crates/peer-protocol/README.md) | Session/request/replay/cancellation lifecycle and its explicit authentication limits |
-| [fhe-prototype](../crates/fhe-prototype/README.md) | Original TFHE comparisons, encrypted overflow/update, compressed images and public-fixture measurement harness |
+| [fhe-prototype](../experiments/fhe-prototype/README.md) | Original TFHE comparisons, encrypted overflow/update, compressed images and public-fixture measurement harness |
 
 Public fixture oracles in tests/examples compare against completed encrypted
 operations; they are not SQL answer sources. Ignored UI previews supply explicit

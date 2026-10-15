@@ -1,5 +1,23 @@
 [workspace]
-members = ["crates/fhe-prototype", "crates/fhe-playground", "crates/peer-protocol", "crates/compact-store", "crates/compact-query", "crates/bfv-query-core", "crates/replica-store"]
+members = [
+    "crates/peer-protocol",
+    "crates/compact-store",
+    "crates/compact-query",
+    "crates/bfv-query-core",
+    "crates/replica-store",
+    "crates/sql-plan",
+    "playground",
+    "experiments/fhe-prototype",
+    "experiments/core-workloads",
+]
+default-members = [
+    "crates/peer-protocol",
+    "crates/compact-store",
+    "crates/compact-query",
+    "crates/bfv-query-core",
+    "crates/replica-store",
+    "crates/sql-plan",
+]
 resolver = "3"
 
 [workspace.package]

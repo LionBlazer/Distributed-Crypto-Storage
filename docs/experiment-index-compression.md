@@ -108,7 +108,7 @@ is 3,187,648 bytes. Thus data plus the padded index is 5,229,212 / 3,000,000 =
 1.743071x for that geometry, before keys, independent owner state, rebuildable
 hash caches and replicas. Small tables have proportionally larger fixed overhead.
 
-[index_storage.rs](../crates/compact-query/examples/index_storage.rs) generates a
+[index_storage.rs](../experiments/core-workloads/examples/index_storage.rs) generates a
 real shared key pair, seals actual public million-row fixtures with uniform,
 90%-skewed, deterministic pseudorandom and single-age distributions, then encodes
 and restores both encrypted images against their exact trusted heads. It reports
@@ -166,7 +166,7 @@ FHE and owner-checked compact writeback after integration.
 ```sh
 cargo test --release --locked --offline -p compact-query index::tests -- --test-threads=1
 cargo clippy --release --locked --offline -p compact-query --all-targets -- -D warnings
-cargo run --release --locked --offline -p compact-query --example index_storage -- 1000000
+cargo run --release --locked --offline -p core-workloads --example index_storage -- 1000000
 ```
 
 Run CPU-heavy checks serially with the other FHE research. Generated local metric

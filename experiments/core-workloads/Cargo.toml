@@ -1,0 +1,13 @@
+[package]
+name = "core-workloads"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+compact-query = { path = "../../crates/compact-query" }
+compact-store = { path = "../../crates/compact-store" }
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true

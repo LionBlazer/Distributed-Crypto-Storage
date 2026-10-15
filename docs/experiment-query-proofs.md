@@ -243,7 +243,7 @@ unquantified spot check as `ComputationProof`.
 
 ## Opt-in TFHE operation accounting
 
-[proof_cost.rs](../crates/fhe-prototype/examples/proof_cost.rs) uses the native
+[proof_cost.rs](../experiments/fhe-prototype/examples/proof_cost.rs) uses the native
 `pbs-stats` counter with the same pinned parameters as the prototype. Enabling the
 `proof-cost` feature only for this example leaves default workspace features
 unchanged. It counts conversion, predicate, selected COUNT/SUM and overflow-safe

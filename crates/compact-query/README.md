@@ -196,8 +196,8 @@ From the workspace root, run CPU-intensive commands serially:
 ~~~sh
 cargo test --release --locked --offline -p compact-query -p compact-store
 cargo clippy --release --locked --offline -p compact-query -p compact-store --all-targets -- -D warnings
-cargo run --release --locked --offline -p compact-query --example compact_query -- 1000000 5 100 8
-cargo run --release --locked --offline -p compact-query --example compact_query -- 1000000 5 30 8 8
+cargo run --release --locked --offline -p core-workloads --example compact_query -- 1000000 5 100 8
+cargo run --release --locked --offline -p core-workloads --example compact_query -- 1000000 5 30 8 8
 ~~~
 
 The example emits JSON lines and saves no keys/data. It includes full encrypted

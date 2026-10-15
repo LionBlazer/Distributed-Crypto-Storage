@@ -2,10 +2,9 @@
 //! No window is opened, owner keys/rows are not written, and the oracle runs after timing.
 #[path = "support/bfv_memory.rs"]
 mod memory;
-use fhe_playground::{
-    DatabaseDraft, LabEngine, PeerConfig, PlainRow, Predicate, QueryOutcome, QueryPlan, parse_sql,
-};
+use fhe_playground::{DatabaseDraft, LabEngine, PeerConfig, PlainRow, QueryOutcome};
 use serde_json::json;
+use sql_plan::{Predicate, QueryPlan, parse_sql};
 use std::time::Instant;
 
 const CASES: &[(&str, &str)] = &[
@@ -71,6 +70,10 @@ const CASES: &[(&str, &str)] = &[
 fn selected(row: &PlainRow, predicate: Predicate) -> bool {
     predicate
         .age_range()
+        .map(|range| compact_query::AgeRange {
+            lower: range.lower,
+            upper: range.upper,
+        })
         .is_some_and(|range| row.age >= range.lower && row.age <= range.upper)
 }
 fn memory_json() -> Result<serde_json::Value, Box<dyn std::error::Error>> {

@@ -129,7 +129,7 @@ ephemeral in-memory keys only:
 ~~~sh
 cargo test --release --locked -p compact-store
 cargo clippy --release --locked -p compact-store --all-targets -- -D warnings
-cargo run --release --locked -p compact-store --example compact_lookup -- 1000000 1000 1000
+cargo run --release --locked -p core-workloads --example compact_lookup -- 1000000 1000 1000
 ~~~
 
 The example prints JSON lines without writing data or keys. The three arguments

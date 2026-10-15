@@ -424,7 +424,15 @@ pub(super) fn execute(
 ) -> Result<(QueryOutcome, Option<PreparedUpdate>), LabError> {
     let replicas = &db.replication;
     if let QueryPlan::Insert { row } = plan {
-        return insert(db, replicas, row, progress);
+        return insert(
+            db,
+            replicas,
+            PlainRow {
+                age: row.age,
+                amount: row.amount,
+            },
+            progress,
+        );
     }
     if let QueryPlan::Select {
         predicate,
@@ -433,7 +441,10 @@ pub(super) fn execute(
     } = plan
     {
         let mut selected = Vec::new();
-        if let Some(range) = predicate.age_range() {
+        if let Some(range) = predicate.age_range().map(|range| AgeRange {
+            lower: range.lower,
+            upper: range.upper,
+        }) {
             for shard in &replicas.shards {
                 let executor = shard
                     .executor(db)
@@ -471,7 +482,10 @@ pub(super) fn execute(
         QueryPlan::Select { .. } => unreachable!("row reads returned above"),
         QueryPlan::Insert { .. } => unreachable!("insert returned above"),
     };
-    let Some(range) = predicate.age_range() else {
+    let Some(range) = predicate.age_range().map(|range| AgeRange {
+        lower: range.lower,
+        upper: range.upper,
+    }) else {
         return Ok((
             if delta.is_some() {
                 QueryOutcome::Updated { committed: true }

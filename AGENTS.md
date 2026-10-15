@@ -98,6 +98,13 @@ cargo test --release --locked -p fhe-playground --test requirements_sync
 
 ## Working conventions
 
+- Keep reusable libraries in `crates/`, the GUI/local simulation in `playground/`,
+  and measurement executables or research candidates in `experiments/`. Core
+  libraries must not depend on either consumer layer, GUI frameworks, virtual
+  time, presets or fixture generators. Keep tests at their owning boundary.
+  Cargo default members must build core only. Do not promote local manager or
+  unverified experimental behavior into production guarantees by renaming it.
+
 - Respond to the user in Russian. Write new project documentation, code, and commit
   messages in English unless requested otherwise. Preserve the imported Russian
   REQUIREMENTS.md and its sources; change requirements only within the requested scope.

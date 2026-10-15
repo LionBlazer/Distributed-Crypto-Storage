@@ -22,7 +22,7 @@ showing the same keys are expensive when poorly amortized.
 
 ## Ownership, fixture and accounting boundary
 
-The isolated [key_amortization example](../crates/compact-query/examples/key_amortization.rs)
+The isolated [key_amortization example](../experiments/core-workloads/examples/key_amortization.rs)
 uses the existing public Owner/Evaluator/Table API; no core API, cryptographic
 parameter, index format, selection cap or security/privacy policy changed. Exactly
 one Owner::generate call creates the key authority. All tables share its secret
@@ -185,11 +185,11 @@ rejection. No API/manifests/frozen kernel files were changed.
 ~~~powershell
 $env:CARGO_HOME='E:/Users/white/Documents/ChatGPT/DistributedCryptoStorage/.local/cargo-home'
 $env:CARGO_TARGET_DIR='E:/Users/white/Documents/ChatGPT/DistributedCryptoStorage/target'
-& E:/Users/white/.cargo/bin/cargo.exe build --release --locked --offline -p compact-query --example key_amortization --jobs 2
-& E:/Users/white/.cargo/bin/cargo.exe clippy --release --locked --offline -p compact-query --example key_amortization -- -D warnings
-& ./crates/compact-query/examples/support/measure_key_amortization.ps1 -Label dry2 -Tables 2 -Rows 1000000 -Samples 3
+& E:/Users/white/.cargo/bin/cargo.exe build --release --locked --offline -p core-workloads --example key_amortization --jobs 2
+& E:/Users/white/.cargo/bin/cargo.exe clippy --release --locked --offline -p core-workloads --example key_amortization -- -D warnings
+& ./experiments/core-workloads/examples/support/measure_key_amortization.ps1 -Label dry2 -Tables 2 -Rows 1000000 -Samples 3
 # Check the completed dry-run estimate and memory before running the larger case:
-& ./crates/compact-query/examples/support/measure_key_amortization.ps1 -Label actual210 -Tables 210 -Rows 1000000 -Samples 3
+& ./experiments/core-workloads/examples/support/measure_key_amortization.ps1 -Label actual210 -Tables 210 -Rows 1000000 -Samples 3
 ~~~
 
 The example uses eight shared Rayon workers and the existing opt-in row-worker
@@ -199,7 +199,7 @@ there was no CPU affinity or global power/OS change.
 
 Frozen new source SHA-256:
 
-| File relative to crates/compact-query/examples | SHA-256 |
+| File relative to experiments/core-workloads/examples | SHA-256 |
 | --- | --- |
 | key_amortization.rs | 12F52940985F6213790C55F06BF724FC86B405C105FE69D7347A9AC57D787C34 |
 | support/key_amortization_memory.rs | F7B1A0310BC96B4498BB4C57EB833CE71F0B53006B80782847993C84D3E3A50F |

@@ -763,7 +763,7 @@ impl Runtime {
         }
     }
     fn begin_query(&mut self, client: NodeId, sql: String) -> Result<(), LabError> {
-        let plan = fhe_playground::parse_sql(&sql)?;
+        let plan = sql_plan::parse_sql(&sql)?;
         let node = self.network.node(client).ok_or_else(|| {
             LabError::InvalidInput("Select a surviving client before running SQL.".into())
         })?;
@@ -782,8 +782,7 @@ impl Runtime {
             ));
         }
         let peers: BTreeSet<_> = match plan {
-            fhe_playground::QueryPlan::AddAmount { .. }
-            | fhe_playground::QueryPlan::Insert { .. } => {
+            sql_plan::QueryPlan::AddAmount { .. } | sql_plan::QueryPlan::Insert { .. } => {
                 replication.write_peers.iter().copied().collect()
             }
             _ => replication.read_peers.iter().copied().collect(),
@@ -2061,7 +2060,7 @@ mod live_worker_tests {
         else {
             panic!("expected actual peer encrypted SELECT completion");
         };
-        assert_eq!(columns, vec![fhe_playground::Column::Amount]);
+        assert_eq!(columns, vec![sql_plan::Column::Amount]);
         assert_eq!(rows, vec![vec![65535]]);
     }
     #[test]

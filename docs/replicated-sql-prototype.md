@@ -1,6 +1,6 @@
 # Replicated SQL prototype
 
-This composes the [playground](../crates/fhe-playground/README.md),
+This composes the [playground](../playground/README.md),
 [compact-query](../crates/compact-query/README.md) and
 [replica-store](../crates/replica-store/README.md) in one process. It advances the
 local crash/freshness parts of requirements 1, 6–9 and 13. It does not establish a
