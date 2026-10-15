@@ -31,6 +31,13 @@ Fixed256 equalizes tested wire/RPC shapes, without a formal timing/privacy proof
 Network, arithmetic proofs, general SQL and complete owner restart remain outside
 this measurement. Neither leakage policy has been selected.
 
+The [GUI/SQL integration](experiment-bfv-gui-integration.md) now uses the same BFV
+arithmetic through the explicit exact-index storage adapter. Its 147 visible-access
+operations on 128 public rows across 1/3/16 simulated peers are exact, maximum
+383.8544 ms; native peak commit is 246,702,080 B. It introduces no private retrieval.
+Its tiny-table sizes and zero virtual delay are separate from the 3 GB disk result
+above; combining those measurements would not establish a new latency/storage bound.
+
 | Question | Visible accesses | Concealed accesses |
 | --- | --- | --- |
 | Retrieval | Request the selected encrypted index/data pages directly | Use an oblivious index with ORAM, or suitable single-server PIR retrieval |
@@ -41,7 +48,7 @@ this measurement. Neither leakage policy has been selected.
 | Updates | Authenticated index and data changes published atomically | Include oblivious rewriting, state synchronization and hint maintenance |
 | Collusion | Colluding peers combine visible traces | Prefer a single-server construction; a two-server noncollusion assumption is a separate unapproved relaxation |
 | Malicious results | Authenticate selected data and prove complete selection/computation | Same obligations; private retrieval does not establish correct SQL execution |
-| Current local code | [Owner-built age index with genuine FHE and compact updates](experiment-compact-query.md) | [Real encrypted age-index and data PIR with fresh FHE](experiment-private-index-fhe-pipeline.md), online owner and bounded one-page groups |
+| Current measured paths | [BFV GUI exact selection, genuine encrypted aggregates and compact updates](experiment-bfv-gui-integration.md) | [Exact-index disk retrieval with real PIR and fresh BFV](experiment-private-bfv-exact-disk.md), online owner and bounded one-page groups |
 
 These compare protocol families rather than promise a universal latency multiplier.
 The same query, records, selected result size, thread count, memory, cache and
