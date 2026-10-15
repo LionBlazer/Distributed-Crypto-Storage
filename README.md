@@ -5,6 +5,8 @@ computers. [REQUIREMENTS.md](REQUIREMENTS.md) defines the intended distributed
 system. Peers now run in separate processes over mutually authenticated TCP/TLS.
 Decentralized agreement and verifiable malicious-peer execution remain unfinished;
 SQL results without a computation proof are rejected rather than accepted.
+Open peer admission and Sybil resistance are required; the current local test CA
+does not implement that admission model.
 
 The repository has two dependency layers: the [reusable core](crates/README.md),
 and deployment/test consumers: [peer daemon](apps/dcs-peer/README.md),

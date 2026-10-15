@@ -42,4 +42,8 @@ agreement, membership/revocation consensus, malicious computation proofs, automa
 independent-domain repair and Internet NAT traversal remain unresolved. This
 bounded service is a working transport/runtime stage, not the completed requirements.
 
+The target permits peers to join without invitations. Current CA provisioning is
+an explicit local deployment restriction, not an implementation of open membership.
+Counting admitted identities is not a Sybil-resistant consensus rule.
+
 Owning process tests: `cargo test --release --locked -p dcs-peer --test process_transport -- --test-threads=1`.
