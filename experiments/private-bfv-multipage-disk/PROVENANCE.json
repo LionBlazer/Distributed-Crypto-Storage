@@ -1,0 +1,113 @@
+{
+  "status": "HISTORICAL INITIAL COPY inventory before multipage compositor changes; copied_files hashes describe that initial source, not current measured status",
+  "baseline_main_sha256": "D5D8F003BA3CB4606994237DFEEBAF5C2613F795BE33229C9519A5D3114BBC07",
+  "baseline_package": "E:/Users/white/.codex/worktrees/private-index-research/DistributedCryptoStorage/experiments/private-bfv-exact-disk",
+  "copied_files": [
+    {
+      "path": "Cargo.lock",
+      "bytes": 26314,
+      "sha256": "B44D3870FEBFAC2FAB3118E82779C28252E44EC6AD52C4F641EF604876C7B218"
+    },
+    {
+      "path": "Cargo.toml",
+      "bytes": 639,
+      "sha256": "687085CF08A66216D26BD380101593C41A8E479DB3FD0BE2B6E4945CFDCC8D77"
+    },
+    {
+      "path": "LICENSE-BLYSS",
+      "bytes": 1089,
+      "sha256": "79381EFF8FE5B9C60C1B40A34B453FDA621F9892B99006C352706F8B38635ED9"
+    },
+    {
+      "path": "README.md",
+      "bytes": 3546,
+      "sha256": "7F6974AEA8F98159E4649C8BB4E1E574D2568704ED07D5A2621F956A5BAD69FD"
+    },
+    {
+      "path": "run.ps1",
+      "bytes": 9014,
+      "sha256": "9ACDA2E38D1E1426A4505E8F4705701877B1C3B630DBF2C3D931CECD7B230B06"
+    },
+    {
+      "path": "src/disk.rs",
+      "bytes": 21516,
+      "sha256": "51DF6045F3E5A6CE0E890FE2F8BE4180C6C008FBDDA9E63EC67789A36EE709B0"
+    },
+    {
+      "path": "src/expansion_schedule.rs",
+      "bytes": 11292,
+      "sha256": "931FD2B0775E10D83872F8E35D04D9C8CBBC055D373BBA221B6C097F01E78F98"
+    },
+    {
+      "path": "src/main.rs",
+      "bytes": 65347,
+      "sha256": "D5D8F003BA3CB4606994237DFEEBAF5C2613F795BE33229C9519A5D3114BBC07"
+    },
+    {
+      "path": "src/native.rs",
+      "bytes": 3365,
+      "sha256": "A188F526EAE01FA3BB236DD509220BCEDA13BA103EF5283D4EA7655ED2CDC4C4"
+    },
+    {
+      "path": "src/padded_index_codec.rs",
+      "bytes": 12378,
+      "sha256": "05A3BAF2AD3AB697B3CC9AD8EEB1B392D1C5B34FDB06AD3DFE0101ABF89F44ED"
+    },
+    {
+      "path": "src/padded_index_codec_tests.rs",
+      "bytes": 19217,
+      "sha256": "1D649C6E9C05DDA25221BBFC9671146076057731FF2574B37DD7FA5092A63EE4"
+    },
+    {
+      "path": "src/protocol_helpers.rs",
+      "bytes": 3029,
+      "sha256": "021F9533EF31EF897B5F959E6D2375F9C6BFB36BE53751834F32E36C55B5D0AD"
+    },
+    {
+      "path": "src/resources.rs",
+      "bytes": 5763,
+      "sha256": "A08890AD588524374C9D1B282A00038F9750DFA63F8FCB78AC466FCBF7A934D7"
+    },
+    {
+      "path": "src/server_schedule.rs",
+      "bytes": 5989,
+      "sha256": "F9B343135A377CF6559415C7C62584A66B823E007DA98DBF43B1EC88C861B3FC"
+    }
+  ],
+  "unchanged_arithmetic": "owning BFV core selected via CoreDirectory/CorePackage, source hashes recorded by runner",
+  "sdk_revision": "fdb7206517c249603b0c91b65f1f29f95272107c",
+  "current_source_status": {
+    "status": "VALIDATED: 31 authored release tests, strict authored Clippy, fmt and release build passed; one fresh tiny3 full480 matrix plus1 full-predicate control and25 before-BFV negatives completed exit0",
+    "public_schedule": "NEW Fixed2562posting+2data+optionalheader, distinct from frozen one-page baseline",
+    "owning_core_package": "Published owning bfv-query-core via original import alias, unmodified arithmetic; actual dependency hashes in preparation-runtime-frozen.jsonl",
+    "unchanged_baseline_modules": [
+      "LICENSE-BLYSS",
+      "src/expansion_schedule.rs",
+      "src/native.rs",
+      "src/padded_index_codec.rs",
+      "src/padded_index_codec_tests.rs",
+      "src/resources.rs",
+      "src/server_schedule.rs"
+    ],
+    "before_measurement_gate": "root CPU lease, prepared dependency source hash review, release owning tests, strict authored Clippy/fmt, independent source review",
+    "authored_test_functions": 31,
+    "preparation_validation": "All5 generated manifest isolation boundaries passed Cargo --locked --offline. Reviewed BA5F new-package lock unchanged through Cargo; three package identity lines differ from historical B44D baseline, with no version/checksum/dependency-resolution changes. Both retained; no lock regeneration, download or SDK edit.",
+    "source_review_manifest": ".local/private-bfv-multipage-disk/preparation-runtime-frozen.jsonl records exact final runtime source; source-review-ready-v2.json is historical pre-lint-fix review metadata",
+    "completed_measurement": {
+      "tables": 3,
+      "samples": 1,
+      "matrix_queries": 480,
+      "peer_evaluations": 481,
+      "negative_controls": 25,
+      "raw_sha256": "AC8279EB8C7DBD9147AE080CD5365142C3E0FD64A7C339997D80D7B1B51E5919",
+      "exe_sha256": "74950A194DEC597F67FE245028715F28BE548FA78872F8B0115B13FE1E62858D",
+      "full_matrix_max_ms": 491.6511,
+      "over500": 0,
+      "report": "docs/experiment-private-bfv-multipage-disk.md"
+    },
+    "lock_images": {
+      "historical_baseline_sha256": "B44D3870FEBFAC2FAB3118E82779C28252E44EC6AD52C4F641EF604876C7B218",
+      "reviewed_package_sha256": "BA5F7932FE2C06262EAA8007A064148267FDC5960EDBF13F626CB0DA54064E2E"
+    }
+  }
+}

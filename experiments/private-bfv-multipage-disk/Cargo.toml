@@ -1,0 +1,21 @@
+[package]
+name = "private-bfv-multipage-disk"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[workspace]
+
+[dependencies]
+sha2 = "=0.10.9"
+spiral-cache-core = { path = "../spiral-cache-core" }
+spiral-owner-state = { path = "../spiral-owner-state" }
+compact-bfv-byte-limb-core = { package = "bfv-query-core", path = "../../crates/bfv-query-core" }
+compact-store = { path = "../../crates/compact-store" }
+spiral-rs = { path = "../../.local/private-access/sdk/lib/spiral-rs", features = ["server"] }
+rayon = "1.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+getrandom = "0.2"
+zeroize = "1"

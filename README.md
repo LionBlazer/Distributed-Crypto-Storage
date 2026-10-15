@@ -82,6 +82,15 @@ Selections are bounded to 256 rows and one posting/data page, with the owner onl
 OS file cache is allowed. Network, arithmetic proofs, general SQL and complete
 owner restart are outside this [paired result](docs/experiment-private-bfv-exact-disk.md).
 
+The newer [multipage read probe](experiments/private-bfv-multipage-disk/README.md)
+accepts complete groups across two posting pages and two data pages, including
+real varints crossing page boundaries. Its 480 visible/private queries over three
+million-row tables are exact and below 500 ms, maximum 491.651 ms; 25 invalid or
+overbudget operations reject before fresh BFV. The
+[report](docs/experiment-private-bfv-multipage-disk.md) retains every mode and the
+new fixed two-plus-two retrieval schedule. This separate tiny run does not establish
+large-scale overhead or owner-process recovery.
+
 The [BFV disk UPDATE experiment](experiments/private-bfv-update-disk/README.md)
 adds genuine encrypted addition and compact writeback. Its actual 1,000-table run
 retains constant file sizes after 126 positive commits; files plus native peak

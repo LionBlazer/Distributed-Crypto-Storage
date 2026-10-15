@@ -4,7 +4,7 @@ The user requested comparison of both policies; visible accesses have not been
 approved as the final design. Both candidates retain owner-only secret keys,
 encrypted peer data and an independently authenticated snapshot head.
 
-The latest [paired exact-index disk experiment](experiment-private-bfv-exact-disk.md)
+The [paired exact-index disk baseline](experiment-private-bfv-exact-disk.md)
 measures both policies on the SAME 1,000 independent million-row tables and full
 shared keyset. Complete authenticated exact selection permits eight encrypted
 rotate/add steps instead of repeating the encrypted age predicate. The owner
@@ -38,6 +38,17 @@ operations on 128 public rows across 1/3/16 simulated peers are exact, maximum
 Its tiny-table sizes and zero virtual delay are separate from the 3 GB disk result
 above; combining those measurements would not establish a new latency/storage bound.
 
+The subsequent [multipage comparison](experiment-private-bfv-multipage-disk.md)
+uses three independently sealed million-row tables and the same owning BFV core.
+Complete selections can span two posting and two data pages, with actual varints
+crossing both index boundaries. All 480 operations are exact. For the new Fixed256
+schedule, the worst visible local miss is 38.548 ms; private cached-header miss
+414.122 ms and private uncached-header miss 491.651 ms. That padded schedule always
+performs four page fetches, plus the optional header and fresh BFV, including
+absence. The tiny fixture's files plus native peak commit are 43.106627x; it does
+not inherit the baseline's 1,000-table overhead result or prove timing privacy.
+Neither access policy has been selected.
+
 | Question | Visible accesses | Concealed accesses |
 | --- | --- | --- |
 | Retrieval | Request the selected encrypted index/data pages directly | Use an oblivious index with ORAM, or suitable single-server PIR retrieval |
@@ -48,7 +59,7 @@ above; combining those measurements would not establish a new latency/storage bo
 | Updates | Authenticated index and data changes published atomically | Include oblivious rewriting, state synchronization and hint maintenance |
 | Collusion | Colluding peers combine visible traces | Prefer a single-server construction; a two-server noncollusion assumption is a separate unapproved relaxation |
 | Malicious results | Authenticate selected data and prove complete selection/computation | Same obligations; private retrieval does not establish correct SQL execution |
-| Current measured paths | [BFV GUI exact selection, genuine encrypted aggregates and compact updates](experiment-bfv-gui-integration.md) | [Exact-index disk retrieval with real PIR and fresh BFV](experiment-private-bfv-exact-disk.md), online owner and bounded one-page groups |
+| Current measured paths | [BFV GUI exact selection, genuine encrypted aggregates and compact updates](experiment-bfv-gui-integration.md) | [Exact-index disk retrieval](experiment-private-bfv-exact-disk.md) and [two-page composition](experiment-private-bfv-multipage-disk.md) with real PIR and fresh BFV; online owner and explicit page limits |
 
 These compare protocol families rather than promise a universal latency multiplier.
 The same query, records, selected result size, thread count, memory, cache and
