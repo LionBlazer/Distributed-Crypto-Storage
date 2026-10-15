@@ -196,20 +196,45 @@ pub(super) struct ViewTabResponse {
     pub close: bool,
 }
 
-/// One tab surface with an inset close target, shared by network and inspectors.
+pub(super) const TAB_HEIGHT: f32 = 36.0;
+
+/// A single baseline and adjoining tab surfaces, independent of scroll content.
+pub(super) fn tab_strip<R>(
+    ui: &mut egui::Ui,
+    add_tabs: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
+    let size = egui::vec2(ui.available_width(), TAB_HEIGHT);
+    let rect = egui::Rect::from_min_size(ui.next_widget_position(), size);
+    ui.painter().rect_filled(rect, 0, EDITOR);
+    ui.painter().line_segment(
+        [rect.left_bottom(), rect.right_bottom()],
+        Stroke::new(1.0, BORDER),
+    );
+    ui.allocate_ui_with_layout(size, egui::Layout::left_to_right(egui::Align::Min), |ui| {
+        ui.set_height(TAB_HEIGHT);
+        ui.spacing_mut().item_spacing.x = 0.0;
+        add_tabs(ui)
+    })
+}
+
+/// A document tab joins the content below; closing is part of its own surface.
 pub(super) fn view_tab(
     ui: &mut egui::Ui,
     label: &str,
     selected: bool,
     closable: bool,
 ) -> ViewTabResponse {
-    let mut job =
-        egui::text::LayoutJob::simple_singleline(label.into(), FontId::proportional(13.0), TEXT);
+    let mut job = egui::text::LayoutJob::simple_singleline(
+        label.into(),
+        FontId::proportional(13.0),
+        Color32::PLACEHOLDER,
+    );
     job.wrap.max_width = 160.0;
     job.wrap.max_rows = 1;
     let galley = ui.painter().layout_job(job);
-    let width = galley.size().x + if closable { 44.0 } else { 24.0 };
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 32.0), egui::Sense::click());
+    let width = galley.size().x + if closable { 52.0 } else { 32.0 };
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(width, TAB_HEIGHT), egui::Sense::click());
     let reveal = ui.data_mut(|data| {
         let id = response.id.with("selected");
         let previous = data.get_temp::<bool>(id).unwrap_or(false);
@@ -227,32 +252,59 @@ pub(super) fn view_tab(
             label,
         )
     });
-    let visuals = control_visuals(ui, &response, selected);
-    ui.painter().rect(
-        rect,
-        5,
-        visuals.weak_bg_fill,
-        visuals.bg_stroke,
-        egui::StrokeKind::Inside,
+    let held = response.is_pointer_button_down_on();
+    let hovered = response.hovered();
+    let fill = if !response.enabled() {
+        EDITOR
+    } else if held {
+        Color32::from_rgb(39, 53, 72)
+    } else if hovered {
+        CARD
+    } else if selected {
+        PANEL
+    } else {
+        EDITOR
+    };
+    ui.painter().rect_filled(rect, 0, fill);
+    ui.painter().line_segment(
+        [rect.right_top(), rect.right_bottom()],
+        Stroke::new(1.0, BORDER),
     );
-    if selected {
+    if selected && response.enabled() {
         ui.painter().line_segment(
             [
-                rect.left_bottom() + egui::vec2(5.0, -1.0),
-                rect.right_bottom() - egui::vec2(5.0, 1.0),
+                rect.left_top() + egui::vec2(0.0, 1.0),
+                rect.right_top() + egui::vec2(0.0, 1.0),
             ],
             Stroke::new(2.0, ACCENT),
         );
+    } else {
+        ui.painter().line_segment(
+            [rect.left_bottom(), rect.right_bottom()],
+            Stroke::new(1.0, BORDER),
+        );
+    }
+    if response.has_focus() && response.enabled() {
+        ui.painter().rect_stroke(
+            rect.shrink(3.0),
+            2,
+            Stroke::new(1.0, ACCENT),
+            egui::StrokeKind::Inside,
+        );
     }
     ui.painter().galley(
-        egui::pos2(rect.left() + 10.0, rect.center().y - galley.size().y * 0.5),
+        egui::pos2(rect.left() + 16.0, rect.center().y - galley.size().y * 0.5),
         galley,
-        TEXT,
+        if selected || hovered || held {
+            TEXT
+        } else {
+            MUTED
+        },
     );
     let mut closed = false;
     if closable {
         let close_rect = egui::Rect::from_center_size(
-            egui::pos2(rect.right() - 15.0, rect.center().y),
+            egui::pos2(rect.right() - 17.0, rect.center().y),
             egui::vec2(20.0, 20.0),
         );
         let close = ui.interact(close_rect, response.id.with("close"), egui::Sense::click());

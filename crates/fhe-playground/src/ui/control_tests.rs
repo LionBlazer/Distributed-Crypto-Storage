@@ -35,7 +35,7 @@ fn draw(ctx: &egui::Context, control: Control, enabled: bool, events: Vec<egui::
                 ui.add_enabled_ui(enabled, |ui| match control {
                     Control::Primary => primary_button(ui, "Run", true),
                     Control::Neutral => action_button(ui, "Apply", true),
-                    Control::SelectedTab => tab_button(ui, "SQL", true),
+                    Control::SelectedTab => view_tab(ui, "SQL", true, false).response,
                     Control::NativeButton => ui.button("Generate"),
                     Control::Number => ui.add(egui::DragValue::new(&mut 3)),
                     Control::Text => ui.text_edit_singleline(&mut "demo".to_string()),

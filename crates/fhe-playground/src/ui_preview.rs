@@ -21,6 +21,7 @@ fn export_ui_previews() {
         ("settings", Tab::Sql, 3, [1500, 900]),
         ("navigation-peer", Tab::Sql, 3, [1500, 900]),
         ("navigation-back", Tab::Sql, 3, [1500, 900]),
+        ("tabs-aligned", Tab::Sql, 3, [1500, 900]),
         ("tabs-narrow", Tab::Sql, 16, [1180, 720]),
         ("data", Tab::Data, 3, [1500, 900]),
         ("network", Tab::Sql, 8, [1500, 900]),
@@ -71,6 +72,12 @@ fn export_ui_previews() {
             for id in 2..=17 {
                 app.open_node(id);
             }
+        }
+        if name == "tabs-aligned" {
+            for id in 2..=4 {
+                app.open_node(id);
+            }
+            app.navigate(tab, RightTab::Network);
         }
         if name == "peer-tab" {
             app.open_node(3);

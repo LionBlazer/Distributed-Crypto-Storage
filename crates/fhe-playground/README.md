@@ -38,6 +38,9 @@ old terminal task may reuse its previous command.
 The left pane switches between **SQL** and **Data**. The right pane always contains
 the network, network settings or an opened node inspector. Drag their divider to resize. Buttons,
 tabs, inputs and node cards have distinct hover, pressed, focus and disabled states.
+Workspace, results and inspector tabs use adjoining flat surfaces on a shared
+baseline, with the active tab joined to its content. Network and Settings stay
+pinned while inspector tabs scroll horizontally; closing stays inside each tab.
 
 - **SQL:** select a client, write a statement, then use **Run** or **Ctrl+Enter**.
   Presets are grouped as Read rows, Filter rows, Summarize, Insert and Update,

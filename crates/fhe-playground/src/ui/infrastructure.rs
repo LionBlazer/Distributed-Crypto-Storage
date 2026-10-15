@@ -17,9 +17,12 @@ const NODE_SIZE: egui::Vec2 = egui::vec2(224.0, 132.0);
 impl Playground {
     pub(super) fn infrastructure(&mut self, ui: &mut egui::Ui) {
         egui::Panel::top("network-header")
-            .frame(panel(10))
+            .exact_size(TAB_HEIGHT)
+            .resizable(false)
+            .show_separator_line(false)
+            .frame(egui::Frame::NONE.fill(EDITOR))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
+                tab_strip(ui, |ui| {
                     if view_tab(ui, "Network", self.right_tab == RightTab::Network, false)
                         .response
                         .clicked()
@@ -35,9 +38,14 @@ impl Playground {
                     egui::ScrollArea::horizontal()
                         .id_salt("inspector-tabs")
                         .auto_shrink([false, true])
+                        .min_scrolled_height(TAB_HEIGHT)
+                        .max_height(TAB_HEIGHT)
+                        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
                         .stick_to_right(true)
                         .show(ui, |ui| {
-                            ui.horizontal(|ui| {
+                            ui.horizontal_top(|ui| {
+                                ui.set_height(TAB_HEIGHT);
+                                ui.spacing_mut().item_spacing.x = 0.0;
                                 let mut close = None;
                                 for id in self.node_tabs.clone() {
                                     let label = self.node_name(id);

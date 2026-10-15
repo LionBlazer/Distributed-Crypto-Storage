@@ -813,6 +813,49 @@ fn primary_secondary_and_middle_drags_pan_without_opening_a_context_menu() {
 }
 
 #[test]
+fn document_tabs_share_one_baseline_across_pinned_and_scrolling_headers() {
+    let (mut app, commands, _events) = app();
+    for id in 2..=4 {
+        app.open_node(id);
+    }
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    render(&ctx, &mut app, vec![]);
+    let texts = render(&ctx, &mut app, vec![]);
+    let labels = [
+        "SQL", "Data", "Network", "Settings", "Peer 01", "Peer 02", "Peer 03",
+    ];
+    let centers: Vec<_> = labels
+        .into_iter()
+        .map(|label| {
+            texts
+                .iter()
+                .find(|text| text.text == label && text.rect.top() < 40.0)
+                .unwrap_or_else(|| panic!("Tab {label} must remain in the header"))
+                .rect
+                .center()
+                .y
+        })
+        .collect();
+    for y in centers {
+        assert!(
+            (y - TAB_HEIGHT * 0.5).abs() < 1.0,
+            "Pinned and scrolling tabs must share the same text baseline"
+        );
+    }
+    for name in ["client-tabs", "network-header"] {
+        let header = egui::containers::panel::PanelState::load(&ctx, egui::Id::new(name))
+            .unwrap()
+            .outer_rect;
+        assert!(
+            (header.height() - TAB_HEIGHT).abs() < 1.0,
+            "Both workspaces must start their content at the same height: {name} = {header:?}"
+        );
+    }
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
 fn inspector_tabs_middle_click_closes_active_or_inactive_without_deleting_nodes() {
     let (mut app, commands, _events) = app();
     let ctx = egui::Context::default();

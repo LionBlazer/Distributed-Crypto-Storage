@@ -517,11 +517,17 @@ impl Playground {
             .frame(panel(0))
             .show(ui, |ui| {
                 egui::Panel::top("client-tabs")
-                    .frame(panel(10))
+                    .exact_size(TAB_HEIGHT)
+                    .resizable(false)
+                    .show_separator_line(false)
+                    .frame(egui::Frame::NONE.fill(EDITOR))
                     .show(ui, |ui| {
-                        ui.horizontal(|ui| {
+                        tab_strip(ui, |ui| {
                             for (tab, name) in [(Tab::Sql, "SQL"), (Tab::Data, "Data")] {
-                                if tab_button(ui, name, self.tab == tab).clicked() {
+                                if view_tab(ui, name, self.tab == tab, false)
+                                    .response
+                                    .clicked()
+                                {
                                     self.navigate(tab, self.right_tab);
                                 }
                             }
@@ -679,26 +685,41 @@ impl Playground {
         }
     }
     fn results(&mut self, ui: &mut egui::Ui) -> egui::scroll_area::ScrollAreaOutput<()> {
-        ui.horizontal(|ui| {
-            if tab_button(ui, "Result", self.result_tab == ResultTab::Result).clicked() {
+        tab_strip(ui, |ui| {
+            if view_tab(ui, "Result", self.result_tab == ResultTab::Result, false)
+                .response
+                .clicked()
+            {
                 self.result_tab = ResultTab::Result;
             }
-            if tab_button(ui, "Output", self.result_tab == ResultTab::Output).clicked() {
+            if view_tab(ui, "Output", self.result_tab == ResultTab::Output, false)
+                .response
+                .clicked()
+            {
                 self.result_tab = ResultTab::Output;
             }
             if let Some(record) = self.history.iter().find(|record| record.job == Job::Query) {
-                ui.label(
-                    RichText::new(format!(
-                        "{} / v{} / {:.0} ms",
-                        record.database, record.revision, record.elapsed_ms
-                    ))
-                    .small()
-                    .color(MUTED),
-                )
-                .on_hover_text(&record.label);
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), TAB_HEIGHT),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        ui.add_space(12.0);
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(format!(
+                                    "{} / v{} / {:.0} ms",
+                                    record.database, record.revision, record.elapsed_ms
+                                ))
+                                .small()
+                                .color(MUTED),
+                            )
+                            .truncate(),
+                        )
+                        .on_hover_text(&record.label);
+                    },
+                );
             }
         });
-        ui.separator();
         egui::ScrollArea::both()
             .id_salt("result-body")
             .auto_shrink([false, false])
