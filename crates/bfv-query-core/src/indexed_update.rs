@@ -3,10 +3,10 @@ use super::{
     DEGREE, Error, Geometry, MAX_ROWS, Owner, PeerEvaluator, ProofStatus, QueryContext, Result,
     SelectedField, backend, checked_ciphertext, decode, elapsed, encode,
 };
-use fhe::bfv::Encoding;
+use fhe::bfv::{BfvParameters, Encoding};
 use fhe_traits::{FheDecoder, FheDecrypter, Serialize as FheSerialize};
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 use zeroize::Zeroizing;
 
 const UPDATE_VERSION: u16 = 1;
@@ -245,41 +245,24 @@ impl PeerEvaluator {
     /// Public-only exact addition. It receives no plaintext amount, delta, active mask or index.
     pub fn evaluate_indexed_update(&self, wire: &[u8]) -> Result<EvaluatedIndexedUpdate> {
         let started = Instant::now();
-        let request: IndexedUpdateRequest = decode(wire)?;
-        if request.magic != REQUEST_MAGIC
-            || request.version != UPDATE_VERSION
-            || request.operation != OperationTag::IndexedAddAmount
-            || request.geometry != self.geometry
-            || !request.context.valid()
-        {
-            return Err(Error::InvalidShape);
-        }
-        if request.keyset_id != self.keyset_id {
-            return Err(Error::BindingMismatch);
-        }
-        // Both decodes use this identical evaluator Arc, satisfying upstream Add's assertion.
-        let amounts = checked_ciphertext(&request.amounts, self.kernel.parameters())?;
-        let deltas = checked_ciphertext(&request.deltas, self.kernel.parameters())?;
-        let request_decode_ms = elapsed(started);
-        let started = Instant::now();
-        let updated = &amounts + &deltas;
-        let encrypted_add_ms = elapsed(started);
-        let started = Instant::now();
-        let output = encode(&IndexedUpdateResponse {
-            magic: RESPONSE_MAGIC,
-            version: UPDATE_VERSION,
-            operation: OperationTag::IndexedAddAmount,
-            keyset_id: request.keyset_id,
-            context: request.context,
-            geometry: self.geometry,
-            updated_limbs: updated.to_bytes(),
-        })?;
+        let mut times = [0.0; 3];
+        let mut stage = 0;
+        let output = execute_addition(
+            self.kernel.parameters(),
+            self.geometry,
+            self.keyset_id,
+            wire,
+            || {
+                times[stage] = elapsed(started);
+                stage += 1;
+            },
+        )?;
         Ok(EvaluatedIndexedUpdate {
             output,
             stats: IndexedUpdateStats {
-                request_decode_ms,
-                encrypted_add_ms,
-                output_encode_ms: elapsed(started),
+                request_decode_ms: times[0],
+                encrypted_add_ms: times[1] - times[0],
+                output_encode_ms: times[2] - times[1],
                 ciphertext_additions: 1,
                 ct_ct_multiplications: 0,
                 rotations: 0,
@@ -287,6 +270,44 @@ impl PeerEvaluator {
             },
         })
     }
+}
+
+pub(super) fn execute_addition(
+    parameters: &Arc<BfvParameters>,
+    geometry: Geometry,
+    keyset_id: [u8; 32],
+    wire: &[u8],
+    mut stage_finished: impl FnMut(),
+) -> Result<Vec<u8>> {
+    let request: IndexedUpdateRequest = decode(wire)?;
+    if request.magic != REQUEST_MAGIC
+        || request.version != UPDATE_VERSION
+        || request.operation != OperationTag::IndexedAddAmount
+        || request.geometry != geometry
+        || !request.context.valid()
+    {
+        return Err(Error::InvalidShape);
+    }
+    if request.keyset_id != keyset_id {
+        return Err(Error::BindingMismatch);
+    }
+    // Both decodes use this identical evaluator Arc, satisfying upstream Add's assertion.
+    let amounts = checked_ciphertext(&request.amounts, parameters)?;
+    let deltas = checked_ciphertext(&request.deltas, parameters)?;
+    stage_finished();
+    let updated = &amounts + &deltas;
+    stage_finished();
+    let output = encode(&IndexedUpdateResponse {
+        magic: RESPONSE_MAGIC,
+        version: UPDATE_VERSION,
+        operation: OperationTag::IndexedAddAmount,
+        keyset_id: request.keyset_id,
+        context: request.context,
+        geometry,
+        updated_limbs: updated.to_bytes(),
+    })?;
+    stage_finished();
+    Ok(output)
 }
 
 #[cfg(test)]

@@ -15,6 +15,15 @@ opaque 112-byte heads. Generic pending tokens also bind their local owner keyset
 they do not add malicious-response authentication. Results remain Unverified;
 UPDATE/INSERT callers must locally check decoded values before writeback.
 
+`PublicSetup::update_parameters` extracts the pinned parameters, geometry and full
+keyset identity for indexed addition. `PublicUpdateEvaluator` performs the same
+encrypted limb addition as the full evaluator, with identical request/output bytes,
+without unused rotation/relinearization keys or wall-clock instrumentation. This
+descriptor must be bound to the caller's trusted public setup; its identity is not
+self-authenticating. Validated immutable public parameters are cached once per
+process; no secret key or row data enters that cache. This reduced execution path
+does not itself supply a computation proof or authorize accepting a SQL answer.
+
 The indexed SELECT operation freshly encrypts original age/amount lanes and an
 encrypted projection/active mask. The public-only peer performs one ciphertext
 multiplication and relinearization; it returns encrypted projected lanes and presence
@@ -41,8 +50,9 @@ selection, trusted heads/freshness, global transaction policy and resource accou
 belong to its caller. Original public setup must be retained for same-key recovery;
 secret serialization is currently exposed as a COUNT only, not a recovery image.
 
-Parameters stay native/unfused/level0 N8192/Q218/t114689, CBD variance10, full unchanged
-keyset. Independent security/noise/CCA and malicious arithmetic proof gates remain
+Parameters stay native/unfused/level0 N8192/Q218/t114689, CBD variance10. The full
+evaluator retains the unchanged keyset; indexed addition can omit keys unused by
+that circuit. Independent security/noise/CCA and malicious arithmetic proof gates remain
 open. The inherited37 tests/2 compile-fail doctests move with this implementation;
 crate imports change only. Extraction validation passed all 37 runtime tests and
 two compile-fail doctests in release/locked/offline mode, plus strict all-target

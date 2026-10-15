@@ -14,10 +14,12 @@ pub use indexed_select::{
     ProjectedRow, RowProjection, UnverifiedSelectedRows,
 };
 mod kernel;
+mod linear_update;
 pub use indexed_update::{
     EvaluatedIndexedUpdate, IndexedUpdateStats, PendingIndexedUpdate, PreparedIndexedUpdate,
     UnverifiedUpdateOutcome, UnverifiedUpdatedValues, UpdatedAmount,
 };
+pub use linear_update::{PublicUpdateEvaluator, PublicUpdateParameters};
 
 use bincode::Options;
 use fhe::bfv::{
@@ -32,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 use zeroize::Zeroizing;
 
@@ -202,6 +204,10 @@ fn profile(parameters: &BfvParameters) -> ParameterProfile {
     }
 }
 fn official_parameters() -> Result<Arc<BfvParameters>> {
+    static PARAMETERS: OnceLock<Arc<BfvParameters>> = OnceLock::new();
+    if let Some(parameters) = PARAMETERS.get() {
+        return Ok(parameters.clone());
+    }
     // The upstream catalog eagerly constructs all degrees, including N16384.
     // Build only the pinned N8192 entry; complete upstream wire equality is tested.
     let parameters = BfvParametersBuilder::new()
@@ -219,7 +225,11 @@ fn official_parameters() -> Result<Arc<BfvParameters>> {
     {
         return Err(Error::ParameterProfile);
     }
-    Ok(parameters)
+    let _ = PARAMETERS.set(parameters);
+    Ok(PARAMETERS
+        .get()
+        .expect("validated public parameters were initialized")
+        .clone())
 }
 impl PublicSetup {
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
