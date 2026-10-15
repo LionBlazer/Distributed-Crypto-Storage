@@ -17,6 +17,8 @@ fn export_ui_previews() {
         ("presets-narrow", Tab::Sql, 3, [1180, 720]),
         ("selected-result", Tab::Sql, 3, [1500, 900]),
         ("selected-narrow", Tab::Sql, 3, [1180, 720]),
+        ("selected-scroll", Tab::Sql, 3, [1500, 900]),
+        ("settings", Tab::Sql, 3, [1500, 900]),
         ("navigation-peer", Tab::Sql, 3, [1500, 900]),
         ("navigation-back", Tab::Sql, 3, [1500, 900]),
         ("tabs-narrow", Tab::Sql, 16, [1180, 720]),
@@ -62,6 +64,9 @@ fn export_ui_previews() {
             app.status = "Public fixture / actual encrypted storage sizes".into();
         }
         app.tab = tab;
+        if name == "settings" {
+            app.navigate(tab, RightTab::Settings);
+        }
         if name == "tabs-narrow" {
             for id in 2..=17 {
                 app.open_node(id);
@@ -73,7 +78,12 @@ fn export_ui_previews() {
         if name.starts_with("selected-") {
             // Public renderer fixture only: no query is executed or backend
             // result claimed by this opt-in, window-free preview.
-            app.sql = "SELECT age, amount\nFROM records\nWHERE age >= 18\nLIMIT 10;".into();
+            app.sql = if name == "selected-scroll" {
+                "SELECT age, amount\nFROM records;"
+            } else {
+                "SELECT age, amount\nFROM records\nWHERE age >= 18\nLIMIT 10;"
+            }
+            .into();
             app.status = "Public result fixture / no backend execution".into();
             app.history.push_front(Record {
                 job: Job::Query,
@@ -83,7 +93,11 @@ fn export_ui_previews() {
                 elapsed_ms: 0.0,
                 outcome: Ok(Outcome::Query(QueryOutcome::Selected {
                     columns: vec![Column::Age, Column::Amount],
-                    rows: vec![vec![18, 20], vec![42, 30]],
+                    rows: if name == "selected-scroll" {
+                        (0..128).map(|age| vec![age, age]).collect()
+                    } else {
+                        vec![vec![18, 20], vec![42, 30]]
+                    },
                 })),
             });
         }
@@ -98,7 +112,7 @@ fn export_ui_previews() {
         set_theme(&ctx);
         let mut textures = HashMap::new();
         let show_presets = name.starts_with("presets");
-        let frame_count = if show_presets || name == "tabs-narrow" {
+        let frame_count = if show_presets || name == "tabs-narrow" || name == "selected-scroll" {
             12
         } else {
             3
@@ -118,6 +132,8 @@ fn export_ui_previews() {
                         modifiers: egui::Modifiers::NONE,
                     },
                 ]
+            } else if name == "selected-scroll" {
+                vec![egui::Event::PointerMoved(egui::pos2(603.0, 700.0))]
             } else {
                 Vec::new()
             };

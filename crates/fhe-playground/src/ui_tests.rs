@@ -184,10 +184,16 @@ fn ctrl_enter() -> Vec<egui::Event> {
 }
 
 #[test]
-fn inline_copy_choice_sends_one_serialized_policy_command() {
+fn settings_copy_choice_sends_one_serialized_local_policy_command() {
     let (mut app, commands, _) = app();
     let ctx = egui::Context::default();
     set_theme(&ctx);
+    let texts = render(&ctx, &mut app, vec![]);
+    assert!(texts.iter().any(|text| text.text == "Settings"));
+    assert!(!texts.iter().any(|text| text.text == "Min copies 1"));
+    click(&ctx, &mut app, "Settings");
+    assert_eq!(app.right_tab, RightTab::Settings);
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
     click(&ctx, &mut app, "Min copies 1");
     click(&ctx, &mut app, "2 copies");
     assert!(matches!(
@@ -228,6 +234,7 @@ fn confirming_existing_one_copy_keeps_default_fixed_custody_without_a_rebuild() 
             .contains(&format!("{shard_count}/{shard_count} at target"))
     }));
     assert!(commands.try_recv().is_err());
+    click(&ctx, &mut app, "Settings");
     click(&ctx, &mut app, "Min copies 1");
     click(&ctx, &mut app, "1 copy");
     assert!(commands.try_recv().is_err());
@@ -274,6 +281,8 @@ fn copy_health_counts_independent_domains_and_distinguishes_stale_copies() {
     let texts = render(&ctx, &mut app, vec![]);
     assert!(texts.iter().any(|text| text.text.contains("0/1 at target")
         && text.text.contains("2 online current / 1 stale")));
+    click(&ctx, &mut app, "Settings");
+    let texts = render(&ctx, &mut app, vec![]);
     assert!(texts.iter().any(|text| text.text == "Min copies 2"));
 }
 
@@ -862,6 +871,142 @@ fn inline_tab_cross_closes_without_selecting_and_last_tab_returns_to_network() {
     }
     assert!(app.node_tabs.is_empty());
     assert_eq!(app.network.as_ref().unwrap().nodes.len(), 4);
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn result_panel_starts_at_half_window_and_can_grow_beyond_the_old_limit() {
+    let (mut app, commands, _events) = app();
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    render(&ctx, &mut app, vec![]);
+    let panel = |name| {
+        egui::containers::panel::PanelState::load(&ctx, egui::Id::new(name))
+            .unwrap()
+            .outer_rect
+    };
+    let original = panel("query-results");
+    assert!((original.height() - ctx.content_rect().height() * 0.5).abs() < 3.0);
+    let start = original.center_top();
+    render(
+        &ctx,
+        &mut app,
+        vec![
+            egui::Event::PointerMoved(start),
+            pointer_event(start, egui::PointerButton::Primary, true),
+        ],
+    );
+    let raised = start - egui::vec2(0.0, 150.0);
+    render(&ctx, &mut app, vec![egui::Event::PointerMoved(raised)]);
+    render(
+        &ctx,
+        &mut app,
+        vec![pointer_event(raised, egui::PointerButton::Primary, false)],
+    );
+    let expanded = panel("query-results");
+    assert!(expanded.height() > original.height() + 140.0);
+    assert!(expanded.height() > 420.0);
+    let start = expanded.center_top();
+    render(
+        &ctx,
+        &mut app,
+        vec![
+            egui::Event::PointerMoved(start),
+            pointer_event(start, egui::PointerButton::Primary, true),
+        ],
+    );
+    let lowered = start + egui::vec2(0.0, 90.0);
+    render(&ctx, &mut app, vec![egui::Event::PointerMoved(lowered)]);
+    render(
+        &ctx,
+        &mut app,
+        vec![pointer_event(lowered, egui::PointerButton::Primary, false)],
+    );
+    assert!(panel("query-results").height() < expanded.height() - 80.0);
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn narrow_result_table_keeps_its_scroll_viewport_at_the_panel_right_edge() {
+    // Public renderer fixture: no query or encrypted backend execution is claimed.
+    let (mut app, commands, _events) = app();
+    app.history.push_front(Record {
+        job: Job::Query,
+        label: "Public renderer fixture".into(),
+        database: "demo".into(),
+        revision: 0,
+        elapsed_ms: 0.0,
+        outcome: Ok(Outcome::Query(QueryOutcome::Selected {
+            columns: vec![Column::Age, Column::Amount],
+            rows: (0..128).map(|age| vec![age, age]).collect(),
+        })),
+    });
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    let mut viewport = None;
+    let output = ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(600.0, 400.0),
+            )),
+            ..Default::default()
+        },
+        |ui| {
+            let scroll = app.results(ui);
+            viewport = Some((scroll.inner_rect, scroll.content_size));
+        },
+    );
+    output.drop_without_applying_deltas();
+    let (viewport, content) = viewport.unwrap();
+    assert!(
+        content.y > viewport.height(),
+        "Rows must actually require scrolling"
+    );
+    assert!(
+        viewport.right() > 560.0,
+        "The viewport must fill the panel, not stop after the table"
+    );
+    assert!(viewport.height() > 300.0);
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn network_settings_follow_history_and_stay_beside_data_without_executing_sql() {
+    let (mut app, commands, _events) = app();
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    click(&ctx, &mut app, "Settings");
+    click(&ctx, &mut app, "Data");
+    assert_eq!(app.right_tab, RightTab::Settings);
+    let texts = render(&ctx, &mut app, vec![]);
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.text == "Local prototype policy")
+    );
+    click_point(
+        &ctx,
+        &mut app,
+        egui::pos2(1200.0, 600.0),
+        egui::PointerButton::Extra1,
+    );
+    assert_eq!(app.tab, Tab::Sql);
+    assert_eq!(app.right_tab, RightTab::Settings);
+    click_point(
+        &ctx,
+        &mut app,
+        egui::pos2(1200.0, 600.0),
+        egui::PointerButton::Extra1,
+    );
+    assert_eq!(app.right_tab, RightTab::Network);
+    click_point(
+        &ctx,
+        &mut app,
+        egui::pos2(1200.0, 600.0),
+        egui::PointerButton::Extra2,
+    );
+    assert_eq!(app.right_tab, RightTab::Settings);
     assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
 }
 

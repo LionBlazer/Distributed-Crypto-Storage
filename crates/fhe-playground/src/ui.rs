@@ -37,6 +37,7 @@ enum ResultTab {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RightTab {
     Network,
+    Settings,
     Node(NodeId),
 }
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -608,9 +609,11 @@ impl Playground {
                     ui.label(RichText::new(reason).small().color(MUTED));
                 }
             });
+        let workspace_height = ui.available_height();
+        let min_results = 120.0_f32.min(workspace_height * 0.5);
         egui::Panel::bottom("query-results")
-            .default_size(230.0)
-            .size_range(120.0..=420.0)
+            .default_size(ui.ctx().content_rect().height() * 0.5)
+            .size_range(min_results..=(workspace_height - 80.0).max(min_results))
             .resizable(true)
             .frame(panel(10))
             .show(ui, |ui| self.results(ui));
@@ -675,7 +678,7 @@ impl Playground {
             None
         }
     }
-    fn results(&mut self, ui: &mut egui::Ui) {
+    fn results(&mut self, ui: &mut egui::Ui) -> egui::scroll_area::ScrollAreaOutput<()> {
         ui.horizontal(|ui| {
             if tab_button(ui, "Result", self.result_tab == ResultTab::Result).clicked() {
                 self.result_tab = ResultTab::Result;
@@ -698,6 +701,7 @@ impl Playground {
         ui.separator();
         egui::ScrollArea::both()
             .id_salt("result-body")
+            .auto_shrink([false, false])
             .show(ui, |ui| {
                 if self.result_tab == ResultTab::Output {
                     for record in &self.history {
@@ -743,7 +747,7 @@ impl Playground {
                         }
                     }
                 }
-            });
+            })
     }
 }
 

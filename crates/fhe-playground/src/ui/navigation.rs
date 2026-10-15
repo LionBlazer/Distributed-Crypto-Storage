@@ -161,7 +161,7 @@ impl Playground {
         let network = self.network.as_ref();
         let route = self.navigation.retain(
             |route| match route.right {
-                RightTab::Network => true,
+                RightTab::Network | RightTab::Settings => true,
                 RightTab::Node(id) => {
                     tabs.contains(&id)
                         && network.is_some_and(|net| net.nodes.iter().any(|node| node.id == id))

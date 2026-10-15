@@ -36,7 +36,7 @@ old terminal task may reuse its previous command.
 ## Explore
 
 The left pane switches between **SQL** and **Data**. The right pane always contains
-the network or an opened node inspector. Drag their divider to resize. Buttons,
+the network, network settings or an opened node inspector. Drag their divider to resize. Buttons,
 tabs, inputs and node cards have distinct hover, pressed, focus and disabled states.
 
 - **SQL:** select a client, write a statement, then use **Run** or **Ctrl+Enter**.
@@ -44,6 +44,9 @@ tabs, inputs and node cards have distinct hover, pressed, focus and disabled sta
   starting with `SELECT *`. They only fill the editor. The shortcut applies to the SQL editor, never a
   focused peer setting. Results/history retain the originating client identity.
   With no clients, SQL submission is disabled.
+- **Results:** start at half the window height. Drag the upper edge to
+  grow or shrink the pane; the editor retains usable space. Results and output
+  scroll across the full pane, with the vertical scrollbar at its right edge.
 - **Data:** edit typed draft cells, add/delete rows, or use CSV. Fixtures only fill
   the draft. **Create / replace** explicitly applies it with fresh keys; validation
   errors explain why creation is disabled. Unapplied edits survive queries.
@@ -57,6 +60,10 @@ tabs, inputs and node cards have distinct hover, pressed, focus and disabled sta
   physical storage against quota, plus useful payload and actual stored row count.
   Hover for separate data/index/replica-metadata bytes and current/stale copies;
   shared keys, Merkle caches and temporary RAM are outside this storage bar.
+- **Settings:** the pinned tab beside Network contains **Min copies** and current
+  replica health. It uses the existing serialized local-manager command; targets
+  change only after worker confirmation. This is local prototype policy, not an
+  implemented signed/agreed network contract. Speed and pause stay on the graph.
 - **Back / Forward:** return between SQL/Data and opened network/inspector views
   using **Alt+Left / Alt+Right** or the mouse's back/forward
   buttons. New navigation after Back replaces the forward branch. Deleted nodes

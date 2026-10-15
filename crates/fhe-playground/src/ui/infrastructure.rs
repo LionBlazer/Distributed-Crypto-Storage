@@ -26,6 +26,12 @@ impl Playground {
                     {
                         self.navigate(self.tab, RightTab::Network);
                     }
+                    if view_tab(ui, "Settings", self.right_tab == RightTab::Settings, false)
+                        .response
+                        .clicked()
+                    {
+                        self.navigate(self.tab, RightTab::Settings);
+                    }
                     egui::ScrollArea::horizontal()
                         .id_salt("inspector-tabs")
                         .auto_shrink([false, true])
@@ -68,7 +74,7 @@ impl Playground {
                         if let Some(net)=&self.network {
                             ui.label(RichText::new(format!("{} nodes / {} links",net.nodes.len(),net.links.len())).small().color(MUTED));
                         }
-                        self.replication_controls(ui);
+                        self.replication_summary(ui);
                         ui.separator();
                         for (view,label) in [(NetworkView::Auto,"Auto"),(NetworkView::Map,"Map"),(NetworkView::Matrix,"Matrix")] {
                             if tab_button(ui,label,self.network_view==view).on_hover_text(match view {
@@ -77,7 +83,7 @@ impl Playground {
                                 NetworkView::Matrix=>"Every connection in a cell. Rows send; columns receive.",
                             }).clicked() {self.network_view=view;}
                         }
-                        if self.network_view==NetworkView::Auto {ui.label(RichText::new(if self.uses_matrix(){"Matrix"}else{"Map"}).small().color(MUTED));}
+                        if self.network_view==NetworkView::Auto {ui.add(egui::Label::new(RichText::new(if self.uses_matrix(){"Matrix"}else{"Map"}).small().color(MUTED)).wrap_mode(egui::TextWrapMode::Extend));}
                     });
                 });
                 egui::CentralPanel::default()
@@ -89,6 +95,19 @@ impl Playground {
                             self.network_graph(ui);
                         }
                     });
+            }
+            RightTab::Settings => {
+                egui::CentralPanel::default().frame(panel(16)).show(ui, |ui| {
+                    egui::ScrollArea::vertical().auto_shrink([false,false]).show(ui, |ui| {
+                        ui.heading("Network settings");
+                        ui.label(RichText::new("Local prototype policy").small().color(AMBER));
+                        ui.add_space(14.0);
+                        ui.label("Copies per logical shard");
+                        self.replication_controls(ui);
+                        ui.add_space(12.0);
+                        ui.label(RichText::new("Changes apply to this local experiment. A signed, agreed network-policy contract is still being designed.").color(MUTED));
+                    });
+                });
             }
             RightTab::Node(id) => {
                 egui::CentralPanel::default()
@@ -123,6 +142,9 @@ impl Playground {
         if copies != previous {
             self.control(Command::SetReplication { copies }, Control::Replication);
         }
+        self.replication_summary(ui);
+    }
+    fn replication_summary(&self, ui: &mut egui::Ui) {
         if let Some(state) = &self.snapshot {
             let stored: usize = state.peers.iter().map(|peer| peer.stored_bytes).sum();
             let label = if let Some(replication) = &state.replication {
