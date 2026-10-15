@@ -152,3 +152,30 @@ checked directly. Publication text and local/promotion targets were checked;
 release code was read locally with its Cargo VCS record (remote commit links
 were unavailable to the browser fetcher). These
 are research/documentation checks, not application or cryptographic tests.
+
+## Follow-up: exact indexed aggregates still need verification
+
+The newer [exact-index API](../experiments/bfv-byte-limb-core/README.md) reduces
+the encrypted computation to eight rotations/additions, after caller-established
+complete index selection. Those rotations still execute Galois key switches.
+Eliminating predicate products does not establish a proof relation or remove
+RNS conversion/noise considerations. The owning test performs the real reduction,
+then a public plaintext modification preserves COUNT while changing SUM; the
+result is deliberately returned only as UnverifiedAggregate.
+
+There are published alternatives worth a separate finite investigation:
+[Fiore, Gennaro and Pastro (CCS 2014)](https://eprint.iacr.org/2014/202)
+define encrypted-data delegation that tolerates observable acceptance decisions
+and construct specialized linear/quadratic protocols. This is a possible design
+reference, not evidence that its authenticator can be attached unchanged to our
+packed BFV interface or fit the measured 500 ms budget.
+
+[Cheon and Jang (2025), Sections 1.2 and 5](https://arxiv.org/html/2502.12628v1)
+give attacks on particular lightweight verification encodings using homomorphic
+evaluation itself; the polynomial-encoding attack considers access to the
+re-quadratization protocol. This does not prove every linear authenticator unsafe,
+but rules out treating hidden check slots or a homemade encrypted checksum as an
+established malicious-peer proof. We have implemented no such verifier. A candidate
+must specify its function/degree limits, labels and replay policy, chosen-ciphertext
+and verification-feedback model, exact-index/head binding and concrete overhead
+before changing ProofStatus::Unavailable.

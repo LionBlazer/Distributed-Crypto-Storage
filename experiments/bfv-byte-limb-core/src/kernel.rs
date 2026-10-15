@@ -92,6 +92,23 @@ impl Kernel {
         }
         Ok(&greater + &equal)
     }
+    /// Exact-index operation only: values already encode caller-authorized selected weights.
+    /// The eight rotations still perform the pinned library's Galois key switches.
+    pub(super) fn aggregate_selected(
+        &self,
+        values: &Ciphertext,
+    ) -> Result<(Ciphertext, usize, usize)> {
+        let mut n = Counters {
+            products: 0,
+            rotations: 0,
+        };
+        let mut sums = values.clone();
+        for shift in [1, 2, 4, 8, 16, 32, 64, 128] {
+            let rotated = self.rotate(&sums, shift, &mut n)?;
+            sums += &rotated;
+        }
+        Ok((sums, n.products, n.rotations))
+    }
     pub(super) fn evaluate(
         &self,
         predicate: PredicateKind,

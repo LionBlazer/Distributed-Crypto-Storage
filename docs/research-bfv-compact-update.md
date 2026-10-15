@@ -1,11 +1,15 @@
 # Indexed BFV amount UPDATE with compact writeback
 
-**Source-only, unimplemented proposal.** Based on main
+**Writeback proposal with an implemented cryptographic API.** The arithmetic/API
+portion now lives in the [experimental BFV core](../experiments/bfv-byte-limb-core/README.md),
+whose 37 runtime tests and two doctests pass alongside strict Clippy. Compact
+writeback, repeated-update timing and storage lifecycle remain unimplemented for
+this BFV path. The original proposal was based on main
 `a25dc82e9685221bea161c19e51a9e248ff204ff`, unchanged BFV core
 `83D3E4E23803F96544617E88AA6EF2B17DFEC274DCB962C168BDAFD7DBA82C7A`
-(`src/lib.rs` SHA-256), and `fhe 0.1.1` source revision
-`fe47bac2e2abf0077c0e8d95f5c2ce7ce8a40b2a`. No UPDATE code, gate tests,
-noise bound, latency or storage result is established here.
+(`src/lib.rs` baseline SHA-256), and `fhe 0.1.1` source revision
+`fe47bac2e2abf0077c0e8d95f5c2ce7ce8a40b2a`. No full UPDATE latency, storage
+lifecycle or independent noise/security result is established here.
 
 ## Exact operation and arithmetic
 
@@ -86,7 +90,7 @@ fresh input ciphertexts can serialize one polynomial plus seed. Measure actual
 wire rather than copying input-size assumptions.
 [Serialization source](https://github.com/tlepoint/fhe.rs/blob/fe47bac2e2abf0077c0e8d95f5c2ce7ce8a40b2a/crates/fhe/src/bfv/ciphertext.rs#L135-L225).
 
-Proposed additions, **not existing API**:
+Implemented cryptographic entry points; storage staging remains a proposal:
 
 - `Owner::prepare_indexed_update_for_experiment(context, fields, delta)` returns
   two encrypted inputs and a one-use `PendingIndexedUpdate`. Bind owner/key handle,
@@ -144,7 +148,7 @@ unsafe/variable-time; it cannot alone certify the intended UPDATE and is unneces
 in normal peer/owner APIs.
 [Noise diagnostic source](https://github.com/tlepoint/fhe.rs/blob/fe47bac2e2abf0077c0e8d95f5c2ce7ce8a40b2a/crates/fhe/src/bfv/keys/secret_key.rs#L55-L98). Independent parameter-security validation remains open.
 
-Before implementation/performance claims, run these gates with public fixtures,
+Before complete composition/performance claims, run these gates with public fixtures,
 real serialized peer addition and the unchanged parameters:
 
 1. Carries and exact boundaries across 0/1/254/255/256/257/65280/65534/65535,

@@ -1,6 +1,13 @@
 //! Experimental exact owner-online BFV roles. Outputs have no computation proof.
 //! Parameters and arithmetic match the measured byte-limb probe; retrieval is external.
+mod exact_index;
+mod indexed_update;
+pub use exact_index::{PendingIndexedAggregate, PreparedIndexedAggregate};
 mod kernel;
+pub use indexed_update::{
+    EvaluatedIndexedUpdate, IndexedUpdateStats, PendingIndexedUpdate, PreparedIndexedUpdate,
+    UnverifiedUpdateOutcome, UnverifiedUpdatedValues, UpdatedAmount,
+};
 
 use bincode::Options;
 use fhe::bfv::{
@@ -12,6 +19,7 @@ use fhe_traits::{
     Serialize as FheSerialize,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::Arc;
@@ -41,6 +49,7 @@ pub enum Error {
     WireLimit,
     BindingMismatch,
     AggregateBounds,
+    UpdateBounds,
     Backend(String),
 }
 impl fmt::Display for Error {
@@ -233,16 +242,23 @@ impl PublicSetup {
     }
 }
 
+// Public setup identity shared by the isolated operation domains; not authentication or proof.
+fn keyset_id(setup: &PublicSetup) -> Result<[u8; 32]> {
+    Ok(Sha256::digest(setup.to_bytes()?).into())
+}
+
 /// Holds the only BFV secret; caller still owns plaintext field buffers and trusted heads.
 pub struct Owner {
     parameters: Arc<BfvParameters>,
     key: SecretKey,
     geometry: Geometry,
+    keyset_id: [u8; 32],
 }
 /// Public-only evaluation role. It owns no storage snapshot, AEAD key, or SecretKey.
 pub struct PeerEvaluator {
     kernel: kernel::Kernel,
     geometry: Geometry,
+    keyset_id: [u8; 32],
 }
 /// One-use owner token; consuming it prevents accidental duplicate completion by this handle.
 /// It is not a persistent replay ledger, proof, or verifier capability.
@@ -334,11 +350,13 @@ impl Owner {
             relinearization_key,
             rotation_keys,
         };
+        let keyset_id = keyset_id(&setup)?;
         Ok((
             Self {
                 parameters,
                 key,
                 geometry,
+                keyset_id,
             },
             setup,
         ))
@@ -459,6 +477,7 @@ impl PeerEvaluator {
                 &setup.rotation_keys,
             )?,
             geometry: setup.geometry,
+            keyset_id: keyset_id(setup)?,
         })
     }
     pub fn profile(&self) -> ParameterProfile {
