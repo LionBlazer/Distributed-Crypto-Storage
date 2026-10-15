@@ -2,7 +2,7 @@
 use compact_query::{AgeRange, PlainRow, Table, bfv};
 use compact_store::{Commitment, Limits};
 use replica_store::{
-    Bounds, FailureDomainId, ObjectId, PeerConfig, PeerId, ReplicaStore, ReplicaTarget,
+    Bounds, BundleId, FailureDomainId, ObjectId, PeerConfig, PeerId, ReplicaStore, ReplicaTarget,
 };
 
 const DATA: ObjectId = ObjectId(1);
@@ -55,11 +55,13 @@ fn targets(table: &Table) -> [ReplicaTarget; 2] {
             object: DATA,
             expected: table.commitment().clone(),
             copies: 2,
+            bundle: Some(BundleId(1)),
         },
         ReplicaTarget {
             object: INDEX,
             expected: table.index_commitment().clone(),
             copies: 2,
+            bundle: Some(BundleId(1)),
         },
     ]
 }

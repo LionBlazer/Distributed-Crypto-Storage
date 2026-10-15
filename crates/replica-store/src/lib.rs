@@ -52,6 +52,11 @@ pub struct FailureDomainId(pub u64);
 /// Caller-owned identity for one canonical encrypted image (e.g. a data or index image).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ObjectId(pub u64);
+/// Caller-defined objects that must form a complete copy on the SAME peer.
+/// Membership is the full set supplied in the current target list, not discovered
+/// or authenticated by this identifier.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct BundleId(pub u64);
 
 /// Each stored record charges its eight-byte ObjectId in addition to the FULL
 /// canonical image, including its manifest and per-page crypto metadata.
@@ -90,6 +95,9 @@ pub struct ReplicaTarget {
     pub expected: Commitment,
     /// Minimum available copies in DISTINCT declared fault domains. Never zero.
     pub copies: usize,
+    /// None places this object independently. Some groups all matching targets into
+    /// one complete placement unit; every member must request the same copy count.
+    pub bundle: Option<BundleId>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PeerUsage {

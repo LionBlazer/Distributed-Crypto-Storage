@@ -212,13 +212,25 @@ impl ReplicaStore {
         {
             return Err(Error::InvalidTargets);
         }
+        let mut policies = BTreeMap::new();
+        for t in &sorted {
+            if let Some(bundle) = t.bundle
+                && policies
+                    .insert(bundle, t.copies)
+                    .is_some_and(|copies| copies != t.copies)
+            {
+                return Err(Error::InvalidTargets);
+            }
+        }
         for t in &sorted {
             t.expected.layout().validate(self.bounds.images)?;
         }
         Ok(sorted)
     }
-    /// Deterministic greedy placement in ObjectId/PeerId order, preserving all valid
-    /// copies and reserving quota across the entire batch. Not an optimal bin packer.
+    /// Deterministic greedy placement: units by smallest ObjectId, members by
+    /// ObjectId and destinations by PeerId. Only COMPLETE current bundle holders
+    /// contribute failure domains; quota is reserved across each unit and batch.
+    /// This is not a complete placement search or an optimal bin packer.
     pub fn plan_repair(&self, targets: &[ReplicaTarget]) -> Result<RepairPlan> {
         let targets = self.normalize(targets)?;
         let mut used = self
@@ -228,62 +240,101 @@ impl ReplicaStore {
             .collect::<Result<BTreeMap<_, _>>>()?;
         let mut writes = Vec::new();
         let mut staged_bytes = 0usize;
+        let mut units: Vec<Vec<&ReplicaTarget>> = Vec::new();
+        let mut bundles = BTreeMap::new();
         for target in &targets {
+            if let Some(bundle) = target.bundle {
+                let index = *bundles.entry(bundle).or_insert_with(|| {
+                    units.push(Vec::new());
+                    units.len() - 1
+                });
+                units[index].push(target);
+            } else {
+                units.push(vec![target]);
+            }
+        }
+        for members in units {
+            // Objects may have complementary current sources: no complete source
+            // bundle is required, but every member must have a valid current source.
+            let mut source_sets = Vec::with_capacity(members.len());
+            for target in &members {
+                let sources = self
+                    .peers
+                    .iter()
+                    .filter_map(|(id, p)| {
+                        (p.available
+                            && p.images
+                                .get(&target.object)
+                                .is_some_and(|b| self.validate(b, &target.expected).is_ok()))
+                        .then_some(*id)
+                    })
+                    .collect::<Vec<_>>();
+                if sources.is_empty() {
+                    return Err(Error::NoAvailableSource(target.object));
+                }
+                source_sets.push(sources);
+            }
             let mut domains = BTreeSet::new();
-            let mut sources = Vec::new();
             for (id, p) in &self.peers {
-                if p.available
-                    && p.images
-                        .get(&target.object)
-                        .is_some_and(|b| self.validate(b, &target.expected).is_ok())
-                {
+                if p.available && source_sets.iter().all(|sources| sources.contains(id)) {
                     domains.insert(p.config.failure_domain);
-                    sources.push(*id);
                 }
             }
-            if sources.is_empty() {
-                return Err(Error::NoAvailableSource(target.object));
-            }
-            let len = target.expected.layout().encoded_len()?;
+            let required = members[0].copies; // Nonempty by construction; normalized policy.
             for (id, p) in &self.peers {
-                if domains.len() >= target.copies {
+                if domains.len() >= required {
                     break;
                 }
                 if !p.available || domains.contains(&p.config.failure_domain) {
                     continue;
                 }
-                let old_charge = p
-                    .images
-                    .get(&target.object)
-                    .map(|b| {
-                        b.len()
-                            .checked_add(RECORD_METADATA_BYTES)
-                            .ok_or(Error::ResourceLimit)
-                    })
-                    .transpose()?
-                    .unwrap_or(0);
-                let next = used[id]
-                    .checked_sub(old_charge)
-                    .and_then(|n| n.checked_add(len))
-                    .and_then(|n| n.checked_add(RECORD_METADATA_BYTES))
-                    .ok_or(Error::ResourceLimit)?;
+                // Reserve the ENTIRE missing/replacement subset on one peer before
+                // emitting any member copy or consuming batch staging capacity.
+                let mut next = used[id];
+                let mut additional = 0usize;
+                let mut candidate = Vec::new();
+                for (target, sources) in members.iter().zip(&source_sets) {
+                    if sources.contains(id) {
+                        continue;
+                    } // Correct member already held.
+                    let len = target.expected.layout().encoded_len()?;
+                    let old_charge = p
+                        .images
+                        .get(&target.object)
+                        .map(|b| {
+                            b.len()
+                                .checked_add(RECORD_METADATA_BYTES)
+                                .ok_or(Error::ResourceLimit)
+                        })
+                        .transpose()?
+                        .unwrap_or(0);
+                    next = next
+                        .checked_sub(old_charge)
+                        .and_then(|n| n.checked_add(len))
+                        .and_then(|n| n.checked_add(RECORD_METADATA_BYTES))
+                        .ok_or(Error::ResourceLimit)?;
+                    additional = additional.checked_add(len).ok_or(Error::ResourceLimit)?;
+                    candidate.push(PlannedCopy {
+                        object: target.object,
+                        destination: *id,
+                        canonical_bytes: len,
+                        sources: sources.clone(),
+                    });
+                }
                 if next > p.config.quota_bytes {
                     continue;
                 }
-                staged_bytes = staged_bytes.checked_add(len).ok_or(Error::ResourceLimit)?;
+                staged_bytes = staged_bytes
+                    .checked_add(additional)
+                    .ok_or(Error::ResourceLimit)?;
                 if staged_bytes > self.bounds.max_staged_bytes {
                     return Err(Error::ResourceLimit);
                 }
                 used.insert(*id, next);
                 domains.insert(p.config.failure_domain);
-                writes.push(PlannedCopy {
-                    object: target.object,
-                    destination: *id,
-                    canonical_bytes: len,
-                    sources: sources.clone(),
-                });
+                writes.extend(candidate);
             }
-            if domains.len() < target.copies {
+            if domains.len() < required {
                 return Err(Error::InsufficientDomainsOrCapacity);
             }
         }

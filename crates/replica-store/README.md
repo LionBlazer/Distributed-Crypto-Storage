@@ -27,15 +27,27 @@ ObjectId count and whole-batch staging payload are explicitly bounded by `Bounds
 These limits do not establish a whole-process RAM or disk-performance target.
 
 `plan_repair(&[ReplicaTarget])` uses caller-supplied current heads and desired
-available copy counts. Existing images are fully revalidated. The deterministic
-greedy order is ObjectId then PeerId; quota is reserved across the whole batch and
-new copies use distinct declared domains. It does not delete valid extra copies,
-and it is not a complete placement search: fragmented quotas can cause failure
-even when a different global allocation could succeed.
+available copy counts. `bundle: None` places one object independently.
+`bundle: Some(BundleId(...))` makes all matching targets one placement unit with
+the same requested copy count. The caller supplies COMPLETE current membership;
+the ID does not discover related objects. Inconsistent policies, duplicate objects
+and target bounds reject before placement. Only a peer holding ALL current members
+is a complete bundle holder; partial objects spread across peers do not count as
+one available copy or failure domain.
+
+Existing images are fully revalidated. Units are ordered by smallest ObjectId,
+members by ObjectId and destinations by PeerId. The deterministic greedy planner
+reserves aggregate missing/stale replacement charges on the SAME destination for
+each whole bundle and across the whole batch. Current members already there are
+retained. Different valid peers can supply different members, allowing complementary
+survivors to form a complete copy without a complete source bundle. All transfers
+still pass full current-root validation and publish atomically. It does not delete
+valid extra copies or perform a complete placement search: fragmented quotas can
+cause failure even when a different global allocation could succeed.
 
 `RepairPlan` is opaque and consumed once. A checked process-local instance identity,
 inventory generation and exact targets bind execution; another store, inventory
-change or changed current head/copy policy rejects before fetching. Identity is a
+change or changed current head/copy/bundle policy rejects before fetching. Identity is a
 local handle property, not a cryptographic/network identity or durable token.
 
 `repair_local(plan, still_current_targets)` copies actual survivor ciphertext into
@@ -55,6 +67,9 @@ refuses to delete the last AVAILABLE full copy matching the supplied current hea
 Changing current versions requires an existing current source; repair may replace
 stale records only after receiving and validating current ciphertext. Historical
 version preservation/garbage collection is outside this lifecycle.
+`remove_current` protects an individual object's last available copy; it has no
+bundle-membership input and does not certify complete-bundle availability after a
+deletion. Callers own authorization and complete-unit maintenance for such removals.
 
 ## Caller responsibilities and requirement scope
 
@@ -69,12 +84,16 @@ head authority, durable persistence, recovery after process exit or a resource S
 
 ## Validation
 
-All 14 runtime tests (12 contract + 2 BFV integration) and one compile-fail doctest
-passed, together with strict authored all-target Clippy and package format checks.
+All 23 runtime tests (12 independent-object contracts, 9 bundle contracts and 2 BFV
+integration tests) and one compile-fail doctest passed, together with strict authored
+all-target Clippy and package format checks.
 The contract suite covers survivor repair, correlated labels, full canonical quota,
 whole-batch capacity, all-source loss, wrong heads/tampering/short input, untrusted
 source fallback, later-object batch failure, stale/foreign plans, last-copy deletion
-and target/staging limits. [BFV integration tests](tests/bfv_recovery.rs) repair
+and target/staging limits. Bundle tests additionally cover tempting partial quotas,
+complementary sources, inconsistent policies, aggregate multi-bundle reservation,
+complete-holder failure domains, policy changes and whole-bundle rollback.
+[BFV integration tests](tests/bfv_recovery.rs) repair
 actual encrypted data/index images from surviving peers, restore them under the
 original owner and execute genuine COUNT/SUM and locally checked UPDATE. A stale
 index response rolls back the entire staged data/index repair batch.

@@ -31,6 +31,7 @@ fn target(object: u64, image: &EncryptedSnapshot, copies: usize) -> ReplicaTarge
         object: ObjectId(object),
         expected: image.commitment().clone(),
         copies,
+        bundle: None,
     }
 }
 fn store() -> ReplicaStore {
