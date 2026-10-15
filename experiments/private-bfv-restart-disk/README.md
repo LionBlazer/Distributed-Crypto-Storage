@@ -67,6 +67,12 @@ budgets. The separately launched tiny process probe is explicit, not an automati
 unit-test dataset job. See [the experiment report](../../docs/experiment-private-bfv-restart-disk.md)
 for measured artifacts and results.
 
+The [actual 1,000-table follow-up](../../docs/experiment-private-bfv-restart-disk-scale.md)
+reuses the same frozen executables. It counts all 2,005 files, both sealed backups
+and the reported parent/serial-child peak bound: 1.814826x of 3 GB logical.
+All 384 ExactIndex reads are below 321 ms; the FullPredicate controls retain one
+520.214 ms overrun. The default runner remains a finite three-table probe.
+
 All canonical file reads and full root reconstruction occur inside miss query
 timers before NTT preparation. Restore, negative controls, original public peer
 setup and cached-header bootstrap are separately reported. Application misses do

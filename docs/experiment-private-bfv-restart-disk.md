@@ -1,5 +1,9 @@
 # True owner-process restart disk probe
 
+The subsequent [actual 1,000-table run](experiment-private-bfv-restart-disk-scale.md)
+reuses these frozen binaries and separately validates scale. The measurements
+below remain the original three-table run.
+
 The three-table run succeeded after the writer ACTUALLY exited and a separate
 reader restored the ORIGINAL compact-store, BFV and Spiral owners. All 768 full
 queries were exact, including the committed amount update. ExactIndex's384
@@ -158,7 +162,7 @@ dropped before queries. Kernel pipe-buffer zeroization, upstream protobuf
 temporary-copy zeroization and SDK private-allocation zeroization are unproven.
 
 Broker reads Windows native counters through each held Child handle AFTER actual
-successful exit, requiring nonzero peaks and rejecting regression below earlier
+successful exit, requiring a nonzero RSS peak and rejecting either peak's regression below earlier
 receipt peaks. Late child ledger/receipt work therefore remains in lifetime peaks;
 post-exit current RSS is not a peak.
 

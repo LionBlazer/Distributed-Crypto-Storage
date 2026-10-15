@@ -15,6 +15,14 @@ before-query rejection controls pass; 116 runtime test executions and two doctes
 also pass. Its live broker keeps the external wrapping key in memory. This does
 not establish full-machine recovery, durable publication or large-scale overhead.
 
+The subsequent [actual 1,000-table run](experiment-private-bfv-restart-disk-scale.md)
+reuses those frozen binaries and validates all original-owner imports, updated
+heads, 768 queries and nine rejects after the real process boundary. All 2,005
+files, both sealed backups and the reported parent/serial-child native private
+peak bound total 1.814826x of 3 GB logical. ExactIndex maximum is 320.674 ms;
+FullPredicate retains one 520.214 ms overrun. Restore/bootstrap initialization
+takes 2,047.202 ms separately. External key/anchor custody and durability stay open.
+
 The older retained 1,000-table files still cannot restart the same owner after their
 unsaved secrets were lost. Recreating fixtures/keys would create another database,
 not recover it. The table below describes the unchanged baseline library APIs;

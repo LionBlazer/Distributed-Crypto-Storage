@@ -4,7 +4,7 @@ The user requested comparison of both policies; visible accesses have not been
 approved as the final design. Both candidates retain owner-only secret keys,
 encrypted peer data and an independently authenticated snapshot head.
 
-The [paired exact-index disk baseline](experiment-private-bfv-exact-disk.md)
+The latest [paired original-owner restart experiment](experiment-private-bfv-restart-disk-scale.md)
 measures both policies on the SAME 1,000 independent million-row tables and full
 shared keyset. Complete authenticated exact selection permits eight encrypted
 rotate/add steps instead of repeating the encrypted age predicate. The owner
@@ -12,15 +12,16 @@ checks every selected age before encryption; inconsistent selections reject.
 
 | Exact-index mode | Maximum complete local hit, ms | Maximum complete local miss, ms |
 | --- | ---: | ---: |
-| Visible, both header policies | 30.395 | 45.008 |
-| Private, cached authenticated header | 202.416 | 250.971 |
-| Private, privately retrieved header | 281.484 | 351.110 |
+| Visible, both header policies | 30.532 | 37.288 |
+| Private, cached authenticated header | 219.378 | 279.092 |
+| Private, privately retrieved header | 271.467 | 320.674 |
 
 All 384 exact-index matrix answers pass, covering EQ0/1/16/64/256, GE256 and
 range21/256, AddressOnly/Fixed256 and supplied table IDs 0/499/999. The paired
-FullPredicate control retains all nine observations above 500 ms (maximum
-562.224 ms). Actual 2,003 dataset files plus native peak process commit total
-5,448,908,128 bytes / 3 GB logical = 1.816302709x in this same run. This does not
+FullPredicate control retains one observation above 500 ms (maximum 520.214 ms).
+Actual 2,005 dataset files including both sealed checkpoints plus the conservative
+observed parent/through-exit serial-child native private peak bound total
+5,444,478,278 bytes / 3 GB logical = 1.814826093x in this same run. This does not
 establish a 2x bound for tiny tables.
 
 Selections must fit 256 rows, one posting page and one data page. The owner is
@@ -28,8 +29,12 @@ online; OS file cache is allowed. PIR conceals within-table addresses; table/roo
 operation mode, timing and load events remain public. ExactIndex wire does not
 encode predicate kind; its benchmark query labels are owner-side metadata.
 Fixed256 equalizes tested wire/RPC shapes, without a formal timing/privacy proof.
-Network, arithmetic proofs, general SQL and complete owner restart remain outside
-this measurement. Neither leakage policy has been selected.
+Writer actually exits before a new reader restores the original owner keys and
+public setups. Reader initialization is 2,047.202 ms separately; the live broker
+holds the external wrapping key. Network, arithmetic proofs, general SQL, durable
+publication and full-machine recovery remain outside this measurement. The
+[earlier disk baseline](experiment-private-bfv-exact-disk.md) remains separately
+recorded. Neither leakage policy has been selected.
 
 The [GUI/SQL integration](experiment-bfv-gui-integration.md) now uses the same BFV
 arithmetic through the explicit exact-index storage adapter. Its 147 visible-access

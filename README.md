@@ -116,6 +116,13 @@ and native child lifetime peaks. Its tiny dataset does not amortize setup below
 2x; the live broker retains external wrapping-key custody. Full-machine restart
 and durable checkpoint publication remain open.
 
+The [same frozen restart binaries on 1,000 fresh tables](docs/experiment-private-bfv-restart-disk-scale.md)
+then measured 1.814826x for all 2,005 files, both sealed backups and the conservative
+parent/serial-child native private peak bound against 3 GB logical. All 384 ExactIndex
+queries are exact and below 321 ms; the 384 FullPredicate controls retain one
+520.214 ms overrun. Original-owner reader initialization takes 2,047.202 ms separately.
+This is the same bounded one-page, online-owner, local-transport scope.
+
 The integration branch is `master`. [AGENTS.md](AGENTS.md) defines task branches,
 automatic commit and push after each completed change, synchronization from master,
 and explicitly requested promotion back to master. Project skills live in
