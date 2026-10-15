@@ -770,6 +770,7 @@ impl Runtime {
                 match result {
                     Err(error) => {
                         let query = self.query.take().expect("known query");
+                        self.network.cancel_request(query.id);
                         self.finish(
                             Err(error),
                             Some(query.client),
@@ -914,6 +915,70 @@ mod tests {
         assert!(matches!(
             jobs.try_recv().unwrap(),
             ComputeCommand::Commit { id: 1, .. }
+        ));
+    }
+    #[test]
+    fn repeated_compute_failures_release_transport_work_before_the_next_query() {
+        let (mut runtime, jobs, outputs, client, _) = runtime();
+        for id in 1..=128 {
+            runtime.command(Command::Query {
+                client_id: client,
+                sql: "SELECT COUNT(*), SUM(amount) FROM records".into(),
+            });
+            deliver(&mut runtime, 0.4);
+            assert!(matches!(
+                jobs.try_recv().unwrap(),
+                ComputeCommand::Prepare { id: received, .. } if received == id
+            ));
+
+            runtime.answer(ComputeEvent::Prepared {
+                id,
+                result: Err(LabError::Cryptography("public injected failure".into())),
+            });
+
+            assert!(runtime.query.is_none());
+            assert!(runtime.network.snapshot().packets.iter().all(|packet| {
+                !matches!(
+                    packet.kind,
+                    fhe_playground::PacketKind::Request | fhe_playground::PacketKind::Response
+                )
+            }));
+            let finished: Vec<_> = outputs
+                .try_iter()
+                .filter(|event| {
+                    matches!(
+                        event,
+                        Event::Finished {
+                            outcome: Err(_),
+                            ..
+                        }
+                    )
+                })
+                .collect();
+            assert_eq!(finished.len(), 1);
+        }
+
+        runtime.command(Command::Query {
+            client_id: client,
+            sql: "SELECT COUNT(*), SUM(amount) FROM records".into(),
+        });
+        deliver(&mut runtime, 0.4);
+        assert!(matches!(
+            jobs.try_recv().unwrap(),
+            ComputeCommand::Prepare { id: 129, .. }
+        ));
+        runtime.answer(ComputeEvent::Prepared {
+            id: 129,
+            result: Ok(QueryOutcome::Aggregate {
+                count: 1,
+                sum: 10,
+                peers: vec![],
+            }),
+        });
+        deliver(&mut runtime, 0.4);
+        assert!(matches!(
+            jobs.try_recv().unwrap(),
+            ComputeCommand::Commit { id: 129, .. }
         ));
     }
     #[test]

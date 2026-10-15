@@ -766,6 +766,7 @@ pub(super) fn packet_color(kind: PacketKind) -> Color32 {
         PacketKind::Ack => MUTED,
         PacketKind::Request => ACCENT,
         PacketKind::Response => Color32::from_rgb(195, 154, 250),
+        PacketKind::Cancel => Color32::from_rgb(232, 120, 105),
     }
 }
 fn draw_node(

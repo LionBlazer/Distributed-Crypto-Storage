@@ -72,6 +72,12 @@ must arrive before committing an update. Deleting the requesting client or a
 required peer revokes routes and cancels uncommitted work. A deletion racing an
 already authorized commit is serialized by a commit permit.
 
+Each request attempt is tied to its connection session. Duplicate requests and
+unsolicited or repeated responses are rejected; cancellation packets follow virtual
+delivery time and appear on the graph. Pausing can delay remote cleanup. The protocol
+bounds outstanding requests and accepted jobs; transport IDs still have no
+cryptographic authentication.
+
 Peer IDs remain stable when a middle peer is removed. Adding/removing storage peers
 explicitly repartitions rows under the local manager, preserving keys, revision and
 surviving profiles. This is not automatic replication/recovery by the peer protocol.
