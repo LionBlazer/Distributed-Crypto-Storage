@@ -1,0 +1,34 @@
+[package]
+name = "private-bfv-process-restart-disk"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "private-bfv-restart-broker"
+path = "src/bin/broker.rs"
+
+[[bin]]
+name = "private-bfv-restart-writer"
+path = "src/bin/writer.rs"
+
+[[bin]]
+name = "private-bfv-restart-reader"
+path = "src/bin/reader.rs"
+
+[dependencies]
+compact-store = { package = "compact-store-process-restart-candidate", path = "../generated/store" }
+compact-bfv-byte-limb-core = { package = "compact-bfv-process-restart-candidate", path = "../generated/bfv" }
+sealed-owner-bundle = { package = "sealed-process-restart-owner-bundle", path = "bundle" }
+spiral-owner-state = { path = "../spiral-owner-state" }
+spiral-cache-core = { path = "../spiral-cache-core" }
+spiral-rs = { path = "../../.local/private-access/sdk/lib/spiral-rs", features = ["server"] }
+rayon = "1.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "=0.10.9"
+getrandom = "=0.2.17"
+zeroize = "=1.9.1"

@@ -93,9 +93,19 @@ retains every slow mode and the same unverified, online-owner, local-transport l
 The separate [owner recovery candidate](experiments/owner-recovery-candidate/README.md)
 restores dropped original owners from a sealed checkpoint and reuses the same
 encrypted files and original BFV/PIR public setups. Its 66 runtime tests and two
-doctests pass; cross-process restart and durable checkpoint publication remain
-separate work. The [validation report](docs/proposal-owner-recovery-candidate.md)
+doctests validate that same-process candidate. Its
+[validation report](docs/proposal-owner-recovery-candidate.md)
 records external wrapping-key custody and the bounded three-table fixture.
+
+The subsequent [process-restart probe](experiments/private-bfv-restart-disk/README.md)
+waits for the writer to exit, then restores the original owners in a new reader
+process. All 768 paired queries over three retained tables are exact: maximum
+317.346 ms for ExactIndex and 480.196 ms for FullPredicate. Nine malformed,
+wrong-key and rollback controls reject before query preparation. This
+[result](docs/experiment-private-bfv-restart-disk.md) includes both sealed backups
+and native child lifetime peaks. Its tiny dataset does not amortize setup below
+2x; the live broker retains external wrapping-key custody. Full-machine restart
+and durable checkpoint publication remain open.
 
 The integration branch is `master`. [AGENTS.md](AGENTS.md) defines task branches,
 automatic commit and push after each completed change, synchronization from master,

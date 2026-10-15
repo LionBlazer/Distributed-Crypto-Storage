@@ -5,7 +5,15 @@ boundary. A separate [validated candidate](proposal-owner-recovery-candidate.md)
 now restores dropped original compact/BFV/PIR owners from a sealed checkpoint in
 one process: 66 runtime tests, two doctests and strict Clippy pass. It preserves the
 same encrypted files and original public evaluation keys. Its external wrapping
-key remains in RAM; full process restart and durable publication are not established.
+key remains in RAM; that candidate alone establishes neither process restart nor
+durable publication.
+
+The subsequent [process-restart experiment](experiment-private-bfv-restart-disk.md)
+actually terminates its writer before a separate reader restores the same owners,
+encrypted files and original public setups. All 768 three-table queries and nine
+before-query rejection controls pass; 116 runtime test executions and two doctests
+also pass. Its live broker keeps the external wrapping key in memory. This does
+not establish full-machine recovery, durable publication or large-scale overhead.
 
 The older retained 1,000-table files still cannot restart the same owner after their
 unsaved secrets were lost. Recreating fixtures/keys would create another database,

@@ -1,0 +1,9 @@
+{
+  "stage": "restart-new-source-only",
+  "source_read_prefix_sha256": "D5D8F003BA3CB4606994237DFEEBAF5C2613F795BE33229C9519A5D3114BBC07",
+  "original_disk_sha256": "51DF6045F3E5A6CE0E890FE2F8BE4180C6C008FBDDA9E63EC67789A36EE709B0",
+  "frozen_bundle_sha256": "CD0D9B252F2913C58A0548E4DFA540F02FBFF10828A134E8F2982EDC46704BB7",
+  "scope": "extract unchanged read prefix; writer-only generation; new owned into_parts only in new bundle generation",
+  "no_frozen_source_edits": true,
+  "no_execution": true
+}
