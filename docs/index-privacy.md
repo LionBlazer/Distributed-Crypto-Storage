@@ -218,6 +218,15 @@ owner and live shared keys; physical cold disk, network and arithmetic proofs
 remain unmeasured. The small three-table files+peak-memory total is 44.01x,
 so this result does not establish full-state 2x.
 
+The subsequent [actual 1,000-table run](experiment-private-bfv-disk-scale.md) uses
+the same implementation and one loaded table/cache pair. For 3 GB logical data,
+2,003 files plus native peak private commit total 5,449,801,056 B (1.816600352x).
+All 288 same-table answers are exact. Visible queries take 83–251 ms; private
+cached-header maxima are 406 ms hit and 456 ms miss. Private uncached-header
+ranges reach 477 ms hit and 519 ms miss, with all six tested misses above 500 ms.
+These are the same bounded local privacy/owner assumptions, with OS file cache
+allowed and no transport or arithmetic proof. Neither policy is selected.
+
 A range or JOIN may visit many pages even with an index. A hidden point lookup
 does not establish a hidden general SQL planner. A complete comparison must cover
 absent keys, repeated keys, duplicate groups, indexed-field changes, access padding,

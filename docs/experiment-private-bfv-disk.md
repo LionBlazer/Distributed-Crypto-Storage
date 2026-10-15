@@ -5,8 +5,10 @@ additional full operations with exact COUNT/SUM and actual index-selected ordina
 The complete 500 ms target remains unmet: two uncached private range misses took
 502.0542 and 513.691 ms. All cached-header queries, all private hits and all visible
 queries stayed within 500 ms in this bounded sample. The original slower baseline
-(74 overruns, maximum 899.9261 ms) is preserved. A 1,000-table run is a separate next
-stage; this dry-run report contains no large-dataset result or projection.
+(74 overruns, maximum 899.9261 ms) is preserved. The subsequent
+[actual 1,000-table run](experiment-private-bfv-disk-scale.md) has its own accounting
+and observations; this report retains the three-table comparison.
+
 ## Measured lifecycle and boundary
 
 `experiments/private-bfv-disk` creates three independent public synthetic tables of

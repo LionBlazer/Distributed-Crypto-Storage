@@ -8,6 +8,12 @@ private max 436.9376 ms. Both the slower baseline and final results are retained
 the [complete report](../../docs/experiment-private-bfv-disk.md). This is an isolated
 research executable with an online owner and explicitly unverified BFV output.
 
+The subsequent [actual 1,000-table run](../../docs/experiment-private-bfv-disk-scale.md)
+uses the same executable and capacity. Actual dataset files plus native peak commit
+are 1.816600352x of 3 GB logical data; all 288 matrix answers are exact. Six private
+uncached range misses take 506–518 ms. This is measured bounded accounting, with
+network, proofs and complete owner restart still outside the experiment.
+
 `src/disk.rs` owns bounded held-handle exact reads/EOF checks, full-image commitment
 gates against trusted complete heads, memory admission, capacity-one eviction and
 invalidation. Unloaded tables retain only keys, trusted heads, paths, lengths and
