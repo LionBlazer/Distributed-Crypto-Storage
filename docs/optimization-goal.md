@@ -68,6 +68,7 @@ See [earlier measurements](fhe-optimization.md) before repeating experiments.
 | Actual private disk scale with bounded caches | [1,000 independent million-row tables](experiment-private-bfv-disk-scale.md), same validated executable, 293 exact operations and nine before-BFV rejections | 3 GB logical; actual 2,003 files + whole-process native peak commit = 1.816600352x, with one retained 64 MiB NTT pair and 359/365 MB peak RSS/commit. All cached-header cells ≤456 ms; six uncached private range misses take 506–518 ms. No dropped outliers, general SQL, transport, computation proof or complete owner restart claim |
 | Shared BFV exact-index aggregate and amount-addition APIs | [Owning core contracts](../experiments/bfv-byte-limb-core/README.md), 37 runtime tests, two one-use-token doctests and strict Clippy | One original Owner/PublicSetup/PeerEvaluator serves all three wire domains. Exact selection permits eight genuine encrypted rotate/add steps; COUNT must equal active rows. Indexed amount addition checks every limb and rejects global overflow before output allocation. Full encrypted-predicate reads remain; no new composed timing, compact writeback or arithmetic proof claim |
 | Same-owner restart and secret checkpoint boundary | [Pinned-source and retained-catalog review](research-owner-recovery.md), no recovery implementation or benchmark | The original 1,000-table encrypted files and public catalog cannot recover lost owner secrets. A sealed bounded bundle must retain original compact/BFV/PIR secrets, trusted current heads and original public setup identities; valid-old-backup rollback and durable publication require separate contracts. Secret payload counts alone are not a complete backup or restart measurement |
+| Exact-index BFV with actual private disk scale | [Paired 1,000-table experiment](experiment-private-bfv-exact-disk.md), 31 owning tests, strict Clippy, 774 genuine operations and 13 before-BFV rejections | Same 3 GB logical dataset/keyset: actual files plus native peak process commit 1.816302709x. All 384 ExactIndex matrix queries <352 ms, visible maximum 45.008 ms; FullPredicate retains nine failures >500 ms, maximum 562.224 ms. Complete authenticated exact selections/age checks precede eight encrypted rotate/add steps. Both privacy policies remain; 256 rows/one posting+data page, online owner, OS cache allowed; network/proofs/general SQL/restart excluded |
 
 Experiments use separate managed worktrees, including `private-index-research`,
 `compact-fhe-query`, `query-proof-research` and `compact-playground`. Generated
@@ -123,7 +124,7 @@ amortized below 2x in one configuration, without counting projections or cloned
 tables. It does not remove the earlier small-table costs, multirow latency or
 the need to account for a real distributed SQL planner and routing structures.
 
-The full goal remains active: reduce multi-row latency, extend concealed indexed
-access beyond its measured one-page budget, and retain unresolved proof, freshness, resource and
-durable lifecycle requirements. Transport and malicious-peer computation proofs
-remain absent from all local latency measurements.
+The full goal remains active: complete compact BFV updates and same-owner restart,
+extend concealed indexed access beyond its measured one-page budget, and retain
+unresolved proof, freshness, resource and durable lifecycle requirements. Transport
+and malicious-peer computation proofs remain absent from all local latency measurements.

@@ -63,6 +63,15 @@ owner availability, general SQL, concealed index execution and computation proof
 remain open. See the [measurement ledger](docs/optimization-goal.md) for measured
 costs, including indexes, keys and memory.
 
+The separate [exact-index BFV disk probe](experiments/private-bfv-exact-disk/README.md)
+is the latest measured read path; the GUI still uses compact-query. On 1,000
+independent million-row tables (3 GB logical), actual files plus native peak process
+commit total 1.816303x. Its 384 exact-index queries take at most 45.008 ms with
+visible access and 351.110 ms with private PIR, including application-cache misses.
+Selections are bounded to 256 rows and one posting/data page, with the owner online;
+OS file cache is allowed. Network, arithmetic proofs, general SQL and complete
+owner restart are outside this [paired result](docs/experiment-private-bfv-exact-disk.md).
+
 The integration branch is `master`. [AGENTS.md](AGENTS.md) defines task branches,
 automatic commit and push after each completed change, synchronization from master,
 and explicitly requested promotion back to master. Project skills live in

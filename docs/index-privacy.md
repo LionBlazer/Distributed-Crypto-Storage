@@ -4,6 +4,33 @@ The user requested comparison of both policies; visible accesses have not been
 approved as the final design. Both candidates retain owner-only secret keys,
 encrypted peer data and an independently authenticated snapshot head.
 
+The latest [paired exact-index disk experiment](experiment-private-bfv-exact-disk.md)
+measures both policies on the SAME 1,000 independent million-row tables and full
+shared keyset. Complete authenticated exact selection permits eight encrypted
+rotate/add steps instead of repeating the encrypted age predicate. The owner
+checks every selected age before encryption; inconsistent selections reject.
+
+| Exact-index mode | Maximum complete local hit, ms | Maximum complete local miss, ms |
+| --- | ---: | ---: |
+| Visible, both header policies | 30.395 | 45.008 |
+| Private, cached authenticated header | 202.416 | 250.971 |
+| Private, privately retrieved header | 281.484 | 351.110 |
+
+All 384 exact-index matrix answers pass, covering EQ0/1/16/64/256, GE256 and
+range21/256, AddressOnly/Fixed256 and supplied table IDs 0/499/999. The paired
+FullPredicate control retains all nine observations above 500 ms (maximum
+562.224 ms). Actual 2,003 dataset files plus native peak process commit total
+5,448,908,128 bytes / 3 GB logical = 1.816302709x in this same run. This does not
+establish a 2x bound for tiny tables.
+
+Selections must fit 256 rows, one posting page and one data page. The owner is
+online; OS file cache is allowed. PIR conceals within-table addresses; table/root,
+operation mode, timing and load events remain public. ExactIndex wire does not
+encode predicate kind; its benchmark query labels are owner-side metadata.
+Fixed256 equalizes tested wire/RPC shapes, without a formal timing/privacy proof.
+Network, arithmetic proofs, general SQL and complete owner restart remain outside
+this measurement. Neither leakage policy has been selected.
+
 | Question | Visible accesses | Concealed accesses |
 | --- | --- | --- |
 | Retrieval | Request the selected encrypted index/data pages directly | Use an oblivious index with ORAM, or suitable single-server PIR retrieval |
