@@ -1,25 +1,7 @@
 [
   {
     "label": "FHE: Open GUI playground",
-    "command": "& (rustup which cargo) build --release --locked -p dcs-peer -p fhe-playground; if ($LASTEXITCODE -eq 0) { & (rustup which cargo) run --release --locked -p fhe-playground }; exit $LASTEXITCODE",
-    "shell": {
-      "with_arguments": {
-        "program": "powershell.exe",
-        "args": ["-NoProfile"]
-      }
-    },
-    "cwd": "$ZED_WORKTREE_ROOT",
-    "env": {
-      "CARGO_HOME": "$ZED_WORKTREE_ROOT/.local/cargo-home"
-    },
-    "allow_concurrent_runs": false,
-    "use_new_terminal": false,
-    "reveal": "no_focus",
-    "save": "all"
-  },
-  {
-    "label": "FHE: Open GUI playground (native CPU)",
-    "command": "& (rustup which cargo) build --release --locked -p dcs-peer -p fhe-playground; if ($LASTEXITCODE -eq 0) { & (rustup which cargo) run --release --locked -p fhe-playground }; exit $LASTEXITCODE",
+    "command": "$env:CARGO_ENCODED_RUSTFLAGS = $null; & (rustup which cargo) run --release --locked -p dcs-launch -- playground; exit $LASTEXITCODE",
     "shell": {
       "with_arguments": {
         "program": "powershell.exe",
@@ -29,8 +11,8 @@
     "cwd": "$ZED_WORKTREE_ROOT",
     "env": {
       "CARGO_HOME": "$ZED_WORKTREE_ROOT/.local/cargo-home",
-      "CARGO_TARGET_DIR": "$ZED_WORKTREE_ROOT/.local/target-gui-native",
-      "RUSTFLAGS": "-C target-cpu=native"
+      "CARGO_TARGET_DIR": "$ZED_WORKTREE_ROOT/.local/target-launcher",
+      "RUSTFLAGS": "-C opt-level=3"
     },
     "allow_concurrent_runs": false,
     "use_new_terminal": false,

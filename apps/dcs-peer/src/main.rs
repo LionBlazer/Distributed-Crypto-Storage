@@ -21,6 +21,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if args.next().is_some() {
         return Err("Unexpected argument".into());
     }
+    let executable = std::env::current_exe()?;
+    let kernel_directory = executable
+        .parent()
+        .ok_or("the peer executable has no parent directory")?
+        .join("proof-kernels");
+    let backend = bfv_query_proof::initialize_backend(&kernel_directory)?;
+    eprintln!("Proof backend: {backend}");
     let bytes = zeroize::Zeroizing::new(peer_transport::read_frame(
         &mut io::stdin().lock(),
         64 * 1024,

@@ -10,21 +10,29 @@ each child owns its disk directory and public-only FHE evaluator.
 Use Rust 1.99 or newer, from the repository root:
 
 ```sh
-cargo build --release --locked -p dcs-peer -p fhe-playground
-cargo run --release --locked -p fhe-playground
+cargo run --release --locked -p dcs-launch -- playground
 ```
 
-Zed's **FHE: Open GUI playground** task builds both packages first. A manually
+Zed's single **FHE: Open GUI playground** task runs the same launcher. It builds
+portable applications and both x86-64 AVX2/AVX-512 proof libraries before opening
+the GUI. Each process selects and validates its proof backend once at startup;
+there is no CPU selector or feature detection on each query. Other architectures
+use the SDK's compiled platform backend. See the
+[launcher](../tools/launcher/README.md) for exact flags and artifact paths.
+
+Add `--build-only` after `playground` to build and print artifact paths without
+opening a window. The launcher uses `.local/target-playground/<host-triple>/release`
+for both applications and its adjacent `proof-kernels/`. Zed keeps the launcher
+itself in a separate `.local/target-launcher` to avoid nested build locks. A manually
 launched GUI looks for `dcs-peer` beside its own executable; `DCS_PEER_BIN` can
 select an explicit binary. If it is missing, startup reports an error and never
 falls back to an in-process evaluator or simulated network. Tests and exporters
 never open a native GUI window.
 
-**FHE: Open GUI playground (native CPU)** additionally compiles both processes with
-`RUSTFLAGS="-C target-cpu=native"`, using the separate `.local/target-gui-native`
-directory. This enables instructions supported by this host and changes no BFV or
-proof security parameters. Its binaries must not be distributed to less capable
-CPUs. The original task remains portable. Neither task establishes a latency SLA.
+The packaged host remains portable. Acceleration changes no BFV or proof security
+parameters, and a CPU without the optional x86 instructions uses the genuine
+compiled baseline. The launcher does not use `target-cpu=native`. Packaging several
+ISA variants does not establish a latency SLA.
 
 ## Network behavior and limits
 
@@ -113,6 +121,8 @@ complete owner/key recovery remains a separate unresolved requirement.
 [storage-client](../crates/storage-client/README.md) owns the owner role;
 [version-journal](../crates/version-journal/README.md) owns the explicit network
 profile and confirmed-version reference types;
+[bfv-query-proof](../crates/bfv-query-proof/README.md) owns computation proofs and
+the process's one-time proof backend initialization;
 [sql-plan](../crates/sql-plan/README.md) owns parsing. compact-query/compact-store,
 replica-store and peer-protocol also remain dependencies of the historical local
 `LabEngine`/`DemoNetwork` library and finite research examples. The live worker

@@ -23,12 +23,16 @@ build selects core libraries; the GUI is an explicit package target.
 Use Rust 1.99 or newer, from the repository root:
 
 ```sh
-cargo build --release --locked -p dcs-peer -p fhe-playground
-cargo run --release --locked -p fhe-playground
+cargo run --release --locked -p dcs-launch -- playground
 cargo test --workspace --release --locked -- --test-threads=1
 ```
 
 In Zed, spawn **FHE: Open GUI playground** from [.zed/tasks.json](.zed/tasks.json).
+The single launcher builds portable GUI/peer executables and AVX2/AVX-512 proof
+kernels. Each process selects the fastest supported installed kernel once at
+startup, including OS register-state support; the linked portable engine is the
+fallback. All variants use the same cryptographic parameters and proof format.
+`playground --build-only` packages the applications without opening a window.
 The [egui playground](playground/README.md) has SQL/data on the left and
 network/node inspectors on the right, up to 16 real managed peer processes and
 8 owner-client sessions. Presets fill the editor; Run or Ctrl+Enter sends genuine
@@ -62,6 +66,9 @@ reject rather than truncate. Owner secret keys stay outside peer role objects.
 | [bfv-linear-circuit](crates/bfv-linear-circuit/README.md) | Canonical full-residue BFV addition statement for proof consumers |
 | [bfv-product-circuit](crates/bfv-product-circuit/README.md) | Canonical full-residue BFV public-polynomial product |
 | [bfv-query-proof](crates/bfv-query-proof/README.md) | Genuine bounded STARK generation and independent arithmetic verification |
+| [proof-acceleration](crates/proof-acceleration/README.md) | Startup CPU/OS dispatch and bounded ABI for trusted proof kernels |
+| [dcs-proof-kernel](apps/proof-kernel/README.md) | Fixed-profile SIMD build of the same arithmetic proof engine |
+| [dcs-launch](tools/launcher/README.md) | Single build/package/launch command for portable hosts and SIMD kernels |
 | [version-journal](crates/version-journal/README.md) | Signed state transitions, cumulative work, confirmed ancestry and durable metadata |
 | [compact-store](crates/compact-store/README.md) | Owner-only symmetric keys, opaque authenticated pages, independently trusted version roots and constant-size replacements |
 | [replica-store](crates/replica-store/README.md) | Bounded ciphertext replicas, fault-domain placement and atomic local repair batches |

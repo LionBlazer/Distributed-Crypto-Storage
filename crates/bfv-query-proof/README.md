@@ -10,6 +10,7 @@ owns authenticated SQL-plan coverage, authorization and a fresh agreed database 
 | --- | --- |
 | [bfv-linear-circuit](../bfv-linear-circuit/README.md) | Fixed BFV profile and exact canonical addition input/output |
 | [bfv-product-circuit](../bfv-product-circuit/README.md) | Exact canonical ciphertext/public-polynomial product input/output |
+| [proof-acceleration](../proof-acceleration/README.md) | Shared fixed-profile ABI and optional startup-only trusted kernel loader |
 | [bfv-query-core](../bfv-query-core/README.md), tests only | Genuine FHE owner/evaluator adapters and explicitly public fixtures |
 
 `prove(input)` executes the canonical encrypted operation, constructs the witness
@@ -109,16 +110,28 @@ An arithmetic marker alone must never authorize network SQL acceptance or mutati
 the storage-client/SQL layer must additionally establish complete authenticated
 selection and the version-journal/freshness layer must certify the requested head.
 
-Default builds are portable. Optional CPU-specific vectorization must use a separate
-build cache and report its CPU/flags independently:
+Default builds remain portable. The default `runtime-dispatch` feature permits
+`initialize_backend(trusted_directory)` to select a compatible installed SIMD kernel
+once at application startup. The caller supplies the installation directory; this
+library performs no application-path discovery. Before explicit initialization,
+ordinary library consumers use the linked engine. Missing optional kernels retain
+that engine; an invalid present selected kernel makes initialization and subsequent
+proof calls fail with `BackendUnavailable`. The first initialization result is
+retained, so later callers cannot change a running process's backend. Applications
+must initialize before accepting jobs. `backend_kind()` reports the selected ISA;
+`compiled_kind()` reports the linked engine's compile-time packing.
 
-```powershell
-$env:RUSTFLAGS = '-C target-cpu=native'
-$env:CARGO_TARGET_DIR = '.local/target-bfv-query-proof-native'
-cargo test --release --locked -p bfv-query-proof --test serialized_boundary -- --test-threads=1 --nocapture
-```
+The dispatcher makes one backend call per operation, with no CPU detection inside
+the arithmetic loops. The trusted kernel executes the same genuine engine and
+fixed security profile. Only after successful generation/verification does the
+host privately construct `GeneratedOperation`/`CheckedOperation`; checked markers
+retain exact SHA-256 input/output binding. Complete host timings include the ABI
+call, buffer handling and marker binding. Disable default features when building
+the [proof-kernel](../../apps/proof-kernel/README.md), so a kernel cannot recursively
+load another kernel. Native libraries are part of the trusted application install;
+an ABI/profile descriptor detects incompatible builds, not a malicious replacement.
 
-These binaries may require the measurement computer's instruction set. Complete
+Complete
 proving includes the public certificate and preprocessing; complete verification
 includes certificate parsing, bounded SDK decoding, independent preprocessing and
 cryptographic verification. Reporting only the final SDK call omits most work.

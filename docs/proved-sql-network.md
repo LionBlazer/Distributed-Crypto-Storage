@@ -122,9 +122,11 @@ not workload-independent memory bounds or tail-latency guarantees.
 
 For comparison, the earlier portable two-shard SELECT observations were 6.2–6.6 s;
 its initial INSERT/UPDATE measurements preceded the duplicate-verification cache.
-CPU-native compilation selects available vector instructions; it changes no FHE or
-proof security parameters. Portable builds remain available. A native binary may
-require this CPU's instruction set. Neither configuration meets 50–100 ms.
+These historical measurements used CPU-native compilation. The current launcher
+instead packages a portable host plus fixed AVX2 and AVX-512 proof kernels and
+selects a compatible kernel once at process startup. SIMD changes no FHE or proof
+security parameters. The earlier measurements do not establish the latency of this
+new packaging, and neither previously measured configuration meets 50–100 ms.
 
 A product proof frame alone is approximately 1.6 MiB, plus 655,400 canonical output
 bytes and the request. This overhead matters on real links. No WAN latency or
@@ -143,8 +145,11 @@ cargo test --release --locked -p dcs-peer --test proved_sql -- --nocapture --tes
 cargo test --release --locked -p dcs-peer --test proved_faults -- --test-threads=1
 ```
 
-For the optional CPU-specific run, also set `RUSTFLAGS=-C target-cpu=native` and a
-separate `CARGO_TARGET_DIR`. Zed offers a separate native-CPU GUI task. Tests use
+The single Zed GUI task and `cargo run --release --locked -p dcs-launch -- playground`
+build both SIMD kernels with explicitly bounded instruction sets. Add
+`--build-only` to package them without opening the GUI. The
+[kernel interoperability test](../apps/proof-kernel/README.md) cross-verifies real
+proofs between portable and supported SIMD engines. Tests use
 fresh in-memory keys, explicitly public rows, hidden owned child processes and
 ignored `.local/` state. No GUI launch, desktop focus or accepting proof stub is needed.
 

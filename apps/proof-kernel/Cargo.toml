@@ -1,0 +1,22 @@
+[package]
+name = "dcs-proof-kernel"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[lib]
+name = "dcs_proof_kernel"
+crate-type = ["cdylib"]
+
+[dependencies]
+bfv-query-proof = { path = "../../crates/bfv-query-proof", default-features = false }
+proof-acceleration = { path = "../../crates/proof-acceleration", default-features = false }
+rayon.workspace = true
+
+[dev-dependencies]
+bfv-query-core = { path = "../../crates/bfv-query-core" }
+bfv-linear-circuit = { path = "../../crates/bfv-linear-circuit" }
+bfv-product-circuit = { path = "../../crates/bfv-product-circuit" }
+bfv-query-proof = { path = "../../crates/bfv-query-proof" }
+proof-acceleration = { path = "../../crates/proof-acceleration", features = ["loader"] }

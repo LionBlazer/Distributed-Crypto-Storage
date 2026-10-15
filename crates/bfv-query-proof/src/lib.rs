@@ -5,6 +5,10 @@
 
 mod circuit;
 mod codec;
+mod dispatch;
+
+pub use dispatch::{backend_kind, compiled_kind, initialize_backend};
+pub use proof_acceleration::Kind as BackendKind;
 
 use circuit::{Config, certificate, config, statement, witness};
 use p3_uni_stark::{Proof, prove_with_preprocessed, setup_preprocessed, verify_with_preprocessed};
@@ -96,6 +100,8 @@ pub enum Error {
     Preprocessing,
     Proving,
     Verification,
+    /// A present selected kernel failed loading or the versioned ABI contract.
+    BackendUnavailable,
 }
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -181,6 +187,10 @@ impl CheckedOperation {
 /// Executes the canonical FHE arithmetic and proves all 81,920 NTT residues,
 /// with the unchanged BFV profile and identical cryptographic settings in tests.
 pub fn prove(input: &[u8]) -> Result<GeneratedOperation, Error> {
+    dispatch::prove(input)
+}
+
+fn prove_engine(input: &[u8]) -> Result<GeneratedOperation, Error> {
     let total = Instant::now();
     let operation = Operation::from_input(input)?;
     let started = Instant::now();
@@ -230,6 +240,10 @@ pub fn prove(input: &[u8]) -> Result<GeneratedOperation, Error> {
 /// executes either canonical operation, derives a quotient or computes a product.
 /// It never takes a peer-supplied verification/preprocessing key.
 pub fn verify(input: &[u8], output: &[u8], wire: &[u8]) -> Result<CheckedOperation, Error> {
+    dispatch::verify(input, output, wire)
+}
+
+fn verify_engine(input: &[u8], output: &[u8], wire: &[u8]) -> Result<CheckedOperation, Error> {
     let total = Instant::now();
     let operation = Operation::from_input(input)?;
     let magic = operation.proof_magic();

@@ -244,6 +244,7 @@ dependencies = [
  "p3-symmetric",
  "p3-uni-stark",
  "postcard",
+ "proof-acceleration",
  "serde",
  "sha2",
 ]
@@ -782,9 +783,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
 
 [[package]]
+name = "dcs-launch"
+version = "0.1.0"
+dependencies = [
+ "proof-acceleration",
+]
+
+[[package]]
 name = "dcs-peer"
 version = "0.1.0"
 dependencies = [
+ "bfv-query-proof",
  "compact-query",
  "compact-store",
  "peer-runtime",
@@ -794,6 +803,18 @@ dependencies = [
  "storage-client",
  "version-journal",
  "zeroize",
+]
+
+[[package]]
+name = "dcs-proof-kernel"
+version = "0.1.0"
+dependencies = [
+ "bfv-linear-circuit",
+ "bfv-product-circuit",
+ "bfv-query-core",
+ "bfv-query-proof",
+ "proof-acceleration",
+ "rayon",
 ]
 
 [[package]]
@@ -1245,6 +1266,7 @@ dependencies = [
 name = "fhe-playground"
 version = "0.1.0"
 dependencies = [
+ "bfv-query-proof",
  "compact-query",
  "compact-store",
  "eframe",
@@ -2974,6 +2996,14 @@ name = "profiling"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
+
+[[package]]
+name = "proof-acceleration"
+version = "0.1.0"
+dependencies = [
+ "libloading",
+ "sha2",
+]
 
 [[package]]
 name = "prost"

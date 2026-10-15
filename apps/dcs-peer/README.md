@@ -10,6 +10,15 @@ Build from the repository root:
 cargo build --release --locked -p dcs-peer
 ```
 
+The [single launcher](../../tools/launcher/README.md) also packages portable peer
+and GUI executables with trusted AVX2/AVX-512 proof kernels. Before reading its
+bootstrap or serving requests, the daemon initializes
+`bfv_query_proof::initialize_backend` from the `proof-kernels` directory beside its
+executable and reports the selected backend on stderr. CPU/OS detection runs once;
+proof operations use the retained implementation. Standalone builds without
+optional kernels use the linked portable engine. A present incompatible or damaged
+selected kernel stops startup. Every variant preserves the same proof parameters.
+
 Run `dcs-peer --state-dir PATH`. Before accepting connections, stdin must contain
 one bounded JSON `peer_runtime::Bootstrap` frame encoded with the transport's
 framing helper. Bootstrap supplies that peer's TLS identity, optional network CA, authorized

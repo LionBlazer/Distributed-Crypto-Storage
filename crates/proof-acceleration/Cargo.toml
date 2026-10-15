@@ -1,0 +1,16 @@
+[package]
+name = "proof-acceleration"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[features]
+default = ["loader"]
+loader = ["dep:libloading"]
+
+[dependencies]
+libloading = { version = "=0.8.9", optional = true }
+
+[dev-dependencies]
+sha2 = "=0.10.9"

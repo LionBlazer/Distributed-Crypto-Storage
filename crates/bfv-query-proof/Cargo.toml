@@ -5,9 +5,14 @@ edition = "2024"
 rust-version = "1.99"
 publish = false
 
+[features]
+default = ["runtime-dispatch"]
+runtime-dispatch = ["proof-acceleration/loader"]
+
 [dependencies]
 bfv-linear-circuit = { path = "../bfv-linear-circuit" }
 bfv-product-circuit = { path = "../bfv-product-circuit" }
+proof-acceleration = { path = "../proof-acceleration", default-features = false }
 p3-air = "=0.8.0"
 p3-challenger = "=0.8.0"
 p3-commit = "=0.8.0"
