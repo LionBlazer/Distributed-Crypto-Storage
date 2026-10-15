@@ -21,6 +21,17 @@ pad the trace to 2^14. Exact input/output
 SHA-256 digests, including the original request binding, enter the public transcript.
 The verifier never accepts a prover-supplied preprocessing key.
 
+Proof decoding uses a recursive Serde adapter over the unchanged Postcard SDK
+format. Before invoking any sequence consumer (including `Vec`'s reservation),
+it requires a known length of at most 4,096 elements and charges a shared budget
+of 1,048,576 sequence slots. Tuples, fixed arrays and nested containers also count;
+map entries charge both a key and a value. Unknown lengths are rejected. These
+are decoder structure limits for this fixed profile, not a whole-process RAM
+claim. A violation returns `ProofResourceLimit`, before public preprocessing or
+cryptographic verification. In particular, a sub-MiB frame cannot first reserve
+hundreds of thousands of empty quotient-chunk vectors and only then fail shape
+validation. The real full-profile proof tests exercise these same limits.
+
 Parameters are identical in the CLI and tests: Goldilocks degree-5 extension,
 standard Poseidon2 width 12, FRI blowup 8, 192 queries, binary folding, no grinding.
 The SDK's proven-security model must report at least 128 bits in both decoding

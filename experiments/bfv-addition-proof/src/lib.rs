@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 mod circuit;
+mod codec;
 
 use circuit::{Config, config, statement};
 use p3_matrix::dense::RowMajorMatrix;
@@ -12,6 +13,11 @@ use std::time::{Duration, Instant};
 
 /// Fixed-profile proof frame cap, checked before deserializing any SDK vectors.
 pub const MAX_PROOF_BYTES: usize = 1024 * 1024;
+/// Decoder limit on one sequence, checked before its consumer can reserve memory.
+pub const MAX_PROOF_SEQUENCE_ELEMENTS: usize = 4096;
+/// Decoder budget for all nested sequence slots, including tuples and arrays.
+/// This limits decoded structure, not the entire process's memory consumption.
+pub const MAX_PROOF_DECODE_ELEMENTS: usize = 1024 * 1024;
 const PROOF_MAGIC: &[u8; 8] = b"BFVP3A01";
 // Eight independent equations share each row. Every original residue is retained.
 const LANES: usize = 8;
@@ -27,6 +33,7 @@ pub enum Error {
     NonCanonicalResidue,
     ProofLength,
     ProofEncoding,
+    ProofResourceLimit,
     TrailingProofBytes,
     SecurityProfile,
     Preprocessing,
@@ -165,8 +172,7 @@ pub fn verify(input: &[u8], output: &[u8], wire: &[u8]) -> Result<CheckedAdditio
         return Err(Error::ProofEncoding);
     }
     let payload = &wire[PROOF_MAGIC.len()..];
-    let (proof, trailing): (Proof<Config>, _) =
-        postcard::take_from_bytes(payload).map_err(|_| Error::ProofEncoding)?;
+    let (proof, trailing): (Proof<Config>, _) = codec::take_from_bytes(payload)?;
     if !trailing.is_empty() {
         return Err(Error::TrailingProofBytes);
     }

@@ -62,6 +62,7 @@ dependencies = [
  "p3-symmetric",
  "p3-uni-stark",
  "postcard",
+ "serde",
  "sha2",
 ]
 

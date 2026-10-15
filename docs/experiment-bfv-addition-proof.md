@@ -39,6 +39,18 @@ and its [preprocessed-column implementation](https://docs.rs/p3-uni-stark/0.8.0/
 The framework itself cautions that malformed-input panics have not all been ruled
 out. A successful finite test suite is not a hostile-network safety audit.
 
+The 1 MiB frame cap alone is not a memory budget: a 524,371-byte malformed SDK
+frame can declare 524,288 empty quotient-chunk vectors, whose headers alone would
+occupy at least 12 MiB on this 64-bit host before the later shape rejection. The
+experiment now wraps Serde/Postcard recursively, rejecting sequence lengths above
+4,096 and charging a shared 1,048,576-slot budget before entering container consumers. A regression
+requires the distinct `ProofResourceLimit` rejection, and consumer-level tests
+establish that the oversized sequence visitor is never entered. Nested options,
+enums, maps, tuples and arrays retain the same budget. These fixed-profile decoder
+limits do not alter the proof encoding or cryptographic settings, and are not a
+whole-process RAM claim. The concrete SDK type graph is not recursively nested;
+no generic protection for arbitrary recursively defined Serde types is claimed.
+
 ## Bounded measurements
 
 Initial measurements used ciphertext-only public fixtures produced by the actual
@@ -85,6 +97,20 @@ alive through serialized verification. Replay against a fresh request, a differe
 delta or a genuinely different pair of table/index heads fails cryptographically,
 including when both canonical binding headers are rewritten to match. No owner-local
 sum recheck or mutation application is used as the proof verifier.
+
+After decoder hardening, the parent independently reran all 14 tests and strict
+Clippy/format checks, then measured the actual portable CLI in its own hidden
+process with two Rayon threads. The complete prover took 954 ms; full verification
+including decoding and independent preprocessing took 411 ms. The public amounts
+decrypted to `[25, 35]`; the frame was 550,493 bytes. The fresh-owner workflow took
+1,631 ms inside the CLI and 1,760 ms including process startup. Windows process peak
+counters, observed at 20 ms intervals, reached 179,920,896 bytes working set
+(171.6 MiB) and 175,661,056 bytes pagefile usage (167.5 MiB). This process includes
+owner keys, public setup, prover and verifier; it is still a bounded diagnostic
+workload, not the storage daemon or a complete SQL request. This additional single
+run does not replace earlier observations or establish a latency/RAM guarantee.
+Decoder tests include pre-consumer rejection, nested containers and exhaustion of
+the actual shared budget by an otherwise valid sub-MiB Postcard structure.
 
 Earlier local RISC Zero 3.0.6 trials returned no verified receipt within the tested
 CPU/time/virtual-address limits, including 16/17-bit execution segments. An 18-bit
