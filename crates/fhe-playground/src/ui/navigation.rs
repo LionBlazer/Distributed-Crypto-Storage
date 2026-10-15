@@ -128,14 +128,34 @@ impl Playground {
     }
 
     pub(super) fn close_node_tab(&mut self, id: u64) {
+        let Some(index) = self.node_tabs.iter().position(|node| *node == id) else {
+            return;
+        };
+        let fallback = if self.right_tab == RightTab::Node(id) {
+            self.node_tabs
+                .get(index + 1)
+                .or_else(|| {
+                    index
+                        .checked_sub(1)
+                        .and_then(|previous| self.node_tabs.get(previous))
+                })
+                .copied()
+                .map_or(RightTab::Network, RightTab::Node)
+        } else {
+            RightTab::Network
+        };
         self.node_tabs.retain(|node| *node != id);
-        self.prune_navigation();
+        self.prune_navigation_with_fallback(fallback);
     }
 
     pub(super) fn prune_navigation(&mut self) {
+        self.prune_navigation_with_fallback(RightTab::Network);
+    }
+
+    fn prune_navigation_with_fallback(&mut self, right: RightTab) {
         let fallback = Route {
             left: self.tab,
-            right: RightTab::Network,
+            right,
         };
         let tabs = &self.node_tabs;
         let network = self.network.as_ref();

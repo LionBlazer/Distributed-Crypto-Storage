@@ -585,6 +585,8 @@ fn network_remains_beside_both_sql_and_data_without_old_sidebars() {
         "Tables",
         "Layout",
         "Add peer",
+        "Back",
+        "Forward",
     ] {
         assert!(!texts.iter().any(|t| t.text == obsolete));
     }
@@ -610,10 +612,20 @@ fn back_and_forward_restore_views_without_changing_edits_or_running_sql() {
     app.camera_manipulated = true;
     app.open_node(3);
 
-    click(&ctx, &mut app, "Back");
+    click_point(
+        &ctx,
+        &mut app,
+        egui::pos2(1200.0, 600.0),
+        egui::PointerButton::Extra1,
+    );
     assert_eq!(app.right_tab, RightTab::Node(2));
     assert!(app.navigation.can_step(true));
-    click(&ctx, &mut app, "Forward");
+    click_point(
+        &ctx,
+        &mut app,
+        egui::pos2(1200.0, 600.0),
+        egui::PointerButton::Extra2,
+    );
     assert_eq!(app.right_tab, RightTab::Node(3));
     assert_eq!(app.sql, "SELECT age FROM records LIMIT 2;");
     assert_eq!(app.draft_name, "unsaved");
@@ -731,7 +743,7 @@ fn side_navigation_activates_on_press_and_never_pans_while_held_or_on_release() 
 }
 
 #[test]
-fn only_primary_and_middle_pointer_drags_pan_the_map() {
+fn primary_secondary_and_middle_drags_pan_without_opening_a_context_menu() {
     for button in [
         egui::PointerButton::Primary,
         egui::PointerButton::Middle,
@@ -762,7 +774,9 @@ fn only_primary_and_middle_pointer_drags_pan_the_map() {
         );
         if matches!(
             button,
-            egui::PointerButton::Primary | egui::PointerButton::Middle
+            egui::PointerButton::Primary
+                | egui::PointerButton::Secondary
+                | egui::PointerButton::Middle
         ) {
             assert_ne!(app.camera.center, saved, "{button:?} must pan the graph");
         } else {
@@ -771,85 +785,114 @@ fn only_primary_and_middle_pointer_drags_pan_the_map() {
                 "{button:?} must not pan the graph"
             );
         }
+        let stopped = app.camera.center;
+        let texts = render(
+            &ctx,
+            &mut app,
+            vec![pointer_event(start - egui::vec2(80.0, 60.0), button, false)],
+        );
+        assert_eq!(
+            app.camera.center, stopped,
+            "Release must not move the camera"
+        );
+        assert!(
+            !texts.iter().any(|text| text.text == "Add peer"),
+            "Dragging with {button:?} must not open a context menu"
+        );
         assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
     }
 }
 
 #[test]
-fn visible_navigation_buttons_step_on_press_and_ignore_release_and_key_repeat() {
+fn inspector_tabs_middle_click_closes_active_or_inactive_without_deleting_nodes() {
     let (mut app, commands, _events) = app();
     let ctx = egui::Context::default();
     set_theme(&ctx);
     app.open_node(2);
     app.open_node(3);
-    let point = render(&ctx, &mut app, vec![])
-        .into_iter()
-        .find(|text| text.text == "Back")
-        .unwrap()
-        .rect
-        .center();
-    render(
-        &ctx,
-        &mut app,
-        vec![
-            egui::Event::PointerMoved(point),
-            pointer_event(point, egui::PointerButton::Primary, true),
-        ],
-    );
-    assert_eq!(app.right_tab, RightTab::Node(2));
-    render(
-        &ctx,
-        &mut app,
-        vec![pointer_event(point, egui::PointerButton::Primary, false)],
-    );
-    assert_eq!(app.right_tab, RightTab::Node(2));
-    app.navigate_history(true);
-    for repeat in [false, true, true] {
-        render(
-            &ctx,
-            &mut app,
-            vec![egui::Event::Key {
-                key: egui::Key::ArrowLeft,
-                physical_key: None,
-                pressed: true,
-                repeat,
-                modifiers: egui::Modifiers::ALT,
-            }],
-        );
-        assert_eq!(app.right_tab, RightTab::Node(2));
+    app.open_node(4);
+    let draft = app.sql.clone();
+    for (label, remaining, active) in [
+        ("Peer 02", vec![2, 4], RightTab::Node(4)),
+        ("Peer 03", vec![2], RightTab::Node(2)),
+    ] {
+        let point = render(&ctx, &mut app, vec![])
+            .into_iter()
+            .find(|text| text.text == label && text.rect.top() < 55.0)
+            .unwrap()
+            .rect
+            .center();
+        click_point(&ctx, &mut app, point, egui::PointerButton::Middle);
+        assert_eq!(app.node_tabs, remaining);
+        assert_eq!(app.right_tab, active);
     }
+    assert_eq!(app.sql, draft);
+    assert_eq!(app.network.as_ref().unwrap().nodes.len(), 4);
+    assert_eq!(app.active_client, Some(1));
     assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
 }
 
 #[test]
-fn navigation_buttons_accept_fast_press_release_events_in_the_same_frame_once() {
+fn inline_tab_cross_closes_without_selecting_and_last_tab_returns_to_network() {
     let (mut app, commands, _events) = app();
     let ctx = egui::Context::default();
     set_theme(&ctx);
     app.open_node(2);
     app.open_node(3);
-    for (label, expected) in [("Back", 2), ("Forward", 3)] {
+    app.open_node(4);
+    for (ordinal, expected) in [
+        (0, RightTab::Node(4)),
+        (1, RightTab::Node(3)),
+        (0, RightTab::Network),
+    ] {
         let point = render(&ctx, &mut app, vec![])
             .into_iter()
-            .find(|text| text.text == label)
+            .filter(|text| text.text == "×" && text.rect.top() < 55.0)
+            .nth(ordinal)
             .unwrap()
             .rect
             .center();
-        render(
-            &ctx,
-            &mut app,
-            vec![
-                egui::Event::PointerMoved(point),
-                pointer_event(point, egui::PointerButton::Primary, true),
-                pointer_event(point, egui::PointerButton::Primary, false),
-            ],
-        );
-        assert_eq!(app.right_tab, RightTab::Node(expected));
+        click_point(&ctx, &mut app, point, egui::PointerButton::Primary);
+        assert_eq!(app.right_tab, expected);
         render(&ctx, &mut app, vec![]);
         assert_eq!(
-            app.right_tab,
-            RightTab::Node(expected),
-            "A fast click must navigate exactly once"
+            app.right_tab, expected,
+            "Closing must not select the closed tab"
+        );
+    }
+    assert!(app.node_tabs.is_empty());
+    assert_eq!(app.network.as_ref().unwrap().nodes.len(), 4);
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn overflowing_tabs_reveal_the_active_inspector_and_keep_network_pinned() {
+    let (mut app, commands, _events) = app();
+    app.network = Some(network(16, 1));
+    app.snapshot = Some(snapshot(16));
+    for id in 2..=17 {
+        app.open_node(id);
+    }
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    for label in ["Peer 16", "Peer 15"] {
+        if label == "Peer 15" {
+            app.navigate_history(false);
+        }
+        let visible = (0..60).any(|_| {
+            let texts = render(&ctx, &mut app, vec![]);
+            ["Network", label].into_iter().all(|label| {
+                texts.iter().any(|text| {
+                    text.text == label
+                        && text.rect.top() < 55.0
+                        && text.rect.left() >= 615.0
+                        && text.rect.right() <= 1500.0
+                })
+            })
+        });
+        assert!(
+            visible,
+            "The active {label} and pinned Network tab must be visible"
         );
     }
     assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
@@ -1180,9 +1223,7 @@ fn narrow_window_wraps_whole_toolbar_buttons_without_vertical_labels_or_overflow
         },
         |ui| app.draw(ui),
     );
-    let labels = [
-        "Run", "Presets", "Back", "Forward", "Network", "Auto", "Map", "Matrix",
-    ];
+    let labels = ["Run", "Presets", "Network", "Auto", "Map", "Matrix"];
     let mut observed = Vec::new();
     fn check(shape: &egui::Shape, labels: &[&str], screen: egui::Rect, observed: &mut Vec<String>) {
         match shape {
@@ -1198,8 +1239,7 @@ fn narrow_window_wraps_whole_toolbar_buttons_without_vertical_labels_or_overflow
                     screen.contains_rect(bounds),
                     "{label} remains within the window"
                 );
-                if ["Back", "Forward", "Network", "Auto", "Map", "Matrix"].contains(&label.as_str())
-                {
+                if ["Network", "Auto", "Map", "Matrix"].contains(&label.as_str()) {
                     assert!(
                         bounds.left() >= screen.width() * 0.41,
                         "{label} remains in the right pane"

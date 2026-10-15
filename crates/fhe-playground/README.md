@@ -49,14 +49,16 @@ tabs, inputs and node cards have distinct hover, pressed, focus and disabled sta
   errors explain why creation is disabled. Unapplied edits survive queries.
 - **Network:** right-click empty space to add a peer or client; right-click a node
   to delete it or change availability. Click a client to use it. Double-click a node
-  to open its own inspector tab. The inspector edits a peer's name, storage quota
+  to open its own inspector tab. Tabs share one horizontal, scrollable strip with
+  an inset close cross; middle-click also closes an inspector. Closing the active
+  tab selects its neighbor, or Network when no inspectors remain. The inspector edits a peer's name, storage quota
   and link delay; **Save settings** applies changes. Its shard rows come from the
   owner's fixture, while the peer evaluator holds ciphertexts. Cards show charged
   physical storage against quota, plus useful payload and actual stored row count.
   Hover for separate data/index/replica-metadata bytes and current/stale copies;
   shared keys, Merkle caches and temporary RAM are outside this storage bar.
 - **Back / Forward:** return between SQL/Data and opened network/inspector views
-  using the arrow controls, **Alt+Left / Alt+Right** or the mouse's back/forward
+  using **Alt+Left / Alt+Right** or the mouse's back/forward
   buttons. New navigation after Back replaces the forward branch. Deleted nodes
   and closed inspectors are skipped; navigation preserves editor drafts and camera.
   Navigation fires on press, once per press; holding a side button cannot pan the
@@ -68,7 +70,8 @@ tabs, inputs and node cards have distinct hover, pressed, focus and disabled sta
   lanes for dense links; selecting/hovering a node highlights its individual paths.
   These lanes are drawing conventions, not transport relays. No connection is
   removed to improve the picture. See [layout research](../../docs/graph-layout.md).
-- **Camera / time:** pan with primary/middle drag and zoom the map; nodes, routes and background dots share
+- **Camera / time:** pan with left/right/middle drag and zoom the map; a right-click
+  without dragging opens the context menu. Nodes, routes and background dots share
   world coordinates. Double-click empty space or use its **Fit view** menu item to
   fit the map. **Speed** and **Pause** control virtual message delivery independently
   of peer delay and FHE CPU computation. Pausing does not stop an already running

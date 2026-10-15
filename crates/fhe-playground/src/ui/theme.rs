@@ -66,17 +66,10 @@ enum ControlKind {
     Tab { selected: bool },
 }
 
-#[derive(Clone, Copy)]
-enum ControlGlyph {
-    Play,
-    Back,
-    Forward,
-}
-
 pub(super) struct ActionButton<'a> {
     label: &'a str,
     kind: ControlKind,
-    glyph: Option<ControlGlyph>,
+    play_icon: bool,
 }
 
 impl egui::Widget for ActionButton<'_> {
@@ -93,7 +86,7 @@ impl egui::Widget for ActionButton<'_> {
         });
         let text = if primary { text.strong() } else { text };
         let padding = ui.spacing().button_padding;
-        if self.glyph.is_some() {
+        if self.play_icon {
             ui.spacing_mut().button_padding.x += 8.0;
         }
         // Allocate in the parent's wrapping row so a whole control moves to the
@@ -131,45 +124,22 @@ impl egui::Widget for ActionButton<'_> {
                 egui::StrokeKind::Inside,
             ),
         );
-        if let Some(glyph) = self.glyph {
+        if self.play_icon {
             let center = egui::pos2(response.rect.left() + 10.0, response.rect.center().y);
             let color = if primary && response.enabled() {
                 EDITOR
             } else {
                 visuals.fg_stroke.color
             };
-            match glyph {
-                ControlGlyph::Play => {
-                    ui.painter().add(egui::Shape::convex_polygon(
-                        vec![
-                            center + egui::vec2(-3.0, -4.5),
-                            center + egui::vec2(4.0, 0.0),
-                            center + egui::vec2(-3.0, 4.5),
-                        ],
-                        color,
-                        Stroke::NONE,
-                    ));
-                }
-                ControlGlyph::Back | ControlGlyph::Forward => {
-                    let direction = if matches!(glyph, ControlGlyph::Forward) {
-                        1.0
-                    } else {
-                        -1.0
-                    };
-                    let tip = center + egui::vec2(4.0 * direction, 0.0);
-                    let tail = center - egui::vec2(4.0 * direction, 0.0);
-                    let stroke = Stroke::new(1.5, color);
-                    ui.painter().line_segment([tail, tip], stroke);
-                    ui.painter().add(egui::Shape::line(
-                        vec![
-                            tip + egui::vec2(-3.5 * direction, -3.5),
-                            tip,
-                            tip + egui::vec2(-3.5 * direction, 3.5),
-                        ],
-                        stroke,
-                    ));
-                }
-            }
+            ui.painter().add(egui::Shape::convex_polygon(
+                vec![
+                    center + egui::vec2(-3.0, -4.5),
+                    center + egui::vec2(4.0, 0.0),
+                    center + egui::vec2(-3.0, 4.5),
+                ],
+                color,
+                Stroke::NONE,
+            ));
         }
         if response.enabled() {
             response.on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -183,7 +153,7 @@ pub(super) fn primary(label: &str) -> ActionButton<'_> {
     ActionButton {
         label,
         kind: ControlKind::Primary,
-        glyph: None,
+        play_icon: false,
     }
 }
 
@@ -197,7 +167,7 @@ pub(super) fn action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> eg
         ActionButton {
             label,
             kind: ControlKind::Neutral,
-            glyph: None,
+            play_icon: false,
         },
     )
 }
@@ -206,7 +176,7 @@ pub(super) fn tab_button(ui: &mut egui::Ui, label: &str, selected: bool) -> egui
     ui.add(ActionButton {
         label,
         kind: ControlKind::Tab { selected },
-        glyph: None,
+        play_icon: false,
     })
 }
 
@@ -216,51 +186,108 @@ pub(super) fn run_button(ui: &mut egui::Ui, enabled: bool) -> egui::Response {
         ActionButton {
             label: "Run",
             kind: ControlKind::Primary,
-            glyph: Some(ControlGlyph::Play),
+            play_icon: true,
         },
     )
 }
 
-pub(super) fn navigation_button(ui: &mut egui::Ui, forward: bool, enabled: bool) -> egui::Response {
-    ui.add_enabled(
-        enabled,
-        ActionButton {
-            label: if forward { "Forward" } else { "Back" },
-            kind: ControlKind::Neutral,
-            glyph: Some(if forward {
-                ControlGlyph::Forward
-            } else {
-                ControlGlyph::Back
-            }),
-        },
-    )
+pub(super) struct ViewTabResponse {
+    pub response: egui::Response,
+    pub close: bool,
 }
 
-/// Mouse navigation activates on the first press; release and key auto-repeat
-/// must not advance history a second time. Keyboard/accessibility clicks remain.
-pub(super) fn navigation_activated(response: &egui::Response) -> bool {
-    if !response.enabled() {
-        return false;
+/// One tab surface with an inset close target, shared by network and inspectors.
+pub(super) fn view_tab(
+    ui: &mut egui::Ui,
+    label: &str,
+    selected: bool,
+    closable: bool,
+) -> ViewTabResponse {
+    let mut job =
+        egui::text::LayoutJob::simple_singleline(label.into(), FontId::proportional(13.0), TEXT);
+    job.wrap.max_width = 160.0;
+    job.wrap.max_rows = 1;
+    let galley = ui.painter().layout_job(job);
+    let width = galley.size().x + if closable { 44.0 } else { 24.0 };
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 32.0), egui::Sense::click());
+    let reveal = ui.data_mut(|data| {
+        let id = response.id.with("selected");
+        let previous = data.get_temp::<bool>(id).unwrap_or(false);
+        data.insert_temp(id, selected);
+        selected && !previous
+    });
+    if reveal {
+        response.scroll_to_me(None);
     }
-    let pointer_click = response.clicked_by(egui::PointerButton::Primary);
-    let clicked = response.clicked();
-    let pointer_down = response.is_pointer_button_down_on();
-    response.ctx.input(|input| {
-        let pressed = (pointer_down || pointer_click)
-            && input.pointer.button_pressed(egui::PointerButton::Primary);
-        let repeated_key = input.events.iter().any(|event| {
-            matches!(
-                event,
-                egui::Event::Key {
-                    key: egui::Key::Enter | egui::Key::Space,
-                    pressed: true,
-                    repeat: true,
-                    ..
-                }
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::SelectableLabel,
+            ui.is_enabled(),
+            selected,
+            label,
+        )
+    });
+    let visuals = control_visuals(ui, &response, selected);
+    ui.painter().rect(
+        rect,
+        5,
+        visuals.weak_bg_fill,
+        visuals.bg_stroke,
+        egui::StrokeKind::Inside,
+    );
+    if selected {
+        ui.painter().line_segment(
+            [
+                rect.left_bottom() + egui::vec2(5.0, -1.0),
+                rect.right_bottom() - egui::vec2(5.0, 1.0),
+            ],
+            Stroke::new(2.0, ACCENT),
+        );
+    }
+    ui.painter().galley(
+        egui::pos2(rect.left() + 10.0, rect.center().y - galley.size().y * 0.5),
+        galley,
+        TEXT,
+    );
+    let mut closed = false;
+    if closable {
+        let close_rect = egui::Rect::from_center_size(
+            egui::pos2(rect.right() - 15.0, rect.center().y),
+            egui::vec2(20.0, 20.0),
+        );
+        let close = ui.interact(close_rect, response.id.with("close"), egui::Sense::click());
+        close.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::Button,
+                ui.is_enabled(),
+                format!("Close {label}"),
             )
         });
-        pressed || (clicked && !pointer_click && !repeated_key)
-    })
+        let close_visuals = control_visuals(ui, &close, false);
+        if close.hovered() || close.is_pointer_button_down_on() {
+            ui.painter()
+                .rect_filled(close_rect, 4, close_visuals.weak_bg_fill);
+        }
+        ui.painter().text(
+            close_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "×",
+            FontId::proportional(17.0),
+            if close.hovered() { TEXT } else { MUTED },
+        );
+        closed = close.clicked()
+            || close.clicked_by(egui::PointerButton::Middle)
+            || response.clicked_by(egui::PointerButton::Middle);
+        close
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text("Close tab (middle-click)");
+    }
+    ViewTabResponse {
+        response: response
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text(label),
+        close: closed,
+    }
 }
 
 /// Shared response-based feedback for painted graph nodes and button backgrounds.

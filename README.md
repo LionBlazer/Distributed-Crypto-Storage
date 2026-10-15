@@ -17,7 +17,8 @@ The [egui playground](crates/fhe-playground/README.md) has SQL/data on the left 
 network/node inspectors on the right, up to 16 simulated peers and 8 clients.
 Presets fill the editor; Run or Ctrl+Enter executes them. Graph and connection
 matrix reflect the same protocol links/events. Virtual delivery is in one process.
-Back/Forward arrows, Alt+Left/Right and mouse side buttons navigate between views.
+Alt+Left/Right and mouse side buttons navigate between views; middle-click closes
+inspector tabs.
 
 The SQL frontend supports row SELECT/projections with age filters and LIMIT,
 COUNT/SUM, single-row INSERT and amount addition on `age: u8, amount: u16`; it is not an arbitrary-SQL

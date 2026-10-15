@@ -19,43 +19,41 @@ impl Playground {
         egui::Panel::top("network-header")
             .frame(panel(10))
             .show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    let back = navigation_button(ui, false, self.navigation.can_step(false))
-                        .on_hover_text("Back (Alt+Left / Mouse X1)")
-                        .on_disabled_hover_text("No earlier view");
-                    if navigation_activated(&back) {
-                        self.navigate_history(false);
-                    }
-                    let forward = navigation_button(ui, true, self.navigation.can_step(true))
-                        .on_hover_text("Forward (Alt+Right / Mouse X2)")
-                        .on_disabled_hover_text("No later view");
-                    if navigation_activated(&forward) {
-                        self.navigate_history(true);
-                    }
-                    if tab_button(ui, "Network", self.right_tab == RightTab::Network).clicked() {
+                ui.horizontal(|ui| {
+                    if view_tab(ui, "Network", self.right_tab == RightTab::Network, false)
+                        .response
+                        .clicked()
+                    {
                         self.navigate(self.tab, RightTab::Network);
                     }
-                    let mut close = None;
-                    for id in self.node_tabs.clone() {
-                        let label = self.node_name(id);
-                        ui.push_id(id, |ui| {
-                            if tab_button(ui, &label, self.right_tab == RightTab::Node(id))
-                                .clicked()
-                            {
-                                self.navigate(self.tab, RightTab::Node(id));
-                            }
-                            if ui
-                                .small_button("x")
-                                .on_hover_text("Close inspector tab")
-                                .clicked()
-                            {
-                                close = Some(id);
-                            }
+                    egui::ScrollArea::horizontal()
+                        .id_salt("inspector-tabs")
+                        .auto_shrink([false, true])
+                        .stick_to_right(true)
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                let mut close = None;
+                                for id in self.node_tabs.clone() {
+                                    let label = self.node_name(id);
+                                    ui.push_id(id, |ui| {
+                                        let tab = view_tab(
+                                            ui,
+                                            &label,
+                                            self.right_tab == RightTab::Node(id),
+                                            true,
+                                        );
+                                        if tab.close {
+                                            close = Some(id);
+                                        } else if tab.response.clicked() {
+                                            self.navigate(self.tab, RightTab::Node(id));
+                                        }
+                                    });
+                                }
+                                if let Some(id) = close {
+                                    self.close_node_tab(id);
+                                }
+                            })
                         });
-                    }
-                    if let Some(id) = close {
-                        self.close_node_tab(id);
-                    }
                 });
             });
         match self.right_tab {
@@ -418,6 +416,7 @@ impl Playground {
         });
         if !side_button_down
             && (response.dragged_by(egui::PointerButton::Primary)
+                || response.dragged_by(egui::PointerButton::Secondary)
                 || response.dragged_by(egui::PointerButton::Middle))
         {
             self.camera.pan(response.drag_delta());

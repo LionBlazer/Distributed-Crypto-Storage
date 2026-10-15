@@ -19,6 +19,7 @@ fn export_ui_previews() {
         ("selected-narrow", Tab::Sql, 3, [1180, 720]),
         ("navigation-peer", Tab::Sql, 3, [1500, 900]),
         ("navigation-back", Tab::Sql, 3, [1500, 900]),
+        ("tabs-narrow", Tab::Sql, 16, [1180, 720]),
         ("data", Tab::Data, 3, [1500, 900]),
         ("network", Tab::Sql, 8, [1500, 900]),
         ("network-small", Tab::Sql, 16, [1180, 720]),
@@ -61,6 +62,11 @@ fn export_ui_previews() {
             app.status = "Public fixture / actual encrypted storage sizes".into();
         }
         app.tab = tab;
+        if name == "tabs-narrow" {
+            for id in 2..=17 {
+                app.open_node(id);
+            }
+        }
         if name == "peer-tab" {
             app.open_node(3);
         }
@@ -92,7 +98,11 @@ fn export_ui_previews() {
         set_theme(&ctx);
         let mut textures = HashMap::new();
         let show_presets = name.starts_with("presets");
-        let frame_count = if show_presets { 7 } else { 3 };
+        let frame_count = if show_presets || name == "tabs-narrow" {
+            12
+        } else {
+            3
+        };
         let mut preset_position = None;
         for frame in 0..frame_count {
             // Exercise the actual menu in the in-memory egui context. This
