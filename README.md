@@ -91,6 +91,12 @@ overbudget operations reject before fresh BFV. The
 new fixed two-plus-two retrieval schedule. This separate tiny run does not establish
 large-scale overhead or owner-process recovery.
 
+Its [actual 1,000-table follow-up](docs/experiment-private-bfv-multipage-disk-scale1000.md)
+measures files plus observed native peak commit at 1.813729x. All 480 answers are
+exact, but five private Fixed256 uncached-header table misses exceed 500 ms,
+maximum 522.106 ms. Private cached-header reads stay below 437 ms. The outliers
+remain in the report; this read-only run does not add owner-process recovery.
+
 The [BFV disk UPDATE experiment](experiments/private-bfv-update-disk/README.md)
 adds genuine encrypted addition and compact writeback. Its actual 1,000-table run
 retains constant file sizes after 126 positive commits; files plus native peak

@@ -54,6 +54,14 @@ absence. The tiny fixture's files plus native peak commit are 43.106627x; it doe
 not inherit the baseline's 1,000-table overhead result or prove timing privacy.
 Neither access policy has been selected.
 
+The [same multipage executable on 1,000 fresh tables](experiment-private-bfv-multipage-disk-scale1000.md)
+then measured actual files plus observed native peak commit at 1.813729056x of
+3 GB logical. All 480 answers pass. Cached-header private maxima are 436.036 ms
+for AddressOnly and 414.391 ms for Fixed256; the uncached Fixed256 table-miss
+mode retains five over-500 ms observations, maximum 522.106 ms. Visible maximum
+is 63.107 ms. This full result is separate from the earlier one-page restart
+configuration and does not establish a universal private-query latency bound.
+
 | Question | Visible accesses | Concealed accesses |
 | --- | --- | --- |
 | Retrieval | Request the selected encrypted index/data pages directly | Use an oblivious index with ORAM, or suitable single-server PIR retrieval |

@@ -8,6 +8,12 @@ This finite local run is not a latency guarantee or a 1000-table measurement.
 See the [measurement report](../../docs/experiment-private-bfv-multipage-disk.md)
 for every mode, traffic, resource accounting, frozen executable and raw hashes.
 
+The [actual 1,000-table follow-up](../../docs/experiment-private-bfv-multipage-disk-scale1000.md)
+reuses the same frozen executable: all 480 answers and 25 rejections pass; actual
+files plus observed native peak commit total 1.813729x of 3 GB logical. Five private
+Fixed256 uncached-header table misses exceed 500 ms, maximum 522.106 ms. Cached-header
+private reads stay below 437 ms; the full all-mode latency target remains open.
+
 This isolated experiment starts from the frozen eight-case
 [exact-index disk baseline](../private-bfv-exact-disk/README.md), main source SHA256
 D5D8F003BA3CB4606994237DFEEBAF5C2613F795BE33229C9519A5D3114BBC07.

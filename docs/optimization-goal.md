@@ -75,6 +75,7 @@ See [earlier measurements](fhe-optimization.md) before repeating experiments.
 | Original-owner recovery in a separate process | [Actual writer-exit/reader-restore experiment](experiment-private-bfv-restart-disk.md); 116 runtime test executions, two doctests, strict Clippy and nine before-query rejections | All 768 three-table queries are exact after one committed encrypted update; ExactIndex maximum 317.346 ms, FullPredicate maximum 480.196 ms. Both sealed checkpoints and all 11 files are counted. Files plus parent/serial-child native peak bound total 43.185762x on this tiny fixture; no scaled 2x claim. Live external broker custody, one posting/data page, local transport, unverified arithmetic and nondurable publication remain explicit |
 | Actual original-owner process restart at scale | [Same frozen binaries, 1,000 independent tables](experiment-private-bfv-restart-disk-scale.md); 768 exact answers and nine before-query rejects | Same-run all 2,005 files including both sealed checkpoints plus observed parent/through-exit serial-child private peak bound total 1.814826093x of 3 GB. All 384 ExactIndex reads <=320.674 ms; FullPredicate retains one 520.214 ms overrun. Actual updated original heads and all 2,000 physical image heads/lengths pass. Reader restore/bootstrap initialization 2,047.202 ms is separate; one posting/data page, external wrapping-key/current-anchor custody, unverified arithmetic, local transport and nondurable publication remain explicit |
 | Complete indexed BFV groups across two posting/data pages | [Actual multipage composition](experiment-private-bfv-multipage-disk.md); 31 owning tests, strict Clippy, 480 exact matrix queries and 25 before-BFV rejections | Real two-byte varints cross index offsets 4095 and 8191; complete EQ/GE/range groups retain all rows. Fixed256 performs two actual posting plus two data fetches, including dummies. All visible/private/header/cache modes pass, maximum 491.651 ms. Tiny three-table files plus peak commit =43.106627x, not a scaled 2x result. Same owning BFV core, capacity-one loading, local transport, online owner and unverified arithmetic; process restart is a separate experiment |
+| Actual two-page private read scale | [Same frozen executable, 1,000 fresh tables](experiment-private-bfv-multipage-disk-scale1000.md); all 480 answers, one predicate control and 25 before-BFV rejects pass | Same-run all 2,003 files plus observed native peak commit =1.813729056x of 3 GB logical. Five Private/Fixed256/Uncached/TableMiss observations exceed 500 ms, maximum 522.106 ms; every outlier is retained. Cached-header private maxima: AddressOnly 436.036 ms, Fixed256 414.391 ms. Actual two-posting/two-data groups, capacity-one loading and unchanged owning BFV; no owner restart, network, arbitrary SQL or arithmetic proof claim |
 
 Experiments use separate managed worktrees, including `private-index-research`,
 `compact-fhe-query`, `query-proof-research` and `compact-playground`. Generated
@@ -130,9 +131,9 @@ amortized below 2x in one configuration, without counting projections or cloned
 tables. It does not remove the earlier small-table costs, multirow latency or
 the need to account for a real distributed SQL planner and routing structures.
 
-The full goal remains active: validate actual large-scale overhead for the new
-two-page concealed read schedule. Sparse
-groups beyond those page limits need a separate retrieval plan. Proof, freshness,
+The full goal remains active: close the private uncached-header multipage latency
+misses and validate a retrieval plan for sparse groups beyond those page limits.
+Proof, freshness,
 resource and durable lifecycle requirements
 remain unresolved. Transport and malicious-peer computation proofs remain absent
 from all local latency measurements.

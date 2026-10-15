@@ -1,5 +1,9 @@
 # Private BFV multipage disk experiment
 
+The subsequent [actual 1,000-table run](experiment-private-bfv-multipage-disk-scale1000.md)
+reuses this frozen executable and reports scale separately, including all five
+observations above 500 ms. The numbers below remain the original three-table run.
+
 One fresh three-table run completed on 2026-10-15: **480/480 exact matrix reads**,
 **25/25 rejections before fresh BFV**, and one genuine full-predicate control.
 The full local matrix maximum was **491.6511 ms, with 0/480 over 500 ms**. This
