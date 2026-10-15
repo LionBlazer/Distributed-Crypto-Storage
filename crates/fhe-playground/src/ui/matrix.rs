@@ -73,9 +73,9 @@ impl Playground {
                         let hit = ui
                             .interact(rect, ui.id().with((axis, node.id)), egui::Sense::click())
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .on_hover_text(format!(
-                                "{} · Node {} · Double-click to inspect",
-                                node.name, node.id
+                            .on_hover_text(super::infrastructure::storage_tooltip(
+                                node,
+                                self.snapshot.as_ref(),
                             ));
                         let highlighted = selected == Some(node.id)
                             || hovered.is_some_and(|(r, c)| r == index || c == index);

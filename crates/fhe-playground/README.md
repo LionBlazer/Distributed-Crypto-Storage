@@ -3,7 +3,7 @@
 A native **egui / eframe** client and manager for local FHE experiments. This crate
 owns the test UI, a small SQL frontend, and an in-process transport adapter.
 It composes [compact-query](../compact-query/README.md) for compact authenticated
-storage, an owner-assisted encrypted age index, real FHE projection/aggregation/updates and
+storage, an owner-assisted encrypted age index, real FHE projection/aggregation/inserts/updates and
 compact writeback; [compact-store](../compact-store/README.md) supplies the page
 limits, [replica-store](../replica-store/README.md) places related ciphertext images
 together, and [peer-protocol](../peer-protocol/README.md) owns connection/message
@@ -40,7 +40,8 @@ the network or an opened node inspector. Drag their divider to resize. Buttons,
 tabs, inputs and node cards have distinct hover, pressed, focus and disabled states.
 
 - **SQL:** select a client, write a statement, then use **Run** or **Ctrl+Enter**.
-  Presets only fill the editor. The shortcut applies to the SQL editor, never a
+  Presets are grouped as Read rows, Filter rows, Summarize, Insert and Update,
+  starting with `SELECT *`. They only fill the editor. The shortcut applies to the SQL editor, never a
   focused peer setting. Results/history retain the originating client identity.
   With no clients, SQL submission is disabled.
 - **Data:** edit typed draft cells, add/delete rows, or use CSV. Fixtures only fill
@@ -50,12 +51,16 @@ tabs, inputs and node cards have distinct hover, pressed, focus and disabled sta
   to delete it or change availability. Click a client to use it. Double-click a node
   to open its own inspector tab. The inspector edits a peer's name, storage quota
   and link delay; **Save settings** applies changes. Its shard rows come from the
-  owner's fixture, while the peer evaluator holds ciphertexts.
+  owner's fixture, while the peer evaluator holds ciphertexts. Cards show charged
+  physical storage against quota, plus useful payload and actual stored row count.
+  Hover for separate data/index/replica-metadata bytes and current/stale copies;
+  shared keys, Merkle caches and temporary RAM are outside this storage bar.
 - **Back / Forward:** return between SQL/Data and opened network/inspector views
   using the arrow controls, **Alt+Left / Alt+Right** or the mouse's back/forward
   buttons. New navigation after Back replaces the forward branch. Deleted nodes
   and closed inspectors are skipped; navigation preserves editor drafts and camera.
-  Moving through history does not change the selected SQL client or execute SQL.
+  Navigation fires on press, once per press; holding a side button cannot pan the
+  graph. Moving through history does not change the selected SQL client or execute SQL.
 - **Map / Matrix / Auto:** all modes use the same actual connection and packet
   snapshot. Auto uses a matrix for dense graphs; each undirected connection occupies
   two mirrored cells, while packet activity is directional (row sends to column).
@@ -63,7 +68,7 @@ tabs, inputs and node cards have distinct hover, pressed, focus and disabled sta
   lanes for dense links; selecting/hovering a node highlights its individual paths.
   These lanes are drawing conventions, not transport relays. No connection is
   removed to improve the picture. See [layout research](../../docs/graph-layout.md).
-- **Camera / time:** pan and zoom the map; nodes, routes and background dots share
+- **Camera / time:** pan with primary/middle drag and zoom the map; nodes, routes and background dots share
   world coordinates. Double-click empty space or use its **Fit view** menu item to
   fit the map. **Speed** and **Pause** control virtual message delivery independently
   of peer delay and FHE CPU computation. Pausing does not stop an already running
@@ -84,15 +89,15 @@ delivery time and appear on the graph. Pausing can delay remote cleanup. The pro
 bounds outstanding requests and accepted jobs; transport IDs still have no
 cryptographic authentication.
 
-Peer IDs remain stable when a middle peer is removed. The initial **Legacy
-single-copy** mode retains the original fixture-based manager repartition.
-Explicitly choose **Min copies** (1, 2 or 3) to enter fixed logical-shard custody.
-New peers then start empty; removal drops their real ciphertext copies. The owner
-fixture cannot recreate a lost shard in this mode. Lowering the minimum retains
-existing copies; **Create / replace** starts a new legacy experiment with fresh keys.
+Peer IDs remain stable when a middle peer is removed. New databases start in fixed
+logical-shard custody with a minimum of one copy; **Min copies** adjusts the target.
+New peers start empty; removal drops their real ciphertext copies. The owner
+fixture cannot recreate a lost shard. Lowering the minimum retains existing copies;
+**Create / replace** explicitly creates a new database from the owner's draft with
+fresh keys. Ordinary topology changes do not regenerate keys or encrypted data.
 
 Replica reads select one current online executor per logical shard, using configured
-link delay and stable IDs. UPDATE stages new data/index images on all online current
+link delay and stable IDs. INSERT/UPDATE stage new data/index images on all online current
 holders; offline versions become stale and cannot answer current queries when they
 return. Missing current shards reject the whole statement. **Failure domain** in
 each inspector declares correlated placement; repeated labels count as one domain.
@@ -107,10 +112,10 @@ transfer or bandwidth, and does not invent packet animations. See the
 
 Quotas cover canonical encrypted data plus the complete encrypted index and its
 headers (1 KiB..64 MiB), plus 16 bytes of replica record metadata per physical
-data/index pair in fixed-custody mode. They exclude
+data/index pair. They exclude
 BFV working memory, shared keys or rebuildable in-memory Merkle hashes. The node
 inspector shows data and index bytes separately. Creation, repartitioning, profile edits and
-updates reject overruns without partial writes. Peer delay (0..1000 ms) belongs to
+inserts/updates reject overruns without partial writes. Peer delay (0..1000 ms) belongs to
 the virtual transport; it is not measured ping. Query wall time includes delivery,
 index selection, fresh encrypted selected byte/COUNT weights, request/output serialization, FHE evaluation and owner decryption; per-shard query timing excludes virtual delay.
 Loss of every current online copy of a logical shard rejects reads/updates without
@@ -118,7 +123,7 @@ silently omitting records.
 
 The fixture editor is the owner's plaintext view. Peer evaluations receive only
 opaque ciphertext inputs and evaluation material. The fixture is decrypted from actual staged compact ciphertexts after successful
-updates for further editing; aggregate answers come from FHE evaluation, not a
+inserts/updates for further editing; query answers come from FHE evaluation, not a
 plaintext SQL fallback. Unapplied draft edits are preserved when a live SQL update
 finishes. A failed rebuild preserves the old database.
 
@@ -142,6 +147,7 @@ SELECT COUNT(*), SUM(amount) FROM records WHERE age < 18;
 SELECT COUNT(*), SUM(amount) FROM records WHERE age <= 18;
 SELECT COUNT(*), SUM(amount) FROM records WHERE age > 18;
 SELECT COUNT(*), SUM(amount) FROM records WHERE age BETWEEN 18 AND 42;
+INSERT INTO records (age, amount) VALUES (18, 10);
 UPDATE records SET amount = amount + 5 WHERE age >= 18;
 UPDATE records SET amount = amount + 1 WHERE age BETWEEN 18 AND 42;
 UPDATE records SET amount = amount + 1;
@@ -176,9 +182,18 @@ database, peer availability and transport checks still apply. These folded cases
 not evaluate FHE and carry no FHE timing claim. Every potentially matching range,
 including a valid range with no actual matches, follows authenticated exact-index
 selection and the appropriate BFV operation.
+Single-row INSERT supports literal values in `(age, amount)` order, with that
+column list optional. It chooses the smallest logical shard and sends
+independently encrypted original rows and the new row to the public-only evaluator.
+The peer rotates the encrypted incoming row into place and adds the relation.
+The owner decodes that output, checks every old/new value and grows only that
+shard's compact data/index under the same keys. Online current holders receive the
+new images; offline holders remain stale. Quota failure or cancellation publishes
+nothing. The whole laboratory database remains bounded to 128 rows.
+
 The entire statement is parsed, with a 4 KiB limit. Unsupported projections,
 operators, clauses, aliases, comments, quoted identifiers, and multiple statements
-are rejected. CREATE/INSERT/DELETE, CREATE INDEX, joins and transactions are not supported
+are rejected. CREATE/DELETE, CREATE INDEX, joins and transactions are not supported
 as SQL; database creation and fixture replacement are GUI manager actions.
 
 The BFV backend uses its owner-built authenticated encrypted age posting index for
@@ -202,8 +217,8 @@ one fixed Rows256 SIMD operation per shard, with no TFHE keys or row workers.
 Evaluator clones share key allocation, so memory does not model
 independent physical machines. Packets carry opaque references to local operations;
 there is no TCP transport. The cryptographic backend actually serializes and decodes encrypted requests/results, but the virtual network does not yet model their byte-dependent transmission time.
-Taking a peer offline preserves its local ciphertexts. Removing one in fixed-custody
-mode drops its copies; local repair can use only surviving current ciphertext.
+Taking a peer offline preserves its local ciphertexts. Removing one drops its
+copies; local repair can use only surviving current ciphertext.
 This models declared crash/offline events, without proving malicious availability.
 
 The database, keys, drafts, and history are ephemeral and are never saved. Closing

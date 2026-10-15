@@ -87,7 +87,7 @@ fn a_missing_required_shard_prevents_incomplete_queries_and_partial_updates() {
     engine.set_peer_online(2, false).unwrap();
 
     for sql in [ADULTS, "UPDATE records SET amount = amount + 5"] {
-        assert!(matches!(engine.execute(sql), Err(LabError::Unavailable(ids)) if ids == [2]));
+        assert!(matches!(engine.execute(sql), Err(LabError::UnavailableShards(ids)) if ids == [2]));
     }
 
     assert_eq!(engine.snapshot().unwrap().revision, 0);
@@ -127,19 +127,22 @@ fn overflow_on_a_later_shard_rolls_back_the_already_staged_shards() {
 }
 
 #[test]
-fn an_offline_peer_with_no_rows_does_not_make_the_database_incomplete() {
+fn an_offline_empty_shard_still_requires_a_current_encrypted_copy() {
     let mut engine = lab(vec![PlainRow { age: 18, amount: 7 }], 2);
     engine.set_peer_online(2, false).unwrap();
-
+    assert!(matches!(engine.execute(ALL),Err(LabError::UnavailableShards(ids)) if ids==[2]));
+    engine.set_peer_online(2, true).unwrap();
     assert_eq!(aggregate(&mut engine, ALL), (1, 7));
 }
 
 #[test]
-fn an_empty_database_remains_queryable_when_all_empty_peers_are_offline() {
+fn empty_tables_require_real_online_peer_processing() {
     let mut engine = lab(vec![], 2);
     engine.set_peer_online(1, false).unwrap();
     engine.set_peer_online(2, false).unwrap();
-
+    assert!(matches!(engine.execute(ALL),Err(LabError::UnavailableShards(ids)) if ids==[1,2]));
+    engine.set_peer_online(1, true).unwrap();
+    engine.set_peer_online(2, true).unwrap();
     assert_eq!(aggregate(&mut engine, ALL), (0, 0));
 }
 
@@ -161,20 +164,24 @@ fn invalid_replacement_keeps_the_original_database_and_keys_usable() {
 }
 
 #[test]
-fn removing_middle_peer_preserves_surviving_ids_and_updated_owner_data() {
+fn removing_middle_peer_uses_surviving_real_copies_without_resealing() {
     let mut engine = lab(sample_rows(3).unwrap(), 3);
+    engine.set_replication(2).unwrap();
+    engine.repair_replicas().unwrap();
     engine
         .execute("UPDATE records SET amount = amount + 1")
         .unwrap();
+    let heads = engine.snapshot().unwrap().replication.unwrap().shards;
     engine
         .repartition(vec![
             (1, PeerConfig::numbered(1), true),
             (3, PeerConfig::numbered(3), true),
         ])
         .unwrap();
-    let snapshot = engine.snapshot().unwrap();
     assert_eq!(
-        snapshot
+        engine
+            .snapshot()
+            .unwrap()
             .peers
             .iter()
             .map(|peer| peer.id)
@@ -182,23 +189,34 @@ fn removing_middle_peer_preserves_surviving_ids_and_updated_owner_data() {
         [1, 3]
     );
     assert_eq!(aggregate(&mut engine, ALL), (3, 63));
+    for (before, after) in heads
+        .iter()
+        .zip(engine.snapshot().unwrap().replication.unwrap().shards)
+    {
+        assert_eq!(before.data_head, after.data_head);
+        assert_eq!(before.index_head, after.index_head);
+    }
     engine.set_peer_online(3, false).unwrap();
-    assert!(matches!(engine.execute(ALL),Err(LabError::Unavailable(ids)) if ids==[3]));
+    assert_eq!(aggregate(&mut engine, ALL), (3, 63));
 }
 
 #[test]
-fn deleting_last_peer_retains_owner_data_but_cannot_answer_sql_until_explicit_rebuild() {
+fn deleting_last_copy_then_adding_blank_peer_cannot_recover_from_inspector_fixture() {
     let mut engine = lab(sample_rows(1).unwrap(), 1);
+    let head = engine.snapshot().unwrap().replication.unwrap().shards[0]
+        .data_head
+        .clone();
     engine.repartition(vec![]).unwrap();
-    assert!(engine.snapshot().unwrap().peers.is_empty());
-    assert!(
-        matches!(engine.execute(ALL),Err(LabError::InvalidInput(message)) if message.contains("No storage peers"))
-    );
+    assert!(matches!(engine.execute(ALL),Err(LabError::UnavailableShards(ids)) if ids==[1]));
     engine
         .repartition(vec![(9, PeerConfig::numbered(9), true)])
         .unwrap();
-    assert_eq!(aggregate(&mut engine, ALL), (1, 10));
-    assert_eq!(engine.snapshot().unwrap().peers[0].id, 9);
+    assert!(matches!(engine.execute(ALL),Err(LabError::UnavailableShards(ids)) if ids==[1]));
+    assert!(engine.repair_replicas().is_err());
+    let snapshot = engine.snapshot().unwrap();
+    assert_eq!(snapshot.peers[0].stored_bytes, 0);
+    assert_eq!(snapshot.peers[0].logical_bytes, 0);
+    assert_eq!(snapshot.replication.unwrap().shards[0].data_head, head);
 }
 
 #[test]
@@ -217,25 +235,23 @@ fn cancelled_staged_update_changes_no_ciphertext_or_owner_revision() {
 }
 
 #[test]
-fn adding_custom_peers_preserves_updated_ciphertexts_revision_and_availability() {
+fn adding_custom_peers_preserves_ciphertext_and_keeps_new_peers_empty_until_repair() {
     let mut engine = lab(sample_rows(2).unwrap(), 1);
     engine
         .execute("UPDATE records SET amount = amount + 1")
         .unwrap();
-    let before = engine.snapshot().unwrap();
+    let before = engine.peer_heads_for_experiment().unwrap();
     let mut fast = PeerConfig::numbered(2);
     fast.name = "Fast SSD".into();
     fast.delay_ms = 5;
-    let profiles = vec![
-        PeerConfig::numbered(1),
-        fast.clone(),
-        PeerConfig::numbered(3),
-    ];
-
-    engine.configure_peers(profiles).unwrap();
-
+    engine
+        .configure_peers(vec![
+            PeerConfig::numbered(1),
+            fast.clone(),
+            PeerConfig::numbered(3),
+        ])
+        .unwrap();
     let after = engine.snapshot().unwrap();
-    assert_eq!(after.revision, before.revision);
     assert_eq!(after.peers[1].config, fast);
     assert_eq!(
         after
@@ -243,33 +259,33 @@ fn adding_custom_peers_preserves_updated_ciphertexts_revision_and_availability()
             .iter()
             .map(|p| p.owner_row_indices.clone())
             .collect::<Vec<_>>(),
-        [vec![0], vec![1], vec![]]
+        [vec![0, 1], vec![], vec![]]
     );
+    assert_eq!(engine.peer_heads_for_experiment().unwrap(), before);
     assert_eq!(aggregate(&mut engine, ALL), (2, 32));
     engine.set_peer_online(2, false).unwrap();
     engine
         .configure_peers((1..=4).map(PeerConfig::numbered).collect())
         .unwrap();
     assert!(!engine.snapshot().unwrap().peers[1].online);
-    assert!(matches!(engine.execute(ALL), Err(LabError::Unavailable(ids)) if ids == [2]));
+    assert_eq!(aggregate(&mut engine, ALL), (2, 32));
+    engine.set_peer_online(1, false).unwrap();
+    assert!(matches!(engine.execute(ALL),Err(LabError::UnavailableShards(ids)) if ids==[1]));
 }
 
 #[test]
-fn a_quota_failure_after_staging_a_shard_keeps_the_entire_original_layout() {
+fn repair_quota_failure_never_partially_publishes_a_new_ciphertext_holder() {
     let mut engine = lab(sample_rows(2).unwrap(), 1);
-    let before = engine.snapshot().unwrap();
     let mut tiny = PeerConfig::numbered(2);
     tiny.storage_limit_bytes = 1024;
-
-    let outcome = engine.configure_peers(vec![PeerConfig::numbered(1), tiny]);
-
-    assert!(
-        matches!(outcome, Err(LabError::InvalidInput(message)) if message.contains("storage quota"))
-    );
-    let after = engine.snapshot().unwrap();
-    assert_eq!(after.peers.len(), 1);
-    assert_eq!(after.revision, before.revision);
-    assert_eq!(after.peers[0].stored_bytes, before.peers[0].stored_bytes);
+    engine
+        .configure_peers(vec![PeerConfig::numbered(1), tiny])
+        .unwrap();
+    engine.set_replication(2).unwrap();
+    let before = engine.peer_heads_for_experiment().unwrap();
+    assert!(engine.repair_replicas().is_err());
+    assert_eq!(engine.peer_heads_for_experiment().unwrap(), before);
+    assert_eq!(engine.snapshot().unwrap().peers[1].stored_bytes, 0);
     assert_eq!(aggregate(&mut engine, ALL), (2, 30));
 }
 
@@ -291,21 +307,18 @@ fn invalid_peer_settings_leave_the_live_profile_and_query_results_unchanged() {
 }
 
 #[test]
-fn progress_identifies_only_required_nonempty_shards_in_execution_order() {
+fn progress_identifies_every_real_logical_shard_including_empty_tables() {
     let mut engine = lab(sample_rows(2).unwrap(), 3);
-    engine.set_peer_online(3, false).unwrap();
     let visited = std::cell::RefCell::new(Vec::new());
-
     engine
-        .execute_with_progress(ALL, |progress| visited.borrow_mut().push(progress.peer_id))
+        .execute_with_progress(ALL, |p| visited.borrow_mut().push(p.peer_id))
         .unwrap();
-
     engine
-        .execute_with_progress("UPDATE records SET amount = amount + 1", |progress| {
-            visited.borrow_mut().push(progress.peer_id)
+        .execute_with_progress("UPDATE records SET amount = amount + 1", |p| {
+            visited.borrow_mut().push(p.peer_id)
         })
         .unwrap();
-    assert_eq!(*visited.borrow(), [1, 2, 1, 2]);
+    assert_eq!(*visited.borrow(), [1, 2, 3, 1, 2, 3]);
 }
 
 #[test]
@@ -459,13 +472,13 @@ fn constant_false_plans_still_require_a_database_storage_and_online_shards() {
     let mut engine = lab(sample_rows(2).unwrap(), 2);
     engine.set_peer_online(2, false).unwrap();
     for sql in sqls {
-        assert!(matches!(engine.execute(sql), Err(LabError::Unavailable(ids)) if ids == [2]));
+        assert!(matches!(engine.execute(sql), Err(LabError::UnavailableShards(ids)) if ids == [2]));
     }
     engine.configure_peers(Vec::new()).unwrap();
     for sql in sqls {
         assert!(matches!(
             engine.execute(sql),
-            Err(LabError::InvalidInput(_))
+            Err(LabError::UnavailableShards(_))
         ));
     }
 }

@@ -13,6 +13,8 @@ fn export_ui_previews() {
     for (name, tab, peer_count, size) in [
         ("sql", Tab::Sql, 3, [1500, 900]),
         ("sql-narrow", Tab::Sql, 3, [1180, 720]),
+        ("presets", Tab::Sql, 3, [1500, 900]),
+        ("presets-narrow", Tab::Sql, 3, [1180, 720]),
         ("selected-result", Tab::Sql, 3, [1500, 900]),
         ("selected-narrow", Tab::Sql, 3, [1180, 720]),
         ("navigation-peer", Tab::Sql, 3, [1500, 900]),
@@ -21,11 +23,14 @@ fn export_ui_previews() {
         ("network", Tab::Sql, 8, [1500, 900]),
         ("network-small", Tab::Sql, 16, [1180, 720]),
         ("network-map", Tab::Sql, 16, [1500, 900]),
+        ("peer-storage", Tab::Sql, 3, [1500, 900]),
+        ("peer-storage-narrow", Tab::Sql, 3, [1180, 720]),
         ("network-max", Tab::Sql, 16, [1500, 900]),
         ("peer-tab", Tab::Sql, 3, [1500, 900]),
     ] {
         let (mut app, _commands, _events) = app();
         app.snapshot = Some(snapshot(peer_count));
+        app.status = "Public renderer fixture / no backend execution".into();
         app.network = Some(network(
             peer_count,
             if name == "network-max" { 8 } else { 1 },
@@ -33,10 +38,27 @@ fn export_ui_previews() {
         if name == "network-map" {
             app.network_view = NetworkView::Map;
         }
-        for peer in &mut app.snapshot.as_mut().unwrap().peers {
-            peer.data_bytes = 112 + peer.rows * 3 + if peer.rows == 0 { 0 } else { 48 };
-            peer.index_bytes = 2328 + peer.rows * 4;
-            peer.stored_bytes = peer.data_bytes + peer.index_bytes;
+        if name.starts_with("peer-storage") {
+            // Public synthetic input, real encrypted-storage accounting. The
+            // renderer consumes this engine snapshot without estimated sizes.
+            let mut engine = fhe_playground::LabEngine::default();
+            let peers = (1..=3)
+                .map(|id| PeerConfig {
+                    storage_limit_bytes: 8192,
+                    ..PeerConfig::numbered(id)
+                })
+                .collect();
+            app.snapshot = Some(
+                engine
+                    .create(DatabaseDraft {
+                        name: "storage-demo".into(),
+                        rows: sample_rows(4).unwrap(),
+                        peers,
+                    })
+                    .unwrap(),
+            );
+            app.network_view = NetworkView::Map;
+            app.status = "Public fixture / actual encrypted storage sizes".into();
         }
         app.tab = tab;
         if name == "peer-tab" {
@@ -69,17 +91,47 @@ fn export_ui_previews() {
         let ctx = egui::Context::default();
         set_theme(&ctx);
         let mut textures = HashMap::new();
-        for frame in 0..3 {
+        let show_presets = name.starts_with("presets");
+        let frame_count = if show_presets { 7 } else { 3 };
+        let mut preset_position = None;
+        for frame in 0..frame_count {
+            // Exercise the actual menu in the in-memory egui context. This
+            // generates no OS input and never dispatches a SQL command.
+            let events = if show_presets && (frame == 1 || frame == 2) {
+                let position = preset_position.expect("Presets button is visible");
+                vec![
+                    egui::Event::PointerMoved(position),
+                    egui::Event::PointerButton {
+                        pos: position,
+                        button: egui::PointerButton::Primary,
+                        pressed: frame == 1,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ]
+            } else {
+                Vec::new()
+            };
             let output = ctx.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
                         egui::Pos2::ZERO,
                         egui::vec2(size[0] as f32, size[1] as f32),
                     )),
+                    // Advance egui's clock explicitly, including enough time
+                    // after opening the popup for its normal fade to finish.
+                    time: Some(frame as f64 * 0.1),
+                    predicted_dt: 0.1,
+                    events,
                     ..Default::default()
                 },
                 |ui| app.draw(ui),
             );
+            if show_presets && frame == 0 {
+                preset_position = output
+                    .shapes
+                    .iter()
+                    .find_map(|shape| text_center(&shape.shape, "Presets"));
+            }
             for (id, deltas) in &output.textures_delta.set {
                 for delta in deltas {
                     let egui::ImageData::Color(image) = &delta.image;
@@ -96,7 +148,7 @@ fn export_ui_previews() {
                     }
                 }
             }
-            if frame == 2 {
+            if frame + 1 == frame_count {
                 let meshes = ctx.tessellate(output.shapes.clone(), output.pixels_per_point);
                 let pixels = rasterize(meshes, &textures, size);
                 let path = directory.join(format!("{name}.ppm"));
@@ -107,6 +159,16 @@ fn export_ui_previews() {
             }
             output.drop_without_applying_deltas();
         }
+    }
+}
+
+fn text_center(shape: &egui::Shape, label: &str) -> Option<egui::Pos2> {
+    match shape {
+        egui::Shape::Text(text) if text.galley.job.text == label => {
+            Some(text.galley.rect.translate(text.pos.to_vec2()).center())
+        }
+        egui::Shape::Vec(shapes) => shapes.iter().find_map(|shape| text_center(shape, label)),
+        _ => None,
     }
 }
 

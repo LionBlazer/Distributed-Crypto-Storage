@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::fmt;
-use std::time::Instant;
 
 use crate::PlainRow;
 use compact_query::bfv as backend;
@@ -21,7 +20,6 @@ pub enum LabError {
     NoDatabase,
     InvalidInput(String),
     UnsupportedSql(String),
-    Unavailable(Vec<usize>),
     UnavailableShards(Vec<usize>),
     Replication(String),
     Cryptography(String),
@@ -33,10 +31,6 @@ impl fmt::Display for LabError {
             Self::InvalidInput(message)
             | Self::UnsupportedSql(message)
             | Self::Replication(message) => f.write_str(message),
-            Self::Unavailable(peers) => write!(
-                f,
-                "Required shards are offline on peers {peers:?}. No incomplete result or partial update was accepted."
-            ),
             Self::Cryptography(message) => write!(f, "FHE operation failed: {message}"),
             Self::UnavailableShards(shards) => write!(
                 f,
@@ -112,6 +106,8 @@ pub struct PeerInfo {
     pub config: PeerConfig,
     pub online: bool,
     pub rows: usize,
+    /// Actual stored row payload, including retained stale physical copies.
+    pub logical_bytes: usize,
     /// Canonical encrypted data including its manifest, nonces and tags.
     pub data_bytes: usize,
     /// Complete encrypted posting index including its table-head binding.
@@ -175,6 +171,10 @@ pub enum QueryOutcome {
         /// The statement succeeded; a constant-false predicate is a successful no-op.
         committed: bool,
     },
+    /// Genuine encrypted append; published only after successful transport completion.
+    Inserted {
+        count: u32,
+    },
 }
 
 /// Honest local owner/manager composition. Peer storage contains compact pages
@@ -192,36 +192,17 @@ struct Database {
     owner_rows: Vec<PlainRow>,
     peers: Vec<Peer>,
     failure_domains: BTreeMap<usize, u64>,
-    replication: Option<replication::Replication>,
+    replication: replication::Replication,
 }
 struct Peer {
     id: usize,
     config: PeerConfig,
     evaluator: backend::Evaluator,
-    table: Option<Table>,
     online: bool,
 }
-impl Peer {
-    fn rows(&self) -> usize {
-        self.table
-            .as_ref()
-            .map_or(0, |table| table.commitment().layout().row_count as usize)
-    }
-    fn stored_bytes(&self) -> usize {
-        self.table.as_ref().map_or(0, |table| {
-            table.canonical_data_bytes() + table.encrypted_index_bytes()
-        })
-    }
-    fn legacy_table(&self) -> &Table {
-        self.table
-            .as_ref()
-            .expect("legacy mode owns one primary table per peer")
-    }
-}
 struct PreparedUpdate {
-    tables: Vec<Table>,
     rows: Vec<PlainRow>,
-    replication: Option<replication::Replication>,
+    replication: replication::Replication,
 }
 
 impl LabEngine {
@@ -253,7 +234,8 @@ impl LabEngine {
             .zip(draft.peers)
             .map(|(id, config)| (id, config, true))
             .collect();
-        let peers = build_peers(&owner, &evaluator, &draft.rows, profiles)?;
+        let peers = build_peers(&evaluator, profiles);
+        let replication = replication::Replication::initial(&owner, &draft.rows, &peers, 1)?;
         self.database = Some(Database {
             name: name.into(),
             revision: 0,
@@ -261,7 +243,7 @@ impl LabEngine {
             evaluator,
             owner_rows: draft.rows,
             failure_domains: peers.iter().map(|peer| (peer.id, peer.id as u64)).collect(),
-            replication: None,
+            replication,
             peers,
         });
         self.prepared = None;
@@ -272,29 +254,11 @@ impl LabEngine {
             name: db.name.clone(),
             revision: db.revision,
             owner_rows: db.owner_rows.clone(),
-            replication: db.replication.as_ref().map(|replicas| replicas.info(db)),
+            replication: Some(db.replication.info(db)),
             peers: db
                 .peers
                 .iter()
-                .enumerate()
-                .map(|(index, peer)| {
-                    if let Some(replicas) = &db.replication {
-                        replicas.peer_info(peer)
-                    } else {
-                        PeerInfo {
-                            id: peer.id,
-                            config: peer.config.clone(),
-                            online: peer.online,
-                            rows: peer.rows(),
-                            data_bytes: peer.legacy_table().canonical_data_bytes(),
-                            index_bytes: peer.legacy_table().encrypted_index_bytes(),
-                            stored_bytes: peer.stored_bytes(),
-                            owner_row_indices: (index..db.owner_rows.len())
-                                .step_by(db.peers.len())
-                                .collect(),
-                        }
-                    }
-                })
+                .map(|peer| db.replication.peer_info(peer))
                 .collect(),
         })
     }
@@ -302,18 +266,7 @@ impl LabEngine {
     /// for different shards, including stale copies; logical current heads are in snapshot.
     pub fn peer_heads_for_experiment(&self) -> Result<Vec<PeerHeads>, LabError> {
         let db = self.database.as_ref().ok_or(LabError::NoDatabase)?;
-        if let Some(replicas) = &db.replication {
-            return Ok(replicas.physical_heads());
-        }
-        Ok(db
-            .peers
-            .iter()
-            .map(|peer| PeerHeads {
-                id: peer.id,
-                data: peer.legacy_table().commitment().clone(),
-                index: peer.legacy_table().index_commitment().clone(),
-            })
-            .collect())
+        Ok(db.replication.physical_heads())
     }
     /// Diagnostic accounting outside query timers. Peers share the same public setup via Arc.
     pub fn backend_info_for_experiment(&self) -> Result<BackendInfo, LabError> {
@@ -338,16 +291,13 @@ impl LabEngine {
     pub fn set_peer_config(&mut self, id: usize, mut config: PeerConfig) -> Result<(), LabError> {
         config.validate()?;
         let db = self.database.as_mut().ok_or(LabError::NoDatabase)?;
-        let replicated_bytes = db
-            .replication
-            .as_ref()
-            .map(|replicas| replicas.charged_bytes(id));
+        let replicated_bytes = db.replication.charged_bytes(id);
         let peer = db
             .peers
             .iter_mut()
             .find(|peer| peer.id == id)
             .ok_or_else(|| LabError::InvalidInput("Unknown peer.".into()))?;
-        config.check_size(replicated_bytes.unwrap_or_else(|| peer.stored_bytes()))?;
+        config.check_size(replicated_bytes)?;
         config.name = config.name.trim().into();
         peer.config = config;
         self.prepared = None;
@@ -355,24 +305,26 @@ impl LabEngine {
     }
     pub fn configure_peers(&mut self, configs: Vec<PeerConfig>) -> Result<(), LabError> {
         let db = self.database.as_ref().ok_or(LabError::NoDatabase)?;
-        let mut next = db.peers.iter().map(|peer| peer.id).max().unwrap_or(0) + 1;
+        let mut next = db.peers.iter().map(|peer| peer.id).max().unwrap_or(0);
         let profiles = configs
             .into_iter()
             .enumerate()
             .map(|(index, config)| {
                 if let Some(peer) = db.peers.get(index) {
-                    (peer.id, config, peer.online)
+                    Ok((peer.id, config, peer.online))
                 } else {
-                    let id = next;
-                    next += 1;
-                    (id, config, true)
+                    next = next.checked_add(1).ok_or_else(|| {
+                        LabError::InvalidInput(
+                            "Peer identity space exhausted; no topology changed.".into(),
+                        )
+                    })?;
+                    Ok((next, config, true))
                 }
             })
-            .collect();
+            .collect::<Result<Vec<_>, LabError>>()?;
         self.repartition(profiles)
     }
-    /// Legacy mode explicitly rebuilds owner partitions. Replicated mode only
-    /// synchronizes physical peers/custody, preserving logical heads after any loss.
+    /// Synchronize physical custody only. Never rebuild missing ciphertext from the inspector.
     pub fn repartition(
         &mut self,
         profiles: Vec<(usize, PeerConfig, bool)>,
@@ -384,25 +336,7 @@ impl LabEngine {
         let ids: Vec<_> = profiles.iter().map(|(id, _, _)| *id).collect();
         validate_profiles(&configs, &ids)?;
         let db = self.database.as_mut().ok_or(LabError::NoDatabase)?;
-        if db.replication.is_some() {
-            replication::synchronize_peers(db, profiles)?;
-            self.prepared = None;
-            return Ok(());
-        }
-        let peers = build_peers(&db.owner, &db.evaluator, &db.owner_rows, profiles)?;
-        db.failure_domains = peers
-            .iter()
-            .map(|peer| {
-                (
-                    peer.id,
-                    db.failure_domains
-                        .get(&peer.id)
-                        .copied()
-                        .unwrap_or(peer.id as u64),
-                )
-            })
-            .collect();
-        db.peers = peers;
+        replication::synchronize_peers(db, profiles)?;
         self.prepared = None;
         Ok(())
     }
@@ -427,53 +361,10 @@ impl LabEngine {
         self.prepared = None;
         let plan = parse_sql(sql)?;
         let db = self.database.as_mut().ok_or(LabError::NoDatabase)?;
-        if let Some(replicas) = &db.replication {
-            replicas.ensure_available(db)?;
-            let (outcome, prepared) = replication::execute(db, plan, &progress)?;
-            self.prepared = prepared;
-            return Ok(outcome);
-        }
-        if db.peers.is_empty() {
-            return Err(LabError::InvalidInput(
-                "No storage peers are available. Add a peer to rebuild encrypted shards.".into(),
-            ));
-        }
-        let missing: Vec<_> = db
-            .peers
-            .iter()
-            .filter(|peer| !peer.online && peer.rows() != 0)
-            .map(|peer| peer.id)
-            .collect();
-        if !missing.is_empty() {
-            return Err(LabError::Unavailable(missing));
-        }
-        match plan {
-            QueryPlan::Aggregate { predicate }
-            | QueryPlan::Count { predicate }
-            | QueryPlan::Sum { predicate } => match predicate.age_range() {
-                Some(range) => db.aggregate(range, plan, &progress),
-                // Public domain reasoning only. No stored row is inspected or FHE claimed.
-                None => Ok(aggregate_outcome(plan, 0, 0, Vec::new())),
-            },
-            QueryPlan::Select {
-                predicate,
-                projection,
-                limit,
-            } => {
-                let Some(range) = predicate.age_range() else {
-                    return Ok(project_rows(Vec::new(), projection, limit));
-                };
-                db.select_rows(range, projection, limit, &progress)
-            }
-            QueryPlan::AddAmount { predicate, delta } => {
-                let Some(range) = predicate.age_range() else {
-                    return Ok(QueryOutcome::Updated { committed: true });
-                };
-                let (result, prepared) = db.add_amount(range, delta, &progress)?;
-                self.prepared = prepared;
-                Ok(result)
-            }
-        }
+        db.replication.ensure_available(db)?;
+        let (outcome, prepared) = replication::execute(db, plan, &progress)?;
+        self.prepared = prepared;
+        Ok(outcome)
     }
     pub fn discard_prepared(&mut self) {
         self.prepared = None;
@@ -484,166 +375,13 @@ impl LabEngine {
                 .database
                 .as_mut()
                 .expect("prepared update owns database");
-            if let Some(replicas) = update.replication {
-                db.replication = Some(replicas);
-            } else {
-                for (peer, table) in db.peers.iter_mut().zip(update.tables) {
-                    peer.table = Some(table);
-                }
-            }
+            db.replication = update.replication;
             db.owner_rows = update.rows;
             db.revision += 1;
         }
     }
 }
 
-impl Database {
-    fn select_rows(
-        &self,
-        range: AgeRange,
-        projection: Projection,
-        limit: Option<usize>,
-        progress: &impl Fn(LabProgress),
-    ) -> Result<QueryOutcome, LabError> {
-        let mut selected = Vec::new();
-        if !self.peers.iter().any(|peer| peer.online) {
-            return Err(LabError::Unavailable(
-                self.peers.iter().map(|peer| peer.id).collect(),
-            ));
-        }
-        for (position, peer) in self.peers.iter().enumerate() {
-            if !peer.online {
-                continue;
-            }
-            progress(LabProgress {
-                peer_id: peer.id,
-                message: format!("Evaluating encrypted row projection on peer {}...", peer.id),
-            });
-            let rows = evaluate_selected_rows(
-                &self.owner,
-                &peer.evaluator,
-                peer.legacy_table(),
-                range,
-                projection,
-            )?;
-            selected.extend(
-                rows.into_iter()
-                    .map(|(ordinal, row)| (ordinal as usize * self.peers.len() + position, row)),
-            );
-        }
-        Ok(project_rows(selected, projection, limit))
-    }
-    fn aggregate(
-        &self,
-        range: AgeRange,
-        plan: QueryPlan,
-        progress: &impl Fn(LabProgress),
-    ) -> Result<QueryOutcome, LabError> {
-        let mut contributions = Vec::new();
-        let (mut count, mut sum) = (0, 0);
-        for peer in &self.peers {
-            if peer.rows() == 0 {
-                continue;
-            }
-            progress(LabProgress {
-                peer_id: peer.id,
-                message: format!(
-                    "Evaluating selected encrypted rows on peer {} / {}...",
-                    peer.id,
-                    self.peers.len()
-                ),
-            });
-            let start = Instant::now();
-            let query = self.owner.prepare_exact_aggregate_for_experiment(
-                peer.legacy_table(),
-                range,
-                MAX_LAB_ROWS,
-                Limits::default(),
-            )?;
-            let evaluated = peer.evaluator.evaluate_exact_aggregate(query.request())?;
-            let result = self
-                .owner
-                .complete_exact_aggregate_unverified_for_experiment(
-                    peer.legacy_table(),
-                    query,
-                    &evaluated.output,
-                )?;
-            count += result.count;
-            sum += result.sum;
-            contributions.push(PeerAggregate {
-                id: peer.id,
-                count: result.count,
-                sum: result.sum,
-                elapsed_ms: start.elapsed().as_secs_f64() * 1000.0,
-            });
-        }
-        Ok(aggregate_outcome(plan, count, sum, contributions))
-    }
-    fn add_amount(
-        &self,
-        range: AgeRange,
-        delta: u16,
-        progress: &impl Fn(LabProgress),
-    ) -> Result<(QueryOutcome, Option<PreparedUpdate>), LabError> {
-        let mut candidates = Vec::with_capacity(self.peers.len());
-        for peer in &self.peers {
-            let mut table = peer.legacy_table().fork_for_experiment();
-            if peer.rows() != 0 {
-                progress(LabProgress {
-                    peer_id: peer.id,
-                    message: format!(
-                        "Staging compact encrypted update on peer {} / {}...",
-                        peer.id,
-                        self.peers.len()
-                    ),
-                });
-                let query = self.owner.prepare_exact_update_for_experiment(
-                    peer.legacy_table(),
-                    range,
-                    delta,
-                    MAX_LAB_ROWS,
-                    Limits::default(),
-                )?;
-                let evaluated = peer.evaluator.evaluate_indexed_update(query.request())?;
-                let applied = self.owner.apply_exact_update_checked_for_experiment(
-                    &mut table,
-                    query,
-                    &evaluated.output,
-                    Limits::default(),
-                )?;
-                if applied.rejected {
-                    return Ok((QueryOutcome::Updated { committed: false }, None));
-                }
-            }
-            peer.config
-                .check_size(table.canonical_data_bytes() + table.encrypted_index_bytes())?;
-            candidates.push(table);
-        }
-        // The inspector mirrors actual staged ciphertexts, not a plaintext SQL fallback.
-        let mut owner_rows = self.owner_rows.clone();
-        for (shard, table) in candidates.iter().enumerate() {
-            for (local, global) in (shard..owner_rows.len())
-                .step_by(candidates.len())
-                .enumerate()
-            {
-                let row = self.owner.decrypt_row_for_experiment(
-                    table,
-                    local as u64,
-                    Limits::default(),
-                )?;
-                owner_rows[global] = row;
-            }
-        }
-        Ok((
-            QueryOutcome::Updated { committed: true },
-            Some(PreparedUpdate {
-                tables: candidates,
-                rows: owner_rows,
-                replication: None,
-            }),
-        ))
-    }
-}
 fn aggregate_outcome(
     plan: QueryPlan,
     count: u32,
@@ -732,32 +470,21 @@ fn validate_profiles(configs: &[PeerConfig], ids: &[usize]) -> Result<(), LabErr
     Ok(())
 }
 fn build_peers(
-    owner: &backend::Owner,
     evaluator: &backend::Evaluator,
-    rows: &[PlainRow],
     profiles: Vec<(usize, PeerConfig, bool)>,
-) -> Result<Vec<Peer>, LabError> {
-    let count = profiles.len();
-    let mut partitions = vec![Vec::new(); count];
-    for (index, row) in rows.iter().enumerate() {
-        if count != 0 {
-            partitions[index % count].push(*row);
-        }
-    }
-    let mut peers = Vec::with_capacity(count);
-    for (rows, (id, mut config, online)) in partitions.into_iter().zip(profiles) {
-        config.name = config.name.trim().into();
-        let table = owner.seal(&rows, ROWS_PER_PAGE, Limits::default())?;
-        config.check_size(table.canonical_data_bytes() + table.encrypted_index_bytes())?;
-        peers.push(Peer {
-            id,
-            config,
-            evaluator: evaluator.clone(),
-            table: Some(table),
-            online,
-        });
-    }
-    Ok(peers)
+) -> Vec<Peer> {
+    profiles
+        .into_iter()
+        .map(|(id, mut config, online)| {
+            config.name = config.name.trim().into();
+            Peer {
+                id,
+                config,
+                evaluator: evaluator.clone(),
+                online,
+            }
+        })
+        .collect()
 }
 /// Public synthetic data only. Each GUI run generates fresh secret keys in memory.
 pub fn sample_rows(count: usize) -> Result<Vec<PlainRow>, LabError> {

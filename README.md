@@ -20,7 +20,7 @@ matrix reflect the same protocol links/events. Virtual delivery is in one proces
 Back/Forward arrows, Alt+Left/Right and mouse side buttons navigate between views.
 
 The SQL frontend supports row SELECT/projections with age filters and LIMIT,
-COUNT/SUM, and amount addition on `age: u8, amount: u16`; it is not an arbitrary-SQL
+COUNT/SUM, single-row INSERT and amount addition on `age: u8, amount: u16`; it is not an arbitrary-SQL
 database. Row projection uses actual BFV encrypted masking and returns encrypted
 peer output for client completion. The GUI uses the BFV
 exact-index backend, shared public evaluation keys and compact encrypted pages.
@@ -37,12 +37,17 @@ reject rather than truncate. Owner secret keys stay outside peer role objects.
 | [peer-protocol](crates/peer-protocol/README.md) | Bounded transport-independent handshake/message state machine |
 | [fhe-prototype](crates/fhe-prototype/README.md) | Original standalone TFHE experiment and historical baseline |
 
-The GUI's **Min copies** setting enables fixed encrypted shards with read failover,
-stale-copy exclusion after UPDATE and local replica repair after route discovery.
+New GUI databases use fixed encrypted shards with a minimum of one copy. **Min
+copies** adjusts that target; read failover, stale-copy exclusion after INSERT/UPDATE
+and local replica repair use actual ciphertext holders. New peers start empty;
+lost shards are never rebuilt from the editable fixture.
 Data and index stay together; quotas and declared failure domains constrain placement.
 The [replicated SQL model](docs/replicated-sql-prototype.md) explains the local failure
 guarantees. Head agreement, trusted domain labels, real failure detection and durable
 publication remain open.
+
+The [requirements/code audit](docs/requirements-code-audit.md) records the checked
+FHE/plaintext boundaries, repaired bypasses and requirements that remain unfinished.
 
 The [measurement ledger](docs/optimization-goal.md) preserves successful and failed
 experiments. Private retrieval and process recovery currently live in standalone

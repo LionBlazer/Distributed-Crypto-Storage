@@ -236,6 +236,33 @@ pub(super) fn navigation_button(ui: &mut egui::Ui, forward: bool, enabled: bool)
     )
 }
 
+/// Mouse navigation activates on the first press; release and key auto-repeat
+/// must not advance history a second time. Keyboard/accessibility clicks remain.
+pub(super) fn navigation_activated(response: &egui::Response) -> bool {
+    if !response.enabled() {
+        return false;
+    }
+    let pointer_click = response.clicked_by(egui::PointerButton::Primary);
+    let clicked = response.clicked();
+    let pointer_down = response.is_pointer_button_down_on();
+    response.ctx.input(|input| {
+        let pressed = (pointer_down || pointer_click)
+            && input.pointer.button_pressed(egui::PointerButton::Primary);
+        let repeated_key = input.events.iter().any(|event| {
+            matches!(
+                event,
+                egui::Event::Key {
+                    key: egui::Key::Enter | egui::Key::Space,
+                    pressed: true,
+                    repeat: true,
+                    ..
+                }
+            )
+        });
+        pressed || (clicked && !pointer_click && !repeated_key)
+    })
+}
+
 /// Shared response-based feedback for painted graph nodes and button backgrounds.
 pub(super) fn control_visuals(
     ui: &egui::Ui,

@@ -773,55 +773,25 @@ impl Runtime {
             ));
         }
         let snapshot = self.snapshot.as_ref().ok_or(LabError::NoDatabase)?;
-        if snapshot.peers.is_empty() && snapshot.replication.is_none() {
-            return Err(LabError::InvalidInput(
-                "No storage peers are available. Add a peer to rebuild encrypted shards.".into(),
+        let replication = snapshot.replication.as_ref().ok_or_else(|| {
+            LabError::InvalidInput("Encrypted custody metadata is missing; query refused.".into())
+        })?;
+        if !replication.unavailable_shards.is_empty() {
+            return Err(LabError::UnavailableShards(
+                replication.unavailable_shards.clone(),
             ));
         }
-        let mut peers: BTreeSet<_> = if let Some(replication) = &snapshot.replication {
-            if !replication.unavailable_shards.is_empty() {
-                return Err(LabError::UnavailableShards(
-                    replication.unavailable_shards.clone(),
-                ));
+        let peers: BTreeSet<_> = match plan {
+            fhe_playground::QueryPlan::AddAmount { .. }
+            | fhe_playground::QueryPlan::Insert { .. } => {
+                replication.write_peers.iter().copied().collect()
             }
-            match plan {
-                fhe_playground::QueryPlan::Aggregate { .. }
-                | fhe_playground::QueryPlan::Count { .. }
-                | fhe_playground::QueryPlan::Sum { .. }
-                | fhe_playground::QueryPlan::Select { .. } => {
-                    replication.read_peers.iter().copied().collect()
-                }
-                fhe_playground::QueryPlan::AddAmount { .. } => {
-                    replication.write_peers.iter().copied().collect()
-                }
-            }
-        } else {
-            let missing: Vec<_> = snapshot
-                .peers
-                .iter()
-                .filter(|peer| !peer.online && peer.rows > 0)
-                .map(|peer| peer.id)
-                .collect();
-            if !missing.is_empty() {
-                return Err(LabError::Unavailable(missing));
-            }
-            snapshot
-                .peers
-                .iter()
-                .filter(|peer| peer.rows > 0)
-                .map(|peer| peer.id)
-                .collect()
+            _ => replication.read_peers.iter().copied().collect(),
         };
-        // Even an empty database has to reach a real storage peer.
         if peers.is_empty() {
-            let first = snapshot
-                .peers
-                .iter()
-                .find(|peer| peer.online)
-                .ok_or_else(|| {
-                    LabError::InvalidInput("No online storage peer can receive the query.".into())
-                })?;
-            peers.insert(first.id);
+            return Err(LabError::InvalidInput(
+                "No current online encrypted custody source can receive the query.".into(),
+            ));
         }
         let id = self.next_request;
         self.next_request += 1;
@@ -1013,7 +983,7 @@ impl Runtime {
                             }
                         }
                         let _ = self.events.send(Event::Progress(
-                            "Returning computed ciphertext results to the requesting client..."
+                            "Local encrypted evaluation complete; waiting for simulated response delivery."
                                 .into(),
                         ));
                     }
@@ -1041,7 +1011,10 @@ impl Runtime {
                     };
                     if matches!(
                         &outcome,
-                        Ok(Outcome::Query(QueryOutcome::Updated { committed: true }))
+                        Ok(Outcome::Query(
+                            QueryOutcome::Updated { committed: true }
+                                | QueryOutcome::Inserted { .. }
+                        ))
                     ) {
                         self.repair_pending = self
                             .snapshot
@@ -1081,6 +1054,21 @@ mod tests {
         for _ in 0..6 {
             network.advance(0.4);
         }
+        let fixture_owner = compact_store::Owner::generate([70; 16]).unwrap();
+        let fixture_head = fixture_owner
+            .seal(
+                compact_store::Layout {
+                    schema: [3; 16],
+                    row_width: 3,
+                    rows_per_page: 256,
+                    row_count: 1,
+                },
+                &[18, 10, 0],
+                compact_store::Limits::default(),
+            )
+            .unwrap()
+            .commitment()
+            .clone();
         let snapshot = LabSnapshot {
             name: "public test fixture".into(),
             revision: 0,
@@ -1093,12 +1081,34 @@ mod tests {
                 config: config.clone(),
                 online: true,
                 rows: 1,
+                logical_bytes: 3,
                 data_bytes: 163,
                 index_bytes: 2332,
                 stored_bytes: 2495,
                 owner_row_indices: vec![0],
             }],
-            replication: None,
+            replication: Some(fhe_playground::ReplicationInfo {
+                desired_copies: 1,
+                shards: vec![fhe_playground::LogicalShardInfo {
+                    id: 7,
+                    rows: 1,
+                    data_head: fixture_head.clone(),
+                    index_head: fixture_head,
+                    replicas: vec![fhe_playground::ReplicaLocation {
+                        peer_id: 7,
+                        failure_domain: 7,
+                        online: true,
+                        current: true,
+                        data_bytes: 163,
+                        index_bytes: 2332,
+                    }],
+                    executor: Some(7),
+                }],
+                failure_domains: vec![(7, 7)],
+                read_peers: vec![7],
+                write_peers: vec![7],
+                unavailable_shards: vec![],
+            }),
         };
         let runtime = Runtime {
             network,
@@ -1206,6 +1216,17 @@ mod tests {
             jobs.try_recv().unwrap(),
             ComputeCommand::Prepare { id: 1, .. }
         ));
+    }
+    #[test]
+    fn missing_ciphertext_custody_metadata_never_falls_back_to_inspector_or_peer_row_counts() {
+        let (mut runtime, jobs, _, client, _) = runtime();
+        runtime.snapshot.as_mut().unwrap().replication = None;
+        let error = runtime
+            .begin_query(client, "SELECT * FROM records".into())
+            .unwrap_err();
+        assert!(error.to_string().contains("custody metadata"));
+        assert!(runtime.query.is_none());
+        assert!(matches!(jobs.try_recv(), Err(TryRecvError::Empty)));
     }
 
     #[test]
@@ -2042,5 +2063,54 @@ mod live_worker_tests {
         };
         assert_eq!(columns, vec![fhe_playground::Column::Amount]);
         assert_eq!(rows, vec![vec![65535]]);
+    }
+    #[test]
+    fn real_worker_insert_waits_for_delivery_then_encrypted_select_reads_the_new_row() {
+        let worker = Worker::start(egui::Context::default()).unwrap();
+        worker
+            .send(Command::SetSimulation {
+                speed: 4.0,
+                paused: false,
+            })
+            .unwrap();
+        worker
+            .send(Command::Create(DatabaseDraft {
+                name: "public INSERT worker fixture".into(),
+                rows: vec![],
+                peers: vec![],
+            }))
+            .unwrap();
+        let created = until(&worker, |event| matches!(event, Event::Finished { .. }));
+        assert!(matches!(
+            created,
+            Event::Finished {
+                outcome: Ok(Outcome::Created),
+                ..
+            }
+        ));
+        until(
+            &worker,
+            |event| matches!(event,Event::Network(network) if network.links.iter().any(|link|link.from==1&&link.to==2)),
+        );
+        worker
+            .send(Command::Query {
+                client_id: 1,
+                sql: "INSERT INTO records (age, amount) VALUES (42,65535)".into(),
+            })
+            .unwrap();
+        let inserted = until(&worker, |event| matches!(event, Event::Finished { .. }));
+        assert!(
+            matches!(inserted,Event::Finished {outcome:Ok(Outcome::Query(QueryOutcome::Inserted {count:1})),snapshot:Some(snapshot),..} if snapshot.revision==1)
+        );
+        worker
+            .send(Command::Query {
+                client_id: 1,
+                sql: "SELECT * FROM records WHERE age=42".into(),
+            })
+            .unwrap();
+        let result = until(&worker, |event| matches!(event, Event::Finished { .. }));
+        assert!(
+            matches!(result,Event::Finished {outcome:Ok(Outcome::Query(QueryOutcome::Selected {rows,..})),..} if rows==vec![vec![42,65535]])
+        );
     }
 }

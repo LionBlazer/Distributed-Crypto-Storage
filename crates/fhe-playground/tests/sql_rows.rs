@@ -159,7 +159,7 @@ fn limit_never_hides_offline_shards_even_for_zero_output_or_public_false_bounds(
         "SELECT SUM(amount) FROM records",
     ] {
         assert!(
-            matches!(engine.execute(sql), Err(LabError::Unavailable(peers)) if peers == vec![3]),
+            matches!(engine.execute(sql), Err(LabError::UnavailableShards(peers)) if peers == vec![3]),
             "{sql}"
         );
     }
@@ -202,10 +202,9 @@ fn empty_database_still_runs_encrypted_select_on_an_actual_online_peer() {
         .create(DatabaseDraft {
             name: "public empty fixture".into(),
             rows: vec![],
-            peers: vec![PeerConfig::numbered(1), PeerConfig::numbered(2)],
+            peers: vec![PeerConfig::numbered(1)],
         })
         .unwrap();
-    engine.set_peer_online(2, false).unwrap();
     let visited = std::cell::RefCell::new(Vec::new());
     let result = engine
         .execute_with_progress("SELECT * FROM records", |progress| {
@@ -217,6 +216,6 @@ fn empty_database_still_runs_encrypted_select_on_an_actual_online_peer() {
     engine.set_peer_online(1, false).unwrap();
     assert!(matches!(
         engine.execute("SELECT * FROM records"),
-        Err(LabError::Unavailable(_))
+        Err(LabError::UnavailableShards(_))
     ));
 }

@@ -8,11 +8,11 @@ decentralized consensus or malicious-peer query-proof protocol.
 
 ## State and operations
 
-Explicit `LabEngine::set_replication(1..=16)` fixes existing logical shard identities,
-trusted data/index heads and actual physical ciphertext holders. It configures a
-minimum; `repair_replicas` performs copying separately. The untouched default and
-fresh Create/replace retain the older fixture-manager baseline. Enabling custody
-generates no new keys and does not reseal rows from the inspector fixture.
+Database creation establishes fixed logical shard identities, trusted data/index
+heads and actual physical ciphertext holders, initially with a minimum of one copy.
+`LabEngine::set_replication(1..=16)` changes that minimum; `repair_replicas` performs
+copying separately. Adding a peer starts it empty and removing one drops its real
+copies. Neither topology changes nor repair reseal rows from the inspector fixture.
 
 Each usable copy contains BOTH canonical data and its matching encrypted index.
 Reads select one current online holder per logical shard; replicas do not multiply
@@ -26,6 +26,11 @@ execution remain open parts of requirement 7.
 UPDATE evaluates once per logical shard and stages ciphertext replacements on all
 online current holders. Overflow, quota failure or cancelled preparation publishes
 no partial update. Offline copies retain older heads and are excluded after return.
+Single-row INSERT chooses the smallest logical shard, homomorphically appends to
+its encrypted relation and checks the decoded response before growing its compact
+data/index. It stages every online current holder, leaves offline copies stale and
+shares the same quota/cancellation/commit gate. The laboratory database is capped
+at 128 rows; INSERT neither creates fresh keys nor reconstructs lost ciphertext.
 Repair validates survivor ciphertext and publishes the complete data/index batch;
 it does not read the owner fixture as a recovery source. Removing every copy leaves
 an unavailable shard even if the fixture is visible and empty peers are later added.
@@ -51,6 +56,9 @@ record metadata per pair. Offline/stale copies remain charged; lowering the mini
 does not garbage-collect extras. Owner keys, shared evaluation keys, Merkle caches,
 temporary images and allocator overhead are additional RAM. All state remains
 ephemeral; durable publication and process restart are separate experimental work.
+Peer-card occupancy uses these actual physical bytes. Its separate useful-payload
+count comes from each held data image's row geometry, including stale copies;
+it is not the current global fixture size.
 
 ## Reproduction
 

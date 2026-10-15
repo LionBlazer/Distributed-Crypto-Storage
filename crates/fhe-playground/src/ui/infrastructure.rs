@@ -12,7 +12,7 @@ pub(super) enum GraphAction {
     Repair,
     Fit,
 }
-const NODE_SIZE: egui::Vec2 = egui::vec2(148.0, 78.0);
+const NODE_SIZE: egui::Vec2 = egui::vec2(224.0, 132.0);
 
 impl Playground {
     pub(super) fn infrastructure(&mut self, ui: &mut egui::Ui) {
@@ -20,18 +20,16 @@ impl Playground {
             .frame(panel(10))
             .show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
-                    if navigation_button(ui, false, self.navigation.can_step(false))
+                    let back = navigation_button(ui, false, self.navigation.can_step(false))
                         .on_hover_text("Back (Alt+Left / Mouse X1)")
-                        .on_disabled_hover_text("No earlier view")
-                        .clicked()
-                    {
+                        .on_disabled_hover_text("No earlier view");
+                    if navigation_activated(&back) {
                         self.navigate_history(false);
                     }
-                    if navigation_button(ui, true, self.navigation.can_step(true))
+                    let forward = navigation_button(ui, true, self.navigation.can_step(true))
                         .on_hover_text("Forward (Alt+Right / Mouse X2)")
-                        .on_disabled_hover_text("No later view")
-                        .clicked()
-                    {
+                        .on_disabled_hover_text("No later view");
+                    if navigation_activated(&forward) {
                         self.navigate_history(true);
                     }
                     if tab_button(ui, "Network", self.right_tab == RightTab::Network).clicked() {
@@ -106,26 +104,25 @@ impl Playground {
         }
     }
     fn replication_controls(&mut self, ui: &mut egui::Ui) {
-        let mut copies = self
+        let Some(mut copies) = self
             .snapshot
             .as_ref()
             .and_then(|state| state.replication.as_ref())
-            .map_or(1, |replication| replication.desired_copies);
+            .map(|replication| replication.desired_copies)
+        else {
+            ui.add_enabled(false, egui::Button::new("Storage state unavailable"));
+            return;
+        };
         let previous = copies;
-        let legacy = self
-            .snapshot
-            .as_ref()
-            .is_some_and(|state| state.replication.is_none());
-        let mut selected = false;
         ui.add_enabled_ui(self.available() && self.controls_available() && self.snapshot.is_some(), |ui| {
             egui::ComboBox::from_id_salt("minimum-copies")
                 .selected_text(format!("Min copies {copies}"))
                 .width(110.0)
                 .show_ui(ui, |ui| {
-                    for count in 1..=3 { selected |= ui.selectable_value(&mut copies, count, if count == 1 { "1 copy".into() } else { format!("{count} copies") }).clicked(); }
-                }).response.on_hover_text("Minimum current copies in distinct configured failure domains; extra/stale copies remain charged. An explicit selection retains logical shards through topology changes. New placement is local repair after peer discovery; pause defers copies.");
+                    for count in 1..=3 { ui.selectable_value(&mut copies, count, if count == 1 { "1 copy".into() } else { format!("{count} copies") }); }
+                }).response.on_hover_text("Minimum current copies in distinct configured failure domains; extra/stale copies remain charged. Logical shards retain their custody through topology changes. New placement is local repair after peer discovery; pause defers copies.");
         });
-        if copies != previous || (selected && legacy) {
+        if copies != previous {
             self.control(Command::SetReplication { copies }, Control::Replication);
         }
         if let Some(state) = &self.snapshot {
@@ -162,7 +159,7 @@ impl Playground {
                     bytes(stored)
                 )
             } else {
-                format!("Legacy single-copy · {} stored", bytes(stored))
+                "Storage state unavailable".to_string()
             };
             ui.label(RichText::new(label).small().color(MUTED)).on_hover_text("Actual retained data+index ciphertext and replica-record metadata. Shared evaluation keys, owner state and transient memory are additional. Target counts configured independent domains, not a production availability guarantee.");
             if let Some(replication) = &state.replication
@@ -331,6 +328,8 @@ impl Playground {
                     RichText::new(format!("Data {}  ·  Index {}", bytes(peer.data_bytes), bytes(peer.index_bytes)))
                         .small().color(MUTED),
                 ).on_hover_text("Canonical encrypted data includes page authentication metadata. The index is counted separately. Shared evaluation keys and transient FHE memory are additional.");
+                ui.label(RichText::new(format!("Logical payload {} B / {} stored {}",peer.logical_bytes,peer.rows,row_word(peer.rows))).small().color(MUTED))
+                    .on_hover_text("Actual plaintext-size payload represented by all physical stored copies, including older stale copies; it is not unique current database coverage.");
                 if let Some(replication) = self
                     .snapshot
                     .as_ref()
@@ -413,7 +412,14 @@ impl Playground {
             .last_graph_canvas
             .is_none_or(|previous| previous.size() != canvas.size());
         self.last_graph_canvas = Some(canvas);
-        if response.dragged() {
+        let side_button_down = ui.input(|input| {
+            input.pointer.button_down(egui::PointerButton::Extra1)
+                || input.pointer.button_down(egui::PointerButton::Extra2)
+        });
+        if !side_button_down
+            && (response.dragged_by(egui::PointerButton::Primary)
+                || response.dragged_by(egui::PointerButton::Middle))
+        {
             self.camera.pan(response.drag_delta());
             self.camera_manipulated = true;
         }
@@ -615,7 +621,8 @@ impl Playground {
                     ui.id().with(("node", node.id)),
                     egui::Sense::click(),
                 )
-                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text(storage_tooltip(node, self.snapshot.as_ref()));
             if pointer.is_some_and(|pos| rect.contains(pos)) {
                 over_node = true;
             }
@@ -941,6 +948,58 @@ pub(super) fn packet_color(kind: PacketKind) -> Color32 {
         PacketKind::Cancel => Color32::from_rgb(232, 120, 105),
     }
 }
+
+fn copy_counts(state: &LabSnapshot, peer_id: usize) -> Option<(usize, usize)> {
+    state.replication.as_ref().map(|replication| {
+        replication
+            .shards
+            .iter()
+            .flat_map(|shard| &shard.replicas)
+            .filter(|copy| copy.peer_id == peer_id)
+            .fold((0, 0), |(current, stale), copy| {
+                if copy.current {
+                    (current + 1, stale)
+                } else {
+                    (current, stale + 1)
+                }
+            })
+    })
+}
+
+fn row_word(rows: usize) -> &'static str {
+    if rows == 1 { "row" } else { "rows" }
+}
+
+pub(super) fn storage_tooltip(node: &NetworkNode, state: Option<&LabSnapshot>) -> String {
+    let Some((state, peer)) = state.and_then(|state| {
+        node.peer_id
+            .and_then(|id| state.peers.iter().find(|peer| peer.id == id))
+            .map(|peer| (state, peer))
+    }) else {
+        return format!("{} · Node {} · Double-click to inspect", node.name, node.id);
+    };
+    let metadata = peer
+        .stored_bytes
+        .saturating_sub(peer.data_bytes.saturating_add(peer.index_bytes));
+    let copies = copy_counts(state, peer.id).map_or(String::new(), |(current, stale)| {
+        format!("\nCopies: {current} current / {stale} stale")
+    });
+    format!(
+        "{} · Node {}\nPhysical storage: {} B / {} B quota\nEncrypted data: {} B (includes authentication metadata)\nEncrypted index: {} B\nReplica record metadata: {} B\nLogical payload: {} B / {} stored {}{}\nPayload counts actual stored copies, including stale copies; it is not unique database coverage.\nShared evaluation keys and transient FHE memory are additional.\nDouble-click to inspect",
+        node.name,
+        node.id,
+        peer.stored_bytes,
+        peer.config.storage_limit_bytes,
+        peer.data_bytes,
+        peer.index_bytes,
+        metadata,
+        peer.logical_bytes,
+        peer.rows,
+        row_word(peer.rows),
+        copies
+    )
+}
+
 fn draw_node(
     p: &egui::Painter,
     rect: egui::Rect,
@@ -962,7 +1021,7 @@ fn draw_node(
     } else {
         GREEN
     };
-    let font = |size: f32| FontId::proportional((size * scale).clamp(9.0, 20.0));
+    let font = |size: f32| FontId::proportional((size * scale).clamp(6.0, 20.0));
     let title = if let Some(peer) = node.peer_id {
         format!("P{peer:02}")
     } else {
@@ -993,23 +1052,84 @@ fn draw_node(
         font(12.0),
         TEXT,
     );
-    let detail = if !node.online {
-        "Offline".into()
-    } else if !connected {
-        "Discovering...".into()
-    } else if let Some(peer) = node
+    let status = if !node.online {
+        "Offline"
+    } else if connected {
+        "Connected"
+    } else {
+        "Discovering…"
+    };
+    if let Some(peer) = node
         .peer_id
         .and_then(|id| state.and_then(|s| s.peers.iter().find(|p| p.id == id)))
     {
-        format!("{} rows / {}", peer.rows, bytes(peer.stored_bytes))
+        p.text(
+            egui::pos2(left, top + 45.0 * scale),
+            egui::Align2::LEFT_CENTER,
+            format!(
+                "Payload {} B · {} {}",
+                peer.logical_bytes,
+                peer.rows,
+                row_word(peer.rows)
+            ),
+            font(10.0),
+            TEXT,
+        );
+        p.text(
+            egui::pos2(left, top + 63.0 * scale),
+            egui::Align2::LEFT_CENTER,
+            format!(
+                "Stored {} / {} B",
+                peer.stored_bytes, peer.config.storage_limit_bytes
+            ),
+            font(10.0),
+            MUTED,
+        );
+        let ratio = (peer.stored_bytes as f32 / peer.config.storage_limit_bytes.max(1) as f32)
+            .clamp(0.0, 1.0);
+        let track = egui::Rect::from_min_size(
+            egui::pos2(left, top + 75.0 * scale),
+            egui::vec2(rect.width() - 24.0 * scale, 5.0 * scale),
+        );
+        p.rect_filled(track, 2, EDITOR);
+        if peer.stored_bytes > 0 {
+            let filled = egui::Rect::from_min_size(
+                track.min,
+                egui::vec2(track.width() * ratio, track.height()),
+            );
+            p.rect_filled(filled, 2, if ratio >= 0.9 { AMBER } else { GREEN });
+        }
+        let detail = state
+            .and_then(|state| copy_counts(state, peer.id))
+            .map_or_else(
+                || status.to_string(),
+                |(current, stale)| format!("{current} current / {stale} stale · {status}"),
+            );
+        p.text(
+            egui::pos2(left, top + 96.0 * scale),
+            egui::Align2::LEFT_CENTER,
+            detail,
+            font(9.0),
+            if node.online { MUTED } else { RED },
+        );
     } else {
-        "Connected".into()
-    };
-    p.text(
-        egui::pos2(left, top + 45.0 * scale),
-        egui::Align2::LEFT_CENTER,
-        detail,
-        font(10.0),
-        if node.online { MUTED } else { RED },
-    );
+        p.text(
+            egui::pos2(left, top + 45.0 * scale),
+            egui::Align2::LEFT_CENTER,
+            if node.role == NodeRole::Client {
+                "SQL client"
+            } else {
+                "Storage pending"
+            },
+            font(10.0),
+            MUTED,
+        );
+        p.text(
+            egui::pos2(left, top + 66.0 * scale),
+            egui::Align2::LEFT_CENTER,
+            status,
+            font(10.0),
+            if node.online { MUTED } else { RED },
+        );
+    }
 }

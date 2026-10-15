@@ -126,7 +126,11 @@ impl Playground {
             worker,
             snapshot: None,
             network: None,
-            sql: PRESETS[1].sql.into(),
+            sql: PRESETS
+                .first()
+                .expect("public presets are nonempty")
+                .sql
+                .into(),
             draft_name: "demo".into(),
             draft_rows: format_rows(&sample_rows(4).expect("bounded sample")),
             generate_rows: 4,
@@ -170,7 +174,10 @@ impl Playground {
     fn can_query(&self) -> bool {
         self.available()
             && self.controls_available()
-            && self.snapshot.is_some()
+            && self
+                .snapshot
+                .as_ref()
+                .is_some_and(|state| state.replication.is_some())
             && self.active_client.is_some_and(|id| {
                 self.network.as_ref().is_some_and(|net| {
                     net.nodes
@@ -396,7 +403,10 @@ impl Playground {
                     let created = matches!(outcome, Ok(Outcome::Created));
                     let updated = matches!(
                         outcome,
-                        Ok(Outcome::Query(QueryOutcome::Updated { committed: true }))
+                        Ok(Outcome::Query(
+                            QueryOutcome::Updated { committed: true }
+                                | QueryOutcome::Inserted { .. }
+                        ))
                     );
                     let current_draft = self.snapshot.as_ref().is_some_and(|s| {
                         self.draft_name.trim() == s.name
@@ -575,7 +585,17 @@ impl Playground {
                     }
                     self.client_selector(ui);
                     ui.menu_button("Presets", |ui| {
+                        ui.spacing_mut().item_spacing.y = 3.0;
+                        ui.spacing_mut().interact_size.y = 24.0;
+                        let mut group = None;
                         for preset in PRESETS {
+                            if group != Some(preset.group) {
+                                if group.is_some() {
+                                    ui.separator();
+                                }
+                                ui.label(RichText::new(preset.group.label()).small().color(MUTED));
+                                group = Some(preset.group);
+                            }
                             if ui.button(preset.name).on_hover_text(preset.sql).clicked() {
                                 self.insert_preset(preset.sql);
                                 ui.close();
@@ -641,6 +661,12 @@ impl Playground {
             Some("Applying network changes…")
         } else if self.snapshot.is_none() {
             Some("Create a database in Data")
+        } else if self
+            .snapshot
+            .as_ref()
+            .is_some_and(|state| state.replication.is_none())
+        {
+            Some("Storage state unavailable")
         } else if self.active_client.is_none() {
             Some("Add a client from the Network context menu")
         } else if !self.can_query() {
@@ -761,6 +787,10 @@ fn outcome_message(outcome: &Result<Outcome, String>) -> (String, Color32) {
             ("Rejected: amount overflow; no changes".into(), AMBER)
         }
         Ok(Outcome::Query(QueryOutcome::Updated { committed: true })) => ("Updated".into(), GREEN),
+        Ok(Outcome::Query(QueryOutcome::Inserted { count })) => (
+            format!("Inserted {count} row{}", if *count == 1 { "" } else { "s" }),
+            GREEN,
+        ),
         Ok(_) => ("OK".into(), TEXT),
     }
 }
@@ -773,9 +803,8 @@ fn highlight_sql(sql: &str) -> egui::text::LayoutJob {
         let word = token
             .trim_end_matches(|character: char| !character.is_alphanumeric() && character != '_');
         let color = match word.to_ascii_uppercase().as_str() {
-            "SELECT" | "FROM" | "WHERE" | "UPDATE" | "SET" | "BETWEEN" | "AND" | "LIMIT" => {
-                Color32::from_rgb(207, 142, 109)
-            }
+            "SELECT" | "FROM" | "WHERE" | "INSERT" | "INTO" | "VALUES" | "UPDATE" | "SET"
+            | "BETWEEN" | "AND" | "LIMIT" => Color32::from_rgb(207, 142, 109),
             "COUNT" | "SUM" => Color32::from_rgb(86, 168, 245),
             _ if !word.is_empty() && word.chars().all(|character| character.is_ascii_digit()) => {
                 Color32::from_rgb(106, 171, 115)

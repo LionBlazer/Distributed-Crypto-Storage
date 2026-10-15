@@ -3,6 +3,7 @@ use super::*;
 use compact_store::Commitment;
 use replica_store::{BundleId, FailureDomainId, ObjectId, PeerId, ReplicaStore, ReplicaTarget};
 use std::collections::BTreeSet;
+use std::time::Instant;
 
 const COPY_METADATA_BYTES: usize = 2 * replica_store::RECORD_METADATA_BYTES;
 
@@ -77,29 +78,38 @@ impl Shard {
     }
 }
 impl Replication {
-    fn initial(db: &Database, desired: usize) -> Result<Self, LabError> {
-        if db.peers.is_empty() {
+    pub(super) fn initial(
+        owner: &backend::Owner,
+        rows: &[PlainRow],
+        peers: &[Peer],
+        desired: usize,
+    ) -> Result<Self, LabError> {
+        if peers.is_empty() {
             return Err(LabError::InvalidInput(
-                "No encrypted primary shards exist to replicate.".into(),
+                "At least one storage peer is required to create encrypted shards.".into(),
             ));
         }
-        let shards = db
-            .peers
+        let shards = peers
             .iter()
             .enumerate()
             .map(|(position, peer)| {
-                let table = peer.legacy_table();
-                Shard {
+                let indices: Vec<_> = (position..rows.len()).step_by(peers.len()).collect();
+                let plaintext: Vec<_> = indices.iter().map(|index| rows[*index]).collect();
+                let table = owner.seal(&plaintext, ROWS_PER_PAGE, Limits::default())?;
+                peer.config.check_size(
+                    table.canonical_data_bytes()
+                        + table.encrypted_index_bytes()
+                        + COPY_METADATA_BYTES,
+                )?;
+                Ok(Shard {
                     id: peer.id,
-                    rows: (position..db.owner_rows.len())
-                        .step_by(db.peers.len())
-                        .collect(),
+                    rows: indices,
                     data: table.commitment().clone(),
                     index: table.index_commitment().clone(),
-                    holders: BTreeMap::from([(peer.id, table.fork_for_experiment())]),
-                }
+                    holders: BTreeMap::from([(peer.id, table)]),
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, LabError>>()?;
         Ok(Self { desired, shards })
     }
     fn fork(&self) -> Self {
@@ -153,12 +163,19 @@ impl Replication {
     pub(super) fn peer_info(&self, peer: &Peer) -> PeerInfo {
         let mut data_bytes = 0;
         let mut index_bytes = 0;
+        let mut logical_bytes = 0;
         let mut indices = Vec::new();
         for shard in &self.shards {
             if let Some(table) = shard.holders.get(&peer.id) {
                 data_bytes += table.canonical_data_bytes();
                 index_bytes += table.encrypted_index_bytes();
-                indices.extend_from_slice(&shard.rows);
+                let count = table.commitment().layout().row_count as usize;
+                logical_bytes += table
+                    .commitment()
+                    .layout()
+                    .logical_bytes()
+                    .expect("validated stored layout");
+                indices.extend_from_slice(&shard.rows[..count]);
             }
         }
         indices.sort_unstable();
@@ -167,6 +184,7 @@ impl Replication {
             config: peer.config.clone(),
             online: peer.online,
             rows: indices.len(),
+            logical_bytes,
             data_bytes,
             index_bytes,
             stored_bytes: self.charged_bytes(peer.id),
@@ -343,28 +361,15 @@ impl LabEngine {
             ));
         }
         let db = self.database.as_mut().ok_or(LabError::NoDatabase)?;
-        if let Some(replicas) = &mut db.replication {
-            replicas.desired = copies;
-        } else {
-            let replicas = Replication::initial(db, copies)?;
-            replicas.check_quotas(db)?;
-            db.replication = Some(replicas);
-            for peer in &mut db.peers {
-                peer.table = None;
-            }
-        }
+        db.replication.desired = copies;
         self.prepared = None;
         Ok(())
     }
     /// Local ciphertext copy only: caller owns discovery/routes/time and maintenance policy.
     pub fn repair_replicas(&mut self) -> Result<(), LabError> {
         let db = self.database.as_mut().ok_or(LabError::NoDatabase)?;
-        let replicas = db
-            .replication
-            .as_ref()
-            .ok_or_else(|| LabError::InvalidInput("Enable replication before repair.".into()))?;
-        let next = replicas.repaired(db)?;
-        db.replication = Some(next);
+        let next = db.replication.repaired(db)?;
+        db.replication = next;
         self.prepared = None;
         Ok(())
     }
@@ -384,7 +389,7 @@ pub(super) fn synchronize_peers(
     db: &mut Database,
     profiles: Vec<(usize, PeerConfig, bool)>,
 ) -> Result<(), LabError> {
-    let replicas = db.replication.as_ref().expect("replicated mode");
+    let replicas = &db.replication;
     for (id, config, _) in &profiles {
         config.check_size(replicas.charged_bytes(*id))?;
     }
@@ -398,11 +403,10 @@ pub(super) fn synchronize_peers(
                 config,
                 online,
                 evaluator: db.evaluator.clone(),
-                table: None,
             }
         })
         .collect();
-    for shard in &mut db.replication.as_mut().expect("replicated mode").shards {
+    for shard in &mut db.replication.shards {
         shard.holders.retain(|peer, _| ids.contains(peer));
     }
     db.failure_domains.retain(|peer, _| ids.contains(peer));
@@ -418,7 +422,10 @@ pub(super) fn execute(
     plan: QueryPlan,
     progress: &impl Fn(LabProgress),
 ) -> Result<(QueryOutcome, Option<PreparedUpdate>), LabError> {
-    let replicas = db.replication.as_ref().expect("replicated mode");
+    let replicas = &db.replication;
+    if let QueryPlan::Insert { row } = plan {
+        return insert(db, replicas, row, progress);
+    }
     if let QueryPlan::Select {
         predicate,
         projection,
@@ -462,6 +469,7 @@ pub(super) fn execute(
         | QueryPlan::Sum { predicate } => (predicate, None),
         QueryPlan::AddAmount { predicate, delta } => (predicate, Some(delta)),
         QueryPlan::Select { .. } => unreachable!("row reads returned above"),
+        QueryPlan::Insert { .. } => unreachable!("insert returned above"),
     };
     let Some(range) = predicate.age_range() else {
         return Ok((
@@ -516,6 +524,78 @@ pub(super) fn execute(
         });
     }
     Ok((aggregate_outcome(plan, count, sum, contributions), None))
+}
+fn insert(
+    db: &Database,
+    replicas: &Replication,
+    row: PlainRow,
+    progress: &impl Fn(LabProgress),
+) -> Result<(QueryOutcome, Option<PreparedUpdate>), LabError> {
+    let total: usize = replicas.shards.iter().map(|shard| shard.rows.len()).sum();
+    if total >= MAX_LAB_ROWS {
+        return Err(LabError::InvalidInput(
+            "INSERT would exceed the 128-row laboratory bound.".into(),
+        ));
+    }
+    let (slot, shard) = replicas
+        .shards
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, shard)| (shard.rows.len(), shard.id))
+        .ok_or_else(|| LabError::InvalidInput("No logical shard exists for INSERT.".into()))?;
+    let executor = shard
+        .executor(db)
+        .ok_or_else(|| LabError::UnavailableShards(vec![shard.id]))?;
+    progress(LabProgress {
+        peer_id: executor,
+        message: format!(
+            "Homomorphically appending an encrypted row to logical shard {}...",
+            shard.id
+        ),
+    });
+    let mut table = shard.materialize(db, executor)?;
+    let query =
+        db.owner
+            .prepare_insert_for_experiment(&table, row, MAX_LAB_ROWS, Limits::default())?;
+    let peer = db
+        .peers
+        .iter()
+        .find(|peer| peer.id == executor)
+        .expect("current executor");
+    let evaluated = peer.evaluator.evaluate_indexed_insert(query.request())?;
+    db.owner.apply_insert_checked_for_experiment(
+        &mut table,
+        query,
+        &evaluated.output,
+        Limits::default(),
+    )?;
+    let actual =
+        db.owner
+            .decrypt_row_for_experiment(&table, shard.rows.len() as u64, Limits::default())?;
+    let mut next = replicas.fork();
+    let staged = &mut next.shards[slot];
+    for peer in db.peers.iter().filter(|peer| peer.online) {
+        if shard
+            .holders
+            .get(&peer.id)
+            .is_some_and(|table| shard.current(table))
+        {
+            staged.holders.insert(peer.id, table.fork_for_experiment());
+        }
+    }
+    staged.rows.push(total);
+    staged.data = table.commitment().clone();
+    staged.index = table.index_commitment().clone();
+    next.check_quotas(db)?;
+    let mut rows = db.owner_rows.clone();
+    rows.push(actual);
+    Ok((
+        QueryOutcome::Inserted { count: 1 },
+        Some(PreparedUpdate {
+            rows,
+            replication: next,
+        }),
+    ))
 }
 fn update(
     db: &Database,
@@ -591,9 +671,8 @@ fn update(
     Ok((
         QueryOutcome::Updated { committed: true },
         Some(PreparedUpdate {
-            tables: Vec::new(),
             rows,
-            replication: Some(next),
+            replication: next,
         }),
     ))
 }

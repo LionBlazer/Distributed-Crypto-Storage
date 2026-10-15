@@ -89,69 +89,116 @@ pub enum QueryPlan {
         predicate: Predicate,
         delta: u16,
     },
+    Insert {
+        row: crate::PlainRow,
+    },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PresetGroup {
+    Select,
+    Filter,
+    Aggregate,
+    Insert,
+    Update,
+}
+impl PresetGroup {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Select => "Read rows",
+            Self::Filter => "Filter rows",
+            Self::Aggregate => "Summarize",
+            Self::Insert => "Insert",
+            Self::Update => "Update",
+        }
+    }
+}
 pub struct Preset {
     pub name: &'static str,
+    pub group: PresetGroup,
     pub sql: &'static str,
 }
 
 pub const PRESETS: &[Preset] = &[
     Preset {
         name: "All rows",
-        sql: "SELECT COUNT(*), SUM(amount)\nFROM records;",
-    },
-    Preset {
-        name: "Adults",
-        sql: "SELECT COUNT(*), SUM(amount)\nFROM records\nWHERE age >= 18;",
-    },
-    Preset {
-        name: "Age 18",
-        sql: "SELECT COUNT(*), SUM(amount)\nFROM records\nWHERE age = 18;",
-    },
-    Preset {
-        name: "No matches",
-        sql: "SELECT COUNT(*), SUM(amount)\nFROM records\nWHERE age = 255;",
-    },
-    Preset {
-        name: "Add 5",
-        sql: "UPDATE records\nSET amount = amount + 5\nWHERE age >= 18;",
-    },
-    Preset {
-        name: "Overflow test",
-        sql: "UPDATE records\nSET amount = amount + 65535\nWHERE age >= 18;",
-    },
-    Preset {
-        name: "Under 18",
-        sql: "SELECT COUNT(*), SUM(amount)\nFROM records\nWHERE age < 18;",
-    },
-    Preset {
-        name: "At most 18",
-        sql: "SELECT COUNT(*), SUM(amount)\nFROM records\nWHERE age <= 18;",
-    },
-    Preset {
-        name: "Over 18",
-        sql: "SELECT COUNT(*), SUM(amount)\nFROM records\nWHERE age > 18;",
-    },
-    Preset {
-        name: "Ages 18..42",
-        sql: "SELECT COUNT(*), SUM(amount)\nFROM records\nWHERE age BETWEEN 18 AND 42;",
-    },
-    Preset {
-        name: "Browse rows",
+        group: PresetGroup::Select,
         sql: "SELECT * FROM records;",
     },
     Preset {
-        name: "First amounts",
-        sql: "SELECT amount FROM records\nWHERE age >= 18\nLIMIT 10;",
+        name: "First 10 rows",
+        group: PresetGroup::Select,
+        sql: "SELECT * FROM records LIMIT 10;",
+    },
+    Preset {
+        name: "Adults",
+        group: PresetGroup::Filter,
+        sql: "SELECT * FROM records WHERE age >= 18;",
+    },
+    Preset {
+        name: "Age 18",
+        group: PresetGroup::Filter,
+        sql: "SELECT * FROM records WHERE age = 18;",
+    },
+    Preset {
+        name: "Under 18",
+        group: PresetGroup::Filter,
+        sql: "SELECT * FROM records WHERE age < 18;",
+    },
+    Preset {
+        name: "At most 18",
+        group: PresetGroup::Filter,
+        sql: "SELECT * FROM records WHERE age <= 18;",
+    },
+    Preset {
+        name: "Over 18",
+        group: PresetGroup::Filter,
+        sql: "SELECT * FROM records WHERE age > 18;",
+    },
+    Preset {
+        name: "Ages 18..42",
+        group: PresetGroup::Filter,
+        sql: "SELECT * FROM records WHERE age BETWEEN 18 AND 42;",
+    },
+    Preset {
+        name: "Age 255",
+        group: PresetGroup::Filter,
+        sql: "SELECT * FROM records WHERE age = 255;",
+    },
+    Preset {
+        name: "Adult amounts",
+        group: PresetGroup::Filter,
+        sql: "SELECT amount FROM records WHERE age >= 18 LIMIT 10;",
     },
     Preset {
         name: "Count rows",
+        group: PresetGroup::Aggregate,
         sql: "SELECT COUNT(*) FROM records;",
     },
     Preset {
         name: "Sum amounts",
+        group: PresetGroup::Aggregate,
         sql: "SELECT SUM(amount) FROM records;",
+    },
+    Preset {
+        name: "Count and sum",
+        group: PresetGroup::Aggregate,
+        sql: "SELECT COUNT(*), SUM(amount) FROM records;",
+    },
+    Preset {
+        name: "Insert one row",
+        group: PresetGroup::Insert,
+        sql: "INSERT INTO records (age, amount) VALUES (18, 10);",
+    },
+    Preset {
+        name: "Increase adult amounts by 5",
+        group: PresetGroup::Update,
+        sql: "UPDATE records SET amount = amount + 5 WHERE age >= 18;",
+    },
+    Preset {
+        name: "Overflow test",
+        group: PresetGroup::Update,
+        sql: "UPDATE records SET amount = amount + 65535 WHERE age >= 18;",
     },
 ];
 
@@ -165,6 +212,23 @@ pub fn parse_sql(sql: &str) -> Result<QueryPlan, LabError> {
     let mut parser = Parser { tokens, index: 0 };
     let plan = if parser.take("SELECT") {
         parser.select()?
+    } else if parser.take("INSERT") {
+        parser.expect("INTO")?;
+        parser.expect("RECORDS")?;
+        if parser.take("(") {
+            for token in ["AGE", ",", "AMOUNT", ")"] {
+                parser.expect(token)?;
+            }
+        }
+        parser.expect("VALUES")?;
+        parser.expect("(")?;
+        let age = parser.number("age must be in 0..=255")?;
+        parser.expect(",")?;
+        let amount = parser.number("amount must be in 0..=65535")?;
+        parser.expect(")")?;
+        QueryPlan::Insert {
+            row: crate::PlainRow { age, amount },
+        }
     } else if parser.take("UPDATE") {
         for token in ["RECORDS", "SET", "AMOUNT", "=", "AMOUNT", "+"] {
             parser.expect(token)?;
@@ -175,7 +239,7 @@ pub fn parse_sql(sql: &str) -> Result<QueryPlan, LabError> {
             delta,
         }
     } else {
-        return Err(unsupported("expected SELECT or UPDATE"));
+        return Err(unsupported("expected SELECT, INSERT or UPDATE"));
     };
     parser.take(";");
     if parser.index != parser.tokens.len() {
@@ -368,6 +432,6 @@ impl Parser {
 
 fn unsupported(reason: &str) -> LabError {
     LabError::UnsupportedSql(format!(
-        "{reason}. Supported: SELECT *, age, amount, COUNT(*), SUM(amount), or COUNT(*), SUM(amount) FROM records; UPDATE records SET amount = amount + N. Optional WHERE age =, <, <=, >, >= N or age BETWEEN lower AND upper. Row SELECT allows LIMIT 0..128."
+        "{reason}. Supported: SELECT *, age, amount, COUNT(*), SUM(amount), or COUNT(*), SUM(amount) FROM records; INSERT INTO records (age, amount) VALUES (A, N); UPDATE records SET amount = amount + N. Optional read/update WHERE age =, <, <=, >, >= N or age BETWEEN lower AND upper. Row SELECT allows LIMIT 0..128."
     ))
 }

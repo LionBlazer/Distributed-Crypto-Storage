@@ -51,7 +51,6 @@ fn enabling_is_configure_only_then_actual_ciphertext_repair_does_not_double_coun
             .iter()
             .map(|peer| peer.stored_bytes)
             .sum::<usize>()
-            + 3 * 16
     );
 
     engine.repair_replicas().unwrap();
@@ -80,7 +79,6 @@ fn enabling_is_configure_only_then_actual_ciphertext_repair_does_not_double_coun
             .iter()
             .map(|peer| peer.stored_bytes)
             .sum::<usize>()
-            + 6 * 16
     );
     for (shard, head) in info.shards.iter().zip(heads) {
         assert_eq!(shard.data_head, head.data);
@@ -327,13 +325,21 @@ fn replicated_topology_changes_keep_shard_heads_and_new_peers_start_empty() {
 }
 
 #[test]
-fn rejected_policy_changes_are_atomic_and_create_resets_to_the_legacy_mode() {
+fn rejected_policy_changes_are_atomic_and_create_starts_with_real_factor_one() {
     let mut engine = engine(sample_rows(2).unwrap(), 2);
     let heads = engine.peer_heads_for_experiment().unwrap();
     for copies in [0, 17] {
         assert!(engine.set_replication(copies).is_err());
     }
-    assert!(engine.snapshot().unwrap().replication.is_none());
+    assert_eq!(
+        engine
+            .snapshot()
+            .unwrap()
+            .replication
+            .unwrap()
+            .desired_copies,
+        1
+    );
     assert_eq!(engine.peer_heads_for_experiment().unwrap(), heads);
     engine.set_replication(2).unwrap();
     engine.set_replication(1).unwrap();
@@ -353,7 +359,15 @@ fn rejected_policy_changes_are_atomic_and_create_resets_to_the_legacy_mode() {
             peers: vec![PeerConfig::numbered(1)],
         })
         .unwrap();
-    assert!(engine.snapshot().unwrap().replication.is_none());
+    assert_eq!(
+        engine
+            .snapshot()
+            .unwrap()
+            .replication
+            .unwrap()
+            .desired_copies,
+        1
+    );
 }
 
 #[test]
@@ -383,4 +397,33 @@ fn explicit_factor_one_enters_ciphertext_custody_and_never_recovers_from_the_fix
     assert!(
         matches!(engine.repair_replicas(), Err(fhe_playground::LabError::UnavailableShards(ids)) if ids == [1])
     );
+}
+#[test]
+fn exhausted_peer_identity_can_update_existing_profile_but_never_wraps_a_new_peer() {
+    let mut engine = LabEngine::default();
+    engine
+        .create_with_peer_ids(
+            DatabaseDraft {
+                name: "public ID limit fixture".into(),
+                rows: sample_rows(1).unwrap(),
+                peers: vec![PeerConfig::numbered(1)],
+            },
+            vec![usize::MAX],
+        )
+        .unwrap();
+    let heads = engine.peer_heads_for_experiment().unwrap();
+    let mut existing = PeerConfig::numbered(1);
+    existing.name = "Existing holder".into();
+    engine.configure_peers(vec![existing.clone()]).unwrap();
+    assert_eq!(engine.snapshot().unwrap().peers[0].id, usize::MAX);
+    assert!(
+        engine
+            .configure_peers(vec![existing.clone(), PeerConfig::numbered(2)])
+            .is_err()
+    );
+    let snapshot = engine.snapshot().unwrap();
+    assert_eq!(snapshot.peers.len(), 1);
+    assert_eq!(snapshot.peers[0].config, existing);
+    assert_eq!(engine.peer_heads_for_experiment().unwrap(), heads);
+    assert_eq!(aggregate(&mut engine).0, 1);
 }

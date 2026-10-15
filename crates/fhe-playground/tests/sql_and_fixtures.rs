@@ -18,7 +18,10 @@ fn every_one_click_preset_has_a_supported_plan() {
 fn keywords_are_case_insensitive_and_whitespace_is_optional_around_symbols() {
     let plan = parse_sql("select count(*),sum(amount) from records where age>=18;").unwrap();
 
-    assert_eq!(plan, parse_sql(PRESETS[1].sql).unwrap());
+    assert_eq!(
+        plan,
+        parse_sql("SELECT COUNT(*), SUM(amount) FROM records WHERE age >= 18").unwrap()
+    );
     assert!(matches!(
         parse_sql("UPDATE records SET amount=amount+0"),
         Ok(QueryPlan::AddAmount { delta: 0, .. })
@@ -188,6 +191,74 @@ fn updates_accept_the_same_age_range_grammar_as_reads() {
 #[test]
 fn oversized_sql_is_rejected_before_tokenization() {
     assert!(parse_sql(&" ".repeat(4097)).is_err());
+}
+#[test]
+fn insert_has_bounded_typed_values_and_never_ignores_extra_rows_or_clauses() {
+    use fhe_playground::PlainRow;
+    assert_eq!(
+        parse_sql("INSERT INTO records (age, amount) VALUES (255,65535);").unwrap(),
+        QueryPlan::Insert {
+            row: PlainRow {
+                age: 255,
+                amount: 65535
+            }
+        }
+    );
+    assert_eq!(
+        parse_sql("insert into records values(0,0)").unwrap(),
+        QueryPlan::Insert {
+            row: PlainRow { age: 0, amount: 0 }
+        }
+    );
+    for sql in [
+        "INSERT INTO records VALUES (256,1)",
+        "INSERT INTO records VALUES (1,65536)",
+        "INSERT INTO records VALUES (-1,1)",
+        "INSERT INTO records VALUES (1,1),(2,2)",
+        "INSERT INTO records (amount,age) VALUES (1,2)",
+        "INSERT INTO records VALUES (1,1) WHERE age=1",
+        "INSERT INTO other VALUES (1,1)",
+        "INSERT INTO records VALUES (1)",
+        "INSERT INTO records SELECT * FROM records",
+    ] {
+        assert!(parse_sql(sql).is_err(), "{sql}");
+    }
+}
+#[test]
+fn presets_progress_from_reading_to_filtering_and_summary_then_real_writes() {
+    use fhe_playground::PresetGroup;
+    assert!(matches!(
+        parse_sql(PRESETS.first().unwrap().sql),
+        Ok(QueryPlan::Select { .. })
+    ));
+    let groups: Vec<_> =
+        PRESETS
+            .iter()
+            .map(|preset| preset.group)
+            .fold(Vec::new(), |mut groups, group| {
+                if groups.last() != Some(&group) {
+                    groups.push(group)
+                }
+                groups
+            });
+    assert_eq!(
+        groups,
+        vec![
+            PresetGroup::Select,
+            PresetGroup::Filter,
+            PresetGroup::Aggregate,
+            PresetGroup::Insert,
+            PresetGroup::Update
+        ]
+    );
+    let insert = PRESETS
+        .iter()
+        .find(|preset| preset.group == PresetGroup::Insert)
+        .unwrap();
+    assert!(matches!(
+        parse_sql(insert.sql),
+        Ok(QueryPlan::Insert { .. })
+    ));
 }
 
 #[test]

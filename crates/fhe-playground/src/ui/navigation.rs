@@ -154,10 +154,18 @@ impl Playground {
 
     pub(super) fn navigation_shortcuts(&mut self, ctx: &egui::Context) {
         let (back, forward) = ctx.input_mut(|input| {
-            let back = input.consume_key(egui::Modifiers::ALT, egui::Key::ArrowLeft)
-                || input.pointer.button_clicked(egui::PointerButton::Extra1);
-            let forward = input.consume_key(egui::Modifiers::ALT, egui::Key::ArrowRight)
-                || input.pointer.button_clicked(egui::PointerButton::Extra2);
+            let first_key_press = |key| {
+                input.events.iter().any(|event| matches!(event,
+                egui::Event::Key { key: pressed_key, pressed: true, repeat: false, modifiers, .. }
+                    if *pressed_key == key && *modifiers == egui::Modifiers::ALT
+            ))
+            };
+            let back = first_key_press(egui::Key::ArrowLeft)
+                || input.pointer.button_pressed(egui::PointerButton::Extra1);
+            let forward = first_key_press(egui::Key::ArrowRight)
+                || input.pointer.button_pressed(egui::PointerButton::Extra2);
+            input.consume_key(egui::Modifiers::ALT, egui::Key::ArrowLeft);
+            input.consume_key(egui::Modifiers::ALT, egui::Key::ArrowRight);
             (back, forward)
         });
         if back || forward {

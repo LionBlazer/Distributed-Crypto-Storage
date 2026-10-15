@@ -1,5 +1,5 @@
 use super::*;
-use fhe_playground::{DemoNetwork, PeerInfo};
+use fhe_playground::DemoNetwork;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 #[path = "ui_preview.rs"]
 mod preview;
@@ -13,25 +13,26 @@ fn app() -> (Playground, Receiver<Command>, Sender<Event>) {
     (app, commands, events)
 }
 fn snapshot(peers: usize) -> LabSnapshot {
-    let rows = sample_rows(4).unwrap();
-    LabSnapshot {
-        name: "demo".into(),
-        revision: 0,
-        peers: (0..peers)
-            .map(|index| PeerInfo {
-                id: index + 1,
-                config: PeerConfig::numbered(index + 1),
-                online: true,
-                rows: (index..rows.len()).step_by(peers).count(),
-                data_bytes: 166,
-                index_bytes: 2336,
-                stored_bytes: 2502,
-                owner_row_indices: (index..rows.len()).step_by(peers).collect(),
-            })
-            .collect(),
-        owner_rows: rows,
-        replication: None,
-    }
+    // Public synthetic rows, but real default custody/physical accounting. Cache
+    // only the non-secret snapshot so headless UI examples share no live engine.
+    static SNAPSHOTS: std::sync::OnceLock<std::sync::Mutex<HashMap<usize, LabSnapshot>>> =
+        std::sync::OnceLock::new();
+    SNAPSHOTS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap()
+        .entry(peers)
+        .or_insert_with(|| {
+            let mut engine = fhe_playground::LabEngine::default();
+            engine
+                .create(DatabaseDraft {
+                    name: "demo".into(),
+                    rows: sample_rows(4).unwrap(),
+                    peers: (1..=peers).map(PeerConfig::numbered).collect(),
+                })
+                .unwrap()
+        })
+        .clone()
 }
 fn network(peers: usize, clients: usize) -> NetworkSnapshot {
     let mut net = DemoNetwork::default();
@@ -195,27 +196,73 @@ fn inline_copy_choice_sends_one_serialized_policy_command() {
     ));
     assert!(commands.try_recv().is_err());
     assert!(matches!(app.control_pending, Some(Control::Replication)));
-    assert!(app.snapshot.as_ref().unwrap().replication.is_none());
+    assert_eq!(
+        app.snapshot
+            .as_ref()
+            .unwrap()
+            .replication
+            .as_ref()
+            .unwrap()
+            .desired_copies,
+        1
+    );
 }
 
 #[test]
-fn explicitly_confirming_one_copy_enables_fixed_custody_but_default_render_does_not() {
+fn confirming_existing_one_copy_keeps_default_fixed_custody_without_a_rebuild() {
     let (mut app, commands, _) = app();
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    let shard_count = app
+        .snapshot
+        .as_ref()
+        .unwrap()
+        .replication
+        .as_ref()
+        .unwrap()
+        .shards
+        .len();
+    let texts = render(&ctx, &mut app, vec![]);
+    assert!(texts.iter().any(|text| {
+        text.text
+            .contains(&format!("{shard_count}/{shard_count} at target"))
+    }));
+    assert!(commands.try_recv().is_err());
+    click(&ctx, &mut app, "Min copies 1");
+    click(&ctx, &mut app, "1 copy");
+    assert!(commands.try_recv().is_err());
+    assert_eq!(
+        app.snapshot
+            .as_ref()
+            .unwrap()
+            .replication
+            .as_ref()
+            .unwrap()
+            .desired_copies,
+        1
+    );
+}
+
+#[test]
+fn missing_custody_metadata_disables_policy_and_sql_without_a_legacy_fallback() {
+    let (mut app, commands, _events) = app();
+    app.snapshot.as_mut().unwrap().replication = None;
     let ctx = egui::Context::default();
     set_theme(&ctx);
     let texts = render(&ctx, &mut app, vec![]);
     assert!(
         texts
             .iter()
-            .any(|text| text.text.contains("Legacy single-copy"))
+            .any(|text| text.text == "Storage state unavailable")
     );
-    assert!(commands.try_recv().is_err());
-    click(&ctx, &mut app, "Min copies 1");
-    click(&ctx, &mut app, "1 copy");
-    assert!(matches!(
-        commands.try_recv().unwrap(),
-        Command::SetReplication { copies: 1 }
-    ));
+    assert!(
+        !texts
+            .iter()
+            .any(|text| text.text == "Min copies 1" || text.text.contains("Legacy"))
+    );
+    assert!(!app.can_query());
+    app.run_query();
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
 }
 
 #[test]
@@ -492,13 +539,15 @@ fn presets_fill_the_editor_without_execution_until_run_is_clicked() {
     let ctx = egui::Context::default();
     set_theme(&ctx);
     click(&ctx, &mut app, "Presets");
-    click(&ctx, &mut app, "Add 5");
-    assert_eq!(app.sql, PRESETS[4].sql);
+    click(&ctx, &mut app, "Increase adult amounts by 5");
+    let preset = PRESETS
+        .iter()
+        .find(|preset| preset.name == "Increase adult amounts by 5")
+        .unwrap();
+    assert_eq!(app.sql, preset.sql);
     assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
     click(&ctx, &mut app, "Run");
-    assert!(
-        matches!(commands.try_recv(),Ok(Command::Query{client_id:1,sql})if sql==PRESETS[4].sql)
-    );
+    assert!(matches!(commands.try_recv(),Ok(Command::Query{client_id:1,sql})if sql==preset.sql));
 }
 
 #[test]
@@ -622,6 +671,383 @@ fn mouse_extra_buttons_and_alt_arrows_follow_the_same_navigation_history() {
         assert_eq!(app.right_tab, RightTab::Node(expected));
     }
     assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+fn pointer_event(position: egui::Pos2, button: egui::PointerButton, pressed: bool) -> egui::Event {
+    egui::Event::PointerButton {
+        pos: position,
+        button,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    }
+}
+
+#[test]
+fn side_navigation_activates_on_press_and_never_pans_while_held_or_on_release() {
+    for button in [egui::PointerButton::Extra1, egui::PointerButton::Extra2] {
+        let (mut app, commands, _events) = app();
+        app.network_view = NetworkView::Map;
+        let ctx = egui::Context::default();
+        set_theme(&ctx);
+        render(&ctx, &mut app, vec![]);
+        app.camera_manipulated = true;
+        app.camera.center = egui::vec2(91.0, -31.0);
+        app.camera.zoom = 0.8;
+        app.open_node(2);
+        if button == egui::PointerButton::Extra2 {
+            app.navigate(Tab::Sql, RightTab::Network);
+            app.navigate_history(false);
+        }
+        let saved = (app.camera.center, app.camera.zoom);
+        let start = egui::pos2(1450.0, 810.0);
+        render(
+            &ctx,
+            &mut app,
+            vec![
+                egui::Event::PointerMoved(start),
+                pointer_event(start, button, true),
+            ],
+        );
+        assert_eq!(
+            app.right_tab,
+            RightTab::Network,
+            "Navigation must happen before release"
+        );
+        let moved = start - egui::vec2(80.0, 60.0);
+        render(&ctx, &mut app, vec![egui::Event::PointerMoved(moved)]);
+        assert_eq!(
+            (app.camera.center, app.camera.zoom),
+            saved,
+            "Holding a side button never drags the map"
+        );
+        render(&ctx, &mut app, vec![pointer_event(moved, button, false)]);
+        assert_eq!(
+            app.right_tab,
+            RightTab::Network,
+            "Release must not navigate twice"
+        );
+        assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+    }
+}
+
+#[test]
+fn only_primary_and_middle_pointer_drags_pan_the_map() {
+    for button in [
+        egui::PointerButton::Primary,
+        egui::PointerButton::Middle,
+        egui::PointerButton::Secondary,
+        egui::PointerButton::Extra1,
+        egui::PointerButton::Extra2,
+    ] {
+        let (mut app, commands, _events) = app();
+        app.network_view = NetworkView::Map;
+        let ctx = egui::Context::default();
+        set_theme(&ctx);
+        render(&ctx, &mut app, vec![]);
+        app.camera_manipulated = true;
+        let saved = app.camera.center;
+        let start = egui::pos2(1450.0, 810.0);
+        render(
+            &ctx,
+            &mut app,
+            vec![
+                egui::Event::PointerMoved(start),
+                pointer_event(start, button, true),
+            ],
+        );
+        render(
+            &ctx,
+            &mut app,
+            vec![egui::Event::PointerMoved(start - egui::vec2(80.0, 60.0))],
+        );
+        if matches!(
+            button,
+            egui::PointerButton::Primary | egui::PointerButton::Middle
+        ) {
+            assert_ne!(app.camera.center, saved, "{button:?} must pan the graph");
+        } else {
+            assert_eq!(
+                app.camera.center, saved,
+                "{button:?} must not pan the graph"
+            );
+        }
+        assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+    }
+}
+
+#[test]
+fn visible_navigation_buttons_step_on_press_and_ignore_release_and_key_repeat() {
+    let (mut app, commands, _events) = app();
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    app.open_node(2);
+    app.open_node(3);
+    let point = render(&ctx, &mut app, vec![])
+        .into_iter()
+        .find(|text| text.text == "Back")
+        .unwrap()
+        .rect
+        .center();
+    render(
+        &ctx,
+        &mut app,
+        vec![
+            egui::Event::PointerMoved(point),
+            pointer_event(point, egui::PointerButton::Primary, true),
+        ],
+    );
+    assert_eq!(app.right_tab, RightTab::Node(2));
+    render(
+        &ctx,
+        &mut app,
+        vec![pointer_event(point, egui::PointerButton::Primary, false)],
+    );
+    assert_eq!(app.right_tab, RightTab::Node(2));
+    app.navigate_history(true);
+    for repeat in [false, true, true] {
+        render(
+            &ctx,
+            &mut app,
+            vec![egui::Event::Key {
+                key: egui::Key::ArrowLeft,
+                physical_key: None,
+                pressed: true,
+                repeat,
+                modifiers: egui::Modifiers::ALT,
+            }],
+        );
+        assert_eq!(app.right_tab, RightTab::Node(2));
+    }
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn navigation_buttons_accept_fast_press_release_events_in_the_same_frame_once() {
+    let (mut app, commands, _events) = app();
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    app.open_node(2);
+    app.open_node(3);
+    for (label, expected) in [("Back", 2), ("Forward", 3)] {
+        let point = render(&ctx, &mut app, vec![])
+            .into_iter()
+            .find(|text| text.text == label)
+            .unwrap()
+            .rect
+            .center();
+        render(
+            &ctx,
+            &mut app,
+            vec![
+                egui::Event::PointerMoved(point),
+                pointer_event(point, egui::PointerButton::Primary, true),
+                pointer_event(point, egui::PointerButton::Primary, false),
+            ],
+        );
+        assert_eq!(app.right_tab, RightTab::Node(expected));
+        render(&ctx, &mut app, vec![]);
+        assert_eq!(
+            app.right_tab,
+            RightTab::Node(expected),
+            "A fast click must navigate exactly once"
+        );
+    }
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn peer_cards_render_live_physical_payload_bytes_and_exact_quota_fraction() {
+    // Public synthetic rows; the renderer takes a real engine snapshot and never
+    // calculates query results or storage sizes from the owner's inspector rows.
+    let mut engine = fhe_playground::LabEngine::default();
+    let state = engine
+        .create(DatabaseDraft {
+            name: "metrics".into(),
+            rows: sample_rows(4).unwrap(),
+            peers: (1..=3).map(PeerConfig::numbered).collect(),
+        })
+        .unwrap();
+    let expected = state
+        .peers
+        .iter()
+        .find(|peer| peer.logical_bytes > 0)
+        .unwrap()
+        .clone();
+    let (mut app, commands, _events) = app();
+    app.snapshot = Some(state);
+    app.network_view = NetworkView::Map;
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    let output = ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1500.0, 900.0),
+            )),
+            ..Default::default()
+        },
+        |ui| app.draw(ui),
+    );
+    let mut texts = Vec::new();
+    let mut rectangles = Vec::new();
+    for shape in &output.shapes {
+        match &shape.shape {
+            egui::Shape::Text(text) => texts.push((
+                text.galley.job.text.clone(),
+                text.galley.rect.translate(text.pos.to_vec2()),
+            )),
+            egui::Shape::Rect(rect) => rectangles.push(rect),
+            _ => {}
+        }
+    }
+    assert!(texts.iter().any(|(text, _)| text
+        == &format!(
+            "Payload {} B · {} {}",
+            expected.logical_bytes,
+            expected.rows,
+            if expected.rows == 1 { "row" } else { "rows" }
+        )));
+    assert!(texts.iter().any(|(text, _)| text
+        == &format!(
+            "Stored {} / {} B",
+            expected.stored_bytes, expected.config.storage_limit_bytes
+        )));
+    let title = texts
+        .iter()
+        .find(|(text, _)| text == &format!("P{:02}", expected.id))
+        .unwrap()
+        .1;
+    let bar_min = egui::pos2(title.left(), title.center().y + 75.0 * app.camera.zoom);
+    let track = rectangles
+        .iter()
+        .find(|rect| rect.fill == EDITOR && rect.rect.min.distance(bar_min) < 0.1)
+        .unwrap();
+    let fill = rectangles
+        .iter()
+        .find(|rect| rect.fill == GREEN && rect.rect.min.distance(bar_min) < 0.1)
+        .unwrap();
+    let actual_fraction = fill.rect.width() / track.rect.width();
+    let expected_fraction =
+        expected.stored_bytes as f32 / expected.config.storage_limit_bytes as f32;
+    assert!((actual_fraction - expected_fraction).abs() < 0.00001);
+    output.drop_without_applying_deltas();
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn stale_storage_uses_physical_payload_instead_of_the_current_shard_row_count() {
+    let (mut app, commands, _events) = app();
+    let mut state = replicated_snapshot();
+    let peer = &mut state.peers[0];
+    peer.rows = 1;
+    peer.logical_bytes = 3;
+    peer.data_bytes = 153;
+    peer.index_bytes = 2332;
+    peer.stored_bytes = 2501;
+    let quota = peer.config.storage_limit_bytes;
+    let node = app
+        .network
+        .as_ref()
+        .unwrap()
+        .nodes
+        .iter()
+        .find(|node| node.peer_id == Some(1))
+        .unwrap();
+    let hint = infrastructure::storage_tooltip(node, Some(&state));
+    assert!(hint.contains(&format!("Physical storage: 2501 B / {quota} B quota")));
+    assert!(hint.contains("Encrypted data: 153 B"));
+    assert!(hint.contains("Encrypted index: 2332 B"));
+    assert!(hint.contains("Replica record metadata: 16 B"));
+    assert!(hint.contains("Logical payload: 3 B / 1 stored row"));
+    assert!(hint.contains("Copies: 0 current / 1 stale"));
+    app.snapshot = Some(state);
+    app.network_view = NetworkView::Map;
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    let texts = render(&ctx, &mut app, vec![]);
+    assert!(texts.iter().any(|text| text.text == "Payload 3 B · 1 row"));
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.text.starts_with("0 current / 1 stale"))
+    );
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn grouped_presets_start_with_simple_rows_then_filters_and_writes_without_execution() {
+    let (mut app, commands, _events) = app();
+    assert_eq!(PRESETS.first().unwrap().name, "All rows");
+    assert_eq!(app.sql, "SELECT * FROM records;");
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    click(&ctx, &mut app, "Presets");
+    let texts = render(&ctx, &mut app, vec![]);
+    let y = |name: &str| {
+        texts
+            .iter()
+            .find(|text| text.text == name)
+            .unwrap()
+            .rect
+            .center()
+            .y
+    };
+    assert!(y("All rows") < y("Adults"));
+    assert!(y("Adults") < y("Insert one row"));
+    assert!(y("Insert one row") < y("Increase adult amounts by 5"));
+    click(&ctx, &mut app, "Insert one row");
+    let insert = PRESETS
+        .iter()
+        .find(|preset| preset.name == "Insert one row")
+        .unwrap();
+    assert_eq!(app.sql, insert.sql);
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn insert_completion_reports_rows_and_keeps_unapplied_data_edits() {
+    for dirty in [false, true] {
+        let (mut app, commands, events) = app();
+        app.sql = "INSERT INTO records (age, amount) VALUES (18, 10);".into();
+        if dirty {
+            app.draft_rows = "33,99".into();
+        }
+        app.run_query();
+        let _ = commands.try_recv().unwrap();
+        let mut state = snapshot(3);
+        state.owner_rows.push(fhe_playground::PlainRow {
+            age: 18,
+            amount: 10,
+        });
+        state.revision = 1;
+        let next_rows = format_rows(&state.owner_rows);
+        events
+            .send(Event::Finished {
+                snapshot: Some(state),
+                outcome: Ok(Outcome::Query(QueryOutcome::Inserted { count: 1 })),
+                elapsed_ms: 1.0,
+                client_id: Some(1),
+            })
+            .unwrap();
+        app.poll();
+        assert_eq!(
+            app.draft_rows,
+            if dirty {
+                "33,99".to_string()
+            } else {
+                next_rows
+            }
+        );
+        assert_eq!(app.result_tab, ResultTab::Output);
+        let ctx = egui::Context::default();
+        set_theme(&ctx);
+        assert!(
+            render(&ctx, &mut app, vec![])
+                .iter()
+                .any(|text| text.text == "Inserted 1 row")
+        );
+        assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+    }
 }
 
 #[test]
