@@ -147,6 +147,86 @@ fn encrypted_equality_and_range_index_select_complete_duplicate_groups() {
         );
     }
 }
+
+#[test]
+fn index_only_head_change_rejects_pending_aggregate_and_update_without_mutation() {
+    let roles = roles();
+    let (owner, evaluator) = &*roles;
+    let limits = Limits::default();
+    let mut table = owner
+        .seal(&[PlainRow { age: 18, amount: 7 }], 2, limits)
+        .unwrap();
+    let range = AgeRange::equal(18);
+    let (read, read_output) = run(
+        owner,
+        evaluator,
+        &table,
+        Selection::IndexedAgeRange(range),
+        range,
+        Operation::CountSum,
+    );
+    let (update, update_output) = run(
+        owner,
+        evaluator,
+        &table,
+        Selection::IndexedAgeRange(range),
+        range,
+        Operation::AddAmount(1),
+    );
+    let data_head = table.commitment().clone();
+    let previous_index = table.index_commitment().clone();
+    let index_limits = crate::index::index_limits();
+    let verified = table
+        .index
+        .lookup(0, index_limits)
+        .unwrap()
+        .verify(&previous_index, 0, index_limits)
+        .unwrap();
+    let same_index_content = owner.store.decrypt(&verified).unwrap();
+
+    // A valid new index revision leaves the data head and indexed values unchanged.
+    owner
+        .store
+        .replace_page(
+            &mut table.index,
+            &previous_index,
+            0,
+            same_index_content.as_bytes(),
+            index_limits,
+        )
+        .unwrap();
+
+    assert_eq!(table.commitment(), &data_head);
+    assert_ne!(table.index_commitment(), &previous_index);
+    let before = (table.snapshot().encode(), table.encrypted_index().encode());
+    assert!(matches!(
+        owner.decrypt_aggregate_for_experiment(&table, &read, &read_output),
+        Err(Error::WrongVersion)
+    ));
+    assert!(matches!(
+        owner.apply_update_for_experiment(&mut table, &update, &update_output, limits),
+        Err(Error::WrongVersion)
+    ));
+    assert_eq!(
+        (table.snapshot().encode(), table.encrypted_index().encode()),
+        before
+    );
+
+    let (current_read, current_output) = run(
+        owner,
+        evaluator,
+        &table,
+        Selection::IndexedAgeRange(range),
+        range,
+        Operation::CountSum,
+    );
+    assert_eq!(
+        owner
+            .decrypt_aggregate_for_experiment(&table, &current_read, &current_output)
+            .unwrap(),
+        Aggregate { count: 1, sum: 7 }
+    );
+}
 #[test]
 fn selection_budget_and_incomplete_index_range_are_explicit_errors() {
     let roles = roles();

@@ -1,7 +1,12 @@
 //! Experimental exact owner-online BFV roles. Outputs have no computation proof.
 //! Parameters and arithmetic match the measured byte-limb probe; retrieval is external.
 mod exact_index;
+mod indexed_insert;
 mod indexed_select;
+pub use indexed_insert::{
+    EvaluatedIndexedInsert, IndexedInsertStats, InsertedRow, PendingIndexedInsert,
+    PreparedIndexedInsert, UnverifiedInsertedRows,
+};
 mod indexed_update;
 pub use exact_index::{PendingIndexedAggregate, PreparedIndexedAggregate};
 pub use indexed_select::{
@@ -56,6 +61,7 @@ pub enum Error {
     AggregateBounds,
     UpdateBounds,
     SelectBounds,
+    InsertBounds,
     Backend(String),
 }
 impl fmt::Display for Error {
@@ -271,6 +277,7 @@ pub struct PeerEvaluator {
 pub struct PendingQuery {
     context: QueryContext,
     geometry: Geometry,
+    keyset_id: [u8; 32],
     active_rows: u32,
 }
 impl PendingQuery {
@@ -416,6 +423,7 @@ impl Owner {
             pending: PendingQuery {
                 context,
                 geometry: self.geometry,
+                keyset_id: self.keyset_id,
                 active_rows,
             },
             request: encode(&request)?,
@@ -439,6 +447,7 @@ impl Owner {
         if response.version != VERSION
             || response.geometry != self.geometry
             || pending.geometry != self.geometry
+            || pending.keyset_id != self.keyset_id
             || !response.context.valid()
             || response.context != pending.context
         {

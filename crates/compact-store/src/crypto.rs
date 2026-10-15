@@ -80,6 +80,50 @@ impl Owner {
         Ok(EncryptedSnapshot::from_owner(commitment, pages))
     }
 
+    /// Owner-authorized growth from a fully checked plaintext relation. The caller must
+    /// authenticate/validate its old prefix before calling; this primitive does not run SQL.
+    /// Geometry other than row count and owner identity are retained. Every page uses a
+    /// fresh nonce and the next revision because row count is part of every page's AAD.
+    /// Returns staged state only; failure never mutates the source image.
+    pub fn grow_from_checked_plaintext(
+        &self,
+        snapshot: &EncryptedSnapshot,
+        expected: &Commitment,
+        row_count: u64,
+        plaintext: &[u8],
+        limits: Limits,
+    ) -> Result<EncryptedSnapshot> {
+        if snapshot.commitment() != expected {
+            return Err(Error::WrongVersion);
+        }
+        self.check_owner(expected)?;
+        if row_count <= expected.layout.row_count {
+            return Err(Error::InvalidFormat);
+        }
+        let mut next = expected.clone();
+        next.layout.row_count = row_count;
+        next.layout.validate(limits)?;
+        if plaintext.len() != next.layout.logical_bytes()? {
+            return Err(Error::InvalidPage);
+        }
+        next.revision = expected
+            .revision
+            .checked_add(1)
+            .ok_or(Error::RevisionExhausted)?;
+        let mut pages = Vec::with_capacity(next.layout.page_count()?);
+        let mut offset = 0;
+        for index in 0..next.layout.page_count()? {
+            let size = next.layout.page_plaintext_len(index as u64)?;
+            pages.push(self.encrypt_page(
+                &next,
+                index as u64,
+                &plaintext[offset..offset + size],
+            )?);
+            offset += size;
+        }
+        Ok(EncryptedSnapshot::from_owner(next, pages))
+    }
+
     /// Replaces one existing page, retaining no historical ciphertext in the
     /// snapshot. The caller must hold the previously confirmed head and publish
     /// the returned head through its separate authorization/consensus protocol.

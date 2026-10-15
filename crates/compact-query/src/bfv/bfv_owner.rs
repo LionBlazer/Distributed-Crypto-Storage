@@ -50,6 +50,99 @@ impl Owner {
     pub fn secret_key_serialized_bytes(&self) -> usize {
         self.key.secret_key_serialized_bytes()
     }
+    /// Authenticate every original row of the bounded target shard; input preparation
+    /// encrypts originals and the new row separately, never a preassembled append answer.
+    pub fn prepare_insert_for_experiment(
+        &self,
+        table: &Table,
+        incoming: PlainRow,
+        budget: usize,
+        limits: Limits,
+    ) -> Result<PreparedInsert> {
+        let selection = self.select_exact(
+            table,
+            AgeRange {
+                lower: 0,
+                upper: 255,
+            },
+            budget,
+            limits,
+        )?;
+        let context = QueryContext::new(
+            random_id()?,
+            selection.data_head.encode(),
+            selection.index_head.encode(),
+        );
+        let prepared = self.key.prepare_indexed_insert_for_experiment(
+            context,
+            &selection.fields,
+            bfv_core::SelectedField {
+                age: incoming.age,
+                amount: incoming.amount,
+                active: true,
+            },
+        )?;
+        let [low, high] = incoming.amount.to_le_bytes();
+        Ok(PreparedInsert {
+            request: prepared.request,
+            pending: prepared.pending,
+            selection,
+            incoming: Zeroizing::new([incoming.age, low, high]),
+        })
+    }
+    /// All decoded rows must match authenticated originals and the authorized insertion
+    /// before any page/index staging. This local check is NOT a succinct query proof.
+    pub fn apply_insert_checked_for_experiment(
+        &self,
+        table: &mut Table,
+        prepared: PreparedInsert,
+        output: &[u8],
+        limits: Limits,
+    ) -> Result<()> {
+        current(table, &prepared.selection)?;
+        let answer = self
+            .key
+            .decrypt_indexed_insert_unverified_for_experiment(prepared.pending, output)?;
+        let count = prepared.selection.fields.len();
+        if answer.proof != ProofStatus::Unavailable || answer.rows.len() != count + 1 {
+            return Err(Error::InvalidOutput);
+        }
+        for (slot, row) in answer.rows.iter().enumerate() {
+            let (age, amount) = if slot < count {
+                (
+                    prepared.selection.fields[slot].age,
+                    prepared.selection.fields[slot].amount,
+                )
+            } else {
+                (
+                    prepared.incoming[0],
+                    u16::from_le_bytes([prepared.incoming[1], prepared.incoming[2]]),
+                )
+            };
+            if row.slot != slot || row.age != age || row.amount != amount {
+                return Err(Error::InvalidOutput);
+            }
+        }
+        let rows: Vec<_> = answer
+            .rows
+            .into_iter()
+            .map(|row| PlainRow {
+                age: row.age,
+                amount: row.amount,
+            })
+            .collect();
+        let staged = storage::grow_checked(
+            &self.store,
+            table,
+            &prepared.selection.data_head,
+            &prepared.selection.index_head,
+            &rows,
+            limits,
+        )?;
+        current(table, &prepared.selection)?;
+        *table = staged;
+        Ok(())
+    }
 
     /// Authenticate the complete indexed selection and encrypt ORIGINAL row fields
     /// and a projection/active mask. No plaintext projected result is produced.

@@ -9,9 +9,11 @@ Owner owns the only secret key; PublicSetup contains only original parameters,
 relinearization and rotation keys; PeerEvaluator restores public material only.
 Inputs are fresh encrypted selected fields. Public contracts include generic
 Equal/AtLeast/ClosedRange COUNT/SUM, explicitly caller-asserted exact-index aggregate,
-indexed encrypted row projection, and indexed amount addition. Pending tokens bind operation/keyset/geometry/query ID
-and both opaque112-byte heads. Exact aggregate and UPDATE results remain Unverified;
-UPDATE callers must locally check arithmetic/overflow before writeback.
+indexed encrypted row projection, indexed amount addition and single-row encrypted
+append. Indexed wire contracts bind operation/keyset/geometry/query ID and both
+opaque 112-byte heads. Generic pending tokens also bind their local owner keyset;
+they do not add malicious-response authentication. Results remain Unverified;
+UPDATE/INSERT callers must locally check decoded values before writeback.
 
 The indexed SELECT operation freshly encrypts original age/amount lanes and an
 encrypted projection/active mask. The public-only peer performs one ciphertext
@@ -22,7 +24,17 @@ answer can still pass: `UnverifiedSelectedRows` is explicitly not a computation 
 The exact-index contract belongs to the caller, as for exact-index aggregates; this
 operation does not conceal or re-evaluate an arbitrary SQL predicate.
 
-Private modules are kernel, exact_index, indexed_select and indexed_update. This crate depends
+`Owner::prepare_indexed_insert_for_experiment` independently encrypts the original
+contiguous relation and an incoming row in staging slot 256. The public-only
+`PeerEvaluator::evaluate_indexed_insert_for_experiment` rotates that row into the
+next slot and adds the encrypted relation, including encrypted presence markers.
+`decrypt_indexed_insert_unverified_for_experiment` returns only decoded peer output
+after binding, lane and value checks. This operation requires Rows256 and fewer
+than 256 existing rows; it retains the original parameters and public rotation keys.
+Storage growth, authorization and validation against authenticated originals belong
+to the caller. It does not provide a succinct computation proof.
+
+Private modules are kernel, exact_index, indexed_select, indexed_update and indexed_insert. This crate depends
 only on pinned fhe/fhe-traits0.1.1, rand0.9.2, serde/bincode1.3.3, SHA256 and zeroize;
 it has no storage, SQL, PIR, GUI, fixture or deployment dependency. Complete exact
 selection, trusted heads/freshness, global transaction policy and resource accounting
@@ -44,6 +56,12 @@ three compile-fail doctests. Controls include all 256 slots at maximum unsigned
 values, every projection mask, inactive/zero rows, fresh ciphertexts, forbidden echo,
 wrong operation/keyset/query/heads/geometry/projection and lower-level/wire rejection.
 An accepted in-bounds forged value remains explicitly unverified.
+
+With encrypted INSERT and the generic owner-keyset completion guard, owning
+release/locked/offline validation passes 53 runtime tests and three compile-fail
+doctests. INSERT controls cover empty and 255-row targets, zero/max values, real
+rotations/addition, fresh ciphertexts, unchanged public setup, full/unsupported
+geometry, wire/binding/shape rejection and in-bounds malicious output.
 
 The owning storage consumer is [compact-query](../compact-query/README.md), whose
 explicit BFV module establishes the owner-built exact-index and compact writeback

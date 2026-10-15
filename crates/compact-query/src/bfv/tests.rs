@@ -730,3 +730,180 @@ fn encrypted_select_pending_rejects_either_changed_head_and_old_or_corrupt_image
             .is_err()
     );
 }
+
+#[test]
+fn genuine_insert_grows_actual_ciphertext_and_index_with_monotonic_heads_and_zero_max_rows() {
+    let (owner, peer) = Owner::generate([51; 16]).unwrap();
+    let mut table = owner.seal(&[], 1, Limits::default()).unwrap();
+    let mut expected = Vec::new();
+    for incoming in [row(0, 0), row(255, 65535), row(42, 256)] {
+        let old_data = table.commitment().clone();
+        let old_index = table.index_commitment().clone();
+        let old = table.snapshot().encode();
+        let prepared = owner
+            .prepare_insert_for_experiment(&table, incoming, 256, Limits::default())
+            .unwrap();
+        let evaluated = peer.evaluate_indexed_insert(prepared.request()).unwrap();
+        assert_eq!(evaluated.stats.ciphertext_additions, 1);
+        assert!(evaluated.stats.rotations > 0);
+        owner
+            .apply_insert_checked_for_experiment(
+                &mut table,
+                prepared,
+                &evaluated.output,
+                Limits::default(),
+            )
+            .unwrap();
+        expected.push(incoming);
+        assert_eq!(table.commitment().revision(), old_data.revision() + 1);
+        assert_eq!(
+            table.index_commitment().revision(),
+            old_index.revision() + 1
+        );
+        assert_eq!(table.commitment().database(), old_data.database());
+        assert_eq!(table.commitment().key_domain(), old_data.key_domain());
+        for (slot, expected) in expected.iter().enumerate() {
+            assert_eq!(
+                owner
+                    .decrypt_row_for_experiment(&table, slot as u64, Limits::default())
+                    .unwrap(),
+                *expected
+            );
+        }
+        assert!(
+            owner
+                .restore_table_for_experiment(
+                    &old,
+                    &table.index.encode(),
+                    table.commitment(),
+                    table.index_commitment(),
+                    Limits::default()
+                )
+                .is_err()
+        );
+        let actual = aggregate(
+            &owner,
+            &peer,
+            &table,
+            AgeRange {
+                lower: 0,
+                upper: 255,
+            },
+        );
+        assert_eq!(
+            (actual.count, actual.sum),
+            (
+                expected.len() as u32,
+                expected.iter().map(|row| u32::from(row.amount)).sum()
+            )
+        );
+    }
+}
+
+#[test]
+fn in_bounds_wrong_inserted_relation_never_authorizes_any_compact_write() {
+    let (owner, peer) = Owner::generate([52; 16]).unwrap();
+    let mut table = owner.seal(&[row(18, 255)], 1, Limits::default()).unwrap();
+    let before = (table.snapshot().encode(), table.index.encode());
+    let prepared = owner
+        .prepare_insert_for_experiment(&table, row(42, 256), 256, Limits::default())
+        .unwrap();
+    // Test-only wrong relation, with identical public binding and real encrypted peer append.
+    // The core's public addition-forgery test independently shows such in-bounds values are not proven.
+    let wrong = owner
+        .key
+        .prepare_indexed_insert_for_experiment(
+            prepared.pending.context().clone(),
+            &prepared.selection.fields,
+            bfv_core::SelectedField {
+                age: 43,
+                amount: 256,
+                active: true,
+            },
+        )
+        .unwrap();
+    let wrong = peer.evaluate_indexed_insert(&wrong.request).unwrap();
+    assert_eq!(
+        owner
+            .apply_insert_checked_for_experiment(
+                &mut table,
+                prepared,
+                &wrong.output,
+                Limits::default()
+            )
+            .unwrap_err(),
+        Error::InvalidOutput
+    );
+    assert_eq!((table.snapshot().encode(), table.index.encode()), before);
+}
+
+#[test]
+fn pending_insert_rejects_either_changed_head_and_wrong_owner_without_mutation() {
+    let (owner, peer) = Owner::generate([53; 16]).unwrap();
+    let (other, _) = Owner::generate([54; 16]).unwrap();
+    let mut table = owner.seal(&[row(18, 255)], 1, Limits::default()).unwrap();
+    assert!(
+        other
+            .prepare_insert_for_experiment(&table, row(42, 1), 256, Limits::default())
+            .is_err()
+    );
+    let first = owner
+        .prepare_insert_for_experiment(&table, row(42, 1), 256, Limits::default())
+        .unwrap();
+    let output = peer.evaluate_indexed_insert(first.request()).unwrap();
+    let verified = table
+        .index
+        .lookup(0, crate::index::index_limits())
+        .unwrap()
+        .verify(table.index_commitment(), 0, crate::index::index_limits())
+        .unwrap();
+    let plaintext = owner.store.decrypt(&verified).unwrap();
+    let old = table.index_commitment().clone();
+    owner
+        .store
+        .replace_page(
+            &mut table.index,
+            &old,
+            0,
+            plaintext.as_bytes(),
+            crate::index::index_limits(),
+        )
+        .unwrap();
+    let before = (table.snapshot().encode(), table.index.encode());
+    assert_eq!(
+        owner
+            .apply_insert_checked_for_experiment(
+                &mut table,
+                first,
+                &output.output,
+                Limits::default()
+            )
+            .unwrap_err(),
+        Error::WrongVersion
+    );
+    assert_eq!((table.snapshot().encode(), table.index.encode()), before);
+    let first = owner
+        .prepare_insert_for_experiment(&table, row(42, 1), 256, Limits::default())
+        .unwrap();
+    let first_output = peer.evaluate_indexed_insert(first.request()).unwrap();
+    let second = owner
+        .prepare_insert_for_experiment(&table, row(7, 2), 256, Limits::default())
+        .unwrap();
+    let output = peer.evaluate_indexed_insert(second.request()).unwrap();
+    owner
+        .apply_insert_checked_for_experiment(&mut table, second, &output.output, Limits::default())
+        .unwrap();
+    let before = (table.snapshot().encode(), table.index.encode());
+    assert_eq!(
+        owner
+            .apply_insert_checked_for_experiment(
+                &mut table,
+                first,
+                &first_output.output,
+                Limits::default()
+            )
+            .unwrap_err(),
+        Error::WrongVersion
+    );
+    assert_eq!((table.snapshot().encode(), table.index.encode()), before);
+}

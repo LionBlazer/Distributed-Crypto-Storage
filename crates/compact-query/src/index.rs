@@ -51,6 +51,35 @@ pub(crate) fn build(
     rows: &[PlainRow],
     head: &Commitment,
 ) -> Result<EncryptedSnapshot> {
+    let bytes = build_plaintext(rows, head)?;
+    Ok(owner.seal(
+        Layout {
+            schema: INDEX_SCHEMA,
+            row_width: 1,
+            rows_per_page: INDEX_PAGE_BYTES as u32,
+            row_count: bytes.len() as u64,
+        },
+        &bytes,
+        index_limits(),
+    )?)
+}
+#[cfg(feature = "bfv-experiment")]
+pub(crate) fn grow(
+    owner: &compact_store::Owner,
+    rows: &[PlainRow],
+    head: &Commitment,
+    old: &EncryptedSnapshot,
+) -> Result<EncryptedSnapshot> {
+    let bytes = build_plaintext(rows, head)?;
+    Ok(owner.grow_from_checked_plaintext(
+        old,
+        old.commitment(),
+        bytes.len() as u64,
+        &bytes,
+        index_limits(),
+    )?)
+}
+fn build_plaintext(rows: &[PlainRow], head: &Commitment) -> Result<Zeroizing<Vec<u8>>> {
     if rows.len() > MAX_TABLE_ROWS || rows.len() as u64 != head.layout().row_count {
         return Err(Error::InvalidIndex);
     }
@@ -89,16 +118,7 @@ pub(crate) fn build(
         return Err(Error::InvalidIndex);
     }
     bytes.resize(padded_len, 0);
-    Ok(owner.seal(
-        Layout {
-            schema: INDEX_SCHEMA,
-            row_width: 1,
-            rows_per_page: INDEX_PAGE_BYTES as u32,
-            row_count: bytes.len() as u64,
-        },
-        &bytes,
-        index_limits(),
-    )?)
+    Ok(bytes)
 }
 
 fn write_varint(mut value: u32, output: &mut Vec<u8>) {

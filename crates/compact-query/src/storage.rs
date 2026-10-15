@@ -90,3 +90,36 @@ pub(crate) fn replace_amount_pages(
     let index = index::rebound(owner, &table.index, expected_data, &next)?;
     Ok(Table { data, index })
 }
+
+/// Full output relation was already decoded from genuine peer BFV append and locally
+/// checked against authenticated originals plus authorized input by the owning backend.
+#[cfg(feature = "bfv-experiment")]
+pub(crate) fn grow_checked(
+    owner: &Owner,
+    table: &Table,
+    expected_data: &Commitment,
+    expected_index: &Commitment,
+    rows: &[PlainRow],
+    limits: Limits,
+) -> Result<Table> {
+    if table.commitment() != expected_data || table.index_commitment() != expected_index {
+        return Err(Error::WrongVersion);
+    }
+    if rows.len() as u64 != expected_data.layout().row_count + 1 {
+        return Err(Error::InvalidOutput);
+    }
+    let mut bytes = Zeroizing::new(Vec::with_capacity(rows.len() * ROW_BYTES as usize));
+    for row in rows {
+        bytes.push(row.age);
+        bytes.extend_from_slice(&row.amount.to_le_bytes());
+    }
+    let data = owner.grow_from_checked_plaintext(
+        &table.data,
+        expected_data,
+        rows.len() as u64,
+        &bytes,
+        limits,
+    )?;
+    let index = index::grow(owner, rows, data.commitment(), &table.index)?;
+    Ok(Table { data, index })
+}

@@ -159,6 +159,7 @@ impl Owner {
         stages.owner_data_authenticate_mask_encrypt_ms = ms(start);
         Ok(PreparedQuery {
             request,
+            index_head: table.index_commitment().clone(),
             predicate,
             operation,
             stages,
@@ -318,7 +319,10 @@ impl Owner {
         if query.request.id != output.id {
             return Err(Error::WrongQuery);
         }
-        if query.request.head != table.commitment().encode() || output.head != query.request.head {
+        if query.request.head != table.commitment().encode()
+            || output.head != query.request.head
+            || &query.index_head != table.index_commitment()
+        {
             return Err(Error::WrongVersion);
         }
         let single = query.request.rows.len() == 1;

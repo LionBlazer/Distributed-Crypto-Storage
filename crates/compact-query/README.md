@@ -11,7 +11,7 @@ Neither backend provides a cryptographic computation/completeness proof.
 
 [bfv-query-core](../bfv-query-core/README.md) owns unchanged BFV arithmetic/wire/key
 roles. This module owns storage schema, complete authenticated index selection,
-every selected age check, current data+index heads and owner-local checked UPDATE
+every selected age check, current data+index heads and owner-local checked UPDATE/INSERT
 writeback. Live selected field slots and page buffers are zeroized when owner query
 state drops. Fields reserve their complete bounded capacity before plaintext is
 pushed; this is not a guarantee about every compiler, stack or allocator copy. No
@@ -47,6 +47,17 @@ uses fixed Rows256 and encrypted zero weights even for absent matches; no owner
 COUNT/SUM answer is substituted. Input authentication does not prove output
 arithmetic; core outputs remain ProofStatus::Unavailable.
 
+`prepare_insert_for_experiment` authenticates the complete bounded target table
+and independently encrypts original rows and the authorized incoming row.
+`Evaluator::evaluate_indexed_insert` rotates the encrypted staging row and adds it
+to the encrypted relation. `apply_insert_checked_for_experiment` consumes that BFV
+output, checks every decoded old/new field against the authenticated inputs, then
+stages larger compact data and a rebuilt exact index. It preserves the storage/key
+identity and advances revisions; every target data page receives fresh encryption
+because its AEAD binds row count. Other tables remain unchanged. A failed head,
+output, bound or storage check publishes neither image. No fixture supplies the
+append result; local validation still does not constitute a succinct proof.
+
 The low-level crate carries Rust 1.99 and the exact N8192/Q218/t114689/full-keyset
 profile. Independent security/noise/CCA gates remain unresolved. Retained public
 setup bytes, expanded public keys, owner secret and temporary fields/wire must be
@@ -61,6 +72,11 @@ legacy default TFHE backend retained all 23 passing tests, including full-scan/c
 selection. Strict all-target Clippy passed with both backends and with BFV only.
 Use --no-default-features --features bfv-experiment when validating BFV-only storage
 and GUI consumers. The existing default backend's broader semantics/tests remain.
+Encrypted INSERT extends the BFV-only suite to 25 runtime tests and one compile-fail
+doctest, including checked growth, actual decoded-output writeback, altered output,
+wrong owner and independently changed data/index heads.
+The default TFHE library suite passes 24 tests after adding index-only-head freshness
+rejection for both aggregate completion and UPDATE.
 
 ## Legacy TFHE backend
 
@@ -162,6 +178,8 @@ timing are also visible. The required leakage model remains open.
 
 The owner must independently obtain trusted current data/index heads. An old Table
 is intentionally usable as an old version; global freshness remains external.
+Both BFV and TFHE completion check the prepared data and index heads against the
+supplied current Table, including an index-only revision change.
 restore_table_for_experiment reconstructs encrypted images with the same live key
 authority and independently supplied heads. It does not persist or restore keys.
 

@@ -30,6 +30,7 @@ pub(crate) struct Request {
 /// Only encode_request() crosses to the evaluator.
 pub struct PreparedQuery {
     pub(crate) request: Request,
+    pub(crate) index_head: compact_store::Commitment,
     pub(crate) predicate: AgeRange,
     pub(crate) operation: Operation,
     pub(crate) stages: Stages,

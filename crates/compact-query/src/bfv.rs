@@ -52,6 +52,18 @@ pub struct PreparedSelect {
     pending: bfv_core::PendingIndexedSelect,
     selection: ExactSelection,
 }
+/// One-use checked append state; only ciphertext request crosses to the evaluator.
+pub struct PreparedInsert {
+    request: Vec<u8>,
+    pending: bfv_core::PendingIndexedInsert,
+    selection: ExactSelection,
+    incoming: Zeroizing<[u8; 3]>,
+}
+impl PreparedInsert {
+    pub fn request(&self) -> &[u8] {
+        &self.request
+    }
+}
 impl PreparedSelect {
     pub fn request(&self) -> &[u8] {
         &self.request

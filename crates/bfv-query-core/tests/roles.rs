@@ -215,6 +215,33 @@ fn fresh_ciphertexts_change_without_relying_on_query_id_or_context_changes() {
 }
 
 #[test]
+fn another_owner_cannot_complete_a_generic_pending_query_with_the_same_geometry() {
+    let (owner, setup) = Owner::generate(Geometry::Rows16).unwrap();
+    let (other_owner, _) = Owner::generate(Geometry::Rows16).unwrap();
+    let peer = PeerEvaluator::from_public_setup(&setup).unwrap();
+    let fields = [field(18, 7, true)];
+    let prepared = owner
+        .prepare(context(61), &fields, Predicate::Equal(18))
+        .unwrap();
+    let output = peer.evaluate(&prepared.request).unwrap();
+
+    assert!(matches!(
+        other_owner.decrypt_unverified(prepared.pending, &output.output),
+        Err(Error::BindingMismatch)
+    ));
+
+    let same_owner = owner
+        .prepare(context(62), &fields, Predicate::Equal(18))
+        .unwrap();
+    let output = peer.evaluate(&same_owner.request).unwrap();
+    let completed = owner
+        .decrypt_unverified(same_owner.pending, &output.output)
+        .unwrap();
+    assert_eq!((completed.count, completed.sum), (1, 7));
+    assert_eq!(completed.proof, ProofStatus::Unavailable);
+}
+
+#[test]
 fn public_setup_roundtrip_preserves_profile_and_trailing_wire_is_rejected() {
     let (owner, setup) = Owner::generate(Geometry::Rows16).unwrap();
     let setup_wire = setup.to_bytes().unwrap();

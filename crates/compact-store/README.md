@@ -35,8 +35,14 @@ address-based retrieval, not an FHE evaluator or SQL query proof.
   This supplies in-memory atomic batches, not durable crash-atomic transactions.
 - Owner::replace_page requires the previously known head, encrypts one replacement
   page with a fresh nonce and a new page revision, updates its Merkle path, and
-  returns the new head. It retains no historical ciphertext. Geometry changes,
-  insertion/deletion, durable writes and compacting a disk file are outside this API.
+  returns the new head. It retains no historical ciphertext. This replacement API
+  preserves geometry.
+- Owner::grow_from_checked_plaintext stages a larger row count under the same owner,
+  schema, row width and page width, with the next global revision. The caller must
+  validate the original prefix and authorized new rows first. Every page is freshly
+  encrypted because row count is bound in its AEAD associated data. The source stays
+  unchanged on failure. SQL semantics, shrinking, durable writes and disk compaction
+  belong to callers.
 - Limits caps rows, pages, page plaintext, image bytes and response bytes before
   parsing allocates payload/proof buffers. The page-count cap also bounds index
   construction. A peer may configure lower quotas.
