@@ -1,0 +1,18 @@
+[package]
+name = "dcs-peer"
+version = "0.1.0"
+edition.workspace = true
+rust-version = "1.99"
+publish = false
+
+[dependencies]
+peer-runtime = { path = "../../crates/peer-runtime" }
+peer-transport = { path = "../../crates/peer-transport" }
+serde_json.workspace = true
+zeroize = "1"
+
+[dev-dependencies]
+compact-query = { path = "../../crates/compact-query", default-features = false, features = ["bfv-experiment"] }
+compact-store = { path = "../../crates/compact-store" }
+storage-client = { path = "../../crates/storage-client" }
+rcgen = "=0.14.8"

@@ -73,7 +73,6 @@ enum Control {
     Profile(NodeId),
     Availability,
     Replication,
-    Domain(NodeId),
     Repair,
 }
 
@@ -101,7 +100,6 @@ pub struct Playground {
     navigation: Navigation,
     network_view: NetworkView,
     peer_edits: HashMap<NodeId, PeerConfig>,
-    domain_edits: HashMap<NodeId, u64>,
     maintenance_status: String,
     graph_layout: GraphLayout,
     graph_router: crate::graph_routing::GraphRouter,
@@ -111,8 +109,6 @@ pub struct Playground {
     graph_initialized: bool,
     camera_manipulated: bool,
     last_graph_canvas: Option<egui::Rect>,
-    simulation_speed: f64,
-    simulation_paused: bool,
     context_position: egui::Pos2,
 }
 
@@ -152,7 +148,6 @@ impl Playground {
             navigation: Navigation::default(),
             network_view: NetworkView::Auto,
             peer_edits: HashMap::new(),
-            domain_edits: HashMap::new(),
             maintenance_status: String::new(),
             graph_layout: GraphLayout::default(),
             graph_router: crate::graph_routing::GraphRouter::default(),
@@ -162,8 +157,6 @@ impl Playground {
             graph_initialized: false,
             camera_manipulated: false,
             last_graph_canvas: None,
-            simulation_speed: 1.0,
-            simulation_paused: false,
             context_position: egui::Pos2::ZERO,
         }
     }
@@ -298,6 +291,9 @@ impl Playground {
         }
         loop {
             match self.worker.poll() {
+                Ok(Some(Event::Snapshot(snapshot))) => {
+                    self.snapshot = Some(snapshot);
+                }
                 Ok(Some(Event::Network(net))) => {
                     if !self.active_client.is_some_and(|id| {
                         net.nodes
@@ -313,8 +309,6 @@ impl Playground {
                     self.node_tabs
                         .retain(|id| net.nodes.iter().any(|n| n.id == *id));
                     self.peer_edits
-                        .retain(|id, _| net.nodes.iter().any(|n| n.id == *id));
-                    self.domain_edits
                         .retain(|id, _| net.nodes.iter().any(|n| n.id == *id));
                     self.graph_seeds.retain(|id, _| {
                         net.nodes.iter().any(|n| n.id == *id)
@@ -339,7 +333,6 @@ impl Playground {
                     self.prune_navigation();
                 }
                 Ok(Some(Event::Progress(message))) => self.status = message,
-                Ok(Some(Event::PeerProgress(progress))) => self.status = progress.message,
                 Ok(Some(Event::ControlFinished { snapshot, outcome })) => {
                     let intent = self.control_pending.take();
                     if matches!(intent, Some(Control::Repair)) {
@@ -373,18 +366,11 @@ impl Playground {
                                 self.graph_seeds.remove(id);
                                 self.close_node_tab(*id);
                             }
-                            (Some(Control::Domain(id)), _) => {
-                                self.domain_edits.remove(&id);
-                            }
                             _ => {}
                         }
                     } else if let Err(error) = outcome {
                         self.input_error = Some(error.to_string());
                     }
-                }
-                Ok(Some(Event::MaintenanceFinished { snapshot, outcome })) => {
-                    self.snapshot = snapshot;
-                    self.record_maintenance(outcome);
                 }
                 Ok(Some(Event::Finished {
                     snapshot,
@@ -423,7 +409,6 @@ impl Playground {
                     if created {
                         self.history.clear();
                         self.maintenance_status.clear();
-                        self.domain_edits.clear();
                     }
                     if pending.job == Job::Query {
                         self.result_tab = if matches!(
@@ -479,10 +464,10 @@ impl Playground {
     fn record_maintenance(&mut self, outcome: Result<Outcome, fhe_playground::LabError>) {
         self.maintenance_status = match &outcome {
             Ok(Outcome::ReplicasRepaired { current, stale }) => {
-                format!("Local repair complete: {current} current / {stale} stale")
+                format!("Peer copy complete: {current} current / {stale} stale")
             }
-            Err(error) => format!("Local repair deferred/failed: {error}"),
-            _ => "Local repair complete".into(),
+            Err(error) => format!("Peer copy deferred/failed: {error}"),
+            _ => "Peer copy complete".into(),
         };
         let (database, revision) = self
             .snapshot
@@ -506,7 +491,7 @@ impl Playground {
                 if self.pending.is_some() { ui.spinner(); }
                 ui.add(egui::Label::new(self.input_error.as_deref().unwrap_or(&self.status)).truncate());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new("Local / unverified").small().color(MUTED)).on_hover_text("Local transport and real FHE. No query proofs, consensus or replication guarantees.");
+                    ui.label(RichText::new("TCP/TLS · proof required").small().color(MUTED)).on_hover_text("Peers run in separate processes over authenticated TLS. Results without a computation proof are rejected. Decentralized agreement remains unimplemented.");
                 });
             });
         });

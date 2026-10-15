@@ -74,11 +74,7 @@ impl Playground {
             RightTab::Network => {
                 egui::Panel::top("simulation-controls").frame(panel(10)).show(ui,|ui| {
                     ui.horizontal_wrapped(|ui| {
-                        ui.label("Speed").on_hover_text("Virtual message time. FHE CPU computation retains its real duration.");
-                        let speed_changed=ui.add(egui::DragValue::new(&mut self.simulation_speed).range(0.1..=8.0).speed(0.1).suffix("x")).changed();
-                        let paused_changed=action_button(ui,if self.simulation_paused {"Resume"}else{"Pause"},!self.worker_stopped).clicked();
-                        if paused_changed {self.simulation_paused = !self.simulation_paused;}
-                        if (speed_changed||paused_changed) && let Err(error)=self.worker.send(Command::SetSimulation {speed:self.simulation_speed,paused:self.simulation_paused}) {self.input_error=Some(error);}
+                        ui.label(RichText::new("Live TCP/TLS").small().color(GREEN)).on_hover_text("Actual peer processes and delivered RPCs. Packet markers represent observed sends/replies; no virtual time is used.");
                         if let Some(net)=&self.network {
                             ui.label(RichText::new(format!("{} nodes / {} links",net.nodes.len(),net.links.len())).small().color(MUTED));
                         }
@@ -108,12 +104,12 @@ impl Playground {
                 egui::CentralPanel::default().frame(panel(16)).show(ui, |ui| {
                     egui::ScrollArea::vertical().auto_shrink([false,false]).show(ui, |ui| {
                         ui.heading("Network settings");
-                        ui.label(RichText::new("Local prototype policy").small().color(AMBER));
+                        ui.label(RichText::new("Owner configuration").small().color(AMBER));
                         ui.add_space(14.0);
                         ui.label("Copies per logical shard");
                         self.replication_controls(ui);
                         ui.add_space(12.0);
-                        ui.label(RichText::new("Changes apply to this local experiment. A signed, agreed network-policy contract is still being designed.").color(MUTED));
+                        ui.label(RichText::new("Physical copies are requested by this owner client and transferred directly between peers. All locally launched processes share one host failure domain. Decentralized policy agreement is not implemented.").color(MUTED));
                     });
                 });
             }
@@ -145,7 +141,7 @@ impl Playground {
                 .width(110.0)
                 .show_ui(ui, |ui| {
                     for count in 1..=3 { ui.selectable_value(&mut copies, count, if count == 1 { "1 copy".into() } else { format!("{count} copies") }); }
-                }).response.on_hover_text("Minimum current copies in distinct configured failure domains; extra/stale copies remain charged. Logical shards retain their custody through topology changes. New placement is local repair after peer discovery; pause defers copies.");
+                }).response.on_hover_text("Owner-requested physical copies over real peer-to-peer TLS. Local processes share one failure domain, so multiple local copies do not establish independent failure tolerance. No decentralized replication policy is claimed.");
         });
         if copies != previous {
             self.control(Command::SetReplication { copies }, Control::Replication);
@@ -238,6 +234,9 @@ impl Playground {
             );
         });
         ui.label(RichText::new(format!("Node ID {id}")).small().color(MUTED));
+        if let Some(pid) = node.process_id {
+            ui.label(RichText::new(format!("Process {pid}")).small().color(MUTED));
+        }
         if node.role == NodeRole::Client {
             section(ui, "Session");
             ui.label("Authorized local client of the same database owner.");
@@ -288,12 +287,7 @@ impl Playground {
                         {
                             config.storage_limit_bytes = kib * 1024;
                         }
-                        ui.label("Link delay");
-                        ui.add(
-                            egui::DragValue::new(&mut config.delay_ms)
-                                .range(0..=1000)
-                                .suffix(" ms"),
-                        );
+                        ui.label(RichText::new("TCP/TLS").small().color(MUTED));
                     });
                 });
                 let modified = *config != peer.config;
@@ -307,38 +301,19 @@ impl Playground {
                         Control::Profile(id),
                     );
                 }
-                let domain = self
-                    .snapshot
-                    .as_ref()
-                    .and_then(|state| state.replication.as_ref())
-                    .and_then(|replication| {
-                        replication
-                            .failure_domains
-                            .iter()
-                            .find(|(id, _)| *id == peer_id)
-                    })
-                    .map_or(peer_id as u64, |(_, domain)| *domain);
-                let edited = self.domain_edits.entry(id).or_insert(domain);
-                let domain_enabled = enabled
-                    && self
-                        .snapshot
-                        .as_ref()
-                        .is_some_and(|state| state.replication.is_some());
-                ui.horizontal_wrapped(|ui| {
-                    ui.label("Failure domain").on_hover_text("Owner-configured correlated-failure label; not an authenticated machine identity.");
-                    ui.add_enabled(domain_enabled, egui::DragValue::new(edited).range(0..=u64::MAX));
-                });
-                let edited = *edited;
-                if action_button(ui, "Save domain", domain_enabled && edited != domain).clicked() {
-                    self.control(
-                        Command::SetFailureDomain {
-                            id: peer_id,
-                            domain: edited,
-                        },
-                        Control::Domain(id),
+                ui.label(
+                    RichText::new("Failure domain: local host")
+                        .small()
+                        .color(MUTED),
+                );
+                section(ui, "Encrypted shard");
+                if !peer.online {
+                    ui.label(
+                        RichText::new("Offline: storage counters are last observed")
+                            .small()
+                            .color(AMBER),
                     );
                 }
-                section(ui, "Encrypted shard");
                 ui.label(format!(
                     "{} rows / {} stored of {} quota",
                     peer.rows,

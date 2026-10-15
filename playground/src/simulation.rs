@@ -22,6 +22,7 @@ pub enum PacketKind {
 
 #[derive(Clone, Debug)]
 pub struct NetworkNode {
+    pub process_id: Option<u32>,
     pub id: NodeId,
     pub name: String,
     pub role: NodeRole,
@@ -190,6 +191,7 @@ impl DemoNetwork {
             id,
             Node {
                 info: NetworkNode {
+                    process_id: None,
                     id,
                     name,
                     role,

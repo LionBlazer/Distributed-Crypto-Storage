@@ -2,11 +2,13 @@
 
 Rust prototype and research for encrypted SQL storage on participant-owned
 computers. [REQUIREMENTS.md](REQUIREMENTS.md) defines the intended distributed
-system; production networking, consensus and verifiable malicious-peer execution
-remain unfinished. The current implementation is a local experiment.
+system. Peers now run in separate processes over mutually authenticated TCP/TLS.
+Decentralized agreement and verifiable malicious-peer execution remain unfinished;
+SQL results without a computation proof are rejected rather than accepted.
 
 The repository has two dependency layers: the [reusable core](crates/README.md),
-and its test/research consumers in [playground](playground/README.md) and
+and deployment/test consumers: [peer daemon](apps/dcs-peer/README.md),
+[playground](playground/README.md) and
 [experiments](experiments/README.md). `crates/` contains libraries only; GUI, virtual time,
 fixtures, presets and executable measurements live outside it. A default Cargo
 build selects core libraries; the GUI is an explicit package target.
@@ -14,29 +16,37 @@ build selects core libraries; the GUI is an explicit package target.
 Use Rust 1.99 or newer, from the repository root:
 
 ```sh
+cargo build --release --locked -p dcs-peer -p fhe-playground
 cargo run --release --locked -p fhe-playground
 cargo test --workspace --release --locked -- --test-threads=1
 ```
 
 In Zed, spawn **FHE: Open GUI playground** from [.zed/tasks.json](.zed/tasks.json).
 The [egui playground](playground/README.md) has SQL/data on the left and
-network/node inspectors on the right, up to 16 simulated peers and 8 clients.
-Presets fill the editor; Run or Ctrl+Enter executes them. Graph and connection
-matrix reflect the same protocol links/events. Virtual delivery is in one process.
+network/node inspectors on the right, up to 16 real managed peer processes and
+8 owner-client sessions. Presets fill the editor; Run or Ctrl+Enter sends genuine
+encrypted FHE operations. Graph/matrix reflect authenticated reachability and
+actual RPC observations. Virtual delivery is not used by the live GUI.
 Alt+Left/Right and mouse side buttons navigate between views; middle-click closes
 inspector tabs.
 
 The SQL frontend supports row SELECT/projections with age filters and LIMIT,
 COUNT/SUM, single-row INSERT and amount addition on `age: u8, amount: u16`; it is not an arbitrary-SQL
 database. Row projection uses actual BFV encrypted masking and returns encrypted
-peer output for client completion. The GUI uses the BFV
+peer output. The strict client rejects it until computation/completeness proofs
+and an agreed fresh head can be verified. SQL INSERT/UPDATE therefore do not commit.
+The GUI uses the BFV
 exact-index backend, shared public evaluation keys and compact encrypted pages.
 Complete authenticated index selection precedes fresh FHE; unsupported budgets
 reject rather than truncate. Owner secret keys stay outside peer role objects.
 
 | Module | Responsibility |
 | --- | --- |
-| [fhe-playground](playground/README.md) | GUI, presets, fixtures, local owner/manager, worker and virtual network visualization |
+| [fhe-playground](playground/README.md) | GUI, process supervision, owner-client views and actual network observations |
+| [dcs-peer](apps/dcs-peer/README.md) | Independent peer daemon with no GUI or owner keys |
+| [peer-transport](crates/peer-transport/README.md) | TLS 1.3 mutual authentication, endpoint pinning and bounded TCP frames |
+| [peer-runtime](crates/peer-runtime/README.md) | Peer-owned disk objects, public FHE evaluator, neighbor probes and real copies |
+| [storage-client](crates/storage-client/README.md) | Owner preparation, authenticated retrieval and mandatory proof rejection |
 | [sql-plan](crates/sql-plan/README.md) | Backend-independent SQL parser, typed statement inputs and plans |
 | [compact-query](crates/compact-query/README.md) | Complete index selection, fresh FHE projections/aggregates and checked compact updates; explicit BFV backend plus retained legacy TFHE module |
 | [bfv-query-core](crates/bfv-query-core/README.md) | Reusable owner/public-peer BFV arithmetic and wire contracts; no storage or GUI dependency |
@@ -45,14 +55,14 @@ reject rather than truncate. Owner secret keys stay outside peer role objects.
 | [peer-protocol](crates/peer-protocol/README.md) | Bounded transport-independent handshake/message state machine |
 | [fhe-prototype](experiments/fhe-prototype/README.md) | Original standalone TFHE experiment and historical baseline |
 
-New GUI databases use fixed encrypted shards with a minimum of one copy. **Min
-copies** adjusts that target; read failover, stale-copy exclusion after INSERT/UPDATE
-and local replica repair use actual ciphertext holders. New peers start empty;
-lost shards are never rebuilt from the editable fixture.
-Data and index stay together; quotas and declared failure domains constrain placement.
-The [replicated SQL model](docs/replicated-sql-prototype.md) explains the local failure
-guarantees. Head agreement, trusted domain labels, real failure detection and durable
-publication remain open.
+The live GUI stores encrypted shards in child processes and requests physical
+copies directly between peers. Process stop/restart and holder failover use actual
+network/disk state. All locally managed processes share one host failure domain;
+multiple local copies do not establish independent failure tolerance. Existing
+objects and one previous owner state are retained during a session replacement.
+No remote object-deletion RPC is exposed. The earlier [replicated SQL model](docs/replicated-sql-prototype.md)
+describes the historical local LabEngine, not the new transport's consensus or
+availability guarantees.
 
 The [requirements/code audit](docs/requirements-code-audit.md) records the checked
 FHE/plaintext boundaries, repaired bypasses and requirements that remain unfinished.

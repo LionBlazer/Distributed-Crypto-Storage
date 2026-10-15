@@ -6,6 +6,12 @@ rust-version = "1.99"
 publish = false
 
 [dependencies]
+peer-runtime = { path = "../crates/peer-runtime" }
+peer-transport = { path = "../crates/peer-transport" }
+storage-client = { path = "../crates/storage-client" }
+rcgen = "=0.14.8"
+serde_json.workspace = true
+zeroize = "1"
 sql-plan = { path = "../crates/sql-plan" }
 compact-query = { path = "../crates/compact-query", default-features = false, features = ["bfv-experiment"] }
 compact-store = { path = "../crates/compact-store" }
@@ -13,6 +19,3 @@ peer-protocol = { path = "../crates/peer-protocol" }
 replica-store = { path = "../crates/replica-store" }
 eframe = { version = "=0.36.2", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
 rayon.workspace = true
-
-[dev-dependencies]
-serde_json = '=1.0.154'

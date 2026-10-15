@@ -1,0 +1,217 @@
+//! TLS 1.3 mutual authentication, endpoint pinning and bounded byte frames.
+//! Identity admission is caller policy; this transport does not establish consensus.
+#![forbid(unsafe_code)]
+
+use rustls::{
+    ClientConfig, ClientConnection, RootCertStore, ServerConfig, ServerConnection, StreamOwned,
+    pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName},
+};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::{
+    io::{self, Read, Write},
+    net::{SocketAddr, TcpStream},
+    sync::Arc,
+    time::Duration,
+};
+use zeroize::Zeroize;
+
+pub const MAX_FRAME_BYTES: usize = 64 * 1024 * 1024;
+pub const IO_TIMEOUT: Duration = Duration::from_secs(15);
+const MAGIC: &[u8; 8] = b"DCSNET01";
+
+/// Secret TLS credential. Only bootstrap through private IPC/secret storage.
+#[derive(Serialize, Deserialize)]
+pub struct Identity {
+    pub certificate: Vec<u8>,
+    pub private_key_pkcs8: Vec<u8>,
+}
+impl Drop for Identity {
+    fn drop(&mut self) {
+        self.private_key_pkcs8.zeroize();
+    }
+}
+impl Identity {
+    pub fn fingerprint(&self) -> [u8; 32] {
+        fingerprint(&self.certificate)
+    }
+}
+pub fn fingerprint(certificate: &[u8]) -> [u8; 32] {
+    Sha256::digest(certificate).into()
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Endpoint {
+    pub address: SocketAddr,
+    pub identity: [u8; 32],
+}
+
+/// Clones share TLS configuration, never an application or FHE secret key.
+#[derive(Clone)]
+pub struct Connector {
+    config: Arc<ClientConfig>,
+}
+#[derive(Clone)]
+pub struct Acceptor {
+    config: Arc<ServerConfig>,
+}
+fn roots(authority: &[u8]) -> io::Result<RootCertStore> {
+    let mut roots = RootCertStore::empty();
+    roots
+        .add(CertificateDer::from(authority.to_vec()))
+        .map_err(io::Error::other)?;
+    Ok(roots)
+}
+fn key(identity: &Identity) -> PrivateKeyDer<'static> {
+    PrivatePkcs8KeyDer::from(identity.private_key_pkcs8.clone()).into()
+}
+impl Connector {
+    pub fn new(identity: &Identity, authority: &[u8]) -> io::Result<Self> {
+        let config =
+            ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+                .with_protocol_versions(&[&rustls::version::TLS13])
+                .map_err(io::Error::other)?
+                .with_root_certificates(roots(authority)?)
+                .with_client_auth_cert(
+                    vec![CertificateDer::from(identity.certificate.clone())],
+                    key(identity),
+                )
+                .map_err(io::Error::other)?;
+        Ok(Self {
+            config: Arc::new(config),
+        })
+    }
+    pub fn connect(
+        &self,
+        endpoint: &Endpoint,
+    ) -> io::Result<StreamOwned<ClientConnection, TcpStream>> {
+        let mut socket = TcpStream::connect_timeout(&endpoint.address, Duration::from_secs(2))?;
+        socket.set_read_timeout(Some(IO_TIMEOUT))?;
+        socket.set_write_timeout(Some(IO_TIMEOUT))?;
+        socket.set_nodelay(true)?;
+        let mut connection = ClientConnection::new(
+            self.config.clone(),
+            ServerName::try_from("dcs-peer").map_err(io::Error::other)?,
+        )
+        .map_err(io::Error::other)?;
+        while connection.is_handshaking() {
+            connection.complete_io(&mut socket)?;
+        }
+        let cert = connection
+            .peer_certificates()
+            .and_then(|certs| certs.first())
+            .ok_or_else(|| io::Error::other("Missing peer certificate"))?;
+        if fingerprint(cert.as_ref()) != endpoint.identity {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Peer certificate does not match the configured endpoint",
+            ));
+        }
+        Ok(StreamOwned::new(connection, socket))
+    }
+}
+impl Acceptor {
+    pub fn new(identity: &Identity, authority: &[u8]) -> io::Result<Self> {
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
+        let verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(
+            Arc::new(roots(authority)?),
+            provider.clone(),
+        )
+        .build()
+        .map_err(io::Error::other)?;
+        let config = ServerConfig::builder_with_provider(provider)
+            .with_protocol_versions(&[&rustls::version::TLS13])
+            .map_err(io::Error::other)?
+            .with_client_cert_verifier(verifier)
+            .with_single_cert(
+                vec![CertificateDer::from(identity.certificate.clone())],
+                key(identity),
+            )
+            .map_err(io::Error::other)?;
+        Ok(Self {
+            config: Arc::new(config),
+        })
+    }
+    pub fn accept(
+        &self,
+        mut socket: TcpStream,
+    ) -> io::Result<([u8; 32], StreamOwned<ServerConnection, TcpStream>)> {
+        // Windows accepted sockets inherit the listener's nonblocking flag.
+        socket.set_nonblocking(false)?;
+        socket.set_read_timeout(Some(IO_TIMEOUT))?;
+        socket.set_write_timeout(Some(IO_TIMEOUT))?;
+        socket.set_nodelay(true)?;
+        let mut connection =
+            ServerConnection::new(self.config.clone()).map_err(io::Error::other)?;
+        while connection.is_handshaking() {
+            connection.complete_io(&mut socket)?;
+        }
+        let cert = connection
+            .peer_certificates()
+            .and_then(|certs| certs.first())
+            .ok_or_else(|| io::Error::other("Client authentication is required"))?;
+        let identity = fingerprint(cert.as_ref());
+        Ok((identity, StreamOwned::new(connection, socket)))
+    }
+}
+
+/// The declared length is checked before allocation or reading a payload.
+pub fn read_frame(reader: &mut impl Read, limit: usize) -> io::Result<Vec<u8>> {
+    let mut header = [0u8; 16];
+    reader.read_exact(&mut header)?;
+    if &header[..8] != MAGIC {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Unsupported transport version",
+        ));
+    }
+    let length = u64::from_be_bytes(header[8..].try_into().unwrap());
+    if length > limit.min(MAX_FRAME_BYTES) as u64 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Frame exceeds the configured bound",
+        ));
+    }
+    let mut bytes = vec![0u8; length as usize];
+    reader.read_exact(&mut bytes)?;
+    Ok(bytes)
+}
+pub fn write_frame(writer: &mut impl Write, bytes: &[u8], limit: usize) -> io::Result<()> {
+    if bytes.len() > limit.min(MAX_FRAME_BYTES) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Frame exceeds the configured bound",
+        ));
+    }
+    writer.write_all(MAGIC)?;
+    writer.write_all(&(bytes.len() as u64).to_be_bytes())?;
+    writer.write_all(bytes)?;
+    writer.flush()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn hostile_lengths_are_rejected_before_any_body_is_read() {
+        let mut input = MAGIC.to_vec();
+        input.extend_from_slice(&u64::MAX.to_be_bytes());
+        assert_eq!(
+            read_frame(&mut input.as_slice(), 1024).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
+    #[test]
+    fn truncated_and_unknown_version_frames_never_produce_a_payload() {
+        let mut wire = Vec::new();
+        write_frame(&mut wire, b"ciphertext", 1024).unwrap();
+        assert_eq!(
+            read_frame(&mut wire.as_slice(), 1024).unwrap(),
+            b"ciphertext"
+        );
+        wire.pop();
+        assert!(read_frame(&mut wire.as_slice(), 1024).is_err());
+        wire[0] ^= 1;
+        assert!(read_frame(&mut wire.as_slice(), 1024).is_err());
+    }
+}

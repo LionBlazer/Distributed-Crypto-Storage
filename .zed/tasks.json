@@ -1,7 +1,7 @@
 [
   {
     "label": "FHE: Open GUI playground",
-    "command": "& (rustup which cargo) run --release --locked -p fhe-playground; exit $LASTEXITCODE",
+    "command": "& (rustup which cargo) build --release --locked -p dcs-peer -p fhe-playground; if ($LASTEXITCODE -eq 0) { & (rustup which cargo) run --release --locked -p fhe-playground }; exit $LASTEXITCODE",
     "shell": {
       "with_arguments": {
         "program": "powershell.exe",

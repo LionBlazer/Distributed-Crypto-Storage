@@ -6,6 +6,10 @@ members = [
     "crates/bfv-query-core",
     "crates/replica-store",
     "crates/sql-plan",
+    "crates/peer-transport",
+    "crates/peer-runtime",
+    "crates/storage-client",
+    "apps/dcs-peer",
     "playground",
     "experiments/fhe-prototype",
     "experiments/core-workloads",
@@ -17,6 +21,9 @@ default-members = [
     "crates/bfv-query-core",
     "crates/replica-store",
     "crates/sql-plan",
+    "crates/peer-transport",
+    "crates/peer-runtime",
+    "crates/storage-client",
 ]
 resolver = "3"
 

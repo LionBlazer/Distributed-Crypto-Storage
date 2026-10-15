@@ -98,12 +98,21 @@ cargo test --release --locked -p fhe-playground --test requirements_sync
 
 ## Working conventions
 
-- Keep reusable libraries in `crates/`, the GUI/local simulation in `playground/`,
-  and measurement executables or research candidates in `experiments/`. Core
+- Keep reusable libraries in `crates/`, production process entry points in `apps/`,
+  GUI/test adapters in `playground/`, and measurement executables or research
+  candidates in `experiments/`. Core
   libraries must not depend on either consumer layer, GUI frameworks, virtual
   time, presets or fixture generators. Keep tests at their owning boundary.
   Cargo default members must build core only. Do not promote local manager or
   unverified experimental behavior into production guarantees by renaming it.
+
+- Live GUI storage/query behavior must use independently running peer processes
+  over peer-transport/peer-runtime. Do not reintroduce DemoNetwork, LabEngine or
+  an in-process evaluator as a live fallback. Historical local libraries are
+  research/test consumers only. Network observations must come from actual I/O.
+- Never accept a network SQL answer or commit its mutation without the required
+  computation/completeness proof and fresh agreed head. Missing proof is a hard
+  rejection, not permission to treat TLS, hashes or decryption as verification.
 
 - Respond to the user in Russian. Write new project documentation, code, and commit
   messages in English unless requested otherwise. Preserve the imported Russian

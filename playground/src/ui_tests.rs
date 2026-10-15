@@ -287,11 +287,10 @@ fn copy_health_counts_independent_domains_and_distinguishes_stale_copies() {
 }
 
 #[test]
-fn stale_copy_inspector_labels_current_owner_fixture_and_saves_domain_explicitly() {
+fn inspector_preserves_owner_view_without_faking_independent_process_failure_domains() {
     let (mut app, commands, _) = app();
     app.snapshot = Some(replicated_snapshot());
     app.open_node(2);
-    app.domain_edits.insert(2, 77);
     let ctx = egui::Context::default();
     set_theme(&ctx);
     let texts = render(&ctx, &mut app, vec![]);
@@ -307,11 +306,13 @@ fn stale_copy_inspector_labels_current_owner_fixture_and_saves_domain_explicitly
                 && text.text.contains("earlier values"))
     );
     assert!(commands.try_recv().is_err());
-    click(&ctx, &mut app, "Save domain");
-    assert!(matches!(
-        commands.try_recv().unwrap(),
-        Command::SetFailureDomain { id: 1, domain: 77 }
-    ));
+    assert!(!texts.iter().any(|text| text.text == "Save domain"));
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.text == "Failure domain: local host")
+    );
+    assert!(commands.try_recv().is_err());
 }
 
 #[test]
@@ -336,25 +337,16 @@ fn context_menu_exposes_manual_local_replica_repair_without_a_new_panel() {
 }
 
 #[test]
-fn maintenance_failure_does_not_finish_a_query_or_consume_an_unrelated_control() {
+fn process_snapshots_do_not_finish_a_query_or_consume_an_unrelated_control() {
     let (mut app, commands, events) = app();
     app.run_query();
     let _ = commands.try_recv().unwrap();
     app.control_pending = Some(Control::Availability);
-    events
-        .send(Event::MaintenanceFinished {
-            snapshot: Some(replicated_snapshot()),
-            outcome: Err(fhe_playground::LabError::InvalidInput(
-                "public repair quota failure".into(),
-            )),
-        })
-        .unwrap();
+    events.send(Event::Snapshot(replicated_snapshot())).unwrap();
     app.poll();
     assert!(app.pending.is_some());
     assert!(matches!(app.control_pending, Some(Control::Availability)));
-    assert_eq!(app.history.len(), 1);
-    assert!(app.history[0].job == Job::Maintenance);
-    assert!(app.maintenance_status.contains("quota failure"));
+    assert!(app.history.is_empty());
 }
 
 #[test]
@@ -1023,11 +1015,7 @@ fn network_settings_follow_history_and_stay_beside_data_without_executing_sql() 
     click(&ctx, &mut app, "Data");
     assert_eq!(app.right_tab, RightTab::Settings);
     let texts = render(&ctx, &mut app, vec![]);
-    assert!(
-        texts
-            .iter()
-            .any(|text| text.text == "Local prototype policy")
-    );
+    assert!(texts.iter().any(|text| text.text == "Owner configuration"));
     click_point(
         &ctx,
         &mut app,
@@ -1647,17 +1635,20 @@ fn no_clients_disables_sql_and_switching_clients_changes_request_identity() {
     ));
 }
 #[test]
-fn speed_and_topology_completions_never_finish_an_inflight_sql_job() {
+fn live_network_controls_do_not_offer_simulation_or_finish_an_inflight_sql_job() {
     let (mut app, commands, events) = app();
     let ctx = egui::Context::default();
     set_theme(&ctx);
     app.run_query();
     let _ = commands.try_recv().unwrap();
-    click(&ctx, &mut app, "Pause");
-    assert!(matches!(
-        commands.try_recv(),
-        Ok(Command::SetSimulation { paused: true, .. })
-    ));
+    let texts = render(&ctx, &mut app, vec![]);
+    assert!(texts.iter().any(|text| text.text == "Live TCP/TLS"));
+    assert!(
+        !texts
+            .iter()
+            .any(|text| text.text == "Pause" || text.text == "Speed")
+    );
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
     events
         .send(Event::ControlFinished {
             snapshot: Some(snapshot(3)),
