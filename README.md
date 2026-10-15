@@ -7,6 +7,9 @@ Decentralized agreement and verifiable malicious-peer execution remain unfinishe
 SQL results without a computation proof are rejected rather than accepted.
 Open peer admission and Sybil resistance are required; the current local test CA
 does not implement that admission model.
+The [selected consensus direction](docs/consensus-model.md) is an internally
+operated cumulative-work version journal. It remains unimplemented; external
+consensus networks and identity-count voting are excluded.
 
 The repository has two dependency layers: the [reusable core](crates/README.md),
 and deployment/test consumers: [peer daemon](apps/dcs-peer/README.md),
