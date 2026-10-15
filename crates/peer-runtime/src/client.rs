@@ -19,12 +19,27 @@ pub struct Trace {
     pub elapsed_ms: f64,
     pub succeeded: bool,
 }
+/// Observed application-frame I/O, independent of result/proof acceptance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ActivityPhase {
+    RequestSent,
+    ReplyReceived,
+}
+#[derive(Clone, Debug)]
+pub struct RpcActivity {
+    pub peer: [u8; 32],
+    pub operation: String,
+    pub request_id: u64,
+    pub phase: ActivityPhase,
+    pub bytes: u64,
+}
 #[derive(Clone)]
 pub struct RemotePeer {
     endpoint: Endpoint,
     connector: Connector,
     next: Arc<AtomicU64>,
     trace: Option<Arc<dyn Fn(Trace) + Send + Sync>>,
+    activity: Option<Arc<dyn Fn(RpcActivity) + Send + Sync>>,
 }
 impl RemotePeer {
     pub fn new(endpoint: Endpoint, connector: Connector) -> Self {
@@ -33,10 +48,18 @@ impl RemotePeer {
             connector,
             next: Arc::new(AtomicU64::new(1)),
             trace: None,
+            activity: None,
         }
     }
     pub fn with_trace(mut self, trace: Arc<dyn Fn(Trace) + Send + Sync>) -> Self {
         self.trace = Some(trace);
+        self
+    }
+    /// Reports a frame only after its actual write/read completes. Callbacks run
+    /// synchronously and should return promptly; they receive no payload or keys.
+    /// A received frame still needs decoding, request binding and proof checks.
+    pub fn with_activity(mut self, activity: Arc<dyn Fn(RpcActivity) + Send + Sync>) -> Self {
+        self.activity = Some(activity);
         self
     }
     pub fn endpoint(&self) -> &Endpoint {
@@ -60,8 +83,26 @@ impl RemotePeer {
             let mut stream = self.connector.connect(&self.endpoint)?;
             write_frame(&mut stream, &bytes, MAX_FRAME_BYTES)?;
             sent = bytes.len() as u64;
+            if let Some(activity) = &self.activity {
+                activity(RpcActivity {
+                    peer: self.endpoint.identity,
+                    operation: name.clone(),
+                    request_id: id,
+                    phase: ActivityPhase::RequestSent,
+                    bytes: sent,
+                });
+            }
             let payload = read_frame(&mut stream, MAX_FRAME_BYTES)?;
             received = payload.len() as u64;
+            if let Some(activity) = &self.activity {
+                activity(RpcActivity {
+                    peer: self.endpoint.identity,
+                    operation: name.clone(),
+                    request_id: id,
+                    phase: ActivityPhase::ReplyReceived,
+                    bytes: received,
+                });
+            }
             let response: WireResponse = decode(&payload)?;
             if response.version != 1 || response.id != id {
                 return Err(io::Error::new(

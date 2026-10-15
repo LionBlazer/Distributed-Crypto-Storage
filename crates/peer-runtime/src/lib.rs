@@ -6,7 +6,7 @@ pub mod evidence;
 mod server;
 mod store;
 mod wire;
-pub use client::{RemotePeer, Trace};
+pub use client::{ActivityPhase, RemotePeer, RpcActivity, Trace};
 pub use evidence::{
     JobVerifier, MAX_EVIDENCE_BYTES, MAX_JOB_BYTES, MAX_JOBS, MutationEvidence, MutationJob,
     MutationManifest,

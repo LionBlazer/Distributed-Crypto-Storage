@@ -354,6 +354,7 @@ fn dense_network_shows_every_real_connection_without_changing_topology() {
     let (mut app, commands, _events) = app();
     app.network = Some(network(16, 1));
     app.snapshot = Some(snapshot(16));
+    app.network_view = NetworkView::Matrix;
     let original = app.network.clone().unwrap();
     assert_eq!(original.links.len(), 136);
     let ctx = egui::Context::default();
@@ -402,6 +403,7 @@ fn dense_matrix_nodes_use_the_same_inspector_and_delete_commands() {
     let (mut app, commands, _events) = app();
     app.network = Some(network(16, 1));
     app.snapshot = Some(snapshot(16));
+    app.network_view = NetworkView::Matrix;
     let ctx = egui::Context::default();
     set_theme(&ctx);
     let texts = render(&ctx, &mut app, vec![]);
@@ -436,6 +438,7 @@ fn dense_matrix_nodes_use_the_same_inspector_and_delete_commands() {
 fn matrix_traces_discovery_before_a_connection_exists_in_the_correct_direction() {
     let (mut app, commands, _events) = app();
     app.network_view = NetworkView::Matrix;
+    app.playback.health = true;
     let net = app.network.as_mut().unwrap();
     net.links.clear();
     net.packets = vec![fhe_playground::NetworkPacket {
@@ -1724,6 +1727,11 @@ fn live_network_controls_do_not_offer_simulation_or_finish_an_inflight_sql_job()
     let texts = render(&ctx, &mut app, vec![]);
     assert!(texts.iter().any(|text| text.text == "Live TCP/TLS"));
     assert!(
+        texts.iter().any(|text| text.text == "Trace speed"),
+        "visible: {:?}",
+        texts.iter().map(|text| &text.text).collect::<Vec<_>>()
+    );
+    assert!(
         !texts
             .iter()
             .any(|text| text.text == "Pause" || text.text == "Speed")
@@ -1738,6 +1746,155 @@ fn live_network_controls_do_not_offer_simulation_or_finish_an_inflight_sql_job()
     app.poll();
     assert!(app.pending.is_some());
     assert!(app.history.is_empty());
+}
+
+#[test]
+fn live_frame_observations_animate_while_sql_is_pending_without_completing_the_job() {
+    let (mut app, commands, events) = app();
+    app.run_query();
+    let _ = commands.try_recv().unwrap();
+    events
+        .send(Event::Traffic(crate::traffic::Observation {
+            packet: fhe_playground::NetworkPacket {
+                id: 90001,
+                from: 1,
+                to: 2,
+                kind: fhe_playground::PacketKind::Request,
+                progress: 1.0,
+                request_id: Some(9),
+            },
+            operation: "fhe-proof".into(),
+            bytes: 1234,
+        }))
+        .unwrap();
+    app.poll();
+    app.playback.advance(0.0);
+    app.playback.advance(0.1);
+    let packet = app
+        .playback
+        .packets()
+        .into_iter()
+        .find(|packet| packet.id == 90001)
+        .unwrap();
+    assert!(packet.progress > 0.0 && packet.progress < 1.0);
+    app.playback.speed = 0.0;
+    app.playback.advance(20.0);
+    assert_eq!(app.playback.packets()[0].progress, packet.progress);
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    render(&ctx, &mut app, vec![]);
+    click(&ctx, &mut app, "Live");
+    assert_eq!(app.playback.speed, 1.0);
+    assert!(app.playback.packets().is_empty());
+    assert!(app.pending.is_some());
+    assert!(app.history.is_empty());
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+fn large_observed_topology() -> NetworkSnapshot {
+    // Public renderer fixture only: no processes or cryptographic results claimed.
+    NetworkSnapshot {
+        time_ms: 0.0,
+        speed: 1.0,
+        paused: false,
+        nodes: (1..=10_000)
+            .map(|id| fhe_playground::NetworkNode {
+                id,
+                name: format!("Peer {id:05}"),
+                role: NodeRole::Peer,
+                peer_id: Some(id as usize),
+                online: true,
+                process_id: None,
+            })
+            .collect(),
+        links: (1..=10_000)
+            .map(|id| fhe_playground::NetworkLink {
+                from: id,
+                to: id % 10_000 + 1,
+            })
+            .collect(),
+        packets: vec![],
+        recent: vec![],
+    }
+}
+
+#[test]
+fn ten_thousand_nodes_render_as_groups_and_a_virtualized_matrix_without_changing_topology() {
+    let (mut app, commands, _events) = app();
+    app.network = Some(large_observed_topology());
+    app.snapshot = None;
+    app.active_client = None;
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    assert!(app.uses_overview());
+    for mode in [NetworkView::Auto, NetworkView::Map, NetworkView::Matrix] {
+        app.network_view = mode;
+        let output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1500.0, 900.0),
+                )),
+                ..Default::default()
+            },
+            |ui| app.draw(ui),
+        );
+        assert!(
+            output.shapes.len() < 8000,
+            "{mode:?} must paint a bounded visible subset, got {} shapes",
+            output.shapes.len()
+        );
+        output.drop_without_applying_deltas();
+        assert_eq!(app.network.as_ref().unwrap().nodes.len(), 10_000);
+        assert_eq!(app.network.as_ref().unwrap().links.len(), 10_000);
+    }
+    app.network_view = NetworkView::Overview;
+    app.overview_search = "Peer 09999".into();
+    let text = render(&ctx, &mut app, vec![]);
+    assert!(text.iter().any(|text| text.text.contains("Peer 09999")));
+    assert!(!text.iter().any(|text| text.text.contains("Peer 09998")));
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn relevant_links_reduce_dense_map_clutter_without_removing_observed_connections() {
+    let (mut app, commands, _events) = app();
+    app.network = Some(network(16, 1));
+    app.snapshot = Some(snapshot(16));
+    app.network_view = NetworkView::Map;
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    fn lines(shape: &egui::Shape) -> usize {
+        match shape {
+            egui::Shape::Path(path) if path.stroke.width == 1.1 => 1,
+            egui::Shape::Vec(shapes) => shapes.iter().map(lines).sum(),
+            _ => 0,
+        }
+    }
+    for (scope, expected) in [(LinkView::Relevant, 16), (LinkView::All, 136)] {
+        app.link_view = scope;
+        let output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1500.0, 900.0),
+                )),
+                ..Default::default()
+            },
+            |ui| app.draw(ui),
+        );
+        assert_eq!(
+            output
+                .shapes
+                .iter()
+                .map(|shape| lines(&shape.shape))
+                .sum::<usize>(),
+            expected
+        );
+        output.drop_without_applying_deltas();
+        assert_eq!(app.network.as_ref().unwrap().links.len(), 136);
+    }
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
 }
 #[test]
 fn a_result_stays_bound_to_the_requesting_client_after_switching_sessions() {

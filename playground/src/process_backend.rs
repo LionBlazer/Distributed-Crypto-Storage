@@ -1,4 +1,5 @@
 //! OS process supervision and view adaptation. No protocol or FHE evaluator here.
+use crate::traffic::{LiveTraffic, MAX_OBSERVATIONS, Observation};
 use fhe_playground::{
     DatabaseDraft, LabError, LabSnapshot, LogicalShardInfo, NetworkLink, NetworkLog, NetworkNode,
     NetworkPacket, NetworkSnapshot, NodeId, NodeRole, PacketKind, PeerConfig, PeerInfo,
@@ -197,7 +198,9 @@ pub(super) struct ProcessBackend {
     session: Arc<AtomicU64>,
     logs: VecDeque<NetworkLog>,
     packets: VecDeque<(Instant, NetworkPacket)>,
-    next_packet: u64,
+    next_packet: Arc<AtomicU64>,
+    pub(super) traffic: LiveTraffic,
+    pub(super) wake_traffic: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 fn error(e: impl std::fmt::Display) -> LabError {
     LabError::InvalidInput(e.to_string())
@@ -235,14 +238,60 @@ impl ProcessBackend {
             session: Arc::new(AtomicU64::new(1)),
             logs: VecDeque::new(),
             packets: VecDeque::new(),
-            next_packet: 1,
+            next_packet: Arc::new(AtomicU64::new(1)),
+            traffic: Arc::default(),
+            wake_traffic: None,
         })
     }
-    fn remote(&self, endpoint: Endpoint) -> RemotePeer {
+    fn remote(&self, endpoint: Endpoint, node: NodeId) -> RemotePeer {
         let sender = self.trace_sender.clone();
-        RemotePeer::new(endpoint, self.connector.clone()).with_trace(Arc::new(move |trace| {
-            let _ = sender.try_send(trace);
-        }))
+        let traffic = self.traffic.clone();
+        let session = self.session.clone();
+        let sequence = self.next_packet.clone();
+        let wake = self.wake_traffic.clone();
+        RemotePeer::new(endpoint, self.connector.clone())
+            .with_activity(Arc::new(move |activity| {
+                let source = session.load(Ordering::Acquire);
+                let reply = activity.phase == peer_runtime::ActivityPhase::ReplyReceived;
+                let health = matches!(
+                    activity.operation.as_str(),
+                    "probe" | "status" | "neighbors" | "quota" | "shutdown"
+                );
+                let Ok(id) = sequence
+                    .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+                else {
+                    return;
+                };
+                let packet = NetworkPacket {
+                    id,
+                    from: if reply { node } else { source },
+                    to: if reply { source } else { node },
+                    kind: match (health, reply) {
+                        (true, false) => PacketKind::Ping,
+                        (true, true) => PacketKind::Pong,
+                        (false, false) => PacketKind::Request,
+                        (false, true) => PacketKind::Response,
+                    },
+                    progress: 1.0,
+                    request_id: Some(activity.request_id),
+                };
+                if let Ok(mut pending) = traffic.lock() {
+                    if pending.len() == MAX_OBSERVATIONS {
+                        pending.pop_front();
+                    }
+                    pending.push_back(Observation {
+                        packet,
+                        operation: activity.operation,
+                        bytes: activity.bytes,
+                    });
+                }
+                if let Some(wake) = &wake {
+                    wake();
+                }
+            }))
+            .with_trace(Arc::new(move |trace| {
+                let _ = sender.try_send(trace);
+            }))
     }
     pub fn add_peer(&mut self, config: PeerConfig) -> Result<NodeId, LabError> {
         config.validate()?;
@@ -278,7 +327,7 @@ impl ProcessBackend {
             endpoint: None,
         };
         let endpoint = process.start().map_err(error)?;
-        let remote = self.remote(endpoint);
+        let remote = self.remote(endpoint, node);
         let status = Some(remote.status().map_err(error)?);
         self.peers.insert(
             id,
@@ -413,8 +462,12 @@ impl ProcessBackend {
                 .process
                 .start()
                 .map_err(error)?;
-            let remote = self.remote(endpoint);
-            self.peers.get_mut(&id).unwrap().remote = remote.clone();
+            let node = self.peers[&id].node;
+            let remote = self.remote(endpoint, node);
+            let peer = self.peers.get_mut(&id).unwrap();
+            peer.remote = remote.clone();
+            peer.seen = 0;
+            peer.status = None;
             if let Some(db) = &mut self.database {
                 db.replace_participant(Participant {
                     id: id as u64,
@@ -541,11 +594,16 @@ impl ProcessBackend {
                 .find(|peer| peer.remote.endpoint().identity == event.remote)
                 .map(|peer| peer.node)
             {
-                self.next_packet = self.next_packet.saturating_add(1);
+                let Ok(id) =
+                    self.next_packet
+                        .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+                else {
+                    continue;
+                };
                 self.packets.push_back((
                     Instant::now(),
                     NetworkPacket {
-                        id: self.next_packet,
+                        id,
                         from: source,
                         to: target,
                         kind: if event.operation == "probe" {
@@ -570,35 +628,6 @@ impl ProcessBackend {
                 .find(|p| p.remote.endpoint().identity == trace.peer)
                 .map(|p| p.node);
             if let Some(target) = target {
-                let source = self.session.load(Ordering::Acquire);
-                if trace.request_bytes > 0 {
-                    self.next_packet = self.next_packet.saturating_add(1);
-                    self.packets.push_back((
-                        Instant::now(),
-                        NetworkPacket {
-                            id: self.next_packet,
-                            from: source,
-                            to: target,
-                            kind: PacketKind::Request,
-                            progress: 1.0,
-                            request_id: Some(trace.request_id),
-                        },
-                    ));
-                }
-                if trace.response_bytes > 0 {
-                    self.next_packet = self.next_packet.saturating_add(1);
-                    self.packets.push_back((
-                        Instant::now(),
-                        NetworkPacket {
-                            id: self.next_packet,
-                            from: target,
-                            to: source,
-                            kind: PacketKind::Response,
-                            progress: 1.0,
-                            request_id: Some(trace.request_id),
-                        },
-                    ));
-                }
                 self.logs.push_back(NetworkLog {
                     time_ms: self.started.elapsed().as_secs_f64() * 1000.0,
                     message: format!(
@@ -871,6 +900,7 @@ mod tests {
         assert_eq!(backend.copies(2).unwrap().0, 4);
         backend.refresh();
 
+        backend.traffic.lock().unwrap().clear();
         let VerifiedResult::Selected {
             columns,
             mut rows,
@@ -885,6 +915,16 @@ mod tests {
             vec![sql_plan::Column::Age, sql_plan::Column::Amount]
         );
         assert_eq!(rows, vec![vec![18, 20], vec![42, 30]]);
+        let observed = backend.traffic.lock().unwrap();
+        assert!(observed.iter().any(|event| event.operation == "fhe-proof"
+            && event.packet.kind == PacketKind::Request
+            && event.packet.from == 1
+            && event.bytes > 0));
+        assert!(observed.iter().any(|event| event.operation == "fhe-proof"
+            && event.packet.kind == PacketKind::Response
+            && event.packet.to == 1
+            && event.bytes > 0));
+        drop(observed);
         assert!(
             backend
                 .network()

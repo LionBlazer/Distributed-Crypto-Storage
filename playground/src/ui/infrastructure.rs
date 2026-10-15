@@ -72,28 +72,53 @@ impl Playground {
             });
         match self.right_tab {
             RightTab::Network => {
-                egui::Panel::top("simulation-controls").frame(panel(10)).show(ui,|ui| {
+                egui::Panel::top("network-controls").default_size(156.0).frame(panel(10)).show(ui,|ui| {
                     ui.horizontal_wrapped(|ui| {
-                        ui.label(RichText::new("Live TCP/TLS").small().color(GREEN)).on_hover_text("Actual peer processes and delivered RPCs. Packet markers represent observed sends/replies; no virtual time is used.");
+                        ui.label(RichText::new("Live TCP/TLS").small().color(GREEN)).on_hover_text("Peers are independent OS processes. Arrows replay observed application-frame writes/reads, not invented packets or measured wire travel.");
                         if let Some(net)=&self.network {
-                            ui.label(RichText::new(format!("{} nodes / {} links",net.nodes.len(),net.links.len())).small().color(MUTED));
+                            ui.label(RichText::new(format!("{} nodes / {} connections",net.nodes.len(),super::overview::connections(net).len())).small().color(MUTED));
                         }
                         self.replication_summary(ui);
                         ui.separator();
-                        for (view,label) in [(NetworkView::Auto,"Auto"),(NetworkView::Map,"Map"),(NetworkView::Matrix,"Matrix")] {
+                        for (view,label) in [(NetworkView::Auto,"Auto"),(NetworkView::Map,"Map"),(NetworkView::Overview,"Overview"),(NetworkView::Matrix,"Matrix")] {
                             if tab_button(ui,label,self.network_view==view).on_hover_text(match view {
-                                NetworkView::Auto=>"Uses the matrix for dense networks. Every connection stays visible.",
-                                NetworkView::Map=>"Spatial map of all connections and actual traffic.",
+                                NetworkView::Auto=>"Map for small networks; grouped overview for large networks. Display filters never change real connections.",
+                                NetworkView::Map=>"Selected-node connections and observed traffic. Large networks use the grouped overview.",
+                                NetworkView::Overview=>"Visual groups, search and individual peer inspection. Groups are not protocol clusters.",
                                 NetworkView::Matrix=>"Every connection in a cell. Rows send; columns receive.",
                             }).clicked() {self.network_view=view;}
                         }
-                        if self.network_view==NetworkView::Auto {ui.add(egui::Label::new(RichText::new(if self.uses_matrix(){"Matrix"}else{"Map"}).small().color(MUTED)).wrap_mode(egui::TextWrapMode::Extend));}
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Trace speed").on_hover_text("Visual playback only. 0 pauses arrows; 1 plays each observed frame over 1.1 seconds. SQL, TLS, proofs and measured latency are unaffected.");
+                        ui.spacing_mut().slider_width = (ui.available_width() - 132.0).max(80.0);
+                        if ui.add(egui::Slider::new(&mut self.playback.speed, 0.0..=1.0).step_by(0.01).show_value(false)).changed() {ui.ctx().request_repaint();}
+                        ui.label(if self.playback.speed == 0.0 {"Paused".to_string()} else {format!("{:.0}%", self.playback.speed * 100.0)});
+                        if primary_button(ui,"Live",self.playback.can_sync()).on_hover_text(format!("Catch up to current observations: skip {} queued visual markers and resume at 100%.",self.playback.queued())).clicked() {
+                            self.worker.discard_traffic_tail();
+                            self.playback.sync_live();
+                            ui.ctx().request_repaint();
+                        }
+                    });
+                    ui.horizontal_wrapped(|ui| {
+                        ui.colored_label(ACCENT, "Request");
+                        ui.colored_label(GREEN, "Reply");
+                        ui.checkbox(&mut self.playback.health, "Health checks").on_hover_text("Show actual probes and status polling in amber. Hidden by default to keep SQL traffic readable.");
+                        if !self.uses_overview() && !self.uses_matrix() {
+                            egui::ComboBox::from_id_salt("link-visibility").selected_text(if self.link_view == LinkView::Relevant {"Relevant links"}else{"All links"}).width(115.0).show_ui(ui, |ui| {
+                                ui.selectable_value(&mut self.link_view, LinkView::Relevant, "Relevant links");
+                                ui.selectable_value(&mut self.link_view, LinkView::All, "All links");
+                            }).response.on_hover_text("Relevant = selected node plus currently replayed traffic. Other real connections remain in Matrix and node inspectors.");
+                        }
+                        if self.playback.omitted > 0 { ui.label(RichText::new(format!("{} older markers omitted", self.playback.omitted)).small().color(MUTED)).on_hover_text("Only the bounded visual replay drops old markers; network execution and results are unchanged."); }
                     });
                 });
                 egui::CentralPanel::default()
                     .frame(egui::Frame::new().fill(EDITOR).inner_margin(10))
                     .show(ui, |ui| {
-                        if self.uses_matrix() {
+                        if self.uses_overview() {
+                            self.network_overview(ui);
+                        } else if self.uses_matrix() {
                             self.network_matrix(ui);
                         } else {
                             self.network_graph(ui);
@@ -393,7 +418,7 @@ impl Playground {
         }
         section(ui, "Connections");
         if let Some(net) = &self.network {
-            let adjacent: Vec<_> = net
+            let adjacent: std::collections::BTreeSet<_> = net
                 .links
                 .iter()
                 .filter_map(|l| {
@@ -409,9 +434,25 @@ impl Playground {
             if adjacent.is_empty() {
                 ui.label(RichText::new("No established connections.").color(MUTED));
             }
-            for neighbor in adjacent {
-                ui.label(self.node_name(neighbor));
-            }
+            let adjacent: Vec<_> = adjacent.into_iter().collect();
+            egui::ScrollArea::vertical()
+                .id_salt(("node-connections", id))
+                .max_height(220.0)
+                .auto_shrink([false, true])
+                .show_rows(ui, 24.0, adjacent.len(), |ui, rows| {
+                    for row in rows {
+                        let neighbor = adjacent[row];
+                        if ui
+                            .selectable_label(false, self.node_name(neighbor))
+                            .on_hover_text(
+                                "Observed authenticated reachability. Click to inspect this node.",
+                            )
+                            .clicked()
+                        {
+                            self.open_node(neighbor);
+                        }
+                    }
+                });
         }
     }
     fn network_graph(&mut self, ui: &mut egui::Ui) {
@@ -448,7 +489,7 @@ impl Playground {
                     .zoom_at(canvas, pointer.unwrap(), (scroll * 0.002).exp());
             }
         }
-        let Some(net) = self.network.clone() else {
+        let Some(net) = self.display_network() else {
             ui.painter().text(
                 canvas.center(),
                 egui::Align2::CENTER_CENTER,
@@ -481,6 +522,13 @@ impl Playground {
         let edges: Vec<_> = net
             .links
             .iter()
+            .filter(|link| {
+                self.link_view == LinkView::All
+                    || self
+                        .selected_node
+                        .or(self.active_client)
+                        .is_some_and(|id| link.from == id || link.to == id)
+            })
             .map(|l| LayoutEdge {
                 from: l.from,
                 to: l.to,
@@ -512,7 +560,9 @@ impl Playground {
             })
             .collect();
         self.graph_router.sync(&route_nodes);
-        self.graph_bundler.sync(&route_nodes, &edges);
+        if self.link_view == LinkView::All {
+            self.graph_bundler.sync(&route_nodes, &edges);
+        }
         if initialize || (!self.camera_manipulated && (changed || moving || resized)) {
             self.fit_graph(canvas);
             self.graph_initialized = true;
@@ -537,17 +587,29 @@ impl Playground {
                 })
             })
             .collect();
-        // Hover/selection adds individual paths; the full underlying edge set
-        // remains present in the shared lanes or, for sparse graphs, normal paths.
+        // Presentation filtering leaves the observed topology untouched.
         let focused = pointer
             .and_then(|pos| {
                 boxes
                     .iter()
                     .find_map(|(id, rect)| rect.contains(pos).then_some(*id))
             })
-            .or(self.selected_node);
+            .or(self.selected_node)
+            .or(self.active_client);
+        let mut drawn = std::collections::BTreeSet::new();
         for link in &net.links {
-            let route = if self.graph_layout.is_dense() {
+            let relevant = focused.is_some_and(|id| link.from == id || link.to == id)
+                || net.packets.iter().any(|packet| {
+                    (packet.from == link.from && packet.to == link.to)
+                        || (packet.from == link.to && packet.to == link.from)
+                });
+            if self.link_view == LinkView::Relevant && !relevant {
+                continue;
+            }
+            if !drawn.insert((link.from.min(link.to), link.from.max(link.to))) {
+                continue;
+            }
+            let route = if self.link_view == LinkView::All && self.graph_layout.is_dense() {
                 self.graph_bundler.route(link.from, link.to)
             } else {
                 self.graph_router.route(link.from, link.to)
@@ -568,7 +630,8 @@ impl Playground {
                 ));
             }
         }
-        if self.graph_layout.is_dense()
+        if self.link_view == LinkView::All
+            && self.graph_layout.is_dense()
             && let Some(id) = focused
         {
             for link in net
@@ -597,19 +660,31 @@ impl Playground {
                 .collect();
             if let Some(point) = point_on_route(&screen, packet.progress) {
                 let color = packet_color(packet.kind);
+                let previous = point_on_route(&screen, (packet.progress - 0.035).max(0.0));
                 p.add(egui::Shape::line(
                     screen,
                     Stroke::new(1.0, color.gamma_multiply(0.25)),
                 ));
                 p.circle_filled(point, 8.0, color.gamma_multiply(0.12));
                 p.circle_filled(point, 3.5, color);
+                if let Some(previous) = previous
+                    && point.distance(previous) > 1.0
+                {
+                    let direction = (point - previous).normalized();
+                    p.arrow(
+                        point - direction * 12.0,
+                        direction * 12.0,
+                        Stroke::new(1.6, color),
+                    );
+                }
                 ui.interact(
                     egui::Rect::from_center_size(point, egui::Vec2::splat(14.0)),
                     ui.id().with(("packet", packet.id)),
                     egui::Sense::hover(),
                 )
                 .on_hover_text(format!(
-                    "{:?} #{} · {} -> {} · {:.0}%",
+                    "{}\n{:?} #{} · {} -> {} · visual {:.0}%",
+                    self.playback.description(packet.id),
                     packet.kind,
                     packet.id,
                     self.node_name(packet.from),
@@ -678,8 +753,8 @@ impl Playground {
         p.text(
             canvas.left_top() + egui::vec2(12.0, 12.0),
             egui::Align2::LEFT_TOP,
-            if self.graph_layout.is_dense() {
-                "Shared lanes · select a node for individual links · Matrix shows every pair"
+            if self.link_view == LinkView::Relevant {
+                "Selected node + traffic · other connections in Matrix · double-click to inspect"
             } else {
                 "Right-click to add / double-click a node to inspect"
             },
@@ -695,7 +770,7 @@ impl Playground {
                 MUTED,
             );
         }
-        if !net.packets.is_empty() {
+        if self.playback.playing() {
             ui.ctx().request_repaint();
         }
         if let Some(action) = action {
@@ -725,7 +800,9 @@ impl Playground {
                 })
                 .collect()
         });
-        self.graph_bundler.sync(&route_nodes, &edges);
+        if self.link_view == LinkView::All {
+            self.graph_bundler.sync(&route_nodes, &edges);
+        }
         let mut bounds = egui::Rect::NOTHING;
         for (_, pos) in self.graph_layout.positions() {
             bounds = bounds.union(egui::Rect::from_center_size(
@@ -733,7 +810,8 @@ impl Playground {
                 NODE_SIZE,
             ));
         }
-        if self.graph_layout.is_dense()
+        if self.link_view == LinkView::All
+            && self.graph_layout.is_dense()
             && let Some((min, max)) = self.graph_bundler.bounds()
         {
             bounds = bounds.union(egui::Rect::from_min_max(
@@ -953,10 +1031,10 @@ fn point_on_route(path: &[egui::Pos2], progress: f32) -> Option<egui::Pos2> {
 pub(super) fn packet_color(kind: PacketKind) -> Color32 {
     match kind {
         PacketKind::Ping => AMBER,
-        PacketKind::Pong => GREEN,
+        PacketKind::Pong => AMBER,
         PacketKind::Ack => MUTED,
         PacketKind::Request => ACCENT,
-        PacketKind::Response => Color32::from_rgb(195, 154, 250),
+        PacketKind::Response => GREEN,
         PacketKind::Cancel => Color32::from_rgb(232, 120, 105),
     }
 }
@@ -988,7 +1066,13 @@ pub(super) fn storage_tooltip(node: &NetworkNode, state: Option<&LabSnapshot>) -
             .and_then(|id| state.peers.iter().find(|peer| peer.id == id))
             .map(|peer| (state, peer))
     }) else {
-        return format!("{} · Node {} · Double-click to inspect", node.name, node.id);
+        return format!(
+            "{} · Node {} · {} · Double-click to inspect",
+            node.name,
+            node.id,
+            node.process_id
+                .map_or_else(|| "PID unavailable".to_string(), |pid| format!("PID {pid}"))
+        );
     };
     let metadata = peer.stored_bytes.saturating_sub(
         peer.data_bytes
@@ -999,9 +1083,11 @@ pub(super) fn storage_tooltip(node: &NetworkNode, state: Option<&LabSnapshot>) -
         format!("\nCopies: {current} current / {stale} stale")
     });
     format!(
-        "{} · Node {}\nPhysical storage: {} B / {} B quota\nEncrypted data: {} B (includes authentication metadata)\nEncrypted index: {} B\nVersion/proof journal: {} B\nReplica record metadata: {} B\nLogical payload: {} B / {} stored {}{}\nPayload counts actual stored copies, including stale copies; it is not unique database coverage.\nPublic setup in memory: {} B (serialized size; not disk usage or peak RAM).\nExpanded keys and transient FHE/proof memory are additional.\nDouble-click to inspect",
+        "{} · Node {} · {}\nPhysical storage: {} B / {} B quota\nEncrypted data: {} B (includes authentication metadata)\nEncrypted index: {} B\nVersion/proof journal: {} B\nReplica record metadata: {} B\nLogical payload: {} B / {} stored {}{}\nPayload counts actual stored copies, including stale copies; it is not unique database coverage.\nPublic setup in memory: {} B (serialized size; not disk usage or peak RAM).\nExpanded keys and transient FHE/proof memory are additional.\nDouble-click to inspect",
         node.name,
         node.id,
+        node.process_id
+            .map_or_else(|| "PID unavailable".to_string(), |pid| format!("PID {pid}")),
         peer.stored_bytes,
         peer.config.storage_limit_bytes,
         peer.data_bytes,
@@ -1043,6 +1129,65 @@ fn draw_node(
     } else {
         format!("C{:02}", node.id)
     };
+    if scale < 0.72 {
+        // Semantic zoom: keep identifiers legible instead of shrinking the full
+        // inspector into microscopic text. Exact sizes remain in the tooltip.
+        let origin = rect.min + egui::vec2(6.0, 5.0);
+        p.text(
+            origin,
+            egui::Align2::LEFT_TOP,
+            title,
+            FontId::monospace(11.0),
+            color,
+        );
+        if rect.height() > 38.0 {
+            p.text(
+                origin + egui::vec2(0.0, 16.0),
+                egui::Align2::LEFT_TOP,
+                &node.name,
+                FontId::proportional(10.0),
+                TEXT,
+            );
+        }
+        if let Some(peer) = node
+            .peer_id
+            .and_then(|id| state.and_then(|state| state.peers.iter().find(|peer| peer.id == id)))
+        {
+            if rect.height() > 58.0 {
+                p.text(
+                    origin + egui::vec2(0.0, 30.0),
+                    egui::Align2::LEFT_TOP,
+                    format!("{} rows · {} B", peer.rows, peer.logical_bytes),
+                    FontId::proportional(9.0),
+                    MUTED,
+                );
+            }
+            let track = egui::Rect::from_min_size(
+                egui::pos2(rect.left() + 6.0, rect.bottom() - 7.0),
+                egui::vec2((rect.width() - 12.0).max(0.0), 3.0),
+            );
+            p.rect_filled(track, 1, EDITOR);
+            let ratio = (peer.stored_bytes as f32 / peer.config.storage_limit_bytes.max(1) as f32)
+                .clamp(0.0, 1.0);
+            p.rect_filled(
+                egui::Rect::from_min_size(track.min, egui::vec2(track.width() * ratio, 3.0)),
+                1,
+                GREEN,
+            );
+        }
+        p.circle_filled(
+            egui::pos2(rect.right() - 8.0, rect.top() + 10.0),
+            2.5,
+            if !node.online {
+                RED
+            } else if connected {
+                GREEN
+            } else {
+                AMBER
+            },
+        );
+        return;
+    }
     p.text(
         egui::pos2(left, top),
         egui::Align2::LEFT_CENTER,

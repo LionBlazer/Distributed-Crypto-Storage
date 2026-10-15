@@ -64,10 +64,33 @@ before the contract's larger 256 MiB journal upper bound is reached.
 
 Peer endpoints perform real mutual TLS probes. Graph/matrix links are recently
 observed authenticated reachability, not a claim that a persistent socket is open.
-Packet markers and logs represent actual complete RPC frames and peer observations;
-failed connection attempts are not displayed as delivered packets. Byte counters
-are application-frame payloads, excluding TLS/TCP overhead. Virtual Speed/Pause
-and artificial link-delay controls are removed. Data/FHE time is wall-clock time.
+The transport's `RpcActivity` callback supplies observed frame writes/reads while
+SQL is still running, through a bounded UI queue independent of manager snapshots.
+Failed connection attempts do not generate sent-frame markers. Peer-to-peer
+observations come from peer status telemetry. Byte counters exclude TLS/TCP
+overhead; receiving a frame does not establish proof validity.
+
+**Trace speed** is a full-width 0–1 slider: zero freezes visual playback, one
+animates an observation over 1.1 seconds. It never delays transport, FHE, proof
+checks or results. Adjacent **Live** skips the pending visual tail and resumes at
+100%; skipped snapshot IDs stay deduplicated. It does not replay SQL. Blue means
+request, green means reply; optional amber health
+checks include probes and status polling. Timelines are explanatory playback,
+not measured packet travel. Deduplication prevents repeated snapshots from
+restarting animation; the view retains at most 256 markers and reports visual
+overflow. Data/FHE timing remains wall-clock timing.
+
+Map defaults to selected-node connections and active observations; **All links**
+is explicit. Filtering never changes the observed topology or protocol. Above
+64 nodes, Auto/Map use at most 64 visual ID groups with search and virtualized
+member lists. These are display groups, not consensus or storage clusters.
+Matrix preserves all supplied connection pairs and paints only visible rows and
+columns; it never allocates a dense N×N cell array. Headless rendering tests cover
+10,000 public synthetic nodes, not a 10,000-process deployment. The live local
+manager still caps owned peers at 16. The presentation follows the
+[level-of-detail guidance](https://js.cytoscape.org/#performance) and
+[display-only highlighting](https://v3.sigmajs.org/docs/advanced/data/) used by
+established graph renderers; no JavaScript renderer is a dependency.
 
 All managed peers run on one host and are therefore one failure domain. Arbitrary
 domain labels cannot create independent failure tolerance. **Min copies** requests

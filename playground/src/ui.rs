@@ -15,6 +15,7 @@ mod explorer;
 mod infrastructure;
 mod matrix;
 mod navigation;
+mod overview;
 mod theme;
 use camera::Camera;
 use navigation::Navigation;
@@ -41,12 +42,19 @@ enum RightTab {
     Settings,
     Node(NodeId),
 }
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 enum NetworkView {
     #[default]
     Auto,
     Map,
     Matrix,
+    Overview,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+enum LinkView {
+    #[default]
+    Relevant,
+    All,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Job {
@@ -99,6 +107,10 @@ pub struct Playground {
     right_tab: RightTab,
     navigation: Navigation,
     network_view: NetworkView,
+    link_view: LinkView,
+    playback: crate::traffic::Playback,
+    overview_search: String,
+    overview_members: Option<Vec<NodeId>>,
     peer_edits: HashMap<NodeId, PeerConfig>,
     maintenance_status: String,
     graph_layout: GraphLayout,
@@ -147,6 +159,10 @@ impl Playground {
             right_tab: RightTab::Network,
             navigation: Navigation::default(),
             network_view: NetworkView::Auto,
+            link_view: LinkView::Relevant,
+            playback: crate::traffic::Playback::default(),
+            overview_search: String::new(),
+            overview_members: None,
             peer_edits: HashMap::new(),
             maintenance_status: String::new(),
             graph_layout: GraphLayout::default(),
@@ -295,6 +311,7 @@ impl Playground {
         }
         loop {
             match self.worker.poll() {
+                Ok(Some(Event::Traffic(observation))) => self.playback.observe_io(&observation),
                 Ok(Some(Event::Snapshot(snapshot))) => {
                     self.snapshot = Some(snapshot);
                 }
@@ -492,6 +509,10 @@ impl Playground {
         self.history.truncate(8);
     }
     fn draw(&mut self, ui: &mut egui::Ui) {
+        self.playback.advance(ui.input(|input| input.time));
+        if self.playback.playing() {
+            ui.ctx().request_repaint();
+        }
         self.navigation_shortcuts(ui.ctx());
         egui::Panel::bottom("status").frame(panel(6)).show(ui, |ui| {
             ui.horizontal(|ui| {

@@ -26,6 +26,8 @@ fn export_ui_previews() {
         ("network", Tab::Sql, 8, [1500, 900]),
         ("network-small", Tab::Sql, 16, [1180, 720]),
         ("network-map", Tab::Sql, 16, [1500, 900]),
+        ("network-overview", Tab::Sql, 16, [1500, 900]),
+        ("network-traffic", Tab::Sql, 3, [1500, 900]),
         ("peer-storage", Tab::Sql, 3, [1500, 900]),
         ("peer-storage-narrow", Tab::Sql, 3, [1180, 720]),
         ("network-max", Tab::Sql, 16, [1500, 900]),
@@ -40,6 +42,29 @@ fn export_ui_previews() {
         ));
         if name == "network-map" {
             app.network_view = NetworkView::Map;
+        }
+        if name == "network-overview" {
+            app.network = Some(large_observed_topology());
+            app.snapshot = None;
+            app.active_client = None;
+        }
+        if name == "network-traffic" {
+            for (id, from, to, kind) in [
+                (90001, 1, 2, fhe_playground::PacketKind::Request),
+                (90002, 3, 1, fhe_playground::PacketKind::Response),
+            ] {
+                app.playback.observe(&fhe_playground::NetworkPacket {
+                    id,
+                    from,
+                    to,
+                    kind,
+                    progress: 1.0,
+                    request_id: Some(9),
+                });
+            }
+            for tick in 0..6 {
+                app.playback.advance(f64::from(tick) * 0.1);
+            }
         }
         if name.starts_with("peer-storage") {
             // Public synthetic input, real encrypted-storage accounting. The

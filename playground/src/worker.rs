@@ -1,5 +1,6 @@
 //! The GUI supervises actual child processes. It never executes a peer FHE job.
 use crate::process_backend::ProcessBackend;
+use crate::traffic::{LiveTraffic, Observation};
 use eframe::egui;
 use fhe_playground::{
     DatabaseDraft, LabError, LabSnapshot, NetworkSnapshot, NodeId, PeerConfig, QueryOutcome,
@@ -97,6 +98,7 @@ impl Outcome {
 }
 
 pub enum Event {
+    Traffic(Observation),
     Network(NetworkSnapshot),
     Snapshot(LabSnapshot),
     Progress(String),
@@ -118,6 +120,7 @@ pub struct Worker {
     latest: Arc<Mutex<VecDeque<Event>>>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
+    traffic: LiveTraffic,
 }
 impl Drop for Worker {
     fn drop(&mut self) {
@@ -140,6 +143,7 @@ impl Worker {
                 latest: Arc::default(),
                 stop: Arc::default(),
                 thread: None,
+                traffic: Arc::default(),
             },
             commands,
             events,
@@ -152,15 +156,18 @@ impl Worker {
         let views = latest.clone();
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = stop.clone();
+        let traffic = LiveTraffic::default();
+        let observing = traffic.clone();
         let thread = std::thread::Builder::new()
             .name("dcs-process-manager".into())
-            .spawn(move || run(commands, events, views, context, stopping))?;
+            .spawn(move || run(commands, events, views, context, stopping, observing))?;
         Ok(Self {
             sender: Some(sender),
             receiver,
             latest,
             stop,
             thread: Some(thread),
+            traffic,
         })
     }
     pub fn send(&self, command: Command) -> Result<(), String> {
@@ -170,18 +177,33 @@ impl Worker {
             .try_send(command)
             .map_err(|e| format!("Cannot submit operation: {e}"))
     }
-    pub fn poll(&self) -> Result<Option<Event>, String> {
-        match self.receiver.try_recv() {
-            Ok(event) => Ok(Some(event)),
-            Err(TryRecvError::Empty) => self
-                .latest
-                .lock()
-                .map_err(|_| "Process view lock failed".to_string())
-                .map(|mut events| events.pop_front()),
-            Err(TryRecvError::Disconnected) => {
-                Err("Peer manager stopped; child processes were closed".into())
-            }
+    pub fn discard_traffic_tail(&self) {
+        // Only visual observations, never commands, SQL completions or snapshots.
+        if let Ok(mut pending) = self.traffic.lock() {
+            pending.clear();
         }
+    }
+    pub fn poll(&self) -> Result<Option<Event>, String> {
+        // Real command outcomes take priority over optional visual playback.
+        match self.receiver.try_recv() {
+            Ok(event) => return Ok(Some(event)),
+            Err(TryRecvError::Disconnected) => {
+                return Err("Peer manager stopped; child processes were closed".into());
+            }
+            Err(TryRecvError::Empty) => {}
+        }
+        if let Some(observation) = self
+            .traffic
+            .lock()
+            .map_err(|_| "Traffic view lock failed".to_string())?
+            .pop_front()
+        {
+            return Ok(Some(Event::Traffic(observation)));
+        }
+        self.latest
+            .lock()
+            .map_err(|_| "Process view lock failed".to_string())
+            .map(|mut events| events.pop_front())
     }
 }
 fn run(
@@ -190,6 +212,7 @@ fn run(
     latest: Arc<Mutex<VecDeque<Event>>>,
     context: egui::Context,
     stop: Arc<AtomicBool>,
+    traffic: LiveTraffic,
 ) {
     let mut backend = match ProcessBackend::new() {
         Ok(backend) => backend,
@@ -203,6 +226,9 @@ fn run(
             return;
         }
     };
+    backend.traffic = traffic;
+    let repaint = context.clone();
+    backend.wake_traffic = Some(Arc::new(move || repaint.request_repaint()));
     while !stop.load(Ordering::Acquire) {
         match commands.recv_timeout(Duration::from_millis(500)) {
             Ok(command) => {
@@ -279,6 +305,41 @@ fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn live_sync_discards_visual_tail_without_erasing_a_waiting_sql_completion() {
+        let (worker, _commands, events) = Worker::test_channel();
+        worker.traffic.lock().unwrap().push_back(Observation {
+            packet: fhe_playground::NetworkPacket {
+                id: 1,
+                from: 1,
+                to: 2,
+                kind: fhe_playground::PacketKind::Request,
+                progress: 1.0,
+                request_id: Some(9),
+            },
+            operation: "public telemetry fixture".into(),
+            bytes: 123,
+        });
+        events
+            .send(Event::Finished {
+                snapshot: None,
+                outcome: Err(LabError::InvalidInput("public failure fixture".into())),
+                elapsed_ms: 1.0,
+                client_id: Some(1),
+            })
+            .unwrap();
+
+        worker.discard_traffic_tail();
+
+        assert!(matches!(
+            worker.poll().unwrap(),
+            Some(Event::Finished {
+                client_id: Some(1),
+                ..
+            })
+        ));
+        assert!(worker.poll().unwrap().is_none());
+    }
 
     fn public_version(height: u64) -> version_journal::HeadRef {
         version_journal::HeadRef {
@@ -346,6 +407,7 @@ mod tests {
             latest: Arc::default(),
             stop: Arc::default(),
             thread: Some(thread),
+            traffic: Arc::default(),
         };
         drop(worker);
         assert!(released.load(Ordering::Acquire));

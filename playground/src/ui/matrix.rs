@@ -2,19 +2,15 @@
 use super::infrastructure::{GraphAction, packet_color};
 use super::*;
 use fhe_playground::{NetworkNode, NetworkPacket};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl Playground {
     pub(super) fn uses_matrix(&self) -> bool {
         self.network_view == NetworkView::Matrix
-            || (self.network_view == NetworkView::Auto
-                && self.network.as_ref().is_some_and(|net| {
-                    net.nodes.len() >= 8 && net.links.len() >= net.nodes.len() * 2
-                }))
     }
 
     pub(super) fn network_matrix(&mut self, ui: &mut egui::Ui) {
-        let Some(net) = self.network.clone() else {
+        let Some(net) = self.display_network() else {
             ui.label("Starting network...");
             return;
         };
@@ -28,6 +24,13 @@ impl Playground {
         });
         let nodes = matrix_nodes(&net);
         let links = matrix_links(&net);
+        let mut traffic = BTreeMap::<(NodeId, NodeId), Vec<&NetworkPacket>>::new();
+        for packet in &net.packets {
+            traffic
+                .entry((packet.from, packet.to))
+                .or_default()
+                .push(packet);
+        }
         let mut action = None;
         let width = ui.available_width();
         let row_label_width = 132.0;
@@ -49,6 +52,9 @@ impl Playground {
                 let (canvas, background) = ui.allocate_exact_size(size, egui::Sense::click());
                 let p = ui.painter().with_clip_rect(ui.clip_rect());
                 let origin = canvas.min + egui::vec2(row_label_width, 42.0);
+                let clip = ui.clip_rect();
+                let rows = visible_range(origin.y, cell, nodes.len(), clip.top(), clip.bottom());
+                let columns = visible_range(origin.x, cell, nodes.len(), clip.left(), clip.right());
                 let pointer = ui.input(|i| i.pointer.hover_pos());
                 let mut over_node = false;
                 let matrix_rect =
@@ -59,7 +65,9 @@ impl Playground {
                         ((pos.x - origin.x) / cell) as usize,
                     )
                 });
-                for (index, node) in nodes.iter().enumerate() {
+                let labels: BTreeSet<_> = rows.clone().chain(columns.clone()).collect();
+                for index in labels {
+                    let node = nodes[index];
                     let row = egui::Rect::from_min_size(
                         egui::pos2(canvas.left(), origin.y + index as f32 * cell),
                         egui::vec2(row_label_width - 8.0, cell - 2.0),
@@ -69,6 +77,11 @@ impl Playground {
                         egui::vec2(cell - 2.0, 32.0),
                     );
                     for (axis, rect) in [("row", row), ("column", column)] {
+                        if (axis == "row" && !rows.contains(&index))
+                            || (axis == "column" && !columns.contains(&index))
+                        {
+                            continue;
+                        }
                         over_node |= pointer.is_some_and(|pos| rect.contains(pos));
                         let hit = ui
                             .interact(rect, ui.id().with((axis, node.id)), egui::Sense::click())
@@ -129,8 +142,10 @@ impl Playground {
                         hit.context_menu(|ui| self.node_context_menu(ui, node, &mut action));
                     }
                 }
-                for (row, from) in nodes.iter().enumerate() {
-                    for (column, to) in nodes.iter().enumerate() {
+                for row in rows {
+                    let from = nodes[row];
+                    for column in columns.clone() {
+                        let to = nodes[column];
                         let rect = egui::Rect::from_min_size(
                             origin + egui::vec2(column as f32 * cell, row as f32 * cell),
                             egui::Vec2::splat(cell - 2.0),
@@ -141,11 +156,9 @@ impl Playground {
                             egui::Sense::click(),
                         );
                         let connected = links.contains(&(from.id, to.id));
-                        let packets: Vec<_> = net
-                            .packets
-                            .iter()
-                            .filter(|packet| packet.from == from.id && packet.to == to.id)
-                            .collect();
+                        let packets = traffic
+                            .get(&(from.id, to.id))
+                            .map_or(&[][..], Vec::as_slice);
                         let highlighted = selected == Some(from.id)
                             || selected == Some(to.id)
                             || hovered.is_some_and(|(r, c)| r == row || c == column);
@@ -181,7 +194,7 @@ impl Playground {
                                 egui::StrokeKind::Inside,
                             );
                         }
-                        paint_packets(&p, rect, &packets);
+                        paint_packets(&p, rect, packets);
                         if hit.clicked() {
                             self.selected_node = Some(from.id);
                         }
@@ -195,7 +208,7 @@ impl Playground {
                                 } else {
                                     "No established connection"
                                 });
-                                for packet in &packets {
+                                for packet in packets {
                                     ui.label(format!(
                                         "{:?} #{} · {:.0}%{}",
                                         packet.kind,
@@ -226,13 +239,25 @@ impl Playground {
         if net.nodes.is_empty() {
             ui.label("Right-click to add a client or peer");
         }
-        if !net.packets.is_empty() {
+        if self.playback.playing() {
             ui.ctx().request_repaint();
         }
         if let Some(action) = action {
             self.graph_action(action, outer_canvas);
         }
     }
+}
+
+fn visible_range(
+    origin: f32,
+    cell: f32,
+    count: usize,
+    min: f32,
+    max: f32,
+) -> std::ops::Range<usize> {
+    let first = ((min - origin) / cell).floor().max(0.0) as usize;
+    let last = ((max - origin) / cell).ceil().max(0.0) as usize;
+    first.min(count)..last.min(count)
 }
 
 fn matrix_nodes(net: &NetworkSnapshot) -> Vec<&NetworkNode> {

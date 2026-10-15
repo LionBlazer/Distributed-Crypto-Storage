@@ -17,6 +17,12 @@ client acceptance.
 `run` serves it and `spawn` creates a supervised server. The process deployment is
 [dcs-peer](../../apps/dcs-peer/README.md). `RemotePeer` issues typed RPCs and reports
 actual application-frame bytes and elapsed time, excluding TLS/TCP overhead.
+`RemotePeer::with_activity` additionally reports `RpcActivity` immediately after
+an actual frame write or read, including request identity, operation and byte count.
+It exposes no frame payload, keys or GUI clock. `ReplyReceived` is an I/O event,
+not evidence that decoding, authorization or cryptographic verification succeeded.
+Callbacks run synchronously and must return promptly. The separate `with_trace`
+callback retains completed-RPC diagnostics and outcomes.
 
 ## Transport and custody
 

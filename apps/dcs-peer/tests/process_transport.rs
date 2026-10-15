@@ -131,6 +131,59 @@ impl Drop for Process {
         self.kill();
     }
 }
+#[test]
+fn frame_activity_reports_real_io_before_completion_and_nothing_for_an_unreachable_peer() {
+    use peer_runtime::ActivityPhase;
+    use std::sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    };
+    let authority = Authority::new();
+    let owner = authority.identity();
+    let connector = Connector::new(&owner, &authority.der).unwrap();
+    let mut process = Process::start(&authority, owner.fingerprint(), 1, None);
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let completed = Arc::new(AtomicBool::new(false));
+    let sink = observed.clone();
+    let before_completion = completed.clone();
+    let on_completion = completed.clone();
+    let remote = process
+        .remote(&connector)
+        .with_activity(Arc::new(move |activity| {
+            assert!(
+                !before_completion.load(Ordering::Acquire),
+                "I/O observation must precede completed-RPC telemetry"
+            );
+            sink.lock().unwrap().push(activity);
+        }))
+        .with_trace(Arc::new(move |_| {
+            on_completion.store(true, Ordering::Release);
+        }));
+
+    let status = remote.status().unwrap();
+
+    assert_eq!(status.node_id, 1);
+    assert!(completed.load(Ordering::Acquire));
+    let activity = observed.lock().unwrap();
+    assert_eq!(activity.len(), 2);
+    assert_eq!(activity[0].phase, ActivityPhase::RequestSent);
+    assert_eq!(activity[1].phase, ActivityPhase::ReplyReceived);
+    assert_eq!(activity[0].request_id, activity[1].request_id);
+    assert!(activity.iter().all(|event| event.bytes > 0
+        && event.operation == "status"
+        && event.peer == process.endpoint.identity));
+    drop(activity);
+
+    process.kill();
+    observed.lock().unwrap().clear();
+    completed.store(false, Ordering::Release);
+    assert!(remote.status().is_err());
+    assert!(
+        observed.lock().unwrap().is_empty(),
+        "A failed connect must not invent sent frames"
+    );
+}
+
 fn fixture(owner: &backend::Owner) -> Bundle {
     let table = owner
         .seal(
