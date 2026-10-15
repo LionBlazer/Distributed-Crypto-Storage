@@ -8,12 +8,93 @@ data and process queries without access to plaintext. The requirements cover FHE
 SQL operations, bounded storage and memory, replication, recovery, malicious peers,
 and verifiable query results.
 
-The repository contains a local Rust/Cargo FHE prototype using TFHE-rs, alongside
+The repository contains local Rust/Cargo BFV and TFHE FHE prototypes, alongside
 requirements and research. The prototype experiments with a fixed encrypted schema;
 it does not establish the feasibility of distributed SQL or query proofs. Production
 cryptography, consensus, and rewards remain open choices. Treat performance and
 resource numbers as targets to validate, not established capabilities. Do not assume
 that blockchain is required.
+
+## Requirements are the implementation contract
+
+- Every feature, prototype, optimization, UI action and agent subtask must follow
+  the requirements below. Read this contract and `REQUIREMENTS.md` before changing
+  the relevant behavior. A prototype may implement part of the system, but it must
+  identify unmet requirements and must not replace required behavior with a shortcut.
+- SQL processing on peers must use homomorphic encrypted operations and return
+  encrypted results for client-side completion. Plaintext query execution, answers
+  calculated from owner fixtures, simulated answers, echoed inputs or dummy
+  cryptographic work are not substitutes for the required computation. Client
+  decryption of the completed encrypted result is allowed. Keep fixture inspection
+  and simulation controls separate from actual query execution.
+- Do not silently weaken confidentiality, decentralization, integrity, freshness,
+  proof, resource or failure guarantees to make a feature appear complete or faster.
+  Record a technical blocker and investigate a compliant implementation. Changes to
+  the requirements or an alternative that relaxes them need explicit user direction.
+- Treat resource/performance numbers as targets until the complete relevant
+  operation is measured. FHE encryption alone does not establish a computation proof,
+  and local manager behavior does not establish decentralized agreement.
+
+### Keep the two copies synchronized
+
+`REQUIREMENTS.md` is the canonical requirements text. The block between
+`requirements:begin` and `requirements:end` below mirrors its full requirements
+section, including context and unresolved decisions; the research-source appendix
+stays in `REQUIREMENTS.md`. Preserve the original Russian wording.
+
+Whenever requirements change, update both copies in the same logical change.
+Before implementation and before completion, compare them. If they differ,
+reconcile them using the latest explicit user instructions and Git history before
+continuing dependent implementation; do not overwrite conflicting intent blindly.
+The `requirements_sync` test rejects a mismatch:
+
+```sh
+cargo test --release --locked -p fhe-playground --test requirements_sync
+```
+
+<!-- requirements:begin -->
+# Требования к распределённой зашифрованной SQL-базе
+
+Хотим получить распределённую зашифрованную SQL-базу на домашних компьютерах участников. Заказчик один и владеет базой; пиры поддерживают инфраструктуру и могут обращаться к базе как клиенты в пределах предоставленных прав.
+
+Статус: целевые требования. Их совместную достижимость, скорость и потребление ресурсов ещё нужно проверить. Конкретные протоколы и библиотеки пока не выбраны.
+
+1. **Без центрального сервера.** Хранение, поиск, вычисления и согласование изменений распределены между пирами. Выход одного узла не останавливает систему.
+
+2. **Конфиденциальность хранения и вычислений.** Пиры хранят зашифрованные данные и выполняют FHE-вычисления без доступа к открытому содержимому. Секретные ключи расшифрования остаются у владельца базы или его приложения.
+
+3. **Обычная работа с базой.** Создание баз и таблиц, чтение, добавление, изменение и удаление записей, индексы и транзакции. Конечная цель — полноценный SQL; набор функций первой версии определим отдельно.
+
+4. **Компактное хранение на диске.** Целевой размер — около 1–2× исходных данных без учёта репликации, индексов и служебных данных. Обновления не должны приводить к постоянному разрастанию базы.
+
+5. **Обработка частями.** В FHE разворачиваются только данные, необходимые для операции. Где запрос и выбранная модель приватности допускают индекс, система должна обходиться без перебора всей таблицы.
+
+6. **Ограниченные ресурсы пира.** Цель — 1–2 ГБ RAM на весь процесс, включая ключи, временные результаты и кэш. Дисковую квоту задаёт участник; рассматриваем 10, 20 и 30 ГБ. Базовая работа — на CPU, GPU может ускорять вычисления.
+
+7. **Распределение нагрузки.** Каждый пир хранит часть базы. При выборе исполнителей учитываются доступность, задержка связи и свободные ресурсы. Ориентиры масштаба — 10 тысяч, 100 тысяч и миллион пиров.
+
+8. **Сохранность данных.** Копии размещаются в независимых группах отказа. Система отслеживает исчезновение пиров и автоматически восстанавливает недостающие копии. Требуемый запас устойчивости к массовым отключениям нужно определить численно.
+
+9. **Авторизация и целостность данных.** Изменения разрешены только авторизованным пользователям. Подмена хранимых данных должна обнаруживаться.
+
+10. **Практичная скорость.** Цель — интерактивная работа приложения. Допустимые задержки и пропускную способность зафиксируем на конкретных запросах и объёмах данных.
+
+11. **Проверка ответа одного пира.** Ответ одного пира принимается только с действительным криптографическим доказательством правильности и полноты результата: подходящие записи не пропущены. Доказательство связано с конкретным запросом и подтверждённой согласованной версией базы.
+
+12. **Проверка доказательства.** Проверка должна быть быстрой, без повторного выполнения запроса и сравнения ответов нескольких пиров. Успешная расшифровка, обычная контрольная сумма или подпись отвечающего пира сами по себе не доказывают правильность результата.
+
+13. **Актуальность ответа.** Актуальность версии проверяется отдельно от правильности вычисления. Ответ на устаревших данных отклоняется, если запрос требует более свежей версии.
+
+14. **Опционально: вознаграждения пиров.** Если вознаграждения включены, обязательны пункты 15–17. Децентрализованный протокол оплачивает подтверждённое хранение, вычисления и внутреннюю работу сети, включая восстановление и перераспределение копий.
+
+15. **Полезные задания.** Необходимость внутренней работы определяется протоколом по согласованному состоянию сети. Пиры автоматически выбирают выгодные задания с учётом своих ресурсов, затрат и правил размещения данных.
+
+16. **Цена при дефиците.** При дефиците копий или ресурсов цена соответствующих новых заданий автоматически повышается в пределах заданного бюджета и снижается после устранения дефицита.
+
+17. **Защита от накруток.** Проверки и учёт должны предотвращать фиктивные и повторные начисления. Правила вознаграждений должны противодействовать сговору и заработку на искусственно созданном дефиците.
+
+Остаётся определить: допустимые утечки об обращениях, модель отказов и сговора пиров, требуемую свежесть данных, задержки и SQL первого прототипа. Токен, платёжный механизм и экономические параметры пока не выбраны; необходимость блокчейна разберём отдельно.
+<!-- requirements:end -->
 
 ## Working conventions
 
