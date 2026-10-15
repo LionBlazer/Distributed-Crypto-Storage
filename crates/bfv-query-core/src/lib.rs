@@ -21,6 +21,7 @@ pub use indexed_update::{
 };
 pub use linear_update::{PublicUpdateEvaluator, PublicUpdateParameters};
 
+use bfv_linear_circuit::{DEGREE, MODULI};
 use bincode::Options;
 use fhe::bfv::{
     BfvParameters, BfvParametersBuilder, Ciphertext, Encoding, EvaluationKeyBuilder, Plaintext,
@@ -42,15 +43,7 @@ pub const HEAD_BYTES: usize = 112;
 pub const MAX_ROWS: usize = 256;
 pub const MAX_WIRE_BYTES: u64 = 64 * 1024 * 1024;
 const VERSION: u16 = 1;
-const DEGREE: usize = 8192;
 const PLAINTEXT: u64 = 114_689;
-const MODULI: [u64; 5] = [
-    8796092858369,
-    8796092792833,
-    17592186028033,
-    17592185438209,
-    17592184717313,
-];
 
 #[derive(Debug)]
 pub enum Error {
@@ -560,7 +553,12 @@ impl PeerEvaluator {
 }
 fn checked_ciphertext(wire: &[u8], parameters: &Arc<BfvParameters>) -> Result<Ciphertext> {
     let ct = Ciphertext::from_bytes(wire, parameters).map_err(backend)?;
-    if ct.len() != 2 || parameters.level_of_context(ct[0].ctx()).map_err(backend)? != 0 {
+    if ct.len() != 2
+        || ct
+            .iter()
+            .any(|poly| poly.representation() != &fhe_math::rq::Representation::Ntt)
+        || parameters.level_of_context(ct[0].ctx()).map_err(backend)? != 0
+    {
         return Err(Error::InvalidShape);
     }
     Ok(ct)

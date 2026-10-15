@@ -24,6 +24,18 @@ self-authenticating. Validated immutable public parameters are cached once per
 process; no secret key or row data enters that cache. This reduced execution path
 does not itself supply a computation proof or authorize accepting a SQL answer.
 
+`PublicUpdateEvaluator::circuit_request` converts the exact original ciphertexts to
+the canonical NTT residue representation of [bfv-linear-circuit](../bfv-linear-circuit/README.md),
+the core's only direct project dependency. `restore_circuit_output` reconstructs a
+normal upstream ciphertext response without repeating the addition. Both are
+representation adapters, not verification/acceptance APIs. The proof requester must
+retain the canonical input digest and verify it, the output digest, and a trusted
+circuit identity before decrypting/using the response. Freshly prepared updates are
+tested against the upstream operator byte for byte for both geometries and limb
+carry/overflow cases. The original query ID, complete data/index heads, geometry and
+keyset remain bound through the original request digest. An opaque bound head is
+not evidence that peers agreed on it or that it is current.
+
 The indexed SELECT operation freshly encrypts original age/amount lanes and an
 encrypted projection/active mask. The public-only peer performs one ciphertext
 multiplication and relinearization; it returns encrypted projected lanes and presence

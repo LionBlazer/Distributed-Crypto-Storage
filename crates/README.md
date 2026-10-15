@@ -12,7 +12,8 @@ executables. The root Cargo default members select this layer only.
 | [storage-client](storage-client/README.md) | Owner network orchestration; fail closed without computation proofs | peer-runtime, compact-query, compact-store, sql-plan |
 | [sql-plan](sql-plan/README.md) | Parse the supported SQL subset into typed plans | None |
 | [compact-store](compact-store/README.md) | Owner keys, encrypted pages and authenticated version roots | None |
-| [bfv-query-core](bfv-query-core/README.md) | Separate owner/evaluator FHE roles and bounded wire inputs | None |
+| [bfv-linear-circuit](bfv-linear-circuit/README.md) | Canonical full-residue BFV addition relation for proof consumers | None |
+| [bfv-query-core](bfv-query-core/README.md) | Separate owner/evaluator FHE roles and bounded wire inputs | bfv-linear-circuit |
 | [compact-query](compact-query/README.md) | Authenticated index selection and FHE query/write lifecycle | compact-store; optional bfv-query-core |
 | [replica-store](replica-store/README.md) | Ciphertext custody, placement and local atomic repair | compact-store |
 | [peer-protocol](peer-protocol/README.md) | Bounded connection/request/cancellation state machine | None |
