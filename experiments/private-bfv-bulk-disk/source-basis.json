@@ -1,0 +1,16 @@
+{
+  "status": "source-only-unbuilt",
+  "owning_sources": {
+    "crates/bfv-query-core/src/lib.rs": "F4EC7930D306AE933142AFE7455B500B61A23D53F3DBA69454E796F33EF88CCB",
+    "crates/bfv-query-core/src/kernel.rs": "B36ED5A738B271D12EBEFD81A1BCDBFA6A6BE484362EB8EE0E17C89901E08FF0",
+    "crates/bfv-query-core/src/exact_index.rs": "22CE24E1894675D4B3C55A6024C245EC0DDC8EA0B4B109CBE0DC894850E1F9F2",
+    "crates/bfv-query-core/src/indexed_update.rs": "18E1BDA0B49824EACA59B051204020498D0C07E61E9C653B0BA1E36DAF327F95",
+    "crates/compact-query/src/bfv/bfv_owner.rs": "5CAB8AF29BB736017C5F0295D433B58A42ED93D8C6DEC210D942DD395CD933DA",
+    "crates/compact-query/src/storage.rs": "DD4BE053F9029A6F1DB4B750827085A6C7A2C5030FCFA7FA6ACE143DDB4AC66D",
+    "crates/compact-query/src/index.rs": "0E6A64731D4FB85397DEFDD5B2CAAABDE2F908AB3327113B16A6F2ACDB146296",
+    "experiments/spiral-owner-state/src/lib.rs": "32CF886EEAD6D14CA887E13B8A595FFAA5049E3ACB17844919A5B31F4AE25E3B"
+  },
+  "sdk_revision": "fdb7206517c249603b0c91b65f1f29f95272107c",
+  "profile": "N8192 Q218 t114689 CBDvariance10 native level0 fullkeys",
+  "fixture": "public sparse256 maxu16, one million rows"
+}

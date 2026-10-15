@@ -62,6 +62,16 @@ mode retains five over-500 ms observations, maximum 522.106 ms. Visible maximum
 is 63.107 ms. This full result is separate from the earlier one-page restart
 configuration and does not establish a universal private-query latency bound.
 
+The [whole-snapshot alternative](experiment-private-bfv-bulk-disk.md) supports
+256 matches across 256 data pages by transferring both complete encrypted images
+for every accepted query. No selected page appears in the bulk request; it is not
+PIR. All 18 Disk/Resident operations take 27.073–31.541 ms locally with the same
+5,736,091 B total traffic. Both original BFV/PIR setups remain counted. On this
+single 3 MB table, files plus observed native peak commit are 94.909507x; no scaled
+2x claim follows. The ideal serial 100 Mbps/10 ms RTT model gives 506–510 ms,
+whereas 1000 Mbps/10 ms RTT gives 93–97 ms. Neither is measured network latency,
+and there is no same-fixture PIR benchmark for this sparse selection.
+
 | Question | Visible accesses | Concealed accesses |
 | --- | --- | --- |
 | Retrieval | Request the selected encrypted index/data pages directly | Use an oblivious index with ORAM, or suitable single-server PIR retrieval |

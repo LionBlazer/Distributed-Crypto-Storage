@@ -1,135 +1,68 @@
 # Distributed Crypto Storage
 
-Research and development of distributed encrypted SQL storage on participant-owned
-computers. The target system combines encrypted storage and FHE query processing,
-replication and recovery, and verifiable results from untrusted peers.
+Rust prototype and research for encrypted SQL storage on participant-owned
+computers. [REQUIREMENTS.md](REQUIREMENTS.md) defines the intended distributed
+system; networking, consensus, recovery and verifiable malicious-peer execution
+remain unfinished. The current implementation is a local experiment.
 
-[REQUIREMENTS.md](REQUIREMENTS.md) contains the target requirements, open questions,
-and research references. Their joint feasibility and resource costs still need to
-be validated.
-
-The first [Rust FHE prototype](crates/fhe-prototype/README.md) uses TFHE-rs to filter
-an encrypted table, compute COUNT/SUM, update encrypted amounts, and compress and
-reload the table. It is a local experiment with a fixed schema, not a distributed
-SQL implementation. Cryptographic query proofs and production protocols remain
-open choices.
-
-With Rust installed, run from the repository root:
-
-```sh
-cargo run --release --locked -p fhe-prototype -- --rows 4 --cycles 2 --threads 2
-cargo test --workspace --release --locked -- --test-threads=1
-```
-
-The executable prints a JSON report with timings, ciphertext sizes, and process
-peak memory. Synthetic data and reports go into ignored `.local/fhe-runs/` folders;
-secret keys are generated in memory and are never written to disk. See the module
-README for measurement assumptions, limitations, and the API.
-
-The separate [GUI playground](crates/fhe-playground/README.md) provides an egui
-client/manager, editable test data, SQL presets, up to 16 simulated peers and 8 clients.
-It uses compact encrypted pages and an owner-assisted encrypted index, converting
-selected rows to FHE only for the current operation. The SQL frontend supports
-only the documented aggregate/update subset; peer simulation runs in one process.
-SQL/data occupy the left pane, with the network and node inspector tabs on the right.
-The map and dense connection matrix display the same actual links and packet events.
-Presets fill the editor; execution requires Run or Ctrl+Enter.
-
-The separate [peer-protocol](crates/peer-protocol/README.md) crate owns a bounded,
-transport-independent handshake/message state machine. The playground supplies
-virtual time and in-process delivery. Production networking, authentication,
-consensus and automatic replication remain open work.
+Use Rust 1.99 or newer, from the repository root:
 
 ```sh
 cargo run --release --locked -p fhe-playground
+cargo test --workspace --release --locked -- --test-threads=1
 ```
 
-In Zed, use `task: spawn` and select **FHE: Open GUI playground** from
-[.zed/tasks.json](.zed/tasks.json). The GUI requires Rust 1.99 or newer; the Zed task
-uses the built-in Windows PowerShell and rustup.
+In Zed, spawn **FHE: Open GUI playground** from [.zed/tasks.json](.zed/tasks.json).
+The [egui playground](crates/fhe-playground/README.md) has SQL/data on the left and
+network/node inspectors on the right, up to 16 simulated peers and 8 clients.
+Presets fill the editor; Run or Ctrl+Enter executes them. Graph and connection
+matrix reflect the same protocol links/events. Virtual delivery is in one process.
 
-The experimental [compact-store](crates/compact-store/README.md) crate separates
-owner-only encryption keys from opaque peer pages and authenticates direct page
-retrieval against an independently known version root. Its fixed-width page
-replacements retain constant live encoded size. It currently exposes requested
-page addresses and does not implement FHE, SQL completeness proofs, or concealed
-access.
+The SQL frontend supports its documented COUNT/SUM and amount-addition subset on
+`age: u8, amount: u16`; it is not an arbitrary-SQL database. The GUI uses the BFV
+exact-index backend, shared public evaluation keys and compact encrypted pages.
+Complete authenticated index selection precedes fresh FHE; unsupported budgets
+reject rather than truncate. Owner secret keys stay outside peer role objects.
 
-The [compact-query](crates/compact-query/README.md) crate composes those pages with
-complete age-index selection, genuine FHE COUNT/SUM and overflow-safe amount
-updates, followed by compact owner-assisted writeback. The GUI selects its explicit
-BFV exact-index module and shares public evaluation keys across simulated peers.
-The reusable [BFV core](crates/bfv-query-core/README.md) owns the arithmetic;
-the legacy TFHE module retains its broader full-scan/coarse-candidate semantics.
-It remains an explicitly unverified local experiment with visible addresses;
-owner availability, general SQL, concealed index execution and computation proofs
-remain open. See the [measurement ledger](docs/optimization-goal.md) for measured
-costs, including indexes, keys and memory.
+| Module | Responsibility |
+| --- | --- |
+| [fhe-playground](crates/fhe-playground/README.md) | Test client/manager, SQL frontend, worker and virtual network visualization |
+| [compact-query](crates/compact-query/README.md) | Complete index selection, fresh FHE aggregates and checked compact updates; explicit BFV backend plus retained legacy TFHE module |
+| [bfv-query-core](crates/bfv-query-core/README.md) | Reusable owner/public-peer BFV arithmetic and wire contracts; no storage or GUI dependency |
+| [compact-store](crates/compact-store/README.md) | Owner-only symmetric keys, opaque authenticated pages, independently trusted version roots and constant-size replacements |
+| [peer-protocol](crates/peer-protocol/README.md) | Bounded transport-independent handshake/message state machine |
+| [fhe-prototype](crates/fhe-prototype/README.md) | Original standalone TFHE experiment and historical baseline |
 
-The [headless GUI/SQL measurement](docs/experiment-bfv-gui-integration.md) exercises
-the actual LabEngine on 128 public fixture rows with 1, 3 and 16 peers. All 147
-aggregate/update/overflow operations are exact and below 500 ms, maximum 383.8544 ms;
-native peak process commit is 246,702,080 B. Setup is separate, virtual network delay
-is zero, and the fixture oracle runs after the query timer. This is a visible-access
-SQL subset measurement; its tiny-table metadata/key overhead is not a new 2x result.
+The [measurement ledger](docs/optimization-goal.md) preserves successful and failed
+experiments. Private retrieval and process recovery currently live in standalone
+experimental compositors; the GUI uses visible access. Generated public fixtures,
+ciphertext datasets and reports stay in ignored `.local/`; no real secrets or
+participant data are committed.
 
-The separate [exact-index BFV disk probe](experiments/private-bfv-exact-disk/README.md)
-measures private PIR and capacity-one disk loading separately from the GUI. On 1,000
-independent million-row tables (3 GB logical), actual files plus native peak process
-commit total 1.816303x. Its 384 exact-index queries take at most 45.008 ms with
-visible access and 351.110 ms with private PIR, including application-cache misses.
-Selections are bounded to 256 rows and one posting/data page, with the owner online;
-OS file cache is allowed. Network, arithmetic proofs, general SQL and complete
-owner restart are outside this [paired result](docs/experiment-private-bfv-exact-disk.md).
+| Measured configuration | Maximum complete local operation | Files plus reported native peak / logical payload |
+| --- | ---: | ---: |
+| [Actual GUI SQL, 128 rows, 1/3/16 peers, 147 operations](docs/experiment-bfv-gui-integration.md) | 383.854 ms | Tiny-table metadata/key cost; no 2x claim |
+| [Original-owner process restart, 1,000 tables / 3 GB](docs/experiment-private-bfv-restart-disk-scale.md) | ExactIndex: visible 37.288 ms / PIR 320.674 ms; one FullPredicate control 520.214 ms | 1.814826x including both sealed checkpoints and observed parent/serial-child peak bound |
+| [Two-posting/two-data-page selection, 1,000 tables / 3 GB](docs/experiment-private-bfv-multipage-disk-scale1000.md) | PIR cached-header 436.036 ms; five uncached Fixed256 misses exceed 500 ms, max 522.106 ms | 1.813729x; all 480 answers exact |
+| [Bulk full snapshots, 256 matches across 256 pages, one 3 MB table](docs/experiment-private-bfv-bulk-disk.md) | 31.541 ms, all 18 exact | 94.909507x; fixed keys are not amortized in this tiny fixture |
+| [Compact BFV UPDATE, 1,000 tables / 3 GB](docs/experiment-private-bfv-update-disk.md) | 100 point cycles through commit/invalidation: 316.162 ms | 1.814285x; 126 positive commits preserve file sizes |
 
-The newer [multipage read probe](experiments/private-bfv-multipage-disk/README.md)
-accepts complete groups across two posting pages and two data pages, including
-real varints crossing page boundaries. Its 480 visible/private queries over three
-million-row tables are exact and below 500 ms, maximum 491.651 ms; 25 invalid or
-overbudget operations reject before fresh BFV. The
-[report](docs/experiment-private-bfv-multipage-disk.md) retains every mode and the
-new fixed two-plus-two retrieval schedule. This separate tiny run does not establish
-large-scale overhead or owner-process recovery.
+These are different measured workloads, not interchangeable performance claims.
+Setup is separate; OS file cache is allowed; network, replication and arithmetic
+proofs are excluded. Bulk uses 5,736,091 bytes/query: its ideal 100 Mbps/10 ms RTT
+model exceeds 500 ms. All outliers and complete accounting remain in the reports.
+The [visible/concealed access comparison](docs/index-privacy.md) keeps both policies
+open. Private reads hide selected pages within their declared table/plan, while
+identity, heads, sizes, timing and allowed failure patterns remain public.
 
-Its [actual 1,000-table follow-up](docs/experiment-private-bfv-multipage-disk-scale1000.md)
-measures files plus observed native peak commit at 1.813729x. All 480 answers are
-exact, but five private Fixed256 uncached-header table misses exceed 500 ms,
-maximum 522.106 ms. Private cached-header reads stay below 437 ms. The outliers
-remain in the report; this read-only run does not add owner-process recovery.
-
-The [BFV disk UPDATE experiment](experiments/private-bfv-update-disk/README.md)
-adds genuine encrypted addition and compact writeback. Its actual 1,000-table run
-retains constant file sizes after 126 positive commits; files plus native peak
-process commit are 1.814285x. In 100 point cycles, UPDATE through commit/invalidation
-takes at most 316.162 ms, and the compound including readiness and a separate fresh
-SELECT reaches 635.367 ms. The [full report](docs/experiment-private-bfv-update-disk.md)
-retains every slow mode and the same unverified, online-owner, local-transport limits.
-
-The separate [owner recovery candidate](experiments/owner-recovery-candidate/README.md)
-restores dropped original owners from a sealed checkpoint and reuses the same
-encrypted files and original BFV/PIR public setups. Its 66 runtime tests and two
-doctests validate that same-process candidate. Its
-[validation report](docs/proposal-owner-recovery-candidate.md)
-records external wrapping-key custody and the bounded three-table fixture.
-
-The subsequent [process-restart probe](experiments/private-bfv-restart-disk/README.md)
-waits for the writer to exit, then restores the original owners in a new reader
-process. All 768 paired queries over three retained tables are exact: maximum
-317.346 ms for ExactIndex and 480.196 ms for FullPredicate. Nine malformed,
-wrong-key and rollback controls reject before query preparation. This
-[result](docs/experiment-private-bfv-restart-disk.md) includes both sealed backups
-and native child lifetime peaks. Its tiny dataset does not amortize setup below
-2x; the live broker retains external wrapping-key custody. Full-machine restart
-and durable checkpoint publication remain open.
-
-The [same frozen restart binaries on 1,000 fresh tables](docs/experiment-private-bfv-restart-disk-scale.md)
-then measured 1.814826x for all 2,005 files, both sealed backups and the conservative
-parent/serial-child native private peak bound against 3 GB logical. All 384 ExactIndex
-queries are exact and below 321 ms; the 384 FullPredicate controls retain one
-520.214 ms overrun. Original-owner reader initialization takes 2,047.202 ms separately.
-This is the same bounded one-page, online-owner, local-transport scope.
+The [sealed recovery candidate](experiments/owner-recovery-candidate/README.md)
+and [process-restart compositor](experiments/private-bfv-restart-disk/README.md)
+restore original compact/BFV/PIR owners and public setups. The latter waits for
+actual writer exit before launching its reader; its live broker holds the external
+wrapping key. Full-machine key custody, current-anchor authority and durable
+multi-file publication remain open. Results remain explicitly Unverified; retrieval
+authentication is not a proof of SQL arithmetic or malicious-peer correctness.
 
 The integration branch is `master`. [AGENTS.md](AGENTS.md) defines task branches,
-automatic commit and push after each completed change, synchronization from master,
-and explicitly requested promotion back to master. Project skills live in
-[.agents/skills](.agents/skills).
+automatic publication, incoming master synchronization and explicit promotion.
+Shared project skills live in [.agents/skills](.agents/skills).
