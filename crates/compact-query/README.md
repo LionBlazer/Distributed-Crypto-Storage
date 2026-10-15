@@ -5,7 +5,9 @@ owner-built encrypted index. `tfhe-backend` is the legacy default and retains it
 FullScan/coarse-candidate encrypted predicate and conditional UPDATE semantics.
 `bfv-experiment` selects the explicit `compact_query::bfv` module; callers cannot
 pass FullScan or coarse candidates into its exact-index API. The GUI uses BFV only.
-Neither backend provides a cryptographic computation/completeness proof.
+Historical completion methods return unverified results. The separate proved BFV
+completion path below verifies genuine arithmetic evidence and complete authenticated
+index selection; global agreement and freshness belong to the network client.
 
 ## Explicit BFV composition
 
@@ -49,8 +51,8 @@ arithmetic; core outputs remain ProofStatus::Unavailable.
 
 `prepare_insert_for_experiment` authenticates the complete bounded target table
 and independently encrypts original rows and the authorized incoming row.
-`Evaluator::evaluate_indexed_insert` rotates the encrypted staging row and adds it
-to the encrypted relation. `apply_insert_checked_for_experiment` consumes that BFV
+`Evaluator::evaluate_indexed_insert` adds the independently encrypted incoming row,
+already placed at its public append slot, to the encrypted original relation. `apply_insert_checked_for_experiment` consumes that BFV
 output, checks every decoded old/new field against the authenticated inputs, then
 stages larger compact data and a rebuilt exact index. It preserves the storage/key
 identity and advances revisions; every target data page receives fresh encryption
@@ -77,6 +79,61 @@ doctest, including checked growth, actual decoded-output writeback, altered outp
 wrong owner and independently changed data/index heads.
 The default TFHE library suite passes 24 tests after adding index-only-head freshness
 rejection for both aggregate completion and UPDATE.
+
+## Proved BFV completion
+
+The new path composes [bfv-query-proof](../bfv-query-proof/README.md) with the private
+exact-selection constructor. `prepare_provable_select` and `prepare_provable_update`
+authenticate the complete selected posting lists and data pages before encrypting
+original values. A missing posting, duplicate ordinal, incorrect stored age, changed
+head or over-budget group is rejected; matching groups are never truncated. An
+optional absent range represents only the SQL planner's schema-proven constant-false
+predicate. SELECT's public polynomial expresses column projection across every slot,
+without plaintext match bits or selected count; private presence stays encrypted.
+
+`complete_proved_select` independently reconstructs the canonical arithmetic request
+from the retained one-use preparation, verifies the serialized STARK, restores its
+proved ciphertext and decrypts only that result. `VerifiedSelection` exposes decoded
+rows and the private-field checked evidence. Input authentication and full-coefficient
+arithmetic checking together protect the prepared exact selection; the caller must
+still pin the agreed data/index heads and authorize the SQL plan.
+
+The borrowed `check_select_proof`, `check_update_proof` and `check_insert_proof`
+methods retain their one-use pending preparation when a candidate response is bad,
+allowing the transport caller to try another real replica. The consuming
+`complete_checked_select`, `stage_checked_update` and `stage_checked_insert` methods
+recheck current heads, independently derive the canonical input and compare both
+identities with the private checked marker before restoring/decrypting anything.
+A marker for another request or a changed output rejects; UPDATE evidence cannot
+finish an INSERT even though both use the same addition primitive. The original
+`*_proved_*` methods delegate to these two phases and perform one full verification.
+No peer response is accepted because failover is enabled.
+
+`stage_proved_update` follows the same proof-first sequence and writes decoded FHE
+amounts into new authenticated compact pages, without recomputing expected sums.
+An encrypted global overflow yields no staged table. `stage_proved_insert` verifies
+the addition of both independently encrypted operands before staging the larger data
+image and rebuilt index. Both methods preserve the original Table; publication and
+all-shard atomicity belong to the network client after every shard has passed all
+checks. Historical `*_checked_for_experiment` methods remain explicitly separate.
+
+The `proved_operations` integration suite crosses a real public-setup wire boundary,
+proves every canonical BFV coefficient and exercises the owning storage API. It
+covers 242 selected rows whose postings and data cross pages, omitted projection
+columns, absent/constant-false selections with the same public projection, actual
+INSERT followed by proved SELECT, UPDATE byte carry and global overflow, unchanged
+source images, changed heads, replayed requests and corrupted arithmetic results.
+It uses fresh in-memory keys and explicitly public fixtures, with the full proof
+security profile in every case:
+
+```sh
+cargo test --release --locked --offline -p compact-query --no-default-features --features bfv-experiment --test proved_operations -- --test-threads=1
+```
+
+These methods establish the bounded owner-online exact-index contract. They do not
+supply concealed access, permissionless agreement, a crash-atomic network commit or
+a 100-ms query guarantee by themselves. The proof crate reports complete measured
+proving/verification costs separately from its final cryptographic verifier call.
 
 ## Legacy TFHE backend
 
@@ -167,10 +224,11 @@ state. Key amortization is a separate system-level question.
 
 ## Experiment boundary
 
-The index is private owner policy, with visible candidate cardinality and physical
-addresses at the peer. The owner reads/decrypts encrypted index pages. This is not
+The historical index preparation is private owner policy, with visible candidate
+cardinality and physical addresses at the storage peer. The owner reads/decrypts encrypted index pages. This is not
 a peer-executed concealed SQL index, ORAM/PIR, arbitrary SQL, distributed consensus,
-a proof of query correctness/completeness, durable key recovery or authorization.
+durable key recovery or authorization. The proved completion path above adds exact
+arithmetic verification while retaining the explicit owner-built index contract.
 Public canonical age-operator shape (Equal, AtLeast, AtMost, Range), including the
 implicit 255/0 endpoints of one-sided shapes, sizes,
 revisions, access repetition and

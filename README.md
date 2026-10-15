@@ -3,13 +3,15 @@
 Rust prototype and research for encrypted SQL storage on participant-owned
 computers. [REQUIREMENTS.md](REQUIREMENTS.md) defines the intended distributed
 system. Peers now run in separate processes over mutually authenticated TCP/TLS.
-Decentralized agreement and verifiable malicious-peer execution remain unfinished;
-SQL results without a computation proof are rejected rather than accepted.
-Open peer admission and Sybil resistance are required; the current local test CA
-does not implement that admission model.
+The live owner client verifies full-residue FHE STARKs and confirmed journal heads
+before accepting SELECT or publishing INSERT/UPDATE. Missing or invalid evidence
+rejects. Self-signed TLS identities need no invitation CA; identity count supplies
+no consensus weight. Production discovery, security parameters and scale remain open.
 The [selected consensus direction](docs/consensus-model.md) is an internally
-operated cumulative-work version journal. It remains unimplemented; external
-consensus networks and identity-count voting are excluded.
+operated cumulative-work version journal. Bounded work/fork validation, durable
+peer metadata and client freshness are implemented; external consensus networks
+and identity-count voting are excluded. Easy playground work is not a production
+adversarial security budget.
 
 The repository has two dependency layers: the [reusable core](crates/README.md),
 and deployment/test consumers: [peer daemon](apps/dcs-peer/README.md),
@@ -36,10 +38,12 @@ Alt+Left/Right and mouse side buttons navigate between views; middle-click close
 inspector tabs.
 
 The SQL frontend supports row SELECT/projections with age filters and LIMIT,
-COUNT/SUM, single-row INSERT and amount addition on `age: u8, amount: u16`; it is not an arbitrary-SQL
-database. Row projection uses actual BFV encrypted masking and returns encrypted
-peer output. The strict client rejects it until computation/completeness proofs
-and an agreed fresh head can be verified. SQL INSERT/UPDATE therefore do not commit.
+single-row INSERT and amount addition on `age: u8, amount: u16`; it is not an arbitrary-SQL
+database. Row projection uses actual BFV encrypted masking. The client authenticates
+complete private index selection, verifies exact peer arithmetic, then rechecks the
+confirmed version. INSERT/UPDATE publish actual compact ciphertext only after all
+proof/overflow checks and durable journal confirmation. Parsed COUNT/SUM remain
+unsupported by the verified path and reject explicitly.
 The GUI uses the BFV
 exact-index backend, shared public evaluation keys and compact encrypted pages.
 Complete authenticated index selection precedes fresh FHE; unsupported budgets
@@ -51,11 +55,14 @@ reject rather than truncate. Owner secret keys stay outside peer role objects.
 | [dcs-peer](apps/dcs-peer/README.md) | Independent peer daemon with no GUI or owner keys |
 | [peer-transport](crates/peer-transport/README.md) | TLS 1.3 mutual authentication, endpoint pinning and bounded TCP frames |
 | [peer-runtime](crates/peer-runtime/README.md) | Peer-owned disk objects, public FHE evaluator, neighbor probes and real copies |
-| [storage-client](crates/storage-client/README.md) | Owner preparation, authenticated retrieval and mandatory proof rejection |
+| [storage-client](crates/storage-client/README.md) | Owner preparation, proof-first SELECT/mutations and confirmed version checks |
 | [sql-plan](crates/sql-plan/README.md) | Backend-independent SQL parser, typed statement inputs and plans |
 | [compact-query](crates/compact-query/README.md) | Complete index selection, fresh FHE projections/aggregates and checked compact updates; explicit BFV backend plus retained legacy TFHE module |
 | [bfv-query-core](crates/bfv-query-core/README.md) | Reusable owner/public-peer BFV arithmetic and wire contracts; no storage or GUI dependency |
 | [bfv-linear-circuit](crates/bfv-linear-circuit/README.md) | Canonical full-residue BFV addition statement for proof consumers |
+| [bfv-product-circuit](crates/bfv-product-circuit/README.md) | Canonical full-residue BFV public-polynomial product |
+| [bfv-query-proof](crates/bfv-query-proof/README.md) | Genuine bounded STARK generation and independent arithmetic verification |
+| [version-journal](crates/version-journal/README.md) | Signed state transitions, cumulative work, confirmed ancestry and durable metadata |
 | [compact-store](crates/compact-store/README.md) | Owner-only symmetric keys, opaque authenticated pages, independently trusted version roots and constant-size replacements |
 | [replica-store](crates/replica-store/README.md) | Bounded ciphertext replicas, fault-domain placement and atomic local repair batches |
 | [peer-protocol](crates/peer-protocol/README.md) | Bounded transport-independent handshake/message state machine |
@@ -73,11 +80,13 @@ availability guarantees.
 The [requirements/code audit](docs/requirements-code-audit.md) records the checked
 FHE/plaintext boundaries, repaired bypasses and requirements that remain unfinished.
 
-The opt-in [BFV addition proof](experiments/bfv-addition-proof/README.md) now proves
-the exact homomorphic addition of all ciphertext residues with Plonky3. Its
-[measurements and limits](docs/experiment-bfv-addition-proof.md) include independent
-verifier preprocessing. This arithmetic proof does not yet establish SQL selection
-completeness or a fresh agreed database version; live acceptance remains blocked.
+The reusable [BFV proof engine](crates/bfv-query-proof/README.md) covers all 81,920
+ciphertext residues for addition and public-polynomial projection with Plonky3.
+Its proof-first client composition is described in [proved network SQL](docs/proved-sql-network.md).
+Private AEAD/index authentication remains owner-side; this is not an independently
+public proof of SQL/AEAD linkage. Full network queries still exceed the 50–100 ms
+target. The original [addition experiment](experiments/bfv-addition-proof/README.md)
+and its [measurements](docs/experiment-bfv-addition-proof.md) remain historical evidence.
 
 The [measurement ledger](docs/optimization-goal.md) preserves successful and failed
 experiments. Private retrieval and process recovery currently live in standalone

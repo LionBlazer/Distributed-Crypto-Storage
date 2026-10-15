@@ -7,6 +7,8 @@ use compact_store::{Commitment, Limits};
 use peer_runtime::{Bundle, Operation, RemotePeer, Request, Response, Status};
 use sql_plan::{Projection, QueryPlan};
 use std::{fmt, io};
+mod session;
+pub use session::{Session, VerifiedResult};
 
 #[derive(Debug)]
 pub enum Error {
@@ -15,6 +17,13 @@ pub enum Error {
     Cryptography(String),
     MissingComputationProof,
     UnavailableShard(u64),
+    /// The exact authorized mutation is retained in this live Session. Retry the
+    /// same SQL or call resume_pending; a new SQL statement must not replay it.
+    PendingMutation {
+        query_binding: [u8; 32],
+        submitted: Option<Box<version_journal::HeadRef>>,
+        reason: String,
+    },
 }
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -26,6 +35,12 @@ impl fmt::Display for Error {
                 "Requirements 11–13 prohibit accepting the result or committing a write."
             )),
             Self::UnavailableShard(id) => write!(f, "Logical shard {id} has no reachable authenticated ciphertext holder"),
+            Self::PendingMutation { query_binding, submitted, reason } => {
+                let id: String = query_binding.iter().map(|byte| format!("{byte:02x}")).collect();
+                write!(f, "Mutation {id} remains pending")?;
+                if let Some(head) = submitted { write!(f, " at submitted height {}", head.height)?; }
+                write!(f, ": {reason}. Retry the same SQL or call Session::resume_pending; do not submit a different statement")
+            }
         }
     }
 }
@@ -190,17 +205,17 @@ impl Database {
                     || bundle.data_head != shard.info.data_head.encode()
                     || bundle.index_head != shard.info.index_head.encode()
                 {
-                    return Err(Error::Cryptography(
-                        "Stored ciphertext/head binding mismatch".into(),
-                    ));
+                    continue;
                 }
-                let table = self.owner.restore_table_for_experiment(
+                let Ok(table) = self.owner.restore_table_for_experiment(
                     &bundle.data,
                     &bundle.index,
                     &shard.info.data_head,
                     &shard.info.index_head,
                     Limits::default(),
-                )?;
+                ) else {
+                    continue;
+                };
                 return Ok((peer.remote.clone(), table));
             }
         }

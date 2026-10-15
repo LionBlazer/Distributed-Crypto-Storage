@@ -6,6 +6,29 @@ Source review for the 2026-10-15 prototype changes, against
 not an independent cryptographic security assessment or a claim that all target
 requirements are implemented.
 
+## Current proved network path
+
+The later [proved network SQL integration](proved-sql-network.md) supersedes the
+historical live-path limitations below. `Session` now authenticates complete private
+selection, checks genuine full-residue FHE proofs and rechecks confirmed journal
+ancestry before returning SELECT. INSERT/UPDATE stage verified ciphertext and publish
+owner-authorized roots through a durable cumulative-work journal. The live GUI uses
+this path; historical unverified APIs remain explicitly rejected or research-only.
+
+Self-signed TLS admission verifies real signatures and endpoint pins without a CA.
+Journal weight depends on valid work, not identity count. Production work/confirmation
+parameters, discovery, independent physical availability, owner recovery, general SQL
+and the 50–100 ms full-query target remain unmet. No requirements were weakened.
+
+Public journal validators prove the exact encrypted jobs and authorized root changes;
+private index authentication and compact AEAD finalization remain designated-client
+work. This is not a public proof of AEAD-to-FHE linkage. The current owning tests
+include corruption/rebinding/stale-proof rejection, real-process mutations, all-shard
+overflow rejection, physical copy failover, pinned journal reopening and invalid
+publication. See the linked integration report for commands, measurements and limits.
+
+## Historical source audit
+
 ## Scope
 
 All seven workspace crates were traced through their owning boundaries:

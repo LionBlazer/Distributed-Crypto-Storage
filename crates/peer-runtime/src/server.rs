@@ -14,14 +14,18 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+mod network;
 
 struct Setup {
-    evaluator: PeerEvaluator,
+    public: PublicSetup,
+    legacy: Mutex<Option<Arc<PeerEvaluator>>>,
+    verifier: Arc<crate::JobVerifier>,
     bytes: usize,
 }
 struct State {
     store: Store,
-    setups: BTreeMap<[u8; 32], Setup>,
+    setups: BTreeMap<[u8; 32], Arc<Setup>>,
+    journals: BTreeMap<[u8; 32], Arc<Mutex<network::Network>>>,
     neighbors: Vec<Neighbor>,
     recent: VecDeque<Observation>,
     sequence: u64,
@@ -35,6 +39,7 @@ struct Shared {
     connector: Connector,
     stop: AtomicBool,
     active: AtomicUsize,
+    proof_busy: AtomicBool,
 }
 /// Owns a bound socket and the peer's ciphertext directory lock, never owner keys.
 pub struct PeerServer {
@@ -73,8 +78,17 @@ fn io_error(e: impl std::fmt::Display) -> RemoteError {
 }
 impl PeerServer {
     pub fn bind(config: Bootstrap, directory: &Path) -> io::Result<Self> {
-        let acceptor = Acceptor::new(&config.identity, &config.authority)?;
-        let connector = Connector::new(&config.identity, &config.authority)?;
+        let (acceptor, connector) = if config.authority.is_empty() {
+            (
+                Acceptor::permissionless(&config.identity)?,
+                Connector::permissionless(&config.identity)?,
+            )
+        } else {
+            (
+                Acceptor::new(&config.identity, &config.authority)?,
+                Connector::new(&config.identity, &config.authority)?,
+            )
+        };
         let listener = TcpListener::bind(config.listen)?;
         listener.set_nonblocking(true)?;
         let endpoint = Endpoint {
@@ -90,6 +104,7 @@ impl PeerServer {
                 state: Mutex::new(State {
                     store,
                     setups: BTreeMap::new(),
+                    journals: BTreeMap::new(),
                     neighbors: vec![],
                     recent: VecDeque::new(),
                     sequence: 0,
@@ -101,6 +116,7 @@ impl PeerServer {
                 connector,
                 stop: AtomicBool::new(false),
                 active: AtomicUsize::new(0),
+                proof_busy: AtomicBool::new(false),
             }),
         })
     }
@@ -246,9 +262,33 @@ fn dispatch(
             | Request::Quota(_)
             | Request::Shutdown
             | Request::Copy { .. }
+            | Request::InitJournal { .. }
+            | Request::CollectJournal { .. }
     );
     if privileged && remote != shared.owner {
         return Err(RemoteError::Unauthorized);
+    }
+    if let Request::Prove {
+        object,
+        setup,
+        operation,
+        ciphertext,
+    } = request
+    {
+        return network::prove(shared, object, setup, operation, ciphertext);
+    }
+    if matches!(
+        &request,
+        Request::InstallSetup(_)
+            | Request::Evaluate { .. }
+            | Request::Prove { .. }
+            | Request::InitJournal { .. }
+            | Request::JournalBlocks { .. }
+            | Request::PublishBlock { .. }
+            | Request::MineBlock { .. }
+            | Request::CollectJournal { .. }
+    ) {
+        return network::dispatch(shared, request);
     }
     // Copy reads from another authenticated peer; the owner never supplies source plaintext.
     if let Request::Copy { source, object } = &request {
@@ -282,6 +322,7 @@ fn dispatch(
             quota_bytes: state.store.quota(),
             objects: state.store.objects(),
             public_setup_bytes: state.setups.values().map(|s| s.bytes as u64).sum(),
+            journal_bytes: state.store.journal_bytes(),
             received_bytes: state.received,
             sent_bytes: state.sent,
             neighbors: state.neighbors.clone(),
@@ -289,56 +330,13 @@ fn dispatch(
         })),
         Request::Store(bundle) => state.store.put(bundle).map(Response::Stored),
         Request::Fetch { object } => state.store.get(&object).map(Response::Bundle),
-        Request::InstallSetup(bytes) => {
-            let id: [u8; 32] = Sha256::digest(&bytes).into();
-            if !state.setups.contains_key(&id) {
-                if state.setups.len() >= 2 {
-                    return Err(RemoteError::ResourceLimit);
-                }
-                let setup = PublicSetup::from_bytes(&bytes)
-                    .map_err(|e| RemoteError::Cryptography(e.to_string()))?;
-                let evaluator = PeerEvaluator::from_public_setup(&setup)
-                    .map_err(|e| RemoteError::Cryptography(e.to_string()))?;
-                state.setups.insert(
-                    id,
-                    Setup {
-                        evaluator,
-                        bytes: bytes.len(),
-                    },
-                );
-            }
-            Ok(Response::Setup(id))
-        }
-        Request::Evaluate {
-            object,
-            setup,
-            operation,
-            ciphertext,
-        } => {
-            // A missing/tampered physical object fails before any FHE evaluation.
-            state.store.get(&object)?;
-            let evaluator = &state
-                .setups
-                .get(&setup)
-                .ok_or(RemoteError::NotFound)?
-                .evaluator;
-            let output = match operation {
-                Operation::Aggregate => evaluator
-                    .evaluate_exact_index_aggregate_for_experiment(&ciphertext)
-                    .map(|v| v.output),
-                Operation::Select => evaluator
-                    .evaluate_indexed_select_for_experiment(&ciphertext)
-                    .map(|v| v.output),
-                Operation::Insert => evaluator
-                    .evaluate_indexed_insert_for_experiment(&ciphertext)
-                    .map(|v| v.output),
-                Operation::Update => evaluator
-                    .evaluate_indexed_update(&ciphertext)
-                    .map(|v| v.output),
-            }
-            .map_err(|e| RemoteError::Cryptography(e.to_string()))?;
-            Ok(Response::UnverifiedCiphertext(output))
-        }
+        Request::FetchVersion {
+            data_head,
+            index_head,
+        } => state
+            .store
+            .get_version(&data_head, &index_head)
+            .map(Response::Bundle),
         Request::Neighbors(endpoints) => {
             if endpoints.len() > 32
                 || endpoints
@@ -369,6 +367,16 @@ fn dispatch(
             Ok(Response::Done)
         }
         Request::Copy { .. } => unreachable!("copy handled without the local store lock"),
+        Request::InstallSetup(_)
+        | Request::Evaluate { .. }
+        | Request::Prove { .. }
+        | Request::InitJournal { .. }
+        | Request::JournalBlocks { .. }
+        | Request::PublishBlock { .. }
+        | Request::MineBlock { .. }
+        | Request::CollectJournal { .. } => {
+            unreachable!("heavy work has its own permit and no state lock")
+        }
     }
 }
 fn heartbeat_loop(shared: Arc<Shared>) {
@@ -389,6 +397,9 @@ fn heartbeat_loop(shared: Arc<Shared>) {
                 RemotePeer::new(endpoint.clone(), shared.connector.clone()).call(Request::Probe),
                 Ok(Response::Alive { .. })
             );
+            if reachable {
+                network::synchronize_neighbor(&shared, &endpoint);
+            }
             if let Ok(mut state) = shared.state.lock()
                 && let Some(neighbor) = state.neighbors.iter_mut().find(|n| n.endpoint == endpoint)
             {

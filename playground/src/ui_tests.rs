@@ -302,7 +302,7 @@ fn inspector_preserves_owner_view_without_faking_independent_process_failure_dom
     assert!(
         texts
             .iter()
-            .any(|text| text.text.contains("Current owner fixture")
+            .any(|text| text.text.contains("Owner inspection")
                 && text.text.contains("earlier values"))
     );
     assert!(commands.try_recv().is_err());
@@ -1194,6 +1194,39 @@ fn stale_storage_uses_physical_payload_instead_of_the_current_shard_row_count() 
 }
 
 #[test]
+fn journal_bytes_count_toward_physical_quota_while_public_setup_remains_memory_metadata() {
+    let (app, commands, _events) = app();
+    let mut state = replicated_snapshot();
+    let peer = &mut state.peers[0];
+    peer.data_bytes = 153;
+    peer.index_bytes = 2332;
+    peer.journal_bytes = 1024;
+    peer.public_setup_bytes = 2048;
+    peer.stored_bytes = 153 + 2332 + 16 + 1024;
+    let quota = peer.config.storage_limit_bytes;
+    let node = app
+        .network
+        .as_ref()
+        .unwrap()
+        .nodes
+        .iter()
+        .find(|node| node.peer_id == Some(1))
+        .unwrap();
+
+    let hint = infrastructure::storage_tooltip(node, Some(&state));
+
+    assert!(hint.contains(&format!("Physical storage: 3525 B / {quota} B quota")));
+    assert!(hint.contains("Version/proof journal: 1024 B"));
+    assert!(hint.contains("Replica record metadata: 16 B"));
+    assert!(
+        hint.contains(
+            "Public setup in memory: 2048 B (serialized size; not disk usage or peak RAM)"
+        )
+    );
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
 fn grouped_presets_start_with_simple_rows_then_filters_and_writes_without_execution() {
     let (mut app, commands, _events) = app();
     assert_eq!(PRESETS.first().unwrap().name, "All rows");
@@ -1481,6 +1514,53 @@ fn selected_results_render_requested_column_order_and_worker_values() {
             "Missing {value}"
         );
     }
+    assert_eq!(app.result_tab, ResultTab::Result);
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn verified_network_selection_displays_its_confirmed_version_without_promoting_historical_fixtures()
+{
+    // Public renderer fixture only; real proof acceptance is exercised by process_backend tests.
+    let (mut app, commands, events) = app();
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    app.run_query();
+    let _ = commands.try_recv().unwrap();
+    events
+        .send(Event::Finished {
+            snapshot: Some(snapshot(3)),
+            outcome: Ok(Outcome::VerifiedQuery {
+                outcome: QueryOutcome::Selected {
+                    columns: vec![Column::Age],
+                    rows: vec![vec![42]],
+                },
+                version: version_journal::HeadRef {
+                    genesis: [1; 32],
+                    database: [2; 16],
+                    block: [3; 32],
+                    height: 7,
+                    state_root: [4; 32],
+                },
+                changed_rows: None,
+            }),
+            elapsed_ms: 12.0,
+            client_id: Some(1),
+        })
+        .unwrap();
+    app.poll();
+    let texts = render(&ctx, &mut app, vec![]);
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.text == "Encrypted SELECT · verified · v7")
+    );
+    assert_eq!(app.history.front().unwrap().revision, 7);
+    assert!(
+        !texts
+            .iter()
+            .any(|text| text.text == "Encrypted SELECT · unverified")
+    );
     assert_eq!(app.result_tab, ResultTab::Result);
     assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
 }

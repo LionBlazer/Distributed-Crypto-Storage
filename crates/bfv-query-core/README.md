@@ -24,9 +24,17 @@ self-authenticating. Validated immutable public parameters are cached once per
 process; no secret key or row data enters that cache. This reduced execution path
 does not itself supply a computation proof or authorize accepting a SQL answer.
 
+`PublicUpdateEvaluator::request_context` validates a supported original UPDATE,
+exact-set SELECT or version-2 INSERT request, including every ciphertext's level,
+component count and representation, then returns its public `QueryContext`. Runtime
+and journal validators can compare both heads against independently agreed storage
+state without exposing private request types or executing an SQL/FHE operation.
+It rejects earlier INSERT versions and the private-active SELECT domain; returning
+a well-formed opaque head does not establish that peers agreed on it or its freshness.
+
 `PublicUpdateEvaluator::circuit_request` converts the exact original ciphertexts to
-the canonical NTT residue representation of [bfv-linear-circuit](../bfv-linear-circuit/README.md),
-the core's only direct project dependency. `restore_circuit_output` reconstructs a
+the canonical NTT residue representation of [bfv-linear-circuit](../bfv-linear-circuit/README.md).
+`restore_circuit_output` reconstructs a
 normal upstream ciphertext response without repeating the addition. Both are
 representation adapters, not verification/acceptance APIs. The proof requester must
 retain the canonical input digest and verify it, the output digest, and a trusted
@@ -46,17 +54,55 @@ The exact-index contract belongs to the caller, as for exact-index aggregates; t
 operation does not conceal or re-evaluate an arbitrary SQL predicate.
 
 `Owner::prepare_indexed_insert_for_experiment` independently encrypts the original
-contiguous relation and an incoming row in staging slot 256. The public-only
-`PeerEvaluator::evaluate_indexed_insert_for_experiment` rotates that row into the
-next slot and adds the encrypted relation, including encrypted presence markers.
+contiguous relation and an incoming row at the public append position. The incoming
+operand contains no existing rows, and the existing operand contains no incoming
+row. The public-only `PeerEvaluator::evaluate_indexed_insert_for_experiment` adds
+these ciphertexts, including encrypted presence markers. No rotation is required:
+the request already exposes the append position as `existing_rows`. This is input
+placement for genuine encrypted addition, not owner assembly of the complete answer.
+The append request version is 2; earlier staging/rotation requests are rejected
+rather than interpreted under different arithmetic semantics.
 `decrypt_indexed_insert_unverified_for_experiment` returns only decoded peer output
 after binding, lane and value checks. This operation requires Rows256 and fewer
 than 256 existing rows; it retains the original parameters and public rotation keys.
+`PublicUpdateEvaluator::{evaluate_insert,insert_circuit_request,restore_insert_circuit_output}`
+expose the same operation without rotation/relinearization keys. Canonical circuit
+outputs match both full and minimal upstream evaluator bytes exactly.
 Storage growth, authorization and validation against authenticated originals belong
 to the caller. It does not provide a succinct computation proof.
 
-Private modules are kernel, exact_index, indexed_select, indexed_update and indexed_insert. This crate depends
-only on pinned fhe/fhe-traits0.1.1, rand0.9.2, serde/bincode1.3.3, SHA256 and zeroize;
+`Owner::prepare_exact_select_for_experiment` is a separate path for a complete,
+authenticated exact matching set in which every supplied row is active. It rejects
+private-active holes. Original age/amount fields, encrypted presence bits and zero
+padding are encrypted before projection; it never prepares a projected answer.
+`PublicUpdateEvaluator::evaluate_exact_select` then performs real upstream
+ciphertext-by-plaintext multiplication. Its mask contains only the already public
+`RowProjection`, covering all 256 possible slots even for Rows16 or an empty result.
+No count, row predicate, active pattern or original field appears in that mask.
+
+For this all-active exact-set domain, the decoded output equals the original
+encrypted-mask path: the public mask agrees on every present slot, and zero input
+padding remains zero regardless of mask values there. Presence bits distinguish
+zero-valued rows from padding and remain encrypted. Request shape and mask are
+independent of selected count; fresh same-length BFV ciphertexts hide contents and
+count under the original encryption assumption. This is a conditional equivalence
+argument, not a new cryptographic security proof. The original private-active
+ciphertext-by-ciphertext API remains available and cannot be substituted by this
+path. The operation mode and column projection remain public in both contracts.
+
+`select_circuit_request` converts the exact original ciphertext and public encoded
+mask into [bfv-product-circuit](../bfv-product-circuit/README.md)'s complete NTT
+products. `restore_select_circuit_output` reconstructs the normal upstream response
+without repeating the multiplication. Conversion and restoration validate all
+original ciphertext representations and bind the complete original request digest,
+including query ID, both heads, geometry, projection and keyset. Restoration is not
+proof verification. An external proof consumer must independently derive the same
+canonical inputs, verify a real proof and separately establish authenticated index
+completeness and the fresh agreed head before any live acceptance or mutation.
+
+Private modules are canonical, kernel, exact_index, indexed_select, indexed_update and indexed_insert.
+Direct project dependencies are bfv-linear-circuit and bfv-product-circuit. External
+dependencies are pinned fhe/fhe-traits0.1.1, rand0.9.2, serde/bincode1.3.3, SHA256 and zeroize;
 it has no storage, SQL, PIR, GUI, fixture or deployment dependency. Complete exact
 selection, trusted heads/freshness, global transaction policy and resource accounting
 belong to its caller. Original public setup must be retained for same-key recovery;
@@ -82,7 +128,7 @@ An accepted in-bounds forged value remains explicitly unverified.
 With encrypted INSERT and the generic owner-keyset completion guard, owning
 release/locked/offline validation passes 53 runtime tests and three compile-fail
 doctests. INSERT controls cover empty and 255-row targets, zero/max values, real
-rotations/addition, fresh ciphertexts, unchanged public setup, full/unsupported
+addition of separate operands, fresh ciphertexts, unchanged public setup, full/unsupported
 geometry, wire/binding/shape rejection and in-bounds malicious output.
 
 The owning storage consumer is [compact-query](../compact-query/README.md), whose

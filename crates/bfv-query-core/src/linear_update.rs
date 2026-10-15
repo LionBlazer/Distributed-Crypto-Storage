@@ -1,4 +1,4 @@
-//! Exact indexed addition needs the public parameters and domain binding, not rotation/relin keys.
+//! Exact addition and public-column projection need no rotation/relinearization keys.
 use super::*;
 
 /// Public-only operation descriptor. Its digest must come from the trusted caller's
@@ -38,7 +38,7 @@ impl PublicUpdateParameters {
         Ok(expected)
     }
 }
-/// Genuine public ciphertext addition, with no secret key, rotation key or clock.
+/// Genuine public ciphertext addition and public-mask multiplication, without secret keys.
 /// The output remains unverified until an external computation proof is checked.
 pub struct PublicUpdateEvaluator {
     parameters: Arc<BfvParameters>,
@@ -63,6 +63,33 @@ impl PublicUpdateEvaluator {
         )
     }
 
+    /// Extracts the exact original query/head binding after complete supported-request
+    /// metadata and ciphertext-shape checks. This does not establish head freshness;
+    /// the caller must compare both heads to independently validated agreed state.
+    pub fn request_context(&self, request: &[u8]) -> Result<QueryContext> {
+        match request.get(..8) {
+            Some(b"BFVADDQ1") => indexed_update::request_context(
+                &self.parameters,
+                self.geometry,
+                self.keyset_id,
+                request,
+            ),
+            Some(b"BFVSELQ1") => indexed_select::request_context(
+                &self.parameters,
+                self.geometry,
+                self.keyset_id,
+                request,
+            ),
+            Some(b"BFVINSQ1") => indexed_insert::request_context(
+                &self.parameters,
+                self.geometry,
+                self.keyset_id,
+                request,
+            ),
+            _ => Err(Error::InvalidShape),
+        }
+    }
+
     /// Converts the exact original ciphertext operands into the canonical public
     /// circuit input. Its digest must be retained by the trusted proof requester.
     pub fn circuit_request(&self, request: &[u8]) -> Result<Vec<u8>> {
@@ -74,6 +101,50 @@ impl PublicUpdateEvaluator {
     /// decrypting the returned ciphertext or authorizing any database write.
     pub fn restore_circuit_output(&self, request: &[u8], output: &[u8]) -> Result<Vec<u8>> {
         indexed_update::restore_circuit_output(
+            &self.parameters,
+            self.geometry,
+            self.keyset_id,
+            request,
+            output,
+        )
+    }
+
+    /// Actual addition of separately encrypted original rows and the positioned incoming row.
+    /// This operation returns an unverified ciphertext, not an authorization to commit it.
+    pub fn evaluate_insert(&self, request: &[u8]) -> Result<Vec<u8>> {
+        indexed_insert::evaluate_public(&self.parameters, self.geometry, self.keyset_id, request)
+    }
+
+    /// Canonical full-residue addition input bound to the exact original INSERT request.
+    pub fn insert_circuit_request(&self, request: &[u8]) -> Result<Vec<u8>> {
+        indexed_insert::circuit_request(&self.parameters, self.geometry, self.keyset_id, request)
+    }
+
+    /// Representation conversion only. Verify a proof before consuming this result.
+    pub fn restore_insert_circuit_output(&self, request: &[u8], output: &[u8]) -> Result<Vec<u8>> {
+        indexed_insert::restore_circuit_output(
+            &self.parameters,
+            self.geometry,
+            self.keyset_id,
+            request,
+            output,
+        )
+    }
+
+    /// Exact-index SELECT with encrypted original rows and a public column-only mask.
+    /// It does not accept private-active SELECT requests or prove selection completeness.
+    pub fn evaluate_exact_select(&self, request: &[u8]) -> Result<Vec<u8>> {
+        indexed_select::evaluate_public(&self.parameters, self.geometry, self.keyset_id, request)
+    }
+
+    /// Canonical ct-by-public-mask NTT products bound to the complete original SELECT.
+    pub fn select_circuit_request(&self, request: &[u8]) -> Result<Vec<u8>> {
+        indexed_select::circuit_request(&self.parameters, self.geometry, self.keyset_id, request)
+    }
+
+    /// Representation conversion only. Verify a proof before consuming this result.
+    pub fn restore_select_circuit_output(&self, request: &[u8], output: &[u8]) -> Result<Vec<u8>> {
+        indexed_select::restore_circuit_output(
             &self.parameters,
             self.geometry,
             self.keyset_id,

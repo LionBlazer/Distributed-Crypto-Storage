@@ -745,7 +745,7 @@ fn genuine_insert_grows_actual_ciphertext_and_index_with_monotonic_heads_and_zer
             .unwrap();
         let evaluated = peer.evaluate_indexed_insert(prepared.request()).unwrap();
         assert_eq!(evaluated.stats.ciphertext_additions, 1);
-        assert!(evaluated.stats.rotations > 0);
+        assert_eq!(evaluated.stats.rotations, 0);
         owner
             .apply_insert_checked_for_experiment(
                 &mut table,

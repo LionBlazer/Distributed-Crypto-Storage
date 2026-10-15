@@ -5,10 +5,7 @@ use fhe_playground::{
     ReplicaLocation, ReplicationInfo,
 };
 use peer_runtime::{Bootstrap, Connector, Endpoint, Identity, RemotePeer, Request, Status, Trace};
-use rcgen::{
-    BasicConstraints, CertificateParams, ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair,
-    KeyUsagePurpose,
-};
+use rcgen::{CertificateParams, ExtendedKeyUsagePurpose, KeyPair, KeyUsagePurpose};
 use std::{
     collections::{BTreeMap, VecDeque},
     io::{self, BufRead, BufReader, Read},
@@ -21,43 +18,50 @@ use std::{
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use storage_client::{Database, Participant};
+use storage_client::{Participant, Session, VerifiedResult};
+use version_journal::{ProtocolProfile, Target};
 
-struct Authority {
-    der: Vec<u8>,
-    issuer: Issuer<'static, KeyPair>,
-}
-impl Authority {
-    fn new() -> io::Result<Self> {
-        let mut params = CertificateParams::new(vec![]).map_err(io::Error::other)?;
-        params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-        params.key_usages = vec![
-            KeyUsagePurpose::DigitalSignature,
-            KeyUsagePurpose::KeyCertSign,
-        ];
-        let key = KeyPair::generate().map_err(io::Error::other)?;
-        let cert = params.self_signed(&key).map_err(io::Error::other)?;
-        Ok(Self {
-            der: cert.der().to_vec(),
-            issuer: Issuer::new(params, key),
-        })
+/// Local defaults include room for real durable proof journals. Explicit caller
+/// quotas remain unchanged; historical LabEngine fixtures retain their own defaults.
+pub(super) fn default_peer_config(id: usize) -> PeerConfig {
+    PeerConfig {
+        storage_limit_bytes: 64 * 1024 * 1024,
+        ..PeerConfig::numbered(id)
     }
-    fn identity(&self) -> io::Result<Identity> {
-        let mut params =
-            CertificateParams::new(vec!["dcs-peer".into()]).map_err(io::Error::other)?;
-        params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
-        params.extended_key_usages = vec![
-            ExtendedKeyUsagePurpose::ServerAuth,
-            ExtendedKeyUsagePurpose::ClientAuth,
-        ];
-        let key = KeyPair::generate().map_err(io::Error::other)?;
-        let cert = params
-            .signed_by(&key, &self.issuer)
-            .map_err(io::Error::other)?;
-        Ok(Identity {
-            certificate: cert.der().to_vec(),
-            private_key_pkcs8: key.serialize_der(),
-        })
+}
+
+fn identity() -> io::Result<Identity> {
+    let mut params = CertificateParams::new(vec!["dcs-peer".into()]).map_err(io::Error::other)?;
+    params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+    params.extended_key_usages = vec![
+        ExtendedKeyUsagePurpose::ServerAuth,
+        ExtendedKeyUsagePurpose::ClientAuth,
+    ];
+    let key = KeyPair::generate().map_err(io::Error::other)?;
+    let cert = params.self_signed(&key).map_err(io::Error::other)?;
+    Ok(Identity {
+        certificate: cert.der().to_vec(),
+        private_key_pkcs8: key.serialize_der(),
+    })
+}
+
+/// Explicit local playground contract. Easy work and one confirmation have no
+/// validated production attack budget; the core intentionally supplies no default.
+fn playground_profile() -> ProtocolProfile {
+    ProtocolProfile {
+        initial_target: Target([0x0f; 32]),
+        pow_limit: Target([0x0f; 32]),
+        block_spacing_secs: 1,
+        retarget_interval: 1024,
+        max_future_secs: 30,
+        confirmation_depth: 1,
+        max_headers: 4096,
+        max_shards: 16,
+        max_updates: 16,
+        max_body_bytes: 32 * 1024 * 1024,
+        max_request_bytes: 32 * 1024 * 1024,
+        max_proof_bytes: 32 * 1024 * 1024,
+        max_journal_bytes: 256 * 1024 * 1024,
     }
 }
 struct OwnedPeer {
@@ -176,7 +180,6 @@ struct Peer {
     seen: u64,
 }
 pub(super) struct ProcessBackend {
-    authority: Authority,
     owner: Identity,
     connector: Connector,
     root: PathBuf,
@@ -184,8 +187,8 @@ pub(super) struct ProcessBackend {
     clients: BTreeMap<NodeId, String>,
     next_peer: usize,
     next_node: NodeId,
-    database: Option<Database>,
-    retained_databases: Vec<Database>,
+    database: Option<Session>,
+    retained_databases: Vec<Session>,
     owner_rows: Vec<compact_query::PlainRow>,
     desired: usize,
     started: Instant,
@@ -201,9 +204,8 @@ fn error(e: impl std::fmt::Display) -> LabError {
 }
 impl ProcessBackend {
     pub fn new() -> io::Result<Self> {
-        let authority = Authority::new()?;
-        let owner = authority.identity()?;
-        let connector = Connector::new(&owner, &authority.der)?;
+        let owner = identity()?;
+        let connector = Connector::permissionless(&owner)?;
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../.local/peer-processes")
             .join(format!(
@@ -216,7 +218,6 @@ impl ProcessBackend {
             ));
         let (trace_sender, traces) = mpsc::sync_channel(1024);
         Ok(Self {
-            authority,
             owner,
             connector,
             root,
@@ -266,8 +267,8 @@ impl ProcessBackend {
         let mut process = OwnedPeer {
             child: None,
             bootstrap: Bootstrap {
-                identity: self.authority.identity().map_err(error)?,
-                authority: self.authority.der.clone(),
+                identity: identity().map_err(error)?,
+                authority: Vec::new(),
                 owner: self.owner.fingerprint(),
                 node_id: node,
                 quota_bytes: config.storage_limit_bytes as u64,
@@ -337,28 +338,35 @@ impl ProcessBackend {
                 })
             })
             .collect();
-        let database = Database::create(draft.name, &draft.rows, participants).map_err(error)?;
-        self.owner_rows = draft.rows;
+        let database = Session::create(draft.name, &draft.rows, participants, playground_profile())
+            .map_err(error)?;
+        self.owner_rows = database.inspect_rows().map_err(error)?;
+        self.desired = if database.shards().len() > 1 { 2 } else { 1 };
         if let Some(previous) = self.database.replace(database) {
             self.retained_databases.push(previous);
         }
         self.refresh();
         Ok(())
     }
-    pub fn query(
-        &mut self,
-        client: NodeId,
-        sql: &str,
-    ) -> Result<storage_client::AcceptedResult, LabError> {
+    pub fn query(&mut self, client: NodeId, sql: &str) -> Result<VerifiedResult, LabError> {
         if !self.clients.contains_key(&client) {
             return Err(error("Requesting client session was removed"));
         }
         self.session.store(client, Ordering::Release);
-        self.database
-            .as_ref()
-            .ok_or(LabError::NoDatabase)?
-            .execute(sql)
-            .map_err(error)
+        let database = self.database.as_mut().ok_or(LabError::NoDatabase)?;
+        let result = database.execute(sql).map_err(error)?;
+        if matches!(
+            result,
+            VerifiedResult::Updated { .. } | VerifiedResult::Inserted { .. }
+        ) {
+            self.owner_rows = database.inspect_rows().map_err(|e| {
+                error(format!(
+                    "SQL committed at version {}; owner data view refresh failed: {e}",
+                    database.version().height
+                ))
+            })?;
+        }
+        Ok(result)
     }
     pub fn add_client(&mut self, name: String) -> Result<NodeId, LabError> {
         if self.clients.len() >= 8
@@ -629,20 +637,21 @@ impl ProcessBackend {
             .peers
             .iter()
             .map(|(id, p)| {
-                let objects = p
-                    .status
-                    .as_ref()
-                    .or(p.last_status.as_ref())
-                    .map(|s| s.objects.as_slice())
-                    .unwrap_or(&[]);
+                let observed = p.status.as_ref().or(p.last_status.as_ref());
+                let journal_bytes = observed.map_or(0, |status| status.journal_bytes as usize);
+                let public_setup_bytes =
+                    observed.map_or(0, |status| status.public_setup_bytes as usize);
+                let objects = observed.map(|s| s.objects.as_slice()).unwrap_or(&[]);
                 let mut indices = Vec::new();
-                for (slot, shard) in shards.iter().enumerate() {
+                let mut offset = 0;
+                for shard in &shards {
                     if objects
                         .iter()
                         .any(|object| object.id == shard.object && object.available)
                     {
-                        indices.extend((slot..self.owner_rows.len()).step_by(shards.len()));
+                        indices.extend(offset..offset + shard.rows);
                     }
+                    offset += shard.rows;
                 }
                 PeerInfo {
                     id: *id,
@@ -652,7 +661,13 @@ impl ProcessBackend {
                     logical_bytes: objects.iter().map(|o| o.logical_bytes as usize).sum(),
                     data_bytes: objects.iter().map(|o| o.data_bytes as usize).sum(),
                     index_bytes: objects.iter().map(|o| o.index_bytes as usize).sum(),
-                    stored_bytes: objects.iter().map(|o| o.stored_bytes as usize).sum(),
+                    stored_bytes: objects
+                        .iter()
+                        .map(|o| o.stored_bytes as usize)
+                        .sum::<usize>()
+                        + journal_bytes,
+                    journal_bytes,
+                    public_setup_bytes,
                     owner_row_indices: indices,
                 }
             })
@@ -720,7 +735,7 @@ impl ProcessBackend {
             .collect();
         Some(LabSnapshot {
             name: db.name().into(),
-            revision: 0,
+            revision: db.version().height,
             owner_rows: self.owner_rows.clone(),
             peers,
             replication: Some(ReplicationInfo {
@@ -797,8 +812,7 @@ mod tests {
     use super::*;
     #[test]
     #[ignore = "starts owned peer daemons; build dcs-peer and set DCS_PEER_BIN"]
-    fn real_process_views_follow_links_copies_failover_and_restart_without_accepting_unproved_sql()
-    {
+    fn real_process_views_follow_verified_sql_copies_failover_and_restart() {
         let mut backend = ProcessBackend::new().unwrap();
         backend
             .create(DatabaseDraft {
@@ -813,24 +827,40 @@ mod tests {
                         amount: 30,
                     },
                 ],
-                peers: vec![PeerConfig::numbered(1), PeerConfig::numbered(2)],
+                peers: vec![default_peer_config(1), default_peer_config(2)],
             })
             .unwrap();
+        assert!(
+            backend
+                .peers
+                .values()
+                .all(|peer| peer.process.bootstrap.authority.is_empty())
+        );
+        assert_eq!(
+            backend.database.as_ref().unwrap().genesis().profile,
+            playground_profile()
+        );
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             backend.refresh();
-            let network = backend.network();
-            if network.links.iter().filter(|link| link.from != 1).count() >= 2 {
+            if backend
+                .network()
+                .links
+                .iter()
+                .filter(|link| link.from != 1)
+                .count()
+                >= 2
+            {
                 break;
             }
             assert!(
                 Instant::now() < deadline,
-                "Peer-to-peer TLS heartbeats must establish observed reachability"
+                "Actual mutual-TLS probes must establish observed reachability"
             );
             std::thread::sleep(Duration::from_millis(10));
         }
-        let network = backend.network();
-        let pids: std::collections::BTreeSet<_> = network
+        let pids: std::collections::BTreeSet<_> = backend
+            .network()
             .nodes
             .iter()
             .filter(|node| node.role == NodeRole::Peer)
@@ -838,48 +868,42 @@ mod tests {
             .collect();
         assert_eq!(pids.len(), 2);
         assert!(!pids.contains(&std::process::id()));
-        backend.copies(2).unwrap();
+        assert_eq!(backend.copies(2).unwrap().0, 4);
         backend.refresh();
+
+        let VerifiedResult::Selected {
+            columns,
+            mut rows,
+            version: initial,
+        } = backend.query(1, "SELECT * FROM records").unwrap()
+        else {
+            panic!("Expected verified SELECT");
+        };
+        rows.sort();
         assert_eq!(
-            backend
-                .snapshot()
-                .unwrap()
-                .replication
-                .unwrap()
-                .shards
-                .iter()
-                .map(|shard| shard.replicas.len())
-                .sum::<usize>(),
-            4
+            columns,
+            vec![sql_plan::Column::Age, sql_plan::Column::Amount]
         );
-        assert!(
-            backend
-                .query(1, "SELECT * FROM records")
-                .unwrap_err()
-                .to_string()
-                .contains("no cryptographic proof")
-        );
+        assert_eq!(rows, vec![vec![18, 20], vec![42, 30]]);
         assert!(
             backend
                 .network()
                 .recent
                 .iter()
-                .any(|event| event.message.starts_with("fhe"))
+                .any(|event| event.message.starts_with("fhe-proof"))
         );
+
+        // Losing one local process leaves genuine copies and another journal participant.
         backend.online(1, false).unwrap();
-        assert!(
-            backend
-                .snapshot()
-                .unwrap()
-                .replication
-                .unwrap()
-                .shards
-                .iter()
-                .all(|shard| shard.executor == Some(2))
-        );
-        backend.add_peer(PeerConfig::numbered(3)).unwrap();
+        let VerifiedResult::Selected { rows, .. } = backend
+            .query(1, "SELECT amount FROM records WHERE age = 18")
+            .unwrap()
+        else {
+            panic!("Expected verified failover read");
+        };
+        assert_eq!(rows, vec![vec![20]]);
+        backend.add_peer(default_peer_config(3)).unwrap();
         assert_eq!(backend.repair().unwrap().0, 4);
-        backend.refresh();
         assert!(
             backend
                 .database
@@ -889,23 +913,53 @@ mod tests {
                 .iter()
                 .all(|shard| shard.holders.contains(&3))
         );
-
-        assert!(
-            backend
-                .query(1, "SELECT COUNT(*) FROM records")
-                .unwrap_err()
-                .to_string()
-                .contains("no cryptographic proof")
-        );
         backend.online(1, true).unwrap();
         assert!(!pids.contains(&backend.peers[&1].process.pid().unwrap()));
+
+        let VerifiedResult::Updated {
+            changed_rows,
+            version: updated,
+        } = backend
+            .query(1, "UPDATE records SET amount = amount + 5 WHERE age = 18")
+            .unwrap()
+        else {
+            panic!("Expected verified UPDATE");
+        };
+        assert_eq!(changed_rows, 1);
+        assert!(updated.height > initial.height);
         assert!(
             backend
-                .query(1, "SELECT * FROM records")
-                .unwrap_err()
-                .to_string()
-                .contains("no cryptographic proof")
+                .owner_rows
+                .iter()
+                .any(|row| row.age == 18 && row.amount == 25)
         );
+        let VerifiedResult::Inserted {
+            count,
+            version: inserted,
+        } = backend
+            .query(1, "INSERT INTO records (age, amount) VALUES (7, 9)")
+            .unwrap()
+        else {
+            panic!("Expected verified INSERT");
+        };
+        assert_eq!(count, 1);
+        assert!(inserted.height > updated.height);
+        assert_eq!(backend.owner_rows.len(), 3);
+        assert!(
+            backend
+                .owner_rows
+                .iter()
+                .any(|row| row.age == 7 && row.amount == 9)
+        );
+        let VerifiedResult::Selected { rows, version, .. } = backend
+            .query(1, "SELECT * FROM records WHERE age = 7")
+            .unwrap()
+        else {
+            panic!("Expected read-after-write SELECT");
+        };
+        assert_eq!(rows, vec![vec![7, 9]]);
+        assert!(version.height >= inserted.height);
+        assert_eq!(backend.snapshot().unwrap().revision, version.height);
         assert!(
             backend
                 .snapshot()
@@ -916,33 +970,8 @@ mod tests {
                 .iter()
                 .all(|(_, domain)| *domain == 1)
         );
-        let old_objects: usize = backend
-            .peers
-            .values()
-            .map(|peer| peer.status.as_ref().unwrap().objects.len())
-            .sum();
-        backend
-            .create(DatabaseDraft {
-                name: "replacement-view".into(),
-                rows: vec![compact_query::PlainRow { age: 7, amount: 9 }],
-                peers: vec![],
-            })
-            .unwrap();
-        assert_eq!(backend.retained_databases.len(), 1);
-        assert_eq!(backend.retained_databases[0].name(), "network-view");
-        assert!(matches!(
-            backend.retained_databases[0].execute("SELECT * FROM records"),
-            Err(storage_client::Error::MissingComputationProof)
-        ));
-        backend.refresh();
-        assert!(
-            backend
-                .peers
-                .values()
-                .map(|peer| peer.status.as_ref().unwrap().objects.len())
-                .sum::<usize>()
-                > old_objects
-        );
+        backend.remove(1).unwrap();
+        assert!(backend.query(1, "SELECT * FROM records").is_err());
     }
     #[test]
     #[ignore = "starts owned peer daemons; build dcs-peer and set DCS_PEER_BIN"]

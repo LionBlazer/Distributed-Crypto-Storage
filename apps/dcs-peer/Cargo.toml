@@ -15,4 +15,5 @@ zeroize = "1"
 compact-query = { path = "../../crates/compact-query", default-features = false, features = ["bfv-experiment"] }
 compact-store = { path = "../../crates/compact-store" }
 storage-client = { path = "../../crates/storage-client" }
+version-journal = { path = "../../crates/version-journal" }
 rcgen = "=0.14.8"

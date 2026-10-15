@@ -188,6 +188,8 @@ impl Replication {
             data_bytes,
             index_bytes,
             stored_bytes: self.charged_bytes(peer.id),
+            journal_bytes: 0,
+            public_setup_bytes: 0,
             owner_row_indices: indices,
         }
     }

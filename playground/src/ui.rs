@@ -219,7 +219,11 @@ impl Playground {
         self.snapshot
             .as_ref()
             .map(|s| s.peers.iter().map(|peer| peer.config.clone()).collect())
-            .unwrap_or_else(|| (1..=3).map(PeerConfig::numbered).collect())
+            .unwrap_or_else(|| {
+                (1..=3)
+                    .map(crate::process_backend::default_peer_config)
+                    .collect()
+            })
     }
     fn create_database(&mut self) {
         match parse_rows(&self.draft_rows) {
@@ -390,11 +394,11 @@ impl Playground {
                     };
                     let created = matches!(outcome, Ok(Outcome::Created));
                     let updated = matches!(
-                        outcome,
-                        Ok(Outcome::Query(
+                        outcome.as_ref().ok().and_then(Outcome::query),
+                        Some(
                             QueryOutcome::Updated { committed: true }
                                 | QueryOutcome::Inserted { .. }
-                        ))
+                        )
                     );
                     let current_draft = self.snapshot.as_ref().is_some_and(|s| {
                         self.draft_name.trim() == s.name
@@ -412,13 +416,13 @@ impl Playground {
                     }
                     if pending.job == Job::Query {
                         self.result_tab = if matches!(
-                            outcome,
-                            Ok(Outcome::Query(
+                            outcome.as_ref().ok().and_then(Outcome::query),
+                            Some(
                                 QueryOutcome::Aggregate { .. }
                                     | QueryOutcome::Count { .. }
                                     | QueryOutcome::Sum { .. }
                                     | QueryOutcome::Selected { .. }
-                            ))
+                            )
                         ) {
                             ResultTab::Result
                         } else {
@@ -435,10 +439,13 @@ impl Playground {
                     {
                         self.input_error = Some(error.to_string());
                     }
-                    let (database, revision) = snapshot
+                    let (database, mut revision) = snapshot
                         .as_ref()
                         .map(|s| (s.name.clone(), s.revision))
                         .unwrap_or_default();
+                    if let Ok(Outcome::VerifiedQuery { version, .. }) = &outcome {
+                        revision = version.height;
+                    }
                     self.history.push_front(Record {
                         job: pending.job,
                         label: pending.label,
@@ -491,7 +498,7 @@ impl Playground {
                 if self.pending.is_some() { ui.spinner(); }
                 ui.add(egui::Label::new(self.input_error.as_deref().unwrap_or(&self.status)).truncate());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new("TCP/TLS · proof required").small().color(MUTED)).on_hover_text("Peers run in separate processes over authenticated TLS. Results without a computation proof are rejected. Decentralized agreement remains unimplemented.");
+                    ui.label(RichText::new("TCP/TLS · local test network").small().color(MUTED)).on_hover_text("Independent peer processes verify encrypted computation proofs and the agreed version. This playground uses an easy work target and one confirmation; production resistance to attackers is not established.");
                 });
             });
         });
@@ -728,19 +735,24 @@ impl Playground {
                 } else if let Some(record) =
                     self.history.iter().find(|record| record.job == Job::Query)
                 {
-                    match &record.outcome {
-                        Ok(Outcome::Query(QueryOutcome::Aggregate { count, sum, .. })) => {
+                    match record.outcome.as_ref().ok().and_then(Outcome::query) {
+                        Some(QueryOutcome::Aggregate { count, sum, .. }) => {
                             result_table(ui, &["COUNT(*)", "SUM(amount)"], &[vec![*count, *sum]]);
                         }
-                        Ok(Outcome::Query(QueryOutcome::Count { count, .. })) => {
+                        Some(QueryOutcome::Count { count, .. }) => {
                             result_table(ui, &["COUNT(*)"], &[vec![*count]]);
                         }
-                        Ok(Outcome::Query(QueryOutcome::Sum { sum, .. })) => {
+                        Some(QueryOutcome::Sum { sum, .. }) => {
                             result_table(ui, &["SUM(amount)"], &[vec![*sum]]);
                         }
-                        Ok(Outcome::Query(QueryOutcome::Selected { columns, rows })) => {
-                            ui.label(RichText::new("Encrypted SELECT · unverified").small().color(MUTED))
-                                .on_hover_text("The owner prepares authenticated encrypted index inputs; peers project the rows with BFV. Only the authorized client decrypts the result. No computation proof is available.");
+                        Some(QueryOutcome::Selected { columns, rows }) => {
+                            if let Ok(Outcome::VerifiedQuery { version, .. }) = &record.outcome {
+                                ui.label(RichText::new(format!("Encrypted SELECT · verified · v{}", version.height)).small().color(GREEN))
+                                    .on_hover_text("The client checked the FHE computation/completeness proof and a confirmed agreed version before decrypting. Confirmation uses the explicit local test work profile; production attack resistance is unvalidated.");
+                            } else {
+                                ui.label(RichText::new("Encrypted SELECT · unverified").small().color(MUTED))
+                                    .on_hover_text("Historical local or public renderer-fixture output; no network computation proof or agreed-version acceptance is claimed.");
+                            }
                             let headings: Vec<_> = columns.iter().map(|column| match column {
                                 Column::Age => "age",
                                 Column::Amount => "amount",
@@ -794,15 +806,33 @@ fn panel(margin: i8) -> egui::Frame {
 fn outcome_message(outcome: &Result<Outcome, String>) -> (String, Color32) {
     match outcome {
         Err(message) => (message.clone(), RED),
-        Ok(Outcome::Query(QueryOutcome::Updated { committed: false })) => {
-            ("Rejected: amount overflow; no changes".into(), AMBER)
-        }
-        Ok(Outcome::Query(QueryOutcome::Updated { committed: true })) => ("Updated".into(), GREEN),
-        Ok(Outcome::Query(QueryOutcome::Inserted { count })) => (
-            format!("Inserted {count} row{}", if *count == 1 { "" } else { "s" }),
-            GREEN,
-        ),
-        Ok(_) => ("OK".into(), TEXT),
+        Ok(outcome) => match outcome.query() {
+            Some(QueryOutcome::Updated { committed: false }) => {
+                ("Rejected: amount overflow; no changes".into(), AMBER)
+            }
+            Some(QueryOutcome::Updated { committed: true }) => {
+                let message = if let Outcome::VerifiedQuery {
+                    changed_rows: Some(count),
+                    version,
+                    ..
+                } = outcome
+                {
+                    format!("Updated {count} rows · confirmed v{}", version.height)
+                } else {
+                    "Updated".into()
+                };
+                (message, GREEN)
+            }
+            Some(QueryOutcome::Inserted { count }) => {
+                let mut message =
+                    format!("Inserted {count} row{}", if *count == 1 { "" } else { "s" });
+                if let Outcome::VerifiedQuery { version, .. } = outcome {
+                    message.push_str(&format!(" · confirmed v{}", version.height));
+                }
+                (message, GREEN)
+            }
+            _ => ("OK".into(), TEXT),
+        },
     }
 }
 

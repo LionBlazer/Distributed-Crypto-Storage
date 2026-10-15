@@ -2,6 +2,8 @@
 //! Identity admission is caller policy; this transport does not establish consensus.
 #![forbid(unsafe_code)]
 
+mod permissionless;
+
 use rustls::{
     ClientConfig, ClientConnection, RootCertStore, ServerConfig, ServerConnection, StreamOwned,
     pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName},
@@ -46,10 +48,18 @@ pub struct Endpoint {
     pub identity: [u8; 32],
 }
 
-/// Clones share TLS configuration, never an application or FHE secret key.
+/// Clones share immutable TLS credential/configuration handles, never an application or FHE key.
 #[derive(Clone)]
 pub struct Connector {
-    config: Arc<ClientConfig>,
+    mode: ConnectorMode,
+}
+#[derive(Clone)]
+enum ConnectorMode {
+    Authority(Arc<ClientConfig>),
+    Permissionless {
+        provider: Arc<rustls::crypto::CryptoProvider>,
+        identity: Arc<rustls::sign::CertifiedKey>,
+    },
 }
 #[derive(Clone)]
 pub struct Acceptor {
@@ -78,7 +88,7 @@ impl Connector {
                 )
                 .map_err(io::Error::other)?;
         Ok(Self {
-            config: Arc::new(config),
+            mode: ConnectorMode::Authority(Arc::new(config)),
         })
     }
     pub fn connect(
@@ -90,7 +100,7 @@ impl Connector {
         socket.set_write_timeout(Some(IO_TIMEOUT))?;
         socket.set_nodelay(true)?;
         let mut connection = ClientConnection::new(
-            self.config.clone(),
+            self.client_config(endpoint)?,
             ServerName::try_from("dcs-peer").map_err(io::Error::other)?,
         )
         .map_err(io::Error::other)?;

@@ -122,26 +122,6 @@ impl Kernel {
         let projected = self.multiply(rows, mask, &mut counters)?;
         Ok((projected, counters.products))
     }
-    /// Incoming row is encrypted at staging slot256, never at its final append position.
-    pub(super) fn append_selected(
-        &self,
-        existing: &Ciphertext,
-        incoming: &Ciphertext,
-        old_rows: usize,
-    ) -> Result<(Ciphertext, usize)> {
-        let shift = super::MAX_ROWS - old_rows;
-        let mut moved = incoming.clone();
-        let mut counters = Counters {
-            products: 0,
-            rotations: 0,
-        };
-        for step in [1, 2, 4, 8, 16, 32, 64, 128, 256] {
-            if shift & step != 0 {
-                moved = self.rotate(&moved, step, &mut counters)?;
-            }
-        }
-        Ok((existing + &moved, counters.rotations))
-    }
     pub(super) fn evaluate(
         &self,
         predicate: PredicateKind,

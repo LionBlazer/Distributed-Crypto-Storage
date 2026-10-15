@@ -8,12 +8,13 @@ publish = false
 [features]
 default = ["tfhe-backend"]
 tfhe-backend = ["dep:tfhe"]
-bfv-experiment = ["dep:bfv-query-core"]
+bfv-experiment = ["dep:bfv-query-core", "dep:bfv-query-proof"]
 
 [dependencies]
 compact-store = { path = "../compact-store" }
 tfhe = { workspace = true, features = ["extended-types"], optional = true }
 bfv-query-core = { path = "../bfv-query-core", optional = true }
+bfv-query-proof = { path = "../bfv-query-proof", optional = true }
 serde.workspace = true
 bincode = "1.3"
 getrandom = "0.2"

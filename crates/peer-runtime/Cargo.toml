@@ -8,6 +8,8 @@ publish = false
 [dependencies]
 peer-transport = { path = "../peer-transport" }
 bfv-query-core = { path = "../bfv-query-core" }
+bfv-query-proof = { path = "../bfv-query-proof" }
+version-journal = { path = "../version-journal" }
 compact-store = { path = "../compact-store" }
 serde.workspace = true
 bincode = "1.3"

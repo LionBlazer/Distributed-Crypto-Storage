@@ -1,0 +1,165 @@
+# Proved SQL over independent peer processes
+
+Status on 2026-10-15: genuine proof-first SELECT, INSERT and additive UPDATE are
+connected to the live network client and playground. These operations run against
+actual encrypted files in separate processes. Target requirements are unchanged;
+production deployment, full SQL and 50–100 ms queries are not achieved.
+
+## Implemented acceptance boundary
+
+The owner authenticates a complete encrypted index and selected data pages at exact
+data/index commitments. No matching entry is silently truncated when the fixed
+256-row operation budget is exceeded: unsupported workloads reject. It encrypts the
+original selected values into a fresh, query-bound BFV request. A peer executes the
+homomorphic operation and generates a genuine Plonky3 STARK for all 81,920 residues
+of the unchanged N8192/Q218 profile. The client independently derives the canonical
+statement, verifies before decrypting, and checks the confirmed version again.
+
+SELECT uses a public column-only polynomial over every padded slot. Match/presence
+bits stay encrypted; the mask does not encode the private number of matches. The
+old encrypted-mask operation remains separate and cannot be substituted across
+domains. Projection/order/LIMIT are bound by the client plan; LIMIT applies after
+all logical shards have complete verified results. Final decryption is owner work.
+
+INSERT encrypts old rows and the incoming row separately, already at its public
+append position. The proven operation adds the two ciphertexts; there is no
+preassembled encrypted answer or staging rotation. UPDATE proves encrypted amount
+addition with carry/overflow handling. Only decrypted **proved output** is compactly
+resealed. No owner recomputation of expected SQL values substitutes for a proof.
+One overflowing shard prevents every shard of the write from publishing.
+
+The client stages real ciphertext copies and signs a complete old/new head manifest.
+Public peers check owner authorization, exact source heads, every encrypted job and
+its real proof. A canonical internal journal verifies SHA256d work, exact targets,
+retargets, timestamps and cumulative-work forks. Durable append fsyncs before ACK;
+the client independently validates the same blocks and requires confirmations and
+read-after-write ancestry. Missing proof/body/ciphertext/freshness rejects.
+
+Private index authentication and compact AEAD finalization are designated-client
+responsibilities. The public job proof binds exact FHE operands/result and agreed
+heads, but is not an independently public proof of AEAD decryption or all private
+SQL semantics. An owner signature provides authorization, never arithmetic evidence.
+
+## Failure handling and remaining trust
+
+Corrupt/unavailable holders are skipped in favor of actual surviving copies. A
+missing table never falls back to GUI fixtures or a previously displayed answer.
+Synchronized snapshot metadata changes only after every required shard authenticates.
+Transient heavy-operation `Busy` has bounded retry; quota/proof failures remain
+distinct. An endpoint found unreachable is skipped for subsequent phases of that
+operation, then retried on the next operation.
+
+Write confirmation can fail after the transition is durable. Such an outcome must
+remain pending, with the original transition/result retained: recovery confirms that
+exact write rather than executing INSERT or addition again. A different statement
+must not obscure an ambiguous write. `Error::PendingMutation` exposes its stable
+identity; `Session::resume_pending()` or identical SQL retrieves the original outcome.
+The real-process interruption test clamps the actual peer quota immediately after
+the transition ACK, prevents its confirmation append, then restores quota. INSERT
+and additive UPDATE both resume exactly once, with no extra row or increment.
+Owner-process recovery remains unimplemented;
+pending state and authorization/decryption keys currently live with the owner.
+
+Self-signed transport identities require no invitation CA and still verify real
+certificate/handshake signatures and endpoint pins. Node-local administrative
+credentials do not confer consensus weight. Public work validation has no fixed
+voter roster or external network. Automated discovery and autonomous production
+mining are unimplemented; the manager currently requests bounded real work RPCs.
+
+The caller pins genesis and the entire `ProtocolProfile`. Core provides no default
+work target or confirmation count. Tests/playground explicitly choose an easy
+target and one descendant confirmation. Those values demonstrate protocol behavior,
+not a production attack budget. Consensus security needs adequate honest effective
+hashpower, honest network reachability and propagation/clock bounds. Confirmation is
+probabilistic; reorganization is surfaced. An eclipsed client cannot prove that no
+unseen newer state exists.
+
+The initial logical shard set is fixed. Adding infrastructure holders does not add
+votes. Copies on the local machine share its failure domain. Independent placement,
+automatic distributed repair, storage proofs, owner key recovery, arbitrary schemas,
+DELETE, joins and general transactions remain open. COUNT/SUM parse but lack the
+required proof circuit and are explicitly rejected by the live verified path.
+
+## Cost and optimization
+
+The initial product proof used 91 Boolean witness bits per residue and required
+19.059 s to generate. Moving public-ciphertext-derived quotient/carry values into
+a bounded certificate with independent verifier preprocessing reduced the cost.
+Integer limb constraints prevent Goldilocks wraparound; all original residues,
+192 FRI queries, degree-five extension and the model's 128-bit floor remain intact.
+The complete certificate/proof checks are described in
+[bfv-query-proof](../crates/bfv-query-proof/README.md).
+
+Peer `JobVerifier` caches at most 128 verified digests, keyed by all bytes of the
+canonical input, output, proof and parameter commitment. Only successful genuine
+verification inserts an entry. Authorization, manifest coverage, source contexts,
+head structure, work and freshness are always checked again. The cache saves repeated
+arithmetic verification during mining and subsequent publication, not initial proof
+generation or client completeness/freshness checks.
+
+Single observed full-query run on Windows, AMD Ryzen 9 9950X3D2 (16 cores/32 threads),
+Rust 1.99 release, `-C target-cpu=native`, two Rayon threads per process, two actual
+loopback peers, four initial public rows and two physical copies per shard:
+
+| Complete accepted operation | Observed latency |
+| --- | ---: |
+| SELECT all four rows | 1,488 ms |
+| SELECT projected/filter/LIMIT | 1,513 ms |
+| INSERT, including durable journal confirmation | 1,126 ms |
+| UPDATE three selected rows across two shards, including confirmation | 1,978 ms |
+| SELECT after both writes | 1,561 ms |
+| SELECT with one process stopped, including failure detection | 3,564 ms |
+
+Setup took 951 ms separately. The final three-test run passed in 23.09 s, including
+pending-write recovery, overflow rejection, process loss and journal restart. The
+highest observed OS peak working set of an individual peer was 265,420,800 bytes
+(253.1 MiB); the owner/test process peaked at 212,639,744 bytes (202.8 MiB).
+Monitoring the owned process tree at 50 ms intervals observed at most 430,604,288
+bytes simultaneous working set (410.7 MiB), including its Windows console helper.
+Child discovery ran every 500 ms. Individual OS peak counters and sampled simultaneous
+totals are different metrics; these single-run development-load observations are
+not workload-independent memory bounds or tail-latency guarantees.
+
+For comparison, the earlier portable two-shard SELECT observations were 6.2–6.6 s;
+its initial INSERT/UPDATE measurements preceded the duplicate-verification cache.
+CPU-native compilation selects available vector instructions; it changes no FHE or
+proof security parameters. Portable builds remain available. A native binary may
+require this CPU's instruction set. Neither configuration meets 50–100 ms.
+
+A product proof frame alone is approximately 1.6 MiB, plus 655,400 canonical output
+bytes and the request. This overhead matters on real links. No WAN latency or
+large-dataset throughput is inferred from loopback tests. Journal bodies retain
+encrypted jobs/proofs and grow until the pinned metadata/quota cap; proof pruning
+is unimplemented. Compact collection reclaims superseded known versions while
+unknown failed staging remains. The tiny test database demonstrates no 2x storage
+ratio, indefinite update capacity or production-scale 1–2 GB memory guarantee.
+
+## Reproduction and module ownership
+
+```powershell
+$env:CARGO_BUILD_JOBS = '2'
+$env:RAYON_NUM_THREADS = '2'
+cargo test --release --locked -p dcs-peer --test proved_sql -- --nocapture --test-threads=1
+cargo test --release --locked -p dcs-peer --test proved_faults -- --test-threads=1
+```
+
+For the optional CPU-specific run, also set `RUSTFLAGS=-C target-cpu=native` and a
+separate `CARGO_TARGET_DIR`. Zed offers a separate native-CPU GUI task. Tests use
+fresh in-memory keys, explicitly public rows, hidden owned child processes and
+ignored `.local/` state. No GUI launch, desktop focus or accepting proof stub is needed.
+
+The [arithmetic proof crate](../crates/bfv-query-proof/README.md),
+[compact query composer](../crates/compact-query/README.md),
+[version journal](../crates/version-journal/README.md),
+[peer runtime](../crates/peer-runtime/README.md) and
+[owner client](../crates/storage-client/README.md) own their separate contracts.
+The [playground](../playground/README.md) manages processes and displays results;
+core depends on none of its fixtures, widgets or simulation logic.
+
+Final portable workspace validation passed 427 tests with zero failures and three
+intentional opt-in GUI/process exclusions. The two opt-in ProcessBackend scenarios
+also passed separately with actual hidden peers. Strict all-target/all-feature
+workspace Clippy, formatting, architecture and requirements-mirror checks passed.
+The native three-test measurement additionally passed the same genuine network
+acceptance and pending-recovery contracts. Historical unverified diagnostics remain
+separate and cannot convert to checked arithmetic evidence.

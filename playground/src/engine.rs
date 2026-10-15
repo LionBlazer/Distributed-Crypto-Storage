@@ -120,9 +120,14 @@ pub struct PeerInfo {
     pub data_bytes: usize,
     /// Complete encrypted posting index including its table-head binding.
     pub index_bytes: usize,
-    /// Physical data plus index; replicated mode also charges16B/copy record IDs.
-    /// Shared evaluation keys and in-memory hash trees are excluded.
+    /// Physical encrypted objects plus durable journals; historical replicated
+    /// mode also charges16B/copy record IDs. In-memory keys and caches are excluded.
     pub stored_bytes: usize,
+    /// Actual on-disk version/proof journal bytes, zero for unmetered historical views.
+    pub journal_bytes: usize,
+    /// Serialized public setup held in memory, not disk quota or peak whole-process RAM.
+    /// Zero in historical views that do not report this measurement.
+    pub public_setup_bytes: usize,
     /// Owner-only inspector mapping, never plaintext provided to a peer.
     pub owner_row_indices: Vec<usize>,
 }
@@ -169,8 +174,9 @@ pub enum QueryOutcome {
         sum: u32,
         peers: Vec<PeerAggregate>,
     },
-    /// Final owner BFV-decrypted peer projection of authenticated indexed inputs.
-    /// Cells follow columns in the requested order. No computation proof is available.
+    /// Row-shaped display data, with cells in the requested column order.
+    /// Verification/version assurance belongs to the consumer's operation wrapper;
+    /// historical LabEngine outputs carry no network computation proof.
     Selected {
         columns: Vec<Column>,
         rows: Vec<Vec<u32>>,
@@ -179,7 +185,7 @@ pub enum QueryOutcome {
         /// The statement succeeded; a constant-false predicate is a successful no-op.
         committed: bool,
     },
-    /// Genuine encrypted append; published only after successful transport completion.
+    /// Display count; this shape alone attests no transport, proof or publication.
     Inserted {
         count: u32,
     },

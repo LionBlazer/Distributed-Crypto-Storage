@@ -23,6 +23,7 @@ impl RowProjection {
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum Operation {
     IndexedMaskedSelect,
+    ExactPublicProjection,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -60,6 +61,7 @@ pub struct PendingIndexedSelect {
     keyset_id: [u8; 32],
     projection: RowProjection,
     active: [bool; MAX_ROWS],
+    operation: Operation,
 }
 impl PendingIndexedSelect {
     pub fn context(&self) -> &QueryContext {
@@ -154,6 +156,7 @@ impl Owner {
                 keyset_id: self.keyset_id,
                 projection,
                 active,
+                operation: Operation::IndexedMaskedSelect,
             },
         })
     }
@@ -168,7 +171,7 @@ impl Owner {
         let response: Response = decode(output)?;
         if response.magic != RESPONSE_MAGIC
             || response.version != SELECT_VERSION
-            || response.operation != Operation::IndexedMaskedSelect
+            || response.operation != pending.operation
             || response.keyset_id != self.keyset_id
             || pending.keyset_id != self.keyset_id
             || response.geometry != self.geometry
@@ -277,5 +280,175 @@ impl PeerEvaluator {
     }
 }
 
+impl Owner {
+    /// Prepares an already authenticated exact matching set, with every supplied row active.
+    /// ORIGINAL values and presence bits are encrypted before column projection. The
+    /// public column mask spans all MAX_ROWS slots, independent of the selected count.
+    /// This API rejects private-active holes; use the encrypted-mask API for those.
+    pub fn prepare_exact_select_for_experiment(
+        &self,
+        context: QueryContext,
+        fields: &[SelectedField],
+        projection: RowProjection,
+    ) -> Result<PreparedIndexedSelect> {
+        if fields.len() > self.geometry.slots() {
+            return Err(Error::GeometryLimit);
+        }
+        if !context.valid() {
+            return Err(Error::BindingMismatch);
+        }
+        if fields.iter().any(|field| !field.active) {
+            return Err(Error::InvalidShape);
+        }
+        let mut rows = Zeroizing::new(vec![0u64; DEGREE]);
+        let mut active = [false; MAX_ROWS];
+        for (slot, field) in fields.iter().enumerate() {
+            rows[slot] = u64::from(field.age);
+            rows[DEGREE / 2 + slot] = u64::from(field.amount);
+            rows[VALIDITY_START + slot] = 1;
+            active[slot] = true;
+        }
+        let operation = Operation::ExactPublicProjection;
+        let request = encode(&Request {
+            magic: REQUEST_MAGIC,
+            version: SELECT_VERSION,
+            operation,
+            keyset_id: self.keyset_id,
+            context: context.clone(),
+            geometry: self.geometry,
+            projection,
+            rows: self.encrypted(&rows)?,
+            mask: Vec::new(),
+        })?;
+        Ok(PreparedIndexedSelect {
+            request,
+            pending: PendingIndexedSelect {
+                context,
+                geometry: self.geometry,
+                keyset_id: self.keyset_id,
+                projection,
+                active,
+                operation,
+            },
+        })
+    }
+}
+
+/// This public mask contains only column selection, never a predicate, row count or data.
+fn public_projection(
+    parameters: &Arc<BfvParameters>,
+    projection: RowProjection,
+) -> Result<Plaintext> {
+    let mut mask = vec![0; DEGREE];
+    for slot in 0..MAX_ROWS {
+        mask[slot] = u64::from(projection.age());
+        mask[DEGREE / 2 + slot] = u64::from(projection.amount());
+        mask[VALIDITY_START + slot] = 1;
+    }
+    Plaintext::try_encode(&mask, Encoding::simd(), parameters).map_err(backend)
+}
+
+fn checked_exact_request(geometry: Geometry, keyset_id: [u8; 32], wire: &[u8]) -> Result<Request> {
+    let request: Request = decode(wire)?;
+    if request.magic != REQUEST_MAGIC
+        || request.version != SELECT_VERSION
+        || request.operation != Operation::ExactPublicProjection
+        || request.keyset_id != keyset_id
+        || request.geometry != geometry
+        || !request.context.valid()
+        || !request.mask.is_empty()
+    {
+        return Err(Error::BindingMismatch);
+    }
+    Ok(request)
+}
+
+pub(super) fn evaluate_public(
+    parameters: &Arc<BfvParameters>,
+    geometry: Geometry,
+    keyset_id: [u8; 32],
+    wire: &[u8],
+) -> Result<Vec<u8>> {
+    let request = checked_exact_request(geometry, keyset_id, wire)?;
+    let rows = checked_ciphertext(&request.rows, parameters)?;
+    let mask = public_projection(parameters, request.projection)?;
+    response(request, (&rows * &mask).to_bytes())
+}
+
+pub(super) fn request_context(
+    parameters: &Arc<BfvParameters>,
+    geometry: Geometry,
+    keyset_id: [u8; 32],
+    wire: &[u8],
+) -> Result<QueryContext> {
+    let request = checked_exact_request(geometry, keyset_id, wire)?;
+    checked_ciphertext(&request.rows, parameters)?;
+    Ok(request.context)
+}
+
+pub(super) fn circuit_request(
+    parameters: &Arc<BfvParameters>,
+    geometry: Geometry,
+    keyset_id: [u8; 32],
+    wire: &[u8],
+) -> Result<Vec<u8>> {
+    use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom};
+    let request = checked_exact_request(geometry, keyset_id, wire)?;
+    let rows = checked_ciphertext(&request.rows, parameters)?;
+    let mask = public_projection(parameters, request.projection)?;
+    // Upstream exposes a plaintext-to-polynomial conversion before its NTT step.
+    // This is the same public polynomial used by upstream Ciphertext * Plaintext.
+    let mut poly = Poly::try_convert_from(
+        &mask,
+        parameters.context_at_level(0).map_err(backend)?,
+        true,
+        Representation::PowerBasis,
+    )
+    .map_err(backend)?;
+    poly.change_representation(Representation::Ntt);
+    let values = Vec::<u64>::from(&poly);
+    let repeated: Vec<_> = values.iter().chain(&values).copied().collect();
+    bfv_product_circuit::encode_request(
+        Sha256::digest(wire).into(),
+        &canonical::coefficients(&rows),
+        &repeated,
+    )
+    .map_err(backend)
+}
+
+pub(super) fn restore_circuit_output(
+    parameters: &Arc<BfvParameters>,
+    geometry: Geometry,
+    keyset_id: [u8; 32],
+    wire: &[u8],
+    output: &[u8],
+) -> Result<Vec<u8>> {
+    let request = checked_exact_request(geometry, keyset_id, wire)?;
+    checked_ciphertext(&request.rows, parameters)?;
+    let (binding, coefficients) = bfv_product_circuit::decode_output(output).map_err(backend)?;
+    if binding != <[u8; 32]>::from(Sha256::digest(wire)) {
+        return Err(Error::BindingMismatch);
+    }
+    response(
+        request,
+        canonical::ciphertext(parameters, &coefficients)?.to_bytes(),
+    )
+}
+
+fn response(request: Request, projected: Vec<u8>) -> Result<Vec<u8>> {
+    encode(&Response {
+        magic: RESPONSE_MAGIC,
+        version: SELECT_VERSION,
+        operation: request.operation,
+        keyset_id: request.keyset_id,
+        context: request.context,
+        geometry: request.geometry,
+        projection: request.projection,
+        projected,
+    })
+}
+
+#[cfg(test)]
+mod public_tests;
 #[cfg(test)]
 mod tests;

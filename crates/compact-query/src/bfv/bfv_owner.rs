@@ -7,8 +7,9 @@ impl Owner {
         let store = compact_store::Owner::generate(database)?;
         let (key, setup) = bfv_core::Owner::generate(Geometry::Rows256)?;
         let peer = bfv_core::PeerEvaluator::from_public_setup(&setup)?;
+        let linear = bfv_core::PublicUpdateEvaluator::from_parameters(&setup.update_parameters()?)?;
         Ok((
-            Self { store, key },
+            Self { store, key, linear },
             Evaluator {
                 peer: Arc::new(peer),
                 setup: Arc::new(setup),
@@ -205,7 +206,7 @@ impl Owner {
 
     // This private constructor establishes exact selection under this owner's index-build contract.
     // Neither arbitrary SelectedField vectors nor coarse/full-scan candidates can call these APIs.
-    fn select_exact(
+    pub(super) fn select_exact(
         &self,
         table: &Table,
         predicate: AgeRange,

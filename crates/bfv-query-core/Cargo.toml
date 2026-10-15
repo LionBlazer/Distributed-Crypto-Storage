@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 bfv-linear-circuit = { path = "../bfv-linear-circuit" }
+bfv-product-circuit = { path = "../bfv-product-circuit" }
 fhe = "=0.1.1"
 fhe-math = "=0.1.1"
 fhe-traits = "=0.1.1"

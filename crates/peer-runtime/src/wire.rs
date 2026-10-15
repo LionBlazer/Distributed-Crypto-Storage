@@ -30,7 +30,7 @@ impl Bundle {
         h.finalize().into()
     }
 }
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Operation {
     Aggregate,
     Select,
@@ -45,12 +45,45 @@ pub enum Request {
     Fetch {
         object: [u8; 32],
     },
+    FetchVersion {
+        data_head: Vec<u8>,
+        index_head: Vec<u8>,
+    },
     InstallSetup(Vec<u8>),
     Evaluate {
         object: [u8; 32],
         setup: [u8; 32],
         operation: Operation,
         ciphertext: Vec<u8>,
+    },
+    Prove {
+        object: [u8; 32],
+        setup: [u8; 32],
+        operation: Operation,
+        ciphertext: Vec<u8>,
+    },
+    InitJournal {
+        genesis: Vec<u8>,
+        setup: [u8; 32],
+    },
+    JournalBlocks {
+        network: [u8; 32],
+        known: Vec<[u8; 32]>,
+    },
+    PublishBlock {
+        network: [u8; 32],
+        header: Vec<u8>,
+        body: Vec<u8>,
+    },
+    MineBlock {
+        network: [u8; 32],
+        parent: [u8; 32],
+        body: Vec<u8>,
+        timestamp: u64,
+        attempts: u64,
+    },
+    CollectJournal {
+        network: [u8; 32],
     },
     Copy {
         source: Endpoint,
@@ -67,8 +100,15 @@ impl Request {
             Self::Status => "status",
             Self::Store(_) => "store",
             Self::Fetch { .. } => "fetch",
+            Self::FetchVersion { .. } => "fetch-version",
             Self::InstallSetup(_) => "public-setup",
             Self::Evaluate { .. } => "fhe",
+            Self::Prove { .. } => "fhe-proof",
+            Self::InitJournal { .. } => "journal-init",
+            Self::JournalBlocks { .. } => "journal-sync",
+            Self::PublishBlock { .. } => "journal-publish",
+            Self::MineBlock { .. } => "journal-mine",
+            Self::CollectJournal { .. } => "journal-collect",
             Self::Copy { .. } => "copy",
             Self::Neighbors(_) => "neighbors",
             Self::Quota(_) => "quota",
@@ -109,6 +149,7 @@ pub struct Status {
     pub quota_bytes: u64,
     pub objects: Vec<ObjectInfo>,
     pub public_setup_bytes: u64,
+    pub journal_bytes: u64,
     pub received_bytes: u64,
     pub sent_bytes: u64,
     pub neighbors: Vec<Neighbor>,
@@ -126,15 +167,33 @@ pub enum Response {
     Setup([u8; 32]),
     /// Genuine peer FHE output, with no fabricated proof or accepted-result wrapper.
     UnverifiedCiphertext(Vec<u8>),
+    Proved(ProofReply),
+    JournalReady([u8; 32]),
+    JournalBlocks(Vec<JournalBlock>),
+    JournalAccepted([u8; 32]),
+    Mined(JournalBlock),
     Done,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProofReply {
+    pub output: Vec<u8>,
+    pub proof: Vec<u8>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct JournalBlock {
+    pub header: Vec<u8>,
+    pub body: Vec<u8>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum RemoteError {
+    /// A bounded heavy-work permit is temporarily occupied; retry may succeed.
+    Busy,
     Unauthorized,
     ResourceLimit,
     NotFound,
     Integrity,
     InvalidRequest,
+    MiningExhausted,
     Cryptography(String),
     Io(String),
 }

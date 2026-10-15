@@ -44,6 +44,7 @@ pub enum Error {
     WrongDomain,
     WrongQuery,
     InvalidOutput,
+    ComputationProof(String),
     WorkerBudget { requested: usize, maximum: usize },
     WireLimit,
     Codec(String),

@@ -329,18 +329,24 @@ pub(super) fn circuit_request(
     let request = checked_request(geometry, keyset_id, wire)?;
     let amounts = checked_ciphertext(&request.amounts, parameters)?;
     let deltas = checked_ciphertext(&request.deltas, parameters)?;
-    let coefficients = |ciphertext: &fhe::bfv::Ciphertext| {
-        ciphertext
-            .iter()
-            .flat_map(Vec::<u64>::from)
-            .collect::<Vec<_>>()
-    };
     bfv_linear_circuit::encode_request(
         Sha256::digest(wire).into(),
-        &coefficients(&amounts),
-        &coefficients(&deltas),
+        &super::canonical::coefficients(&amounts),
+        &super::canonical::coefficients(&deltas),
     )
     .map_err(super::backend)
+}
+
+pub(super) fn request_context(
+    parameters: &Arc<BfvParameters>,
+    geometry: Geometry,
+    keyset_id: [u8; 32],
+    wire: &[u8],
+) -> Result<QueryContext> {
+    let request = checked_request(geometry, keyset_id, wire)?;
+    checked_ciphertext(&request.amounts, parameters)?;
+    checked_ciphertext(&request.deltas, parameters)?;
+    Ok(request.context)
 }
 
 pub(super) fn restore_circuit_output(
@@ -350,25 +356,18 @@ pub(super) fn restore_circuit_output(
     original_request: &[u8],
     output: &[u8],
 ) -> Result<Vec<u8>> {
-    use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom};
     use sha2::{Digest, Sha256};
     let request = checked_request(geometry, keyset_id, original_request)?;
+    // Restoration is a public representation boundary, so malformed original
+    // operands must be rejected even when a caller supplies an apparently bound output.
+    checked_ciphertext(&request.amounts, parameters)?;
+    checked_ciphertext(&request.deltas, parameters)?;
     let (binding, coefficients) =
         bfv_linear_circuit::decode_output(output).map_err(super::backend)?;
     if binding != <[u8; 32]>::from(Sha256::digest(original_request)) {
         return Err(Error::BindingMismatch);
     }
-    let context = parameters.context_at_level(0).map_err(super::backend)?;
-    let polynomials = coefficients
-        .as_chunks::<{ bfv_linear_circuit::COEFFICIENTS / 2 }>()
-        .0
-        .iter()
-        // These are public ciphertext residues. This matches upstream's freshly
-        // encrypted public-polynomial flag; secret-key decryption disables it.
-        .map(|values| Poly::try_convert_from(values.to_vec(), context, true, Representation::Ntt))
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(super::backend)?;
-    let updated = fhe::bfv::Ciphertext::new(polynomials, parameters).map_err(super::backend)?;
+    let updated = super::canonical::ciphertext(parameters, &coefficients)?;
     encode(&IndexedUpdateResponse {
         magic: RESPONSE_MAGIC,
         version: UPDATE_VERSION,

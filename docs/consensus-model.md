@@ -1,7 +1,8 @@
 # Consensus direction for an open storage network
 
-Status: selected initial research and implementation direction; not an implemented
-consensus protocol or a claim that the requirements are jointly achievable.
+Status: bounded validation, durable peer journals and client integration implemented;
+production resource/security parameters and autonomous mining/discovery remain open.
+This is not a claim that all requirements are jointly achieved.
 
 The user requires free peer admission, no invitation authority, and no dependence
 on a third-party consensus network. The user delegated the resource-model choice.
@@ -115,12 +116,23 @@ the security of either production system without a new analysis.
 
 ## Implementation boundary
 
-Full PoW consensus and freshness are not implemented now. First implement and test
-the complete bounded journal-validation boundary, persistence, independent-process
-propagation, difficulty transitions, cumulative-work fork choice, partitions,
-reorganizations, replay rejection and client freshness checks. Keep generated
-experimental work separate from production security claims; easy test difficulty
-demonstrates behavior only. Retain all FHE proof and mutation-acceptance gates.
+The [version journal](../crates/version-journal/README.md) now validates bounded
+forks, real work, retargets, timestamps, owner signatures, complete transition bodies,
+ancestry and confirmation policies. Persistence fsyncs before publication and
+revalidates against a pinned genesis on reopen. [Peer runtime](../crates/peer-runtime/README.md)
+provides actual mining/publication/synchronization RPCs and neighbor propagation.
+[Session](../crates/storage-client/README.md) checks confirmed heads before and
+after queries, and publishes mutations after genuine FHE proofs and complete private
+selection. Public job validation and private owner AEAD finalization remain separate
+obligations. This is not a public proof of AEAD decryption.
+
+Contract tests cover retargets, cumulative-work forks, partitions/reorganizations,
+unavailable bodies, replay, proof rejection and durability. Real-process tests cover
+SELECT/INSERT/UPDATE, failed mutations and read-after-write across peer restart.
+Mining runs in bounded requested RPC chunks. There is no autonomous production
+mining/discovery service or quantitative adversarial resource budget. Easy playground
+work demonstrates behavior only. The complete profile is caller-pinned, with no
+production defaults; all FHE proof and mutation-acceptance gates remain mandatory.
 
 The existing targets remain unchanged: CPU baseline, 1-2 GB RAM for the entire peer,
 10-30 GB disk quotas, compact encrypted storage, and independently recoverable data

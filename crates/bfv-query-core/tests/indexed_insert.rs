@@ -1,4 +1,4 @@
-//! Public synthetic rows exercising real encrypted rotation/append, not owner-assembled answers.
+//! Public synthetic rows exercising addition of independently encrypted operands.
 use bfv_query_core::{
     Error, Geometry, Owner, PeerEvaluator, ProofStatus, QueryContext, SelectedField,
 };
@@ -36,7 +36,7 @@ fn encrypted_append_places_new_rows_after_actual_old_relation_including_empty_an
             ),
             (1, 0, 0)
         );
-        assert!(output.stats.rotations >= 1);
+        assert_eq!(output.stats.rotations, 0);
         let result = owner
             .decrypt_indexed_insert_unverified_for_experiment(prepared.pending, &output.output)
             .unwrap();

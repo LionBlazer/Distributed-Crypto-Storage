@@ -9,6 +9,7 @@ publish = false
 peer-runtime = { path = "../crates/peer-runtime" }
 peer-transport = { path = "../crates/peer-transport" }
 storage-client = { path = "../crates/storage-client" }
+version-journal = { path = "../crates/version-journal" }
 rcgen = "=0.14.8"
 serde_json.workspace = true
 zeroize = "1"

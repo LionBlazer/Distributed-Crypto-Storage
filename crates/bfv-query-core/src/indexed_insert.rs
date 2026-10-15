@@ -2,7 +2,9 @@
 use super::*;
 const REQUEST_MAGIC: [u8; 8] = *b"BFVINSQ1";
 const RESPONSE_MAGIC: [u8; 8] = *b"BFVINSR1";
-const INSERT_VERSION: u16 = 1;
+// Version 2 places the independently encrypted new row at its public append slot.
+// Version 1's staging/rotation semantics must never be interpreted as this circuit.
+const INSERT_VERSION: u16 = 2;
 const VALIDITY: usize = 2 * MAX_ROWS;
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum Operation {
@@ -85,7 +87,8 @@ fn check_geometry(geometry: Geometry, existing: usize) -> Result<()> {
 }
 impl Owner {
     /// Encrypt actual authenticated contiguous rows and the authorized new row separately.
-    /// Incoming fields are staged at256; the peer must rotate them before adding the relation.
+    /// The incoming ciphertext contains only the new row at the public append position.
+    /// The peer must add both independent ciphertexts to obtain the complete relation.
     pub fn prepare_indexed_insert_for_experiment(
         &self,
         context: QueryContext,
@@ -106,9 +109,9 @@ impl Owner {
             old[VALIDITY + slot] = 1;
         }
         let mut new = Zeroizing::new(vec![0u64; DEGREE]);
-        new[MAX_ROWS] = u64::from(incoming.age);
-        new[DEGREE / 2 + MAX_ROWS] = u64::from(incoming.amount);
-        new[VALIDITY + MAX_ROWS] = 1;
+        new[existing.len()] = u64::from(incoming.age);
+        new[DEGREE / 2 + existing.len()] = u64::from(incoming.amount);
+        new[VALIDITY + existing.len()] = 1;
         let request = encode(&Request {
             magic: REQUEST_MAGIC,
             version: INSERT_VERSION,
@@ -188,30 +191,18 @@ impl Owner {
     }
 }
 impl PeerEvaluator {
-    /// Real encrypted row-placement rotations and relation addition. No plaintext or secret key.
+    /// Real addition of independently encrypted old relation and positioned incoming row.
     pub fn evaluate_indexed_insert_for_experiment(
         &self,
         wire: &[u8],
     ) -> Result<EvaluatedIndexedInsert> {
         let start = Instant::now();
-        let request: Request = decode(wire)?;
-        check_geometry(self.geometry, usize::from(request.existing_rows))?;
-        if request.magic != REQUEST_MAGIC
-            || request.version != INSERT_VERSION
-            || request.operation != Operation::IndexedAppend
-            || request.keyset_id != self.keyset_id
-            || request.geometry != self.geometry
-            || !request.context.valid()
-        {
-            return Err(Error::BindingMismatch);
-        }
+        let request = checked_request(self.geometry, self.keyset_id, wire)?;
         let old = checked_ciphertext(&request.existing, self.kernel.parameters())?;
         let incoming = checked_ciphertext(&request.incoming, self.kernel.parameters())?;
         let request_decode_ms = elapsed(start);
         let start = Instant::now();
-        let (rows, rotations) =
-            self.kernel
-                .append_selected(&old, &incoming, usize::from(request.existing_rows))?;
+        let rows = &old + &incoming;
         let encrypted_append_ms = elapsed(start);
         let start = Instant::now();
         let output = encode(&Response {
@@ -231,12 +222,101 @@ impl PeerEvaluator {
                 encrypted_append_ms,
                 output_encode_ms: elapsed(start),
                 ciphertext_additions: 1,
-                rotations,
+                rotations: 0,
                 ct_ct_multiplications: 0,
                 multiplicative_depth: 0,
             },
         })
     }
+}
+
+fn checked_request(geometry: Geometry, keyset_id: [u8; 32], wire: &[u8]) -> Result<Request> {
+    let request: Request = decode(wire)?;
+    check_geometry(geometry, usize::from(request.existing_rows))?;
+    if request.magic != REQUEST_MAGIC
+        || request.version != INSERT_VERSION
+        || request.operation != Operation::IndexedAppend
+        || request.keyset_id != keyset_id
+        || request.geometry != geometry
+        || !request.context.valid()
+    {
+        return Err(Error::BindingMismatch);
+    }
+    Ok(request)
+}
+
+pub(super) fn evaluate_public(
+    parameters: &Arc<BfvParameters>,
+    geometry: Geometry,
+    keyset_id: [u8; 32],
+    wire: &[u8],
+) -> Result<Vec<u8>> {
+    let request = checked_request(geometry, keyset_id, wire)?;
+    let old = checked_ciphertext(&request.existing, parameters)?;
+    let incoming = checked_ciphertext(&request.incoming, parameters)?;
+    response(request, (&old + &incoming).to_bytes())
+}
+
+pub(super) fn request_context(
+    parameters: &Arc<BfvParameters>,
+    geometry: Geometry,
+    keyset_id: [u8; 32],
+    wire: &[u8],
+) -> Result<QueryContext> {
+    let request = checked_request(geometry, keyset_id, wire)?;
+    checked_ciphertext(&request.existing, parameters)?;
+    checked_ciphertext(&request.incoming, parameters)?;
+    Ok(request.context)
+}
+
+pub(super) fn circuit_request(
+    parameters: &Arc<BfvParameters>,
+    geometry: Geometry,
+    keyset_id: [u8; 32],
+    wire: &[u8],
+) -> Result<Vec<u8>> {
+    let request = checked_request(geometry, keyset_id, wire)?;
+    let old = checked_ciphertext(&request.existing, parameters)?;
+    let incoming = checked_ciphertext(&request.incoming, parameters)?;
+    bfv_linear_circuit::encode_request(
+        Sha256::digest(wire).into(),
+        &canonical::coefficients(&old),
+        &canonical::coefficients(&incoming),
+    )
+    .map_err(backend)
+}
+
+pub(super) fn restore_circuit_output(
+    parameters: &Arc<BfvParameters>,
+    geometry: Geometry,
+    keyset_id: [u8; 32],
+    wire: &[u8],
+    output: &[u8],
+) -> Result<Vec<u8>> {
+    let request = checked_request(geometry, keyset_id, wire)?;
+    checked_ciphertext(&request.existing, parameters)?;
+    checked_ciphertext(&request.incoming, parameters)?;
+    let (binding, coefficients) = bfv_linear_circuit::decode_output(output).map_err(backend)?;
+    if binding != <[u8; 32]>::from(Sha256::digest(wire)) {
+        return Err(Error::BindingMismatch);
+    }
+    response(
+        request,
+        canonical::ciphertext(parameters, &coefficients)?.to_bytes(),
+    )
+}
+
+fn response(request: Request, rows: Vec<u8>) -> Result<Vec<u8>> {
+    encode(&Response {
+        magic: RESPONSE_MAGIC,
+        version: INSERT_VERSION,
+        operation: request.operation,
+        keyset_id: request.keyset_id,
+        context: request.context,
+        geometry: request.geometry,
+        existing_rows: request.existing_rows,
+        rows,
+    })
 }
 #[cfg(test)]
 mod tests;

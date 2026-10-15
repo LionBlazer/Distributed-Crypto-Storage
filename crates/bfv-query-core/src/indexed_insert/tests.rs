@@ -28,7 +28,7 @@ fn response(request: &Request, rows: Vec<u8>) -> Response {
     }
 }
 #[test]
-fn original_incoming_is_staged_elsewhere_and_only_peer_rotation_places_it_at_append_slot() {
+fn independently_encrypted_originals_and_incoming_are_merged_only_by_the_peer() {
     let (owner, setup) = Owner::generate(Geometry::Rows256).unwrap();
     let peer = PeerEvaluator::from_public_setup(&setup).unwrap();
     let prepared = prepare(&owner);
@@ -36,6 +36,7 @@ fn original_incoming_is_staged_elsewhere_and_only_peer_rotation_places_it_at_app
     let ct = checked_ciphertext(&request.incoming, &owner.parameters).unwrap();
     let pt = Zeroizing::new(owner.key.try_decrypt(&ct).unwrap());
     let slots = Zeroizing::new(Vec::<u64>::try_decode(&pt, Encoding::simd()).unwrap());
+    assert_eq!((slots[0], slots[DEGREE / 2], slots[VALIDITY]), (0, 0, 0));
     assert_eq!(
         (
             slots[1],
@@ -43,7 +44,15 @@ fn original_incoming_is_staged_elsewhere_and_only_peer_rotation_places_it_at_app
             slots[DEGREE / 2 + MAX_ROWS],
             slots[VALIDITY + MAX_ROWS]
         ),
-        (0, 42, 256, 1)
+        (42, 0, 0, 0)
+    );
+    let ct = checked_ciphertext(&request.existing, &owner.parameters).unwrap();
+    let pt = Zeroizing::new(owner.key.try_decrypt(&ct).unwrap());
+    let slots = Zeroizing::new(Vec::<u64>::try_decode(&pt, Encoding::simd()).unwrap());
+    assert_eq!((slots[0], slots[DEGREE / 2], slots[VALIDITY]), (18, 255, 1));
+    assert_eq!(
+        (slots[1], slots[DEGREE / 2 + 1], slots[VALIDITY + 1]),
+        (0, 0, 0)
     );
     let evaluated = peer
         .evaluate_indexed_insert_for_experiment(&prepared.request)
@@ -58,6 +67,111 @@ fn original_incoming_is_staged_elsewhere_and_only_peer_rotation_places_it_at_app
         ),
         Err(Error::InsertBounds)
     ));
+}
+
+#[test]
+fn canonical_append_addition_matches_both_upstream_evaluators_at_every_boundary() {
+    let (owner, setup) = Owner::generate(Geometry::Rows256).unwrap();
+    let peer = PeerEvaluator::from_public_setup(&setup).unwrap();
+    let minimal =
+        PublicUpdateEvaluator::from_parameters(&setup.update_parameters().unwrap()).unwrap();
+    for count in [0, 1, 16, 127, 128, 255] {
+        let fields: Vec<_> = (0..count)
+            .map(|slot| field(slot as u8, if slot % 2 == 0 { 65535 } else { 256 }))
+            .collect();
+        let incoming = field(255, 65535);
+        let prepared = owner
+            .prepare_indexed_insert_for_experiment(context(), &fields, incoming)
+            .unwrap();
+
+        let canonical = minimal.insert_circuit_request(&prepared.request).unwrap();
+        let output = bfv_linear_circuit::evaluate(&canonical).unwrap();
+        let restored = minimal
+            .restore_insert_circuit_output(&prepared.request, &output)
+            .unwrap();
+        let normal = minimal.evaluate_insert(&prepared.request).unwrap();
+        let full = peer
+            .evaluate_indexed_insert_for_experiment(&prepared.request)
+            .unwrap();
+
+        assert!(
+            restored == normal,
+            "Canonical append differs from upstream ciphertext addition"
+        );
+        assert!(
+            normal == full.output,
+            "Minimal and full evaluator outputs differ"
+        );
+        assert_eq!(full.stats.rotations, 0);
+        let actual = owner
+            .decrypt_indexed_insert_unverified_for_experiment(prepared.pending, &restored)
+            .unwrap();
+        assert_eq!(actual.rows.len(), count + 1);
+        assert_eq!(
+            (actual.rows[count].age, actual.rows[count].amount),
+            (255, 65535)
+        );
+    }
+}
+
+#[test]
+fn canonical_append_binds_query_heads_and_validates_both_original_ciphertexts() {
+    use fhe_math::rq::Representation;
+    let (owner, setup) = Owner::generate(Geometry::Rows256).unwrap();
+    let peer = PublicUpdateEvaluator::from_parameters(&setup.update_parameters().unwrap()).unwrap();
+    let prepared = prepare(&owner);
+    let original: Request = decode(&prepared.request).unwrap();
+    let output =
+        bfv_linear_circuit::evaluate(&peer.insert_circuit_request(&prepared.request).unwrap())
+            .unwrap();
+    for fault in 0..6 {
+        let mut request: Request = decode(&prepared.request).unwrap();
+        match fault {
+            0 => request.context.query_id[0] ^= 1,
+            1 => request.context.data_head[HEAD_BYTES - 1] ^= 1,
+            2 => request.context.index_head[HEAD_BYTES - 1] ^= 1,
+            3 => request.existing_rows += 1,
+            4 => request.keyset_id[0] ^= 1,
+            5 => request.geometry = Geometry::Rows16,
+            _ => unreachable!(),
+        }
+        assert!(
+            peer.restore_insert_circuit_output(&encode(&request).unwrap(), &output)
+                .is_err()
+        );
+    }
+    for operand in 0..2 {
+        let bytes = if operand == 0 {
+            &original.existing
+        } else {
+            &original.incoming
+        };
+        let fresh = checked_ciphertext(bytes, &owner.parameters).unwrap();
+        for component in 0..2 {
+            let mut ct = Ciphertext::new(fresh.to_vec(), &owner.parameters).unwrap();
+            ct[component].change_representation(Representation::PowerBasis);
+            let mut request: Request = decode(&prepared.request).unwrap();
+            if operand == 0 {
+                request.existing = ct.to_bytes();
+            } else {
+                request.incoming = ct.to_bytes();
+            }
+            let wire = encode(&request).unwrap();
+            let zeros = vec![0; bfv_linear_circuit::COEFFICIENTS];
+            let apparently_bound = bfv_linear_circuit::evaluate(
+                &bfv_linear_circuit::encode_request(Sha256::digest(&wire).into(), &zeros, &zeros)
+                    .unwrap(),
+            )
+            .unwrap();
+            assert!(peer.evaluate_insert(&wire).is_err());
+            assert!(peer.request_context(&wire).is_err());
+            assert!(peer.insert_circuit_request(&wire).is_err());
+            assert!(
+                peer.restore_insert_circuit_output(&wire, &apparently_bound)
+                    .is_err()
+            );
+        }
+    }
 }
 #[test]
 fn insert_metadata_wire_and_other_operation_domains_are_bound_at_both_roles() {
@@ -88,7 +202,7 @@ fn insert_metadata_wire_and_other_operation_domains_are_bound_at_both_roles() {
             Err(Error::BindingMismatch)
         ));
     }
-    for fault in 0..7 {
+    for fault in 0..8 {
         let mut request: Request = decode(&prepared.request).unwrap();
         match fault {
             0 => request.magic[0] ^= 1,
@@ -100,10 +214,17 @@ fn insert_metadata_wire_and_other_operation_domains_are_bound_at_both_roles() {
             }
             5 => request.existing_rows = 256,
             6 => request.incoming.clear(),
+            7 => request.version = 1,
             _ => unreachable!(),
         }
         assert!(
             peer.evaluate_indexed_insert_for_experiment(&encode(&request).unwrap())
+                .is_err()
+        );
+        assert!(
+            PublicUpdateEvaluator::from_parameters(&setup.update_parameters().unwrap())
+                .unwrap()
+                .request_context(&encode(&request).unwrap())
                 .is_err()
         );
     }

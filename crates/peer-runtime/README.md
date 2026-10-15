@@ -1,49 +1,128 @@
 # Peer runtime
 
-A process-independent service owning encrypted object files and a public-only BFV
-evaluator. It has no owner secret key, plaintext row type, GUI or virtual clock.
+Independent-process encrypted object custody, genuine BFV proving and durable
+cumulative-work version propagation. No owner AEAD/FHE secret or plaintext row
+type lives here. Applications own database creation, keys, complete selection and
+client acceptance.
 
 | Direct project dependency | Responsibility |
 | --- | --- |
-| [peer-transport](../peer-transport/README.md) | TLS identities, endpoint pinning and bounded frames |
-| [compact-store](../compact-store/README.md) | Canonical encrypted pages and exact-head integrity checks |
-| [bfv-query-core](../bfv-query-core/README.md) | Public setup restoration and actual encrypted aggregate/projection/insert/update circuits |
+| [peer-transport](../peer-transport/README.md) | TLS signatures, endpoint pinning and bounded frames |
+| [compact-store](../compact-store/README.md) | Exact-head encrypted page integrity |
+| [bfv-query-core](../bfv-query-core/README.md) | Canonical public-only FHE operation adapters |
+| [bfv-query-proof](../bfv-query-proof/README.md) | Actual STARK generation/verification for every BFV residue |
+| [version-journal](../version-journal/README.md) | Pinned work/profile validation, ancestry, authorization and durable ordering |
 
-`PeerServer::bind` locks one caller-provided directory and binds a TCP endpoint;
-`run` serves it, while `spawn` returns a supervised in-process server handle.
-The standalone deployment is [dcs-peer](../../apps/dcs-peer/README.md).
-`RemotePeer` sends typed RPCs and reports complete application-frame byte counts,
-request identity, elapsed time and success/failure. Those counts exclude TLS/TCP
-headers and are not a bandwidth benchmark.
+`PeerServer::bind` owns its TCP endpoint and a caller-provided directory lock;
+`run` serves it and `spawn` creates a supervised server. The process deployment is
+[dcs-peer](../../apps/dcs-peer/README.md). `RemotePeer` issues typed RPCs and reports
+actual application-frame bytes and elapsed time, excluding TLS/TCP overhead.
 
-Objects are immutable and addressed by a hash of their complete encrypted bundle.
-Only the configured owner's TLS identity can upload data/public setup, change
-quota, configure neighbor endpoints, request copies or stop the service. Other
-admitted certificate holders can probe, read opaque bundles and evaluate ciphertext.
-The service never treats TLS authentication as an SQL computation proof.
+## Transport and custody
 
-Disk quota charges actual serialized bundle file bytes, including record/head
-metadata. Atomic staged publication, a live directory lock, bounded startup import,
-trusted data-head checks and bundle hashes detect missing/truncated/modified files.
-The owner independently authenticates both encrypted data and index on import.
-Public setups are separately reported and kept in RAM, at most two per process.
-At most eight connections are admitted before TLS/frame allocation; FHE work is
-serialized per peer. Object and frame limits are additional to disk quota.
+An empty `Bootstrap.authority` explicitly selects permissionless self-authentication:
+`Identity` must contain a valid self-signed endpoint certificate and private key.
+The transport verifies certificate/handshake signatures and exact endpoint pins;
+this does not count identities as consensus weight or grant database write rights.
+A nonempty authority retains the explicit CA-based deployment mode. Bootstrap
+discovery, address reachability and NAT traversal remain deployment concerns.
 
-`Copy` fetches an existing object directly from another authenticated peer and
-stores identical ciphertext locally. It is an explicit owner-authorized action,
-not an autonomous placement/consensus protocol. Configured neighbors send actual
-TLS probes on wall-clock schedules; reachability changes only after real replies
-or failures. `Status` reports PID, objects, application-byte counters, recent RPCs
-and observed neighbor reachability. Certificate and observation metadata are public.
+The configured owner's TLS credential controls data/setup upload, neighbor and
+quota configuration, journal initialization, collection and shutdown. Other
+self-authenticated peers can fetch opaque bundles, execute/prove operations, mine
+bounded candidates and publish independently validated signed transitions.
 
-No object-deletion RPC is implemented. Network-wide durable commit, signed policy
-agreement, membership/revocation consensus, malicious computation proofs, automatic
-independent-domain repair and Internet NAT traversal remain unresolved. This
-bounded service is a working transport/runtime stage, not the completed requirements.
+Objects are immutable, addressed by the complete bundle hash. `FetchVersion` uses
+an exact data/index-head pair cache and still reads/authenticates the physical
+bundle. Missing or modified data is rejected; cached names do not prove custody.
+`Copy` transfers actual encrypted bytes directly between authenticated processes.
 
-The target permits peers to join without invitations. Current CA provisioning is
-an explicit local deployment restriction, not an implementation of open membership.
-Counting admitted identities is not a Sybil-resistant consensus rule.
+## Computation and proof boundary
 
-Owning process tests: `cargo test --release --locked -p dcs-peer --test process_transport -- --test-threads=1`.
+`InstallSetup` restores minimal `PublicUpdateEvaluator` parameters. Large legacy
+rotation/relinearization evaluator objects are created lazily only by the explicit
+diagnostic `Evaluate` route, whose response remains `UnverifiedCiphertext`.
+
+`Prove` checks that the stored object matches both original request heads, converts
+the actual ciphertext request to the canonical circuit and runs `bfv_query_proof`.
+`ProofReply` contains the complete canonical encrypted output and serialized genuine
+STARK. Supported proved operations are exact-index `SELECT`, `INSERT` and additive
+`UPDATE`; aggregate proofs are explicitly unsupported here. This service does not
+decrypt, generate answers from fixtures or accept SQL for the client.
+
+One atomic admission permit covers proving, public proof verification and mining
+per process; concurrent heavy requests return `Busy` for bounded retry. Persistent
+quota, frame and other capacity failures return `ResourceLimit` separately. Proof work
+runs outside the shared status/object mutex. At most eight connections and two
+public setups are admitted. These bounds do not establish a 1-2 GiB whole-process
+RAM guarantee or a 50-100 ms request SLA; full operations must be measured.
+
+`MutationManifest` signs an opaque query binding, operation, the full previous shard
+set and every original job request. `MutationEvidence` contains the corresponding
+canonical outputs and STARKs. Their manual codecs reject trailing bytes and bound
+aggregate frames to 32 MiB, jobs to 32, and each request/output/proof to 2 MiB before
+allocation. UPDATE must cover every shard, including empty ones; INSERT has exactly
+one chosen shard. `JobVerifier` checks pinned crypto parameters, original contexts,
+all job proofs, allowed changed shard IDs and head revision/schema/domain/count
+constraints. The journal additionally checks parent state, work and owner signature.
+
+`JobVerifier` keeps at most 128 successful arithmetic-proof digests in RAM, keyed
+by its pinned application commitment and every byte/length of canonical input,
+encrypted output and serialized proof. Entries are inserted only after genuine
+STARK verification. Exact repeated proof validation during mining/publication can
+reuse that evidence; authorization, complete manifest, all original contexts,
+old/new head rules, ancestry and requested freshness are still checked separately.
+No root or SQL answer becomes acceptable merely because an arithmetic cache hits.
+
+This is public verification of exact FHE jobs and owner-finalized roots. It does not
+publicly prove the private AEAD-root to FHE-input relation. The designated owner/client
+must independently verify authenticated complete selection, exact saved FHE inputs,
+decrypted completion and compact-store finalization before signing new roots.
+An owner signature is authorization, not a substitute for these checks or STARKs.
+
+## Journal RPCs and storage lifecycle
+
+`InitJournal` pins the supplied genesis and application parameter commitment and
+creates or reopens its durable log with the actual `JobVerifier`. `PublishBlock`
+validates before `sync_all` and in-memory publication. Its acknowledgement identifies
+the exact durably accepted submitted block, including an idempotent ancestor or a
+valid nonwinning fork; it does not report a different current tip. `MineBlock` first checks all
+candidate rules/proofs, then performs at most one million actual SHA256d attempts;
+subsequent chunks retain their nonce cursor. No autonomous unbounded CPU miner is
+started. A mined candidate is not a published or confirmed state.
+
+`JournalBlocks { network, known }` returns zero or one previously unknown validated
+block in topological order, keeping replies bounded even for larger logs. Configured
+neighbors perform actual probes and pull one such block per heartbeat; every pulled
+block passes the same validation/persistence path. Each peer owns its work and
+validation; the GUI does not fabricate agreement. The generic journal's confirmation,
+partition, eclipse and reorganization limits still apply.
+
+Actual serialized journal and bundle file bytes share the participant's disk quota.
+In-flight journal writes reserve quota while expensive verification runs outside the
+status mutex; reservations release on every return path. Restart discovery charges
+journal files before any network has been reopened. Status reports `journal_bytes`
+separately; it does not hide them as free overhead.
+
+`CollectJournal` is owner-authorized and removes only this journal's historical
+bundles outside retained states: best validated, latest confirmed, and the confirmed
+parent. Retained states of every other initialized network are also preserved;
+collection refuses to run while a persisted network remains unopened. Unknown staged
+objects are preserved so pending writes cannot be deleted. This bounds normal bundle
+version retention; aborted staging garbage, journal pruning/checkpoints and automatic
+crash-tail repair remain unimplemented. Arbitrary historical snapshots or deep-reorg
+data can become unavailable and must fail or recover from another real holder.
+
+Public-key setup material stays in RAM. Independent failure-domain repair, durable
+owner-key recovery, automatic overlay discovery and production PoW security parameters
+remain open work. No fixed roster, external chain or token is introduced here.
+
+Verification:
+
+```sh
+cargo test --release --locked --offline -p peer-runtime -p version-journal -- --test-threads=1
+cargo clippy --release --locked --offline -p peer-runtime -p version-journal --all-targets -- -D warnings
+```
+
+Owning process tests live in `dcs-peer`; they must exercise the complete client,
+real encrypted proving, actual RPC journal agreement and resulting storage changes.

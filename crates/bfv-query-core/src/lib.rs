@@ -1,5 +1,6 @@
 //! Experimental exact owner-online BFV roles. Outputs have no computation proof.
 //! Parameters and arithmetic match the measured byte-limb probe; retrieval is external.
+mod canonical;
 mod exact_index;
 mod indexed_insert;
 mod indexed_select;

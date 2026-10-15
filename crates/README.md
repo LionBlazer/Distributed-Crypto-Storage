@@ -8,13 +8,16 @@ executables. The root Cargo default members select this layer only.
 | Library | Responsibility | Direct project dependencies |
 | --- | --- | --- |
 | [peer-transport](peer-transport/README.md) | Authenticated TLS/TCP and bounded frames | None |
-| [peer-runtime](peer-runtime/README.md) | Peer-owned disk/FHE service and real copies/probes | peer-transport, compact-store, bfv-query-core |
-| [storage-client](storage-client/README.md) | Owner network orchestration; fail closed without computation proofs | peer-runtime, compact-query, compact-store, sql-plan |
+| [peer-runtime](peer-runtime/README.md) | Peer-owned custody, proving, work/journal RPC and copies | peer-transport, compact-store, bfv-query-core, bfv-query-proof, version-journal |
+| [storage-client](storage-client/README.md) | Proof-first SQL acceptance, owner-finalized writes and confirmed freshness | peer-runtime, compact-query, compact-store, sql-plan, bfv-query-core, version-journal |
 | [sql-plan](sql-plan/README.md) | Parse the supported SQL subset into typed plans | None |
 | [compact-store](compact-store/README.md) | Owner keys, encrypted pages and authenticated version roots | None |
 | [bfv-linear-circuit](bfv-linear-circuit/README.md) | Canonical full-residue BFV addition relation for proof consumers | None |
-| [bfv-query-core](bfv-query-core/README.md) | Separate owner/evaluator FHE roles and bounded wire inputs | bfv-linear-circuit |
-| [compact-query](compact-query/README.md) | Authenticated index selection and FHE query/write lifecycle | compact-store; optional bfv-query-core |
+| [bfv-product-circuit](bfv-product-circuit/README.md) | Canonical full-residue BFV public-polynomial product | bfv-linear-circuit |
+| [bfv-query-proof](bfv-query-proof/README.md) | Bounded genuine arithmetic STARKs and independent verification | bfv-linear-circuit, bfv-product-circuit; bfv-query-core in tests |
+| [bfv-query-core](bfv-query-core/README.md) | Separate owner/evaluator FHE roles and bounded wire inputs | bfv-linear-circuit, bfv-product-circuit |
+| [compact-query](compact-query/README.md) | Complete private selection and proof-first FHE query/write lifecycle | compact-store; optional bfv-query-core, bfv-query-proof |
+| [version-journal](version-journal/README.md) | Bounded cumulative-work forks, authorization, freshness and durable metadata | None |
 | [replica-store](replica-store/README.md) | Ciphertext custody, placement and local atomic repair | compact-store |
 | [peer-protocol](peer-protocol/README.md) | Bounded connection/request/cancellation state machine | None |
 
@@ -28,9 +31,10 @@ measurement executables. Neither is imported by core. There is no facade that
 silently supplies a local deployment, a test database or a simulated transport.
 
 This separation is preparation for the intended system, not a completion of
-[the requirements](../REQUIREMENTS.md). TCP/TLS process transport and owner certificate authorization are implemented.
-Decentralized agreement, admission/revocation policy and proofs of complete/correct
-query execution remain unresolved. Existing unverified result types stay unverified.
+[the requirements](../REQUIREMENTS.md). Independent TLS process transport, exact FHE
+proofs and a validated work journal are implemented. Production consensus parameters,
+discovery, public SQL/AEAD linkage and scale/resource targets remain unresolved.
+Existing unverified diagnostic result types stay unverified.
 
 From the repository root, `cargo build --release --locked` builds core default
 members. `cargo test --workspace --release --locked -- --test-threads=1` also tests

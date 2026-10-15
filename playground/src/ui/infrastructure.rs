@@ -331,6 +331,14 @@ impl Playground {
                     RichText::new(format!("Data {}  ·  Index {}", bytes(peer.data_bytes), bytes(peer.index_bytes)))
                         .small().color(MUTED),
                 ).on_hover_text("Canonical encrypted data includes page authentication metadata. The index is counted separately. Shared evaluation keys and transient FHE memory are additional.");
+                if peer.journal_bytes > 0 {
+                    ui.label(RichText::new(format!("Version journal {}", bytes(peer.journal_bytes))).small().color(MUTED))
+                        .on_hover_text("Actual durable version/proof journal bytes; included in stored usage and disk quota.");
+                }
+                if peer.public_setup_bytes > 0 {
+                    ui.label(RichText::new(format!("Public setup {} in memory", bytes(peer.public_setup_bytes))).small().color(MUTED))
+                        .on_hover_text("Serialized public setup size held in memory. Expanded keys and transient proof buffers are additional; this is not whole-process RAM or disk usage.");
+                }
                 ui.label(RichText::new(format!("Logical payload {} B / {} stored {}",peer.logical_bytes,peer.rows,row_word(peer.rows))).small().color(MUTED))
                     .on_hover_text("Actual plaintext-size payload represented by all physical stored copies, including older stale copies; it is not unique current database coverage.");
                 if let Some(replication) = self
@@ -357,7 +365,7 @@ impl Playground {
                 section(ui, "Rows / owner view");
                 ui.label(
                     RichText::new(
-                        "Current owner fixture. Peers hold ciphertexts; stale copies may contain earlier values.",
+                        "Owner inspection of current encrypted storage. Stale copies may contain earlier values.",
                     )
                     .small()
                     .color(MUTED),
@@ -902,7 +910,7 @@ impl Playground {
                     .unwrap_or(0)
                     + 1;
                 self.control(
-                    Command::AddPeer(PeerConfig::numbered(id)),
+                    Command::AddPeer(crate::process_backend::default_peer_config(id)),
                     Control::Add { position },
                 );
             }
@@ -982,25 +990,29 @@ pub(super) fn storage_tooltip(node: &NetworkNode, state: Option<&LabSnapshot>) -
     }) else {
         return format!("{} · Node {} · Double-click to inspect", node.name, node.id);
     };
-    let metadata = peer
-        .stored_bytes
-        .saturating_sub(peer.data_bytes.saturating_add(peer.index_bytes));
+    let metadata = peer.stored_bytes.saturating_sub(
+        peer.data_bytes
+            .saturating_add(peer.index_bytes)
+            .saturating_add(peer.journal_bytes),
+    );
     let copies = copy_counts(state, peer.id).map_or(String::new(), |(current, stale)| {
         format!("\nCopies: {current} current / {stale} stale")
     });
     format!(
-        "{} · Node {}\nPhysical storage: {} B / {} B quota\nEncrypted data: {} B (includes authentication metadata)\nEncrypted index: {} B\nReplica record metadata: {} B\nLogical payload: {} B / {} stored {}{}\nPayload counts actual stored copies, including stale copies; it is not unique database coverage.\nShared evaluation keys and transient FHE memory are additional.\nDouble-click to inspect",
+        "{} · Node {}\nPhysical storage: {} B / {} B quota\nEncrypted data: {} B (includes authentication metadata)\nEncrypted index: {} B\nVersion/proof journal: {} B\nReplica record metadata: {} B\nLogical payload: {} B / {} stored {}{}\nPayload counts actual stored copies, including stale copies; it is not unique database coverage.\nPublic setup in memory: {} B (serialized size; not disk usage or peak RAM).\nExpanded keys and transient FHE/proof memory are additional.\nDouble-click to inspect",
         node.name,
         node.id,
         peer.stored_bytes,
         peer.config.storage_limit_bytes,
         peer.data_bytes,
         peer.index_bytes,
+        peer.journal_bytes,
         metadata,
         peer.logical_bytes,
         peer.rows,
         row_word(peer.rows),
-        copies
+        copies,
+        peer.public_setup_bytes,
     )
 }
 
