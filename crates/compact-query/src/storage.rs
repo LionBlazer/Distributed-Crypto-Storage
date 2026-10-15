@@ -45,11 +45,9 @@ pub(crate) fn restore(
     expected_index: &Commitment,
     limits: Limits,
 ) -> Result<Table> {
-    let data = EncryptedSnapshot::decode(data, limits)?;
-    let index = EncryptedSnapshot::decode(index_bytes, index::index_limits())?;
-    if data.commitment() != expected_data || index.commitment() != expected_index {
-        return Err(Error::WrongVersion);
-    }
+    let data = EncryptedSnapshot::decode_for_head(data, expected_data, limits)?;
+    let index =
+        EncryptedSnapshot::decode_for_head(index_bytes, expected_index, index::index_limits())?;
     check_schema(data.commitment())?;
     index::check_binding(owner, &index, data.commitment())?;
     Ok(Table { data, index })

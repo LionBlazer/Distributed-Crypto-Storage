@@ -19,6 +19,10 @@ address-based retrieval, not an FHE evaluator or SQL query proof.
 - EncryptedSnapshot::lookup returns a LookupResponse for one exact public page
   address, with a Merkle proof. LookupResponse::verify takes the requested address
   and independently known head, returning VerifiedPage only after validation.
+- EncryptedSnapshot::decode_for_head imports a complete image against an
+  independently trusted head. It rejects a mismatched manifest before allocating
+  pages, then verifies the full root. Plain `decode` checks internal consistency
+  only; a peer-supplied embedded root does not establish authorization or freshness.
 - Owner::decrypt accepts VerifiedPage and returns PlainPage; the decrypted buffer
   is zeroized on drop. The application remains responsible for its source plaintext
   and any copies. Public nonce, ciphertext and tag accessors on VerifiedPage permit

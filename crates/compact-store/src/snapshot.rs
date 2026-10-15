@@ -44,6 +44,22 @@ impl EncryptedSnapshot {
         bytes
     }
 
+    /// Imports ciphertext only for an independently trusted, exact read head.
+    /// Rejects another version before allocating pages, then checks every page's
+    /// contribution to the root. The caller still owns the head's provenance and
+    /// freshness; accepting an old trusted head intentionally permits an old image.
+    pub fn decode_for_head(bytes: &[u8], expected: &Commitment, limits: Limits) -> Result<Self> {
+        if bytes.len() > limits.max_image_bytes {
+            return Err(Error::ResourceLimit);
+        }
+        let manifest = bytes.get(..MANIFEST_BYTES).ok_or(Error::InvalidFormat)?;
+        let received = Commitment::decode(manifest, limits)?;
+        if &received != expected {
+            return Err(Error::WrongVersion);
+        }
+        Self::decode(bytes, limits)
+    }
+
     /// Parses exact, tightly bounded storage, rebuilding and checking its root.
     /// The embedded root's provenance still needs an independent trust source.
     pub fn decode(bytes: &[u8], limits: Limits) -> Result<Self> {
