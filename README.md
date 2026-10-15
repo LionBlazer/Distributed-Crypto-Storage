@@ -72,6 +72,14 @@ Selections are bounded to 256 rows and one posting/data page, with the owner onl
 OS file cache is allowed. Network, arithmetic proofs, general SQL and complete
 owner restart are outside this [paired result](docs/experiment-private-bfv-exact-disk.md).
 
+The [BFV disk UPDATE experiment](experiments/private-bfv-update-disk/README.md)
+adds genuine encrypted addition and compact writeback. Its actual 1,000-table run
+retains constant file sizes after 126 positive commits; files plus native peak
+process commit are 1.814285x. In 100 point cycles, UPDATE through commit/invalidation
+takes at most 316.162 ms, and the compound including readiness and a separate fresh
+SELECT reaches 635.367 ms. The [full report](docs/experiment-private-bfv-update-disk.md)
+retains every slow mode and the same unverified, online-owner, local-transport limits.
+
 The integration branch is `master`. [AGENTS.md](AGENTS.md) defines task branches,
 automatic commit and push after each completed change, synchronization from master,
 and explicitly requested promotion back to master. Project skills live in

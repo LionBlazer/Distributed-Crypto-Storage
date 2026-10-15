@@ -1,15 +1,23 @@
 # Indexed BFV amount UPDATE with compact writeback
 
-**Writeback proposal with an implemented cryptographic API.** The arithmetic/API
-portion now lives in the [experimental BFV core](../experiments/bfv-byte-limb-core/README.md),
-whose 37 runtime tests and two doctests pass alongside strict Clippy. Compact
-writeback, repeated-update timing and storage lifecycle remain unimplemented for
-this BFV path. The original proposal was based on main
+**Implemented experimental disk composition.** The arithmetic/API lives in the
+[BFV core](../experiments/bfv-byte-limb-core/README.md), whose 37 runtime tests and
+two doctests pass alongside strict Clippy. The separate
+[disk compositor](../experiments/private-bfv-update-disk/README.md) passes 42 owning
+tests and strict Clippy. Its [actual 1,000-table run](experiment-private-bfv-update-disk.md)
+completed 100 sequential point updates and 26 additional positive commits without
+file growth; files plus native peak process commit total 1.814284747x of 3 GB
+logical data. Main-cycle UPDATE through commit/invalidation takes at most
+316.1619 ms; the compound including cache readiness, diagnostics and a subsequent
+independent SELECT reaches 635.3670 ms. Neither number includes network or proofs.
+
+The original proposal below was based on main
 `a25dc82e9685221bea161c19e51a9e248ff204ff`, unchanged BFV core
 `83D3E4E23803F96544617E88AA6EF2B17DFEC274DCB962C168BDAFD7DBA82C7A`
 (`src/lib.rs` baseline SHA-256), and `fhe 0.1.1` source revision
-`fe47bac2e2abf0077c0e8d95f5c2ce7ce8a40b2a`. No full UPDATE latency, storage
-lifecycle or independent noise/security result is established here.
+`fe47bac2e2abf0077c0e8d95f5c2ce7ce8a40b2a`. It explains the operation's contracts;
+the measured report identifies actual gates, timings and retained slow cases.
+Independent noise/security validation and durable recovery remain open.
 
 ## Exact operation and arithmetic
 
@@ -75,7 +83,7 @@ observable. Fixed256 empty scheduling still needs actual authenticated dummy rea
 Encrypted inactive masks conceal no global routing or access pattern. Owner stays
 online and learns selected plaintext. Age/indexed-field updates are outside scope.
 
-## Existing API and proposed minimal boundary
+## Implemented API and writeback boundary
 
 Pinned [`&Ciphertext + &Ciphertext`](https://github.com/tlepoint/fhe.rs/blob/fe47bac2e2abf0077c0e8d95f5c2ce7ce8a40b2a/crates/fhe/src/bfv/ops/mod.rs#L15-L68)
 requires pointer-identical parameter Arcs, equal level/component counts and adds
@@ -90,7 +98,7 @@ fresh input ciphertexts can serialize one polynomial plus seed. Measure actual
 wire rather than copying input-size assumptions.
 [Serialization source](https://github.com/tlepoint/fhe.rs/blob/fe47bac2e2abf0077c0e8d95f5c2ce7ce8a40b2a/crates/fhe/src/bfv/ciphertext.rs#L135-L225).
 
-Implemented cryptographic entry points; storage staging remains a proposal:
+Implemented cryptographic entry points; storage staging stays in the compositor:
 
 - `Owner::prepare_indexed_update_for_experiment(context, fields, delta)` returns
   two encrypted inputs and a one-use `PendingIndexedUpdate`. Bind owner/key handle,
@@ -103,10 +111,10 @@ Implemented cryptographic entry points; storage staging remains a proposal:
   and reconstructs every active result in u32. Return an unverified batch or one
   global overflow outcome; never a partially accepted batch and never page writes.
 
-Use existing bounded/reject-trailing wire conventions. A storage compositor's
-`stage_amount_update_for_experiment(selection, batch)` must compare every actual
-returned value with the original authenticated amount plus delta **after peer
-execution**, as a local experiment check. Count this work in completion timing.
+Use existing bounded/reject-trailing wire conventions. The compositor compares
+every actual returned value with the original authenticated amount plus delta
+**after peer execution**, before its private staging helper. This local experiment
+check is included in completion timing.
 The TFHE experiment already uses this explicit boundary at
 `crates/compact-query/src/owner.rs:202-303`; it is not a succinct query proof.
 
@@ -148,8 +156,9 @@ unsafe/variable-time; it cannot alone certify the intended UPDATE and is unneces
 in normal peer/owner APIs.
 [Noise diagnostic source](https://github.com/tlepoint/fhe.rs/blob/fe47bac2e2abf0077c0e8d95f5c2ce7ce8a40b2a/crates/fhe/src/bfv/keys/secret_key.rs#L55-L98). Independent parameter-security validation remains open.
 
-Before complete composition/performance claims, run these gates with public fixtures,
-real serialized peer addition and the unchanged parameters:
+The acceptance gates below distinguish correctness from stronger unproved claims.
+The measured report records the executed core/storage cases and their limits;
+new operations still need their own complete tests and timings.
 
 1. Carries and exact boundaries across 0/1/254/255/256/257/65280/65534/65535,
    including exact 65535 and maximum 131070. Check all per-row limbs/values.
@@ -174,6 +183,6 @@ real serialized peer addition and the unchanged parameters:
    staging, reseal/rebind, publication and cache readiness. Record native process
    peaks and distinguish warm/cold/private/visible profiles.
 
-No numeric UPDATE latency, 500 ms or full-state 2x result follows from this proposal.
-There is no arithmetic proof, CCA/active-feedback safety claim, general SQL or
-production recovery guarantee.
+Numeric UPDATE and resource results come from the measured composition, rather
+than this arithmetic argument. They establish no arithmetic proof, CCA/active-feedback
+safety, general SQL or production recovery guarantee.

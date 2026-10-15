@@ -1,0 +1,73 @@
+{
+  "source_package": "private-bfv-exact-disk",
+  "source_main_sha256": "D5D8F003BA3CB4606994237DFEEBAF5C2613F795BE33229C9519A5D3114BBC07",
+  "copied_files": [
+    {
+      "file": "Cargo.lock",
+      "sha256": "B44D3870FEBFAC2FAB3118E82779C28252E44EC6AD52C4F641EF604876C7B218"
+    },
+    {
+      "file": "Cargo.toml",
+      "sha256": "687085CF08A66216D26BD380101593C41A8E479DB3FD0BE2B6E4945CFDCC8D77"
+    },
+    {
+      "file": "LICENSE-BLYSS",
+      "sha256": "79381EFF8FE5B9C60C1B40A34B453FDA621F9892B99006C352706F8B38635ED9"
+    },
+    {
+      "file": "README.md",
+      "sha256": "486A63C7A76A059E360CBF32F3FDFB4BE191D264F22C9197A925C6F7F0053FD4"
+    },
+    {
+      "file": "run.ps1",
+      "sha256": "9ACDA2E38D1E1426A4505E8F4705701877B1C3B630DBF2C3D931CECD7B230B06"
+    },
+    {
+      "file": "src/disk.rs",
+      "sha256": "51DF6045F3E5A6CE0E890FE2F8BE4180C6C008FBDDA9E63EC67789A36EE709B0"
+    },
+    {
+      "file": "src/expansion_schedule.rs",
+      "sha256": "931FD2B0775E10D83872F8E35D04D9C8CBBC055D373BBA221B6C097F01E78F98"
+    },
+    {
+      "file": "src/main.rs",
+      "sha256": "D5D8F003BA3CB4606994237DFEEBAF5C2613F795BE33229C9519A5D3114BBC07"
+    },
+    {
+      "file": "src/native.rs",
+      "sha256": "A188F526EAE01FA3BB236DD509220BCEDA13BA103EF5283D4EA7655ED2CDC4C4"
+    },
+    {
+      "file": "src/padded_index_codec.rs",
+      "sha256": "05A3BAF2AD3AB697B3CC9AD8EEB1B392D1C5B34FDB06AD3DFE0101ABF89F44ED"
+    },
+    {
+      "file": "src/padded_index_codec_tests.rs",
+      "sha256": "1D649C6E9C05DDA25221BBFC9671146076057731FF2574B37DD7FA5092A63EE4"
+    },
+    {
+      "file": "src/protocol_helpers.rs",
+      "sha256": "021F9533EF31EF897B5F959E6D2375F9C6BFB36BE53751834F32E36C55B5D0AD"
+    },
+    {
+      "file": "src/resources.rs",
+      "sha256": "A08890AD588524374C9D1B282A00038F9750DFA63F8FCB78AC466FCBF7A934D7"
+    },
+    {
+      "file": "src/server_schedule.rs",
+      "sha256": "F9B343135A377CF6559415C7C62584A66B823E007DA98DBF43B1EC88C861B3FC"
+    }
+  ],
+  "status": "HISTORICAL INITIAL COPY inventory from the frozen eight-case source, before compositor modifications; copied_files are original base hashes, not current measured runtime hashes",
+  "current_validation": {
+    "status": "42 owning runtime tests, strict authored release Clippy, fmt and release build passed; three-table and fresh1000-table measured runs completed",
+    "report": "../../docs/experiment-private-bfv-update-disk.md",
+    "runtime_hash_map": ".local/private-bfv-update-disk/source-preparation-frozen.jsonl (repository-relative ignored artifact)",
+    "final_artifact_ledger": ".local/private-bfv-update-disk/final-artifacts.json (repository-relative ignored artifact)",
+    "executable_sha256": "2F881670B9959AC57AFABDC61796498D2DF25EAEF4C5EE7FD75DB8F366B3CFBF",
+    "dry_report_sha256": "F05589D04F8ED650E09D4AC25DD259CDC64289377AF09601A33407716D5233D1",
+    "actual1000_report_sha256": "E95CEF37260AD6F897D3753EF176589A1F8E93EC0B4E69859377FA9A7582FDBF",
+    "runtime_unchanged_between_runs": true
+  }
+}
