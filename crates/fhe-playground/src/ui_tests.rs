@@ -30,6 +30,7 @@ fn snapshot(peers: usize) -> LabSnapshot {
             })
             .collect(),
         owner_rows: rows,
+        replication: None,
     }
 }
 fn network(peers: usize, clients: usize) -> NetworkSnapshot {
@@ -44,6 +45,50 @@ fn network(peers: usize, clients: usize) -> NetworkSnapshot {
         net.advance(0.1);
     }
     net.snapshot()
+}
+fn replicated_snapshot() -> LabSnapshot {
+    use fhe_playground::{LogicalShardInfo, ReplicaLocation, ReplicationInfo};
+    let mut state = snapshot(3);
+    let owner = compact_store::Owner::generate([89; 16]).unwrap();
+    let head = owner
+        .seal(
+            compact_store::Layout {
+                schema: [1; 16],
+                row_width: 1,
+                rows_per_page: 16,
+                row_count: 1,
+            },
+            &[18],
+            compact_store::Limits::default(),
+        )
+        .unwrap()
+        .commitment()
+        .clone();
+    state.replication = Some(ReplicationInfo {
+        desired_copies: 2,
+        shards: vec![LogicalShardInfo {
+            id: 1,
+            rows: 4,
+            data_head: head.clone(),
+            index_head: head,
+            replicas: (1..=3)
+                .map(|peer_id| ReplicaLocation {
+                    peer_id,
+                    failure_domain: 1,
+                    online: true,
+                    current: peer_id != 1,
+                    data_bytes: 166,
+                    index_bytes: 2336,
+                })
+                .collect(),
+            executor: Some(2),
+        }],
+        failure_domains: vec![(1, 1), (2, 1), (3, 1)],
+        read_peers: vec![2],
+        write_peers: vec![2, 3],
+        unavailable_shards: vec![],
+    });
+    state
 }
 struct VisibleText {
     text: String,
@@ -135,6 +180,125 @@ fn ctrl_enter() -> Vec<egui::Event> {
         repeat: false,
         modifiers: egui::Modifiers::CTRL,
     }]
+}
+
+#[test]
+fn inline_copy_choice_sends_one_serialized_policy_command() {
+    let (mut app, commands, _) = app();
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    click(&ctx, &mut app, "Min copies 1");
+    click(&ctx, &mut app, "2 copies");
+    assert!(matches!(
+        commands.try_recv().unwrap(),
+        Command::SetReplication { copies: 2 }
+    ));
+    assert!(commands.try_recv().is_err());
+    assert!(matches!(app.control_pending, Some(Control::Replication)));
+    assert!(app.snapshot.as_ref().unwrap().replication.is_none());
+}
+
+#[test]
+fn explicitly_confirming_one_copy_enables_fixed_custody_but_default_render_does_not() {
+    let (mut app, commands, _) = app();
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    let texts = render(&ctx, &mut app, vec![]);
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.text.contains("Legacy single-copy"))
+    );
+    assert!(commands.try_recv().is_err());
+    click(&ctx, &mut app, "Min copies 1");
+    click(&ctx, &mut app, "1 copy");
+    assert!(matches!(
+        commands.try_recv().unwrap(),
+        Command::SetReplication { copies: 1 }
+    ));
+}
+
+#[test]
+fn copy_health_counts_independent_domains_and_distinguishes_stale_copies() {
+    let (mut app, _, _) = app();
+    app.snapshot = Some(replicated_snapshot());
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    let texts = render(&ctx, &mut app, vec![]);
+    assert!(texts.iter().any(|text| text.text.contains("0/1 at target")
+        && text.text.contains("2 online current / 1 stale")));
+    assert!(texts.iter().any(|text| text.text == "Min copies 2"));
+}
+
+#[test]
+fn stale_copy_inspector_labels_current_owner_fixture_and_saves_domain_explicitly() {
+    let (mut app, commands, _) = app();
+    app.snapshot = Some(replicated_snapshot());
+    app.open_node(2);
+    app.domain_edits.insert(2, 77);
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    let texts = render(&ctx, &mut app, vec![]);
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.text.contains("stale / online"))
+    );
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.text.contains("Current owner fixture")
+                && text.text.contains("earlier values"))
+    );
+    assert!(commands.try_recv().is_err());
+    click(&ctx, &mut app, "Save domain");
+    assert!(matches!(
+        commands.try_recv().unwrap(),
+        Command::SetFailureDomain { id: 1, domain: 77 }
+    ));
+}
+
+#[test]
+fn context_menu_exposes_manual_local_replica_repair_without_a_new_panel() {
+    let (mut app, commands, _) = app();
+    app.snapshot = Some(replicated_snapshot());
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    render(&ctx, &mut app, vec![]);
+    click_point(
+        &ctx,
+        &mut app,
+        egui::pos2(1460.0, 810.0),
+        egui::PointerButton::Secondary,
+    );
+    click(&ctx, &mut app, "Repair replicas");
+    assert!(matches!(
+        commands.try_recv().unwrap(),
+        Command::RepairReplicas
+    ));
+    assert!(matches!(app.control_pending, Some(Control::Repair)));
+}
+
+#[test]
+fn maintenance_failure_does_not_finish_a_query_or_consume_an_unrelated_control() {
+    let (mut app, commands, events) = app();
+    app.run_query();
+    let _ = commands.try_recv().unwrap();
+    app.control_pending = Some(Control::Availability);
+    events
+        .send(Event::MaintenanceFinished {
+            snapshot: Some(replicated_snapshot()),
+            outcome: Err(fhe_playground::LabError::InvalidInput(
+                "public repair quota failure".into(),
+            )),
+        })
+        .unwrap();
+    app.poll();
+    assert!(app.pending.is_some());
+    assert!(matches!(app.control_pending, Some(Control::Availability)));
+    assert_eq!(app.history.len(), 1);
+    assert!(app.history[0].job == Job::Maintenance);
+    assert!(app.maintenance_status.contains("quota failure"));
 }
 
 #[test]

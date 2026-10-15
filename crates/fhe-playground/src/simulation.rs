@@ -129,6 +129,11 @@ impl Default for DemoNetwork {
 }
 
 impl DemoNetwork {
+    /// Records completed local owner/manager maintenance, never a fabricated
+    /// ciphertext-transfer packet or evidence of production wire delivery.
+    pub fn record_local_maintenance(&mut self, message: String) {
+        self.log(format!("Local maintenance: {message}"));
+    }
     pub fn add_client(&mut self, name: String) -> Result<NodeId, LabError> {
         if self
             .nodes

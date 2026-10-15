@@ -5,7 +5,8 @@ owns the test UI, a small SQL frontend, and an in-process transport adapter.
 It composes [compact-query](../compact-query/README.md) for compact authenticated
 storage, an owner-assisted encrypted age index, real FHE aggregation/updates and
 compact writeback; [compact-store](../compact-store/README.md) supplies the page
-limits, and [peer-protocol](../peer-protocol/README.md) owns connection/message
+limits, [replica-store](../replica-store/README.md) places related ciphertext images
+together, and [peer-protocol](../peer-protocol/README.md) owns connection/message
 state. These libraries are independent of the GUI and simulation clock. This is an experiment, not a production distributed database.
 
 ## Launch
@@ -78,20 +79,37 @@ delivery time and appear on the graph. Pausing can delay remote cleanup. The pro
 bounds outstanding requests and accepted jobs; transport IDs still have no
 cryptographic authentication.
 
-Peer IDs remain stable when a middle peer is removed. Adding/removing storage peers
-explicitly repartitions rows under the local manager, preserving keys, revision and
-surviving profiles. This is not automatic replication/recovery by the peer protocol.
-Creation retains current topology and availability. Zero peers retains owner state
-but cannot answer queries; failed repartition preserves the old encrypted data.
+Peer IDs remain stable when a middle peer is removed. The initial **Legacy
+single-copy** mode retains the original fixture-based manager repartition.
+Explicitly choose **Min copies** (1, 2 or 3) to enter fixed logical-shard custody.
+New peers then start empty; removal drops their real ciphertext copies. The owner
+fixture cannot recreate a lost shard in this mode. Lowering the minimum retains
+existing copies; **Create / replace** starts a new legacy experiment with fresh keys.
+
+Replica reads select one current online executor per logical shard, using configured
+link delay and stable IDs. UPDATE stages new data/index images on all online current
+holders; offline versions become stale and cannot answer current queries when they
+return. Missing current shards reject the whole statement. **Failure domain** in
+each inspector declares correlated placement; repeated labels count as one domain.
+The inspector separates actual copy status from the current owner-fixture row view.
+
+Automatic local repair runs once after relevant changes, while idle, unpaused and
+after actual peer routes have formed. It copies authenticated ciphertext pairs from
+survivors and reports completion or failure in history. **Repair replicas** in the
+graph context menu retries manually. This local copy step does not model full wire
+transfer or bandwidth, and does not invent packet animations. See the
+[replicated SQL model](../../docs/replicated-sql-prototype.md) for its failure limits.
 
 Quotas cover canonical encrypted data plus the complete encrypted index and its
-headers (1 KiB..64 MiB), not
+headers (1 KiB..64 MiB), plus 16 bytes of replica record metadata per physical
+data/index pair in fixed-custody mode. They exclude
 BFV working memory, shared keys or rebuildable in-memory Merkle hashes. The node
 inspector shows data and index bytes separately. Creation, repartitioning, profile edits and
 updates reject overruns without partial writes. Peer delay (0..1000 ms) belongs to
 the virtual transport; it is not measured ping. Query wall time includes delivery,
 index selection, fresh encrypted selected byte/COUNT weights, request/output serialization, FHE evaluation and owner decryption; per-shard query timing excludes virtual delay.
-Offline required shards reject reads/updates, without silently omitting records.
+Loss of every current online copy of a logical shard rejects reads/updates without
+silently omitting records.
 
 The fixture editor is the owner's plaintext view. Peer evaluations receive only
 opaque ciphertext inputs and evaluation material. The fixture is decrypted from actual staged compact ciphertexts after successful
@@ -156,8 +174,9 @@ one fixed Rows256 SIMD operation per shard, with no TFHE keys or row workers.
 Evaluator clones share key allocation, so memory does not model
 independent physical machines. Packets carry opaque references to local operations;
 there is no TCP transport. The cryptographic backend actually serializes and decodes encrypted requests/results, but the virtual network does not yet model their byte-dependent transmission time.
-Taking a peer offline preserves its local ciphertexts and does not model permanent
-data loss, recovery, replication, or adversarial behavior.
+Taking a peer offline preserves its local ciphertexts. Removing one in fixed-custody
+mode drops its copies; local repair can use only surviving current ciphertext.
+This models declared crash/offline events, without proving malicious availability.
 
 The database, keys, drafts, and history are ephemeral and are never saved. Closing
 the app loses the experiment. Results remain **unverified**: FHE confidentiality is
@@ -166,7 +185,8 @@ limitations and measured costs of the underlying implementation remain as descri
 in [compact-query](../compact-query/README.md). Owner-side update checking repeats selected plaintext work and is not a succinct single-peer computation proof.
 
 Library entry points include `parse_sql`, `Predicate::age_range`, `LabEngine::create`, `create_with_peer_ids`,
-`repartition`, `execute`, `prepare_query`, `commit_prepared`, `discard_prepared`,
+`repartition`, `set_replication`, `set_failure_domain`, `repair_replicas`,
+`execute`, `prepare_query`, `commit_prepared`, `discard_prepared`,
 `snapshot`, SQL/fixture
 helpers, and `DemoNetwork`'s node, delivery and snapshot operations. The binary owns
 `worker` (composition/cancellation), `ui` (drafts, commands and views), and private

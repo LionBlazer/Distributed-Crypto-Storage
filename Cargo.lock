@@ -977,6 +977,7 @@ dependencies = [
  "eframe",
  "peer-protocol",
  "rayon",
+ "replica-store",
  "serde_json",
 ]
 

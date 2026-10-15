@@ -48,6 +48,7 @@ enum NetworkView {
 enum Job {
     Query,
     Database,
+    Maintenance,
 }
 struct Pending {
     job: Job,
@@ -67,6 +68,9 @@ enum Control {
     Delete(NodeId),
     Profile(NodeId),
     Availability,
+    Replication,
+    Domain(NodeId),
+    Repair,
 }
 
 pub struct Playground {
@@ -92,6 +96,8 @@ pub struct Playground {
     right_tab: RightTab,
     network_view: NetworkView,
     peer_edits: HashMap<NodeId, PeerConfig>,
+    domain_edits: HashMap<NodeId, u64>,
+    maintenance_status: String,
     graph_layout: GraphLayout,
     graph_router: crate::graph_routing::GraphRouter,
     graph_bundler: crate::graph_bundling::GraphBundler,
@@ -136,6 +142,8 @@ impl Playground {
             right_tab: RightTab::Network,
             network_view: NetworkView::Auto,
             peer_edits: HashMap::new(),
+            domain_edits: HashMap::new(),
+            maintenance_status: String::new(),
             graph_layout: GraphLayout::default(),
             graph_router: crate::graph_routing::GraphRouter::default(),
             graph_bundler: crate::graph_bundling::GraphBundler::default(),
@@ -293,6 +301,8 @@ impl Playground {
                         .retain(|id| net.nodes.iter().any(|n| n.id == *id));
                     self.peer_edits
                         .retain(|id, _| net.nodes.iter().any(|n| n.id == *id));
+                    self.domain_edits
+                        .retain(|id, _| net.nodes.iter().any(|n| n.id == *id));
                     self.graph_seeds.retain(|id, _| {
                         net.nodes.iter().any(|n| n.id == *id)
                             || !self
@@ -318,6 +328,11 @@ impl Playground {
                 Ok(Some(Event::PeerProgress(progress))) => self.status = progress.message,
                 Ok(Some(Event::ControlFinished { snapshot, outcome })) => {
                     let intent = self.control_pending.take();
+                    if matches!(intent, Some(Control::Repair)) {
+                        self.snapshot = snapshot;
+                        self.record_maintenance(outcome);
+                        continue;
+                    }
                     if outcome.is_ok() {
                         self.snapshot = snapshot;
                         match (intent, &outcome) {
@@ -347,11 +362,18 @@ impl Playground {
                                     self.right_tab = RightTab::Network;
                                 }
                             }
+                            (Some(Control::Domain(id)), _) => {
+                                self.domain_edits.remove(&id);
+                            }
                             _ => {}
                         }
                     } else if let Err(error) = outcome {
                         self.input_error = Some(error.to_string());
                     }
+                }
+                Ok(Some(Event::MaintenanceFinished { snapshot, outcome })) => {
+                    self.snapshot = snapshot;
+                    self.record_maintenance(outcome);
                 }
                 Ok(Some(Event::Finished {
                     snapshot,
@@ -386,6 +408,8 @@ impl Playground {
                     }
                     if created {
                         self.history.clear();
+                        self.maintenance_status.clear();
+                        self.domain_edits.clear();
                     }
                     if pending.job == Job::Query {
                         self.result_tab = if matches!(
@@ -432,6 +456,29 @@ impl Playground {
                 }
             }
         }
+    }
+    fn record_maintenance(&mut self, outcome: Result<Outcome, fhe_playground::LabError>) {
+        self.maintenance_status = match &outcome {
+            Ok(Outcome::ReplicasRepaired { current, stale }) => {
+                format!("Local repair complete: {current} current / {stale} stale")
+            }
+            Err(error) => format!("Local repair deferred/failed: {error}"),
+            _ => "Local repair complete".into(),
+        };
+        let (database, revision) = self
+            .snapshot
+            .as_ref()
+            .map(|state| (state.name.clone(), state.revision))
+            .unwrap_or_default();
+        self.history.push_front(Record {
+            job: Job::Maintenance,
+            label: self.maintenance_status.clone(),
+            database,
+            revision,
+            elapsed_ms: 0.0,
+            outcome: outcome.map_err(|error| error.to_string()),
+        });
+        self.history.truncate(8);
     }
     fn draw(&mut self, ui: &mut egui::Ui) {
         egui::Panel::bottom("status").frame(panel(6)).show(ui, |ui| {
@@ -604,9 +651,12 @@ impl Playground {
                         let (message, color) = outcome_message(&record.outcome);
                         ui.horizontal_wrapped(|ui| {
                             ui.colored_label(color, message);
-                            ui.label(
-                                RichText::new(format!("{:.0} ms", record.elapsed_ms)).color(MUTED),
-                            );
+                            if record.job != Job::Maintenance {
+                                ui.label(
+                                    RichText::new(format!("{:.0} ms", record.elapsed_ms))
+                                        .color(MUTED),
+                                );
+                            }
                             ui.label(record.label.lines().next().unwrap_or_default())
                                 .on_hover_text(&record.label);
                         });

@@ -9,6 +9,7 @@ pub(super) enum GraphAction {
     Toggle { peer: usize, online: bool },
     AddPeer(egui::Pos2),
     AddClient(egui::Pos2),
+    Repair,
     Fit,
 }
 const NODE_SIZE: egui::Vec2 = egui::vec2(148.0, 78.0);
@@ -60,6 +61,7 @@ impl Playground {
                         if let Some(net)=&self.network {
                             ui.label(RichText::new(format!("{} nodes / {} links",net.nodes.len(),net.links.len())).small().color(MUTED));
                         }
+                        self.replication_controls(ui);
                         ui.separator();
                         for (view,label) in [(NetworkView::Auto,"Auto"),(NetworkView::Map,"Map"),(NetworkView::Matrix,"Matrix")] {
                             if tab_button(ui,label,self.network_view==view).on_hover_text(match view {
@@ -90,6 +92,82 @@ impl Playground {
                             .show(ui, |ui| self.node_inspector(ui, id));
                     });
             }
+        }
+    }
+    fn replication_controls(&mut self, ui: &mut egui::Ui) {
+        let mut copies = self
+            .snapshot
+            .as_ref()
+            .and_then(|state| state.replication.as_ref())
+            .map_or(1, |replication| replication.desired_copies);
+        let previous = copies;
+        let legacy = self
+            .snapshot
+            .as_ref()
+            .is_some_and(|state| state.replication.is_none());
+        let mut selected = false;
+        ui.add_enabled_ui(self.available() && self.controls_available() && self.snapshot.is_some(), |ui| {
+            egui::ComboBox::from_id_salt("minimum-copies")
+                .selected_text(format!("Min copies {copies}"))
+                .width(110.0)
+                .show_ui(ui, |ui| {
+                    for count in 1..=3 { selected |= ui.selectable_value(&mut copies, count, if count == 1 { "1 copy".into() } else { format!("{count} copies") }).clicked(); }
+                }).response.on_hover_text("Minimum current copies in distinct configured failure domains; extra/stale copies remain charged. An explicit selection retains logical shards through topology changes. New placement is local repair after peer discovery; pause defers copies.");
+        });
+        if copies != previous || (selected && legacy) {
+            self.control(Command::SetReplication { copies }, Control::Replication);
+        }
+        if let Some(state) = &self.snapshot {
+            let stored: usize = state.peers.iter().map(|peer| peer.stored_bytes).sum();
+            let label = if let Some(replication) = &state.replication {
+                let at_target = replication
+                    .shards
+                    .iter()
+                    .filter(|shard| {
+                        let domains: std::collections::BTreeSet<_> = shard
+                            .replicas
+                            .iter()
+                            .filter(|copy| copy.current && copy.online)
+                            .map(|copy| copy.failure_domain)
+                            .collect();
+                        domains.len() >= replication.desired_copies
+                    })
+                    .count();
+                let online_current = replication
+                    .shards
+                    .iter()
+                    .flat_map(|shard| &shard.replicas)
+                    .filter(|copy| copy.current && copy.online)
+                    .count();
+                let stale = replication
+                    .shards
+                    .iter()
+                    .flat_map(|shard| &shard.replicas)
+                    .filter(|copy| !copy.current)
+                    .count();
+                format!(
+                    "{at_target}/{} at target · {online_current} online current / {stale} stale · {} stored",
+                    replication.shards.len(),
+                    bytes(stored)
+                )
+            } else {
+                format!("Legacy single-copy · {} stored", bytes(stored))
+            };
+            ui.label(RichText::new(label).small().color(MUTED)).on_hover_text("Actual retained data+index ciphertext and replica-record metadata. Shared evaluation keys, owner state and transient memory are additional. Target counts configured independent domains, not a production availability guarantee.");
+            if let Some(replication) = &state.replication
+                && !replication.unavailable_shards.is_empty()
+            {
+                ui.colored_label(
+                    RED,
+                    format!(
+                        "{} logical shards unavailable",
+                        replication.unavailable_shards.len()
+                    ),
+                );
+            }
+        }
+        if !self.maintenance_status.is_empty() {
+            ui.label(RichText::new(&self.maintenance_status).small().color(MUTED)).on_hover_text("Completed local owner/manager copy work, not simulated ciphertext-transfer bytes. Repair waits for idle, unpaused simulation and real established peer routes. Right-click to retry.");
         }
     }
     fn node_inspector(&mut self, ui: &mut egui::Ui, id: NodeId) {
@@ -193,6 +271,37 @@ impl Playground {
                         Control::Profile(id),
                     );
                 }
+                let domain = self
+                    .snapshot
+                    .as_ref()
+                    .and_then(|state| state.replication.as_ref())
+                    .and_then(|replication| {
+                        replication
+                            .failure_domains
+                            .iter()
+                            .find(|(id, _)| *id == peer_id)
+                    })
+                    .map_or(peer_id as u64, |(_, domain)| *domain);
+                let edited = self.domain_edits.entry(id).or_insert(domain);
+                let domain_enabled = enabled
+                    && self
+                        .snapshot
+                        .as_ref()
+                        .is_some_and(|state| state.replication.is_some());
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("Failure domain").on_hover_text("Owner-configured correlated-failure label; not an authenticated machine identity.");
+                    ui.add_enabled(domain_enabled, egui::DragValue::new(edited).range(0..=u64::MAX));
+                });
+                let edited = *edited;
+                if action_button(ui, "Save domain", domain_enabled && edited != domain).clicked() {
+                    self.control(
+                        Command::SetFailureDomain {
+                            id: peer_id,
+                            domain: edited,
+                        },
+                        Control::Domain(id),
+                    );
+                }
                 section(ui, "Encrypted shard");
                 ui.label(format!(
                     "{} rows / {} stored of {} quota",
@@ -211,10 +320,31 @@ impl Playground {
                     RichText::new(format!("Data {}  ·  Index {}", bytes(peer.data_bytes), bytes(peer.index_bytes)))
                         .small().color(MUTED),
                 ).on_hover_text("Canonical encrypted data includes page authentication metadata. The index is counted separately. Shared evaluation keys and transient FHE memory are additional.");
+                if let Some(replication) = self
+                    .snapshot
+                    .as_ref()
+                    .and_then(|state| state.replication.as_ref())
+                {
+                    for shard in &replication.shards {
+                        for copy in shard.replicas.iter().filter(|copy| copy.peer_id == peer_id) {
+                            ui.label(format!(
+                                "Shard {} · {} / {} · {} data + {} index · expected heads v{}/v{}",
+                                shard.id,
+                                if copy.current { "current" } else { "stale" },
+                                if copy.online { "online" } else { "offline" },
+                                bytes(copy.data_bytes),
+                                bytes(copy.index_bytes),
+                                shard.data_head.revision(),
+                                shard.index_head.revision()
+                            ));
+                        }
+                    }
+                    ui.label(RichText::new("Repair copies authenticated ciphertext locally after discovery; it does not reseal the owner's rows.").small().color(MUTED));
+                }
                 section(ui, "Rows / owner view");
                 ui.label(
                     RichText::new(
-                        "The peer holds ciphertexts. This view uses the owner's fixture.",
+                        "Current owner fixture. Peers hold ciphertexts; stale copies may contain earlier values.",
                     )
                     .small()
                     .color(MUTED),
@@ -649,6 +779,21 @@ impl Playground {
         }
         ui.separator();
         if ui
+            .add_enabled(
+                self.controls_available()
+                    && self.available()
+                    && self
+                        .snapshot
+                        .as_ref()
+                        .is_some_and(|state| state.replication.is_some()),
+                egui::Button::new("Repair replicas"),
+            )
+            .clicked()
+        {
+            *action = Some(GraphAction::Repair);
+            ui.close();
+        }
+        if ui
             .add_enabled(self.controls_available(), egui::Button::new("Delete node"))
             .clicked()
         {
@@ -701,6 +846,21 @@ impl Playground {
                 ui.close();
             }
         }
+        if ui
+            .add_enabled(
+                self.controls_available()
+                    && self.available()
+                    && self
+                        .snapshot
+                        .as_ref()
+                        .is_some_and(|state| state.replication.is_some()),
+                egui::Button::new("Repair replicas"),
+            )
+            .clicked()
+        {
+            *action = Some(GraphAction::Repair);
+            ui.close();
+        }
     }
     pub(super) fn graph_action(&mut self, action: GraphAction, canvas: egui::Rect) {
         match action {
@@ -741,6 +901,7 @@ impl Playground {
                 self.graph_layout.settle();
                 self.fit_graph(canvas);
             }
+            GraphAction::Repair => self.control(Command::RepairReplicas, Control::Repair),
         }
     }
 }
