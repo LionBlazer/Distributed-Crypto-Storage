@@ -1,5 +1,10 @@
 # Whole-table bulk retrieval → exact BFV aggregate
 
+The separate [bulk-scale package](../private-bfv-bulk-scale/README.md) adds actual
+1,000-table disk-only dispatch under one DB owner. Its measured files plus native
+peak are 1.782226215x of 3 GB; all 54 complete local operations are below 31 ms.
+This package retains the original one-table Disk/Resident comparison unchanged.
+
 Validated isolated alternative, **not PIR**: all18 full operations on one fresh
 1,000,000-row public table returned exact COUNT/SUM. Local time was27.0733–31.5408ms;
 every operation transferred5,736,091B across two sequential RPCs. The100Mbps serial

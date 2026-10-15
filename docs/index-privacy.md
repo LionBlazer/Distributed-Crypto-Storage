@@ -72,6 +72,16 @@ single 3 MB table, files plus observed native peak commit are 94.909507x; no sca
 whereas 1000 Mbps/10 ms RTT gives 93–97 ms. Neither is measured network latency,
 and there is no same-fixture PIR benchmark for this sparse selection.
 
+The [actual bulk scale experiment](experiment-private-bfv-bulk-scale.md) then
+independently sealed 1,000 tables under one declared DB owner and measured all
+2,001 files plus observed native peak commit at 1.782226215x of 3 GB logical.
+All 54 supplied-table EQ operations are exact, 26.672–30.329 ms, including 256
+matches on 256 data pages. Every call reopens/reads both complete encrypted images;
+there is no resident response or owner snapshot cache. Traffic stays 5,736,091 B.
+The ideal 100 Mbps/10 ms RTT model still exceeds 500 ms for all observations.
+This is an additional retrieval plan with O(table bytes) transfer, not index-only
+visible fetching, general SQL or a final privacy-policy selection.
+
 | Question | Visible accesses | Concealed accesses |
 | --- | --- | --- |
 | Retrieval | Request the selected encrypted index/data pages directly | Use an oblivious index with ORAM, or suitable single-server PIR retrieval |

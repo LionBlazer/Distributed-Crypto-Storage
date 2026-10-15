@@ -1,5 +1,9 @@
 # Whole-table bulk disk → exact BFV aggregate
 
+The subsequent [actual 1,000-table experiment](experiment-private-bfv-bulk-scale.md)
+measures scale separately with a new disk-only dispatcher and one DB owner. The
+measurements below remain the original single-table Disk/Resident control.
+
 One fresh1,000,000-row public table completed **18/18 exact full operations** on
 2026-10-15. Local time was **27.0733–31.5408ms**, with0/18 above500ms. The complete
 serialized traffic was **5,736,091B per query**. This is an alternative full-snapshot

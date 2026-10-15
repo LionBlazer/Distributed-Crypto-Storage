@@ -44,13 +44,15 @@ participant data are committed.
 | [Actual GUI SQL, 128 rows, 1/3/16 peers, 147 operations](docs/experiment-bfv-gui-integration.md) | 383.854 ms | Tiny-table metadata/key cost; no 2x claim |
 | [Original-owner process restart, 1,000 tables / 3 GB](docs/experiment-private-bfv-restart-disk-scale.md) | ExactIndex: visible 37.288 ms / PIR 320.674 ms; one FullPredicate control 520.214 ms | 1.814826x including both sealed checkpoints and observed parent/serial-child peak bound |
 | [Two-posting/two-data-page selection, 1,000 tables / 3 GB](docs/experiment-private-bfv-multipage-disk-scale1000.md) | PIR cached-header 436.036 ms; five uncached Fixed256 misses exceed 500 ms, max 522.106 ms | 1.813729x; all 480 answers exact |
-| [Bulk full snapshots, 256 matches across 256 pages, one 3 MB table](docs/experiment-private-bfv-bulk-disk.md) | 31.541 ms, all 18 exact | 94.909507x; fixed keys are not amortized in this tiny fixture |
+| [Bulk full snapshots, 1,000 tables / 3 GB, 256 matches across 256 pages](docs/experiment-private-bfv-bulk-scale.md) | 30.329 ms, all 54 exact | 1.782226x; one DB owner, all keys/native allocations retained |
 | [Compact BFV UPDATE, 1,000 tables / 3 GB](docs/experiment-private-bfv-update-disk.md) | 100 point cycles through commit/invalidation: 316.162 ms | 1.814285x; 126 positive commits preserve file sizes |
 
 These are different measured workloads, not interchangeable performance claims.
 Setup is separate; OS file cache is allowed; network, replication and arithmetic
 proofs are excluded. Bulk uses 5,736,091 bytes/query: its ideal 100 Mbps/10 ms RTT
 model exceeds 500 ms. All outliers and complete accounting remain in the reports.
+The 2x results require the stated large datasets; fixed setup costs still dominate
+tiny tables, as the [one-table control](docs/experiment-private-bfv-bulk-disk.md) shows.
 The [visible/concealed access comparison](docs/index-privacy.md) keeps both policies
 open. Private reads hide selected pages within their declared table/plan, while
 identity, heads, sizes, timing and allowed failure patterns remain public.

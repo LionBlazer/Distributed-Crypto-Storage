@@ -1,10 +1,14 @@
 # Compact FHE query investigation
 
-Active goal: at most 2x canonical data storage and at most 500 ms per measured
-query, while retaining encrypted peer computation. The earlier 100/50 ms indexed
-targets remain stretch targets. These are goals, not established capabilities.
-Arbitrary SQL remains the direction; each result below must identify its actual
-supported query, input size and privacy model.
+The numerical local-performance milestone is met in the explicitly bounded
+prototype configurations below: at most 2x storage with at most 500 ms per measured
+request, retaining genuine encrypted peer computation. The latest
+[actual bulk-scale run](experiment-private-bfv-bulk-scale.md) measures all files
+plus observed native peak at 1.782226215x of 3 GB logical and all 54 complete
+local requests at 26.672–30.329 ms. Setup is separate and network is unmeasured.
+This is not an arbitrary-SQL, small-dataset, WAN or malicious-peer guarantee.
+Arbitrary SQL remains the direction; every result identifies its supported query,
+input size and privacy model. The earlier 100/50 ms targets are not universal SLAs.
 
 The prototype branch is `codex/feature/fhe-prototype`. Isolated experiments record
 their base commit; only reviewed, validated improvements are promoted to that branch.
@@ -77,6 +81,7 @@ See [earlier measurements](fhe-optimization.md) before repeating experiments.
 | Complete indexed BFV groups across two posting/data pages | [Actual multipage composition](experiment-private-bfv-multipage-disk.md); 31 owning tests, strict Clippy, 480 exact matrix queries and 25 before-BFV rejections | Real two-byte varints cross index offsets 4095 and 8191; complete EQ/GE/range groups retain all rows. Fixed256 performs two actual posting plus two data fetches, including dummies. All visible/private/header/cache modes pass, maximum 491.651 ms. Tiny three-table files plus peak commit =43.106627x, not a scaled 2x result. Same owning BFV core, capacity-one loading, local transport, online owner and unverified arithmetic; process restart is a separate experiment |
 | Actual two-page private read scale | [Same frozen executable, 1,000 fresh tables](experiment-private-bfv-multipage-disk-scale1000.md); all 480 answers, one predicate control and 25 before-BFV rejects pass | Same-run all 2,003 files plus observed native peak commit =1.813729056x of 3 GB logical. Five Private/Fixed256/Uncached/TableMiss observations exceed 500 ms, maximum 522.106 ms; every outlier is retained. Cached-header private maxima: AddressOnly 436.036 ms, Fixed256 414.391 ms. Actual two-posting/two-data groups, capacity-one loading and unchanged owning BFV; no owner restart, network, arbitrary SQL or arithmetic proof claim |
 | Whole encrypted snapshot retrieval for sparse groups | [Actual bulk alternative](experiment-private-bfv-bulk-disk.md); six owning tests, strict Clippy and all 18 paired Disk/Resident operations pass | Complete 0/1/256 selections include 256 distinct data pages and maximum SUM. Owning compact-query restores/authenticates full snapshots and performs fresh BFV; no PIR, selected addresses or owner answer cache. Local maximum 31.541 ms, constant 5,736,091 B total traffic. Full original BFV/PIR material remains counted: tiny 3 MB files plus peak commit =94.909507x. Ideal serial 100 Mbps/10 ms RTT model is 506–510 ms, not measured WAN; actual scale remains a separate gate |
+| Actual bulk scale with sparse complete selections | [1,000 fresh tables under one DB owner](experiment-private-bfv-bulk-scale.md); nine owning tests, strict Clippy, all 54 real operations and all 2,000 physical head/length checks pass | Same-run all 2,001 files plus observed native peak commit =1.782226215x of 3 GB. Complete EQ0/1/256 including 256 data pages take 26.672–30.329 ms locally; each call reads/authenticates full snapshots and performs fresh BFV. All original BFV and unused PIR material stays counted; no resident/owner response cache or DB NTT. Fixed 5,736,091 B/query; ideal 100 Mbps/10 ms RTT model exceeds 500 ms for all 54. Supplied-table, owner-online, read-only scope; no restart-bundle compatibility, GUI-private, arbitrary SQL or arithmetic-proof claim |
 
 Experiments use separate managed worktrees, including `private-index-research`,
 `compact-fhe-query`, `query-proof-research` and `compact-playground`. Generated
@@ -132,9 +137,10 @@ amortized below 2x in one configuration, without counting projections or cloned
 tables. It does not remove the earlier small-table costs, multirow latency or
 the need to account for a real distributed SQL planner and routing structures.
 
-The full goal remains active: close the private uncached-header multipage latency
-misses and validate a retrieval plan for sparse groups beyond those page limits.
-Proof, freshness,
-resource and durable lifecycle requirements
-remain unresolved. Transport and malicious-peer computation proofs remain absent
-from all local latency measurements.
+The numerical local-performance investigation is complete for the stated prototype
+workloads; no final access-privacy policy was selected. The five uncached-header
+multipage PIR misses remain failures of that mode, while the separately measured
+bulk plan supports sparse selections at greater bandwidth cost. Future database
+work includes general SQL/routing, real transport, malicious-peer proofs, independent
+security/noise analysis, freshness authority, private writes and durable recovery.
+These requirements are not claimed complete by the local performance milestone.
