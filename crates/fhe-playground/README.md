@@ -96,18 +96,34 @@ finishes. A failed rebuild preserves the old database.
 ## SQL subset
 
 The only table is `records(age u8, amount u16)`. Keywords are case-insensitive;
-whitespace and a trailing semicolon are optional. Supported forms are:
+whitespace around operators and a trailing semicolon are optional. Supported forms are:
 
 ```sql
 SELECT COUNT(*), SUM(amount) FROM records;
 SELECT COUNT(*), SUM(amount) FROM records WHERE age >= 18;
 SELECT COUNT(*), SUM(amount) FROM records WHERE age = 18;
+SELECT COUNT(*), SUM(amount) FROM records WHERE age < 18;
+SELECT COUNT(*), SUM(amount) FROM records WHERE age <= 18;
+SELECT COUNT(*), SUM(amount) FROM records WHERE age > 18;
+SELECT COUNT(*), SUM(amount) FROM records WHERE age BETWEEN 18 AND 42;
 UPDATE records SET amount = amount + 5 WHERE age >= 18;
+UPDATE records SET amount = amount + 1 WHERE age BETWEEN 18 AND 42;
 UPDATE records SET amount = amount + 1;
 ```
 
-Thresholds must be in `0..=255`, deltas in `0..=65535`. Omitting WHERE selects all
-rows. Empty selections return `(0, 0)`; SQL NULL semantics are not implemented.
+Age literals must be in `0..=255`, deltas in `0..=65535`. BETWEEN includes both
+endpoints; its AND is part of that one predicate, not general conjunction support.
+The planner normalizes operators to inclusive age bounds without unsigned wrap.
+Omitting WHERE selects all rows. Empty selections return `(0, 0)`; SQL NULL semantics
+are not implemented.
+
+`age < 0`, `age > 255` and reversed BETWEEN bounds are constant false for the public
+u8 domain. The SQL planner folds these without inspecting any row: reads return
+`(0, 0)` and updates succeed without changing either head, owner rows or revision.
+`Updated.committed` reports a successful statement, not a changed-row count. Normal
+database, peer availability and transport checks still apply. These folded cases do
+not evaluate FHE and carry no FHE timing claim. Every potentially matching range,
+including a valid range with no actual matches, follows authenticated exact-index BFV.
 The entire statement is parsed, with a 4 KiB limit. Unsupported projections,
 operators, clauses, aliases, comments, quoted identifiers, and multiple statements
 are rejected. CREATE/INSERT/DELETE, CREATE INDEX, joins and transactions are not supported
@@ -143,7 +159,7 @@ not proof of correct, complete, fresh execution by malicious peers. The cryptogr
 limitations and measured costs of the underlying implementation remain as described
 in [compact-query](../compact-query/README.md). Owner-side update checking repeats selected plaintext work and is not a succinct single-peer computation proof.
 
-Library entry points include `LabEngine::create`, `create_with_peer_ids`,
+Library entry points include `parse_sql`, `Predicate::age_range`, `LabEngine::create`, `create_with_peer_ids`,
 `repartition`, `execute`, `prepare_query`, `commit_prepared`, `discard_prepared`,
 `snapshot`, SQL/fixture
 helpers, and `DemoNetwork`'s node, delivery and snapshot operations. The binary owns
@@ -173,12 +189,13 @@ The sql_workload example exercises the actual SQL/manager boundary without openi
 
 The BFV owning library is [bfv-query-core](../bfv-query-core/README.md). Its inherited
 profile is experimental and independently unvalidated for security/noise/CCA.
-Release/locked/offline validation passed all 80 headless GUI/SQL/worker tests (one
+Initial BFV integration release/locked/offline validation passed all 80 headless GUI/SQL/worker tests (one
 preview-export test remains ignored). The finite public 128-row workload runs all 16
 cases three times on1/3/16peers plus three late-overflow controls:147 exact full
 operations, zero observed >500ms, maximum 383.8544ms. This measures the visible local
 LabEngine boundary with setup/virtual network/rendering/proofs excluded; it is not a
-general SLA or privacy/security claim. See the [integration report](../../docs/experiment-bfv-gui-integration.md)
+general SLA or privacy/security claim. These historical workload timings predate
+the added strict/BETWEEN grammar. See the [integration report](../../docs/experiment-bfv-gui-integration.md)
 for full timer scope, keys, native memory, canonical sizes and source/raw hashes.
 
 ```sh

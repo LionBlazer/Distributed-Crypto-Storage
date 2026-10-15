@@ -1,12 +1,12 @@
 use std::fmt;
 use std::time::Instant;
 
-use crate::{Comparison, PlainRow};
+use crate::PlainRow;
 use compact_query::bfv as backend;
 use compact_query::{self as cq, AgeRange, Table};
 use compact_store::Limits;
 
-use crate::{Predicate, QueryPlan, parse_sql};
+use crate::{QueryPlan, parse_sql};
 
 pub const MAX_PEERS: usize = 16;
 pub const MAX_LAB_ROWS: usize = 128;
@@ -144,6 +144,7 @@ pub enum QueryOutcome {
         peers: Vec<PeerAggregate>,
     },
     Updated {
+        /// The statement succeeded; a constant-false predicate is a successful no-op.
         committed: bool,
     },
 }
@@ -366,9 +367,20 @@ impl LabEngine {
             return Err(LabError::Unavailable(missing));
         }
         match plan {
-            QueryPlan::Aggregate { predicate } => db.aggregate(predicate, &progress),
+            QueryPlan::Aggregate { predicate } => match predicate.age_range() {
+                Some(range) => db.aggregate(range, &progress),
+                // Public domain reasoning only. No stored row is inspected or FHE claimed.
+                None => Ok(QueryOutcome::Aggregate {
+                    count: 0,
+                    sum: 0,
+                    peers: Vec::new(),
+                }),
+            },
             QueryPlan::AddAmount { predicate, delta } => {
-                let (result, prepared) = db.add_amount(predicate, delta, &progress)?;
+                let Some(range) = predicate.age_range() else {
+                    return Ok(QueryOutcome::Updated { committed: true });
+                };
+                let (result, prepared) = db.add_amount(range, delta, &progress)?;
                 self.prepared = prepared;
                 Ok(result)
             }
@@ -395,12 +407,11 @@ impl LabEngine {
 impl Database {
     fn aggregate(
         &self,
-        predicate: Predicate,
+        range: AgeRange,
         progress: &impl Fn(LabProgress),
     ) -> Result<QueryOutcome, LabError> {
         let mut contributions = Vec::new();
         let (mut count, mut sum) = (0, 0);
-        let range = age_range(predicate);
         for peer in &self.peers {
             if peer.rows() == 0 {
                 continue;
@@ -445,11 +456,10 @@ impl Database {
     }
     fn add_amount(
         &self,
-        predicate: Predicate,
+        range: AgeRange,
         delta: u16,
         progress: &impl Fn(LabProgress),
     ) -> Result<(QueryOutcome, Option<PreparedUpdate>), LabError> {
-        let range = age_range(predicate);
         let mut candidates = Vec::with_capacity(self.peers.len());
         for peer in &self.peers {
             let mut table = peer.table.fork_for_experiment();
@@ -550,15 +560,6 @@ fn build_peers(
         });
     }
     Ok(peers)
-}
-fn age_range(predicate: Predicate) -> AgeRange {
-    match predicate.comparison {
-        Comparison::Equal => AgeRange::equal(predicate.threshold),
-        Comparison::AtLeast => AgeRange {
-            lower: predicate.threshold,
-            upper: u8::MAX,
-        },
-    }
 }
 /// Public synthetic data only. Each GUI run generates fresh secret keys in memory.
 pub fn sample_rows(count: usize) -> Result<Vec<PlainRow>, LabError> {

@@ -345,3 +345,203 @@ fn bfv_full128_no_where_and_duplicate_selection_use_actual_shards_and_writeback(
         assert_eq!(actual.amount, original.amount + 1);
     }
 }
+
+#[test]
+fn strict_and_closed_age_ranges_use_real_bfv_shards_including_valid_empty_ranges() {
+    let mut engine = lab(
+        [0, 1, 17, 18, 19, 42, 43, 254, 255]
+            .into_iter()
+            .enumerate()
+            .map(|(index, age)| PlainRow {
+                age,
+                amount: 1 << index,
+            })
+            .collect(),
+        3,
+    );
+    for (clause, expected) in [
+        ("age < 18", (3, 7)),
+        ("age <= 18", (4, 15)),
+        ("age > 18", (5, 496)),
+        ("age BETWEEN 18 AND 42", (3, 56)),
+        ("age BETWEEN 0 AND 0", (1, 1)),
+        ("age <= 0", (1, 1)),
+        ("age > 254", (1, 256)),
+        ("age BETWEEN 255 AND 255", (1, 256)),
+        ("age < 255", (8, 255)),
+        ("age >= 255", (1, 256)),
+        ("age BETWEEN 0 AND 255", (9, 511)),
+        ("age BETWEEN 2 AND 16", (0, 0)),
+        ("age = 16", (0, 0)),
+    ] {
+        let sql = format!("SELECT COUNT(*), SUM(amount) FROM records WHERE {clause}");
+        let outcome = engine.execute(&sql).unwrap();
+
+        let QueryOutcome::Aggregate { count, sum, peers } = outcome else {
+            panic!("expected aggregate for {sql}");
+        };
+        assert_eq!((count, sum), expected, "{sql}");
+        // Even a valid range with no matches completes an actual encrypted operation per shard.
+        assert_eq!(
+            peers.iter().map(|peer| peer.id).collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+    }
+}
+
+#[test]
+fn public_constant_false_bounds_are_successful_noops_without_any_state_change() {
+    let mut engine = lab(
+        vec![
+            PlainRow {
+                age: 0,
+                amount: u16::MAX,
+            },
+            PlainRow {
+                age: 255,
+                amount: u16::MAX,
+            },
+            PlainRow { age: 18, amount: 7 },
+        ],
+        3,
+    );
+    let before = engine.snapshot().unwrap();
+    let heads = engine.peer_heads_for_experiment().unwrap();
+    for clause in ["age < 0", "age > 255", "age BETWEEN 255 AND 0"] {
+        let visited = std::cell::RefCell::new(Vec::new());
+        let read = engine
+            .execute_with_progress(
+                &format!("SELECT COUNT(*), SUM(amount) FROM records WHERE {clause}"),
+                |progress| visited.borrow_mut().push(progress.peer_id),
+            )
+            .unwrap();
+        let update = engine
+            .execute_with_progress(
+                &format!("UPDATE records SET amount = amount + 65535 WHERE {clause}"),
+                |progress| visited.borrow_mut().push(progress.peer_id),
+            )
+            .unwrap();
+
+        assert!(
+            matches!(read, QueryOutcome::Aggregate { count: 0, sum: 0, peers } if peers.is_empty())
+        );
+        assert!(matches!(update, QueryOutcome::Updated { committed: true }));
+        assert!(visited.borrow().is_empty());
+        let after = engine.snapshot().unwrap();
+        assert_eq!(after.owner_rows, before.owner_rows);
+        assert_eq!(after.revision, before.revision);
+        assert_eq!(engine.peer_heads_for_experiment().unwrap(), heads);
+        assert_eq!(
+            after
+                .peers
+                .iter()
+                .map(|peer| peer.stored_bytes)
+                .collect::<Vec<_>>(),
+            before
+                .peers
+                .iter()
+                .map(|peer| peer.stored_bytes)
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+fn constant_false_plans_still_require_a_database_storage_and_online_shards() {
+    let sqls = [
+        "SELECT COUNT(*), SUM(amount) FROM records WHERE age < 0",
+        "UPDATE records SET amount = amount + 1 WHERE age > 255",
+    ];
+    let mut empty = LabEngine::default();
+    for sql in sqls {
+        assert!(matches!(empty.execute(sql), Err(LabError::NoDatabase)));
+    }
+    let mut engine = lab(sample_rows(2).unwrap(), 2);
+    engine.set_peer_online(2, false).unwrap();
+    for sql in sqls {
+        assert!(matches!(engine.execute(sql), Err(LabError::Unavailable(ids)) if ids == [2]));
+    }
+    engine.configure_peers(Vec::new()).unwrap();
+    for sql in sqls {
+        assert!(matches!(
+            engine.execute(sql),
+            Err(LabError::InvalidInput(_))
+        ));
+    }
+}
+
+#[test]
+fn range_update_overflow_rejects_all_shards_then_safe_range_keeps_excluded_rows() {
+    // Peers1/2 can update; selected peer3 overflows after both have staged writes.
+    let rows = vec![
+        PlainRow {
+            age: 18,
+            amount: 255,
+        },
+        PlainRow {
+            age: 19,
+            amount: 256,
+        },
+        PlainRow {
+            age: 42,
+            amount: u16::MAX,
+        },
+        PlainRow {
+            age: 17,
+            amount: u16::MAX,
+        },
+    ];
+    let mut engine = lab(rows.clone(), 3);
+    let before = engine.peer_heads_for_experiment().unwrap();
+
+    let overflow = engine
+        .execute("UPDATE records SET amount = amount + 1 WHERE age BETWEEN 18 AND 42")
+        .unwrap();
+
+    assert!(matches!(
+        overflow,
+        QueryOutcome::Updated { committed: false }
+    ));
+    assert_eq!(engine.peer_heads_for_experiment().unwrap(), before);
+    assert_eq!(engine.snapshot().unwrap().owner_rows, rows);
+    assert_eq!(engine.snapshot().unwrap().revision, 0);
+
+    let accepted = engine
+        .execute("UPDATE records SET amount = amount + 1 WHERE age BETWEEN 18 AND 19")
+        .unwrap();
+
+    assert!(matches!(
+        accepted,
+        QueryOutcome::Updated { committed: true }
+    ));
+    let after = engine.snapshot().unwrap();
+    assert_eq!(after.revision, 1);
+    assert_eq!(
+        after.owner_rows,
+        [
+            PlainRow {
+                age: 18,
+                amount: 256
+            },
+            PlainRow {
+                age: 19,
+                amount: 257
+            },
+            rows[2],
+            rows[3],
+        ]
+    );
+    let heads = engine.peer_heads_for_experiment().unwrap();
+    for index in [0, 1] {
+        assert_ne!(heads[index].data, before[index].data);
+        assert_ne!(heads[index].index, before[index].index);
+    }
+    assert_eq!(heads[2], before[2]);
+    assert_eq!(
+        aggregate(
+            &mut engine,
+            "SELECT COUNT(*), SUM(amount) FROM records WHERE age BETWEEN 18 AND 19"
+        ),
+        (2, 513)
+    );
+}

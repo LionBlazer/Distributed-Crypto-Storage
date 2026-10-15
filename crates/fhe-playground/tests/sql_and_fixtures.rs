@@ -38,7 +38,13 @@ fn unsupported_clauses_and_extra_statements_are_never_ignored() {
         "UPDATE records SET amount = amount + 5, age = 18",
         "UPDATE records SET amount = amount + 5 -- ignored?",
         "SELECT COUNT(*), SUM(amount) FROM records;;",
-        "SELECT COUNT(*), SUM(amount) FROM records WHERE age > 18",
+        "SELECT COUNT(*), SUM(amount) FROM records WHERE age <> 18",
+        "SELECT COUNT(*), SUM(amount) FROM records WHERE age < = 18",
+        "SELECT COUNT(*), SUM(amount) FROM records WHERE age BETWEEN 18 42",
+        "SELECT COUNT(*), SUM(amount) FROM records WHERE age BETWEEN 18 AND",
+        "SELECT COUNT(*), SUM(amount) FROM records WHERE age BETWEEN 18 OR 42",
+        "SELECT COUNT(*), SUM(amount) FROM records WHERE age BETWEEN 18 AND 42 AND age = 19",
+        "SELECT COUNT(*), SUM(amount) FROM records WHERE age <= 18 AND age > 0",
         "SELECT COUNT(*), SUM(amount) FROM records WHERE age = 1e2",
         "",
     ] {
@@ -54,6 +60,9 @@ fn sql_values_must_fit_the_encrypted_column_types() {
     for sql in [
         "SELECT COUNT(*), SUM(amount) FROM records WHERE age = 256",
         "SELECT COUNT(*), SUM(amount) FROM records WHERE age = -1",
+        "SELECT COUNT(*), SUM(amount) FROM records WHERE age < 256",
+        "SELECT COUNT(*), SUM(amount) FROM records WHERE age BETWEEN 0 AND 256",
+        "SELECT COUNT(*), SUM(amount) FROM records WHERE age BETWEEN -1 AND 18",
         "UPDATE records SET amount = amount + 65536",
         "UPDATE records SET amount = amount + 1.5",
     ] {
@@ -63,6 +72,66 @@ fn sql_values_must_fit_the_encrypted_column_types() {
         );
     }
     assert!(parse_sql("UPDATE records SET amount = amount + 65535 WHERE age = 255").is_ok());
+}
+
+#[test]
+fn age_comparisons_normalize_exact_endpoints_without_unsigned_wrap() {
+    for (clause, bounds) in [
+        ("age = 18", Some((18, 18))),
+        ("age >= 18", Some((18, 255))),
+        ("age < 18", Some((0, 17))),
+        ("age <= 18", Some((0, 18))),
+        ("age > 18", Some((19, 255))),
+        ("age<=0", Some((0, 0))),
+        ("age<1", Some((0, 0))),
+        ("age>254", Some((255, 255))),
+        ("age<=255", Some((0, 255))),
+        ("age>=0", Some((0, 255))),
+        ("age between 18 and 42", Some((18, 42))),
+        ("age BETWEEN 0 AND 0", Some((0, 0))),
+        ("age BETWEEN 255 AND 255", Some((255, 255))),
+        ("age < 0", None),
+        ("age > 255", None),
+        ("age BETWEEN 42 AND 18", None),
+    ] {
+        let sql = format!("SELECT COUNT(*), SUM(amount) FROM records WHERE {clause}");
+        let QueryPlan::Aggregate { predicate } = parse_sql(&sql).unwrap() else {
+            panic!("expected aggregate for {sql}");
+        };
+
+        assert_eq!(
+            predicate
+                .age_range()
+                .map(|range| (range.lower, range.upper)),
+            bounds,
+            "{sql}"
+        );
+    }
+}
+
+#[test]
+fn updates_accept_the_same_age_range_grammar_as_reads() {
+    for clause in ["age < 18", "age <= 18", "age > 18", "age BETWEEN 18 AND 42"] {
+        let QueryPlan::Aggregate { predicate: read } = parse_sql(&format!(
+            "SELECT COUNT(*), SUM(amount) FROM records WHERE {clause}"
+        ))
+        .unwrap() else {
+            panic!("expected read");
+        };
+
+        let update = parse_sql(&format!(
+            "UPDATE records SET amount=amount+65535 WHERE {clause};"
+        ))
+        .unwrap();
+
+        assert_eq!(
+            update,
+            QueryPlan::AddAmount {
+                predicate: read,
+                delta: 65535
+            }
+        );
+    }
 }
 
 #[test]

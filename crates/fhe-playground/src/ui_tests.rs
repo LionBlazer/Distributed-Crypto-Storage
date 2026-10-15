@@ -336,6 +336,27 @@ fn presets_fill_the_editor_without_execution_until_run_is_clicked() {
         matches!(commands.try_recv(),Ok(Command::Query{client_id:1,sql})if sql==PRESETS[4].sql)
     );
 }
+
+#[test]
+fn range_presets_only_fill_sql_until_the_user_runs_the_statement() {
+    let (mut app, commands, _events) = app();
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    for name in ["Under 18", "At most 18", "Over 18", "Ages 18..42"] {
+        let preset = PRESETS.iter().find(|preset| preset.name == name).unwrap();
+
+        click(&ctx, &mut app, "Presets");
+        click(&ctx, &mut app, name);
+
+        assert_eq!(app.sql, preset.sql);
+        assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+    }
+    let sql = app.sql.clone();
+    click(&ctx, &mut app, "Run");
+    assert!(
+        matches!(commands.try_recv(), Ok(Command::Query { client_id: 1, sql: sent }) if sent == sql)
+    );
+}
 #[test]
 fn network_remains_beside_both_sql_and_data_without_old_sidebars() {
     let (mut app, commands, _events) = app();

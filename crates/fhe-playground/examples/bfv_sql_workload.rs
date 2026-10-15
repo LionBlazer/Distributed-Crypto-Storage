@@ -3,8 +3,7 @@
 #[path = "support/bfv_memory.rs"]
 mod memory;
 use fhe_playground::{
-    Comparison, DatabaseDraft, LabEngine, PeerConfig, PlainRow, Predicate, QueryOutcome, QueryPlan,
-    parse_sql,
+    DatabaseDraft, LabEngine, PeerConfig, PlainRow, Predicate, QueryOutcome, QueryPlan, parse_sql,
 };
 use serde_json::json;
 use std::time::Instant;
@@ -70,10 +69,9 @@ const CASES: &[(&str, &str)] = &[
     ),
 ];
 fn selected(row: &PlainRow, predicate: Predicate) -> bool {
-    match predicate.comparison {
-        Comparison::Equal => row.age == predicate.threshold,
-        Comparison::AtLeast => row.age >= predicate.threshold,
-    }
+    predicate
+        .age_range()
+        .is_some_and(|range| row.age >= range.lower && row.age <= range.upper)
 }
 fn memory_json() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let value = memory::guard(0)?;

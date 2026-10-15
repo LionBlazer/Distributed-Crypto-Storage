@@ -672,7 +672,9 @@ fn highlight_sql(sql: &str) -> egui::text::LayoutJob {
         let word = token
             .trim_end_matches(|character: char| !character.is_alphanumeric() && character != '_');
         let color = match word.to_ascii_uppercase().as_str() {
-            "SELECT" | "FROM" | "WHERE" | "UPDATE" | "SET" => Color32::from_rgb(207, 142, 109),
+            "SELECT" | "FROM" | "WHERE" | "UPDATE" | "SET" | "BETWEEN" | "AND" => {
+                Color32::from_rgb(207, 142, 109)
+            }
             "COUNT" | "SUM" => Color32::from_rgb(86, 168, 245),
             _ if !word.is_empty() && word.chars().all(|character| character.is_ascii_digit()) => {
                 Color32::from_rgb(106, 171, 115)

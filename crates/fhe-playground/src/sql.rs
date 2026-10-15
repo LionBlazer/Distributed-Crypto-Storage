@@ -2,6 +2,10 @@
 pub enum Comparison {
     Equal,
     AtLeast,
+    LessThan,
+    AtMost,
+    GreaterThan,
+    Between { upper: u8 },
 }
 
 use crate::LabError;
@@ -11,7 +15,24 @@ pub const MAX_SQL_BYTES: usize = 4_096;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Predicate {
     pub comparison: Comparison,
+    /// Comparison bound, or the inclusive lower bound of BETWEEN.
     pub threshold: u8,
+}
+
+impl Predicate {
+    /// Normalize the public SQL condition without inspecting any stored rows.
+    /// None denotes a constant-false condition in the unsigned age domain.
+    pub fn age_range(self) -> Option<compact_query::AgeRange> {
+        let (lower, upper) = match self.comparison {
+            Comparison::Equal => (self.threshold, self.threshold),
+            Comparison::AtLeast => (self.threshold, u8::MAX),
+            Comparison::LessThan => (0, self.threshold.checked_sub(1)?),
+            Comparison::AtMost => (0, self.threshold),
+            Comparison::GreaterThan => (self.threshold.checked_add(1)?, u8::MAX),
+            Comparison::Between { upper } => (self.threshold, upper),
+        };
+        (lower <= upper).then_some(compact_query::AgeRange { lower, upper })
+    }
 }
 
 impl Default for Predicate {
@@ -58,6 +79,22 @@ pub const PRESETS: &[Preset] = &[
     Preset {
         name: "Overflow test",
         sql: "UPDATE records\nSET amount = amount + 65535\nWHERE age >= 18;",
+    },
+    Preset {
+        name: "Under 18",
+        sql: "SELECT COUNT(*), SUM(amount)\nFROM records\nWHERE age < 18;",
+    },
+    Preset {
+        name: "At most 18",
+        sql: "SELECT COUNT(*), SUM(amount)\nFROM records\nWHERE age <= 18;",
+    },
+    Preset {
+        name: "Over 18",
+        sql: "SELECT COUNT(*), SUM(amount)\nFROM records\nWHERE age > 18;",
+    },
+    Preset {
+        name: "Ages 18..42",
+        sql: "SELECT COUNT(*), SUM(amount)\nFROM records\nWHERE age BETWEEN 18 AND 42;",
     },
 ];
 
@@ -115,9 +152,14 @@ fn tokenize(sql: &str) -> Result<Vec<String>, LabError> {
                 index += 1;
             }
             tokens.push(sql[start..index].to_ascii_uppercase());
-        } else if byte == b'>' && bytes.get(index + 1) == Some(&b'=') {
-            tokens.push(">=".into());
-            index += 2;
+        } else if matches!(byte, b'<' | b'>') {
+            let length = if bytes.get(index + 1) == Some(&b'=') {
+                2
+            } else {
+                1
+            };
+            tokens.push(sql[index..index + length].into());
+            index += length;
         } else if b"(),*+=;".contains(&byte) {
             tokens.push((byte as char).to_string());
             index += 1;
@@ -169,8 +211,24 @@ impl Parser {
             return Ok(Predicate::default());
         }
         self.expect("AGE")?;
+        if self.take("BETWEEN") {
+            let threshold = self.number("age must be in 0..=255")?;
+            self.expect("AND")?;
+            return Ok(Predicate {
+                comparison: Comparison::Between {
+                    upper: self.number("age must be in 0..=255")?,
+                },
+                threshold,
+            });
+        }
         let comparison = if self.take(">=") {
             Comparison::AtLeast
+        } else if self.take("<=") {
+            Comparison::AtMost
+        } else if self.take("<") {
+            Comparison::LessThan
+        } else if self.take(">") {
+            Comparison::GreaterThan
         } else {
             self.expect("=")?;
             Comparison::Equal
@@ -184,6 +242,6 @@ impl Parser {
 
 fn unsupported(reason: &str) -> LabError {
     LabError::UnsupportedSql(format!(
-        "{reason}. Supported: SELECT COUNT(*), SUM(amount) FROM records or UPDATE records SET amount = amount + N; optional WHERE age = N / age >= N."
+        "{reason}. Supported: SELECT COUNT(*), SUM(amount) FROM records or UPDATE records SET amount = amount + N; optional WHERE age =, <, <=, >, >= N or age BETWEEN lower AND upper."
     ))
 }
