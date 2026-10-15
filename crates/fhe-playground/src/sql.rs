@@ -45,9 +45,50 @@ impl Default for Predicate {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Column {
+    Age,
+    Amount,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Projection {
+    Age,
+    Amount,
+    AgeAmount,
+    AmountAge,
+}
+impl Projection {
+    pub fn columns(self) -> Vec<Column> {
+        match self {
+            Self::Age => vec![Column::Age],
+            Self::Amount => vec![Column::Amount],
+            Self::AgeAmount => vec![Column::Age, Column::Amount],
+            Self::AmountAge => vec![Column::Amount, Column::Age],
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QueryPlan {
-    Aggregate { predicate: Predicate },
-    AddAmount { predicate: Predicate, delta: u16 },
+    Aggregate {
+        predicate: Predicate,
+    },
+    Count {
+        predicate: Predicate,
+    },
+    Sum {
+        predicate: Predicate,
+    },
+    Select {
+        predicate: Predicate,
+        projection: Projection,
+        /// Output bound only; the complete exact selection is still authenticated.
+        limit: Option<usize>,
+    },
+    AddAmount {
+        predicate: Predicate,
+        delta: u16,
+    },
 }
 
 pub struct Preset {
@@ -96,6 +137,22 @@ pub const PRESETS: &[Preset] = &[
         name: "Ages 18..42",
         sql: "SELECT COUNT(*), SUM(amount)\nFROM records\nWHERE age BETWEEN 18 AND 42;",
     },
+    Preset {
+        name: "Browse rows",
+        sql: "SELECT * FROM records;",
+    },
+    Preset {
+        name: "First amounts",
+        sql: "SELECT amount FROM records\nWHERE age >= 18\nLIMIT 10;",
+    },
+    Preset {
+        name: "Count rows",
+        sql: "SELECT COUNT(*) FROM records;",
+    },
+    Preset {
+        name: "Sum amounts",
+        sql: "SELECT SUM(amount) FROM records;",
+    },
 ];
 
 /// Parses only the documented laboratory grammar, consuming the entire input.
@@ -107,14 +164,7 @@ pub fn parse_sql(sql: &str) -> Result<QueryPlan, LabError> {
     let tokens = tokenize(sql)?;
     let mut parser = Parser { tokens, index: 0 };
     let plan = if parser.take("SELECT") {
-        for token in [
-            "COUNT", "(", "*", ")", ",", "SUM", "(", "AMOUNT", ")", "FROM", "RECORDS",
-        ] {
-            parser.expect(token)?;
-        }
-        QueryPlan::Aggregate {
-            predicate: parser.predicate()?,
-        }
+        parser.select()?
     } else if parser.take("UPDATE") {
         for token in ["RECORDS", "SET", "AMOUNT", "=", "AMOUNT", "+"] {
             parser.expect(token)?;
@@ -176,6 +226,82 @@ struct Parser {
 }
 
 impl Parser {
+    fn select(&mut self) -> Result<QueryPlan, LabError> {
+        if self.take("COUNT") {
+            for token in ["(", "*", ")"] {
+                self.expect(token)?;
+            }
+            let both = self.take(",");
+            if both {
+                self.sum_expression()?;
+            }
+            self.expect_from_records()?;
+            let predicate = self.predicate()?;
+            return Ok(if both {
+                QueryPlan::Aggregate { predicate }
+            } else {
+                QueryPlan::Count { predicate }
+            });
+        }
+        if self.tokens.get(self.index).map(String::as_str) == Some("SUM") {
+            self.sum_expression()?;
+            self.expect_from_records()?;
+            return Ok(QueryPlan::Sum {
+                predicate: self.predicate()?,
+            });
+        }
+        let projection = if self.take("*") {
+            Projection::AgeAmount
+        } else {
+            let first = self.column()?;
+            let second = if self.take(",") {
+                Some(self.column()?)
+            } else {
+                None
+            };
+            match (first, second) {
+                (Column::Age, None) => Projection::Age,
+                (Column::Amount, None) => Projection::Amount,
+                (Column::Age, Some(Column::Amount)) => Projection::AgeAmount,
+                (Column::Amount, Some(Column::Age)) => Projection::AmountAge,
+                _ => return Err(unsupported("duplicate projection column")),
+            }
+        };
+        self.expect_from_records()?;
+        let predicate = self.predicate()?;
+        let limit = if self.take("LIMIT") {
+            let value = self.number::<usize>("LIMIT must be in 0..=128")?;
+            if value > crate::MAX_LAB_ROWS {
+                return Err(unsupported("LIMIT must be in 0..=128"));
+            }
+            Some(value)
+        } else {
+            None
+        };
+        Ok(QueryPlan::Select {
+            predicate,
+            projection,
+            limit,
+        })
+    }
+    fn column(&mut self) -> Result<Column, LabError> {
+        if self.take("AGE") {
+            Ok(Column::Age)
+        } else {
+            self.expect("AMOUNT")?;
+            Ok(Column::Amount)
+        }
+    }
+    fn sum_expression(&mut self) -> Result<(), LabError> {
+        for token in ["SUM", "(", "AMOUNT", ")"] {
+            self.expect(token)?;
+        }
+        Ok(())
+    }
+    fn expect_from_records(&mut self) -> Result<(), LabError> {
+        self.expect("FROM")?;
+        self.expect("RECORDS")
+    }
     fn take(&mut self, token: &str) -> bool {
         if self.tokens.get(self.index).map(String::as_str) == Some(token) {
             self.index += 1;
@@ -242,6 +368,6 @@ impl Parser {
 
 fn unsupported(reason: &str) -> LabError {
     LabError::UnsupportedSql(format!(
-        "{reason}. Supported: SELECT COUNT(*), SUM(amount) FROM records or UPDATE records SET amount = amount + N; optional WHERE age =, <, <=, >, >= N or age BETWEEN lower AND upper."
+        "{reason}. Supported: SELECT *, age, amount, COUNT(*), SUM(amount), or COUNT(*), SUM(amount) FROM records; UPDATE records SET amount = amount + N. Optional WHERE age =, <, <=, >, >= N or age BETWEEN lower AND upper. Row SELECT allows LIMIT 0..128."
     ))
 }

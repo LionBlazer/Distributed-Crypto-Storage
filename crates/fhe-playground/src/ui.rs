@@ -4,7 +4,7 @@ use crate::{
 };
 use eframe::egui::{self, Color32, FontId, RichText, Stroke};
 use fhe_playground::{
-    DatabaseDraft, LabSnapshot, MAX_LAB_ROWS, MAX_PEERS, NetworkSnapshot, NodeId, NodeRole,
+    Column, DatabaseDraft, LabSnapshot, MAX_LAB_ROWS, MAX_PEERS, NetworkSnapshot, NodeId, NodeRole,
     PRESETS, PeerConfig, QueryOutcome, format_rows, parse_rows, sample_rows,
 };
 use std::collections::{HashMap, VecDeque};
@@ -13,11 +13,13 @@ mod data;
 mod explorer;
 mod infrastructure;
 mod matrix;
+mod navigation;
 mod theme;
 use camera::Camera;
+use navigation::Navigation;
 use theme::*;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Tab {
     Sql,
     Data,
@@ -27,12 +29,12 @@ enum DataView {
     Grid,
     Csv,
 }
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ResultTab {
     Result,
     Output,
 }
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RightTab {
     Network,
     Node(NodeId),
@@ -94,6 +96,7 @@ pub struct Playground {
     selected_node: Option<NodeId>,
     node_tabs: Vec<NodeId>,
     right_tab: RightTab,
+    navigation: Navigation,
     network_view: NetworkView,
     peer_edits: HashMap<NodeId, PeerConfig>,
     domain_edits: HashMap<NodeId, u64>,
@@ -140,6 +143,7 @@ impl Playground {
             selected_node: None,
             node_tabs: Vec::new(),
             right_tab: RightTab::Network,
+            navigation: Navigation::default(),
             network_view: NetworkView::Auto,
             peer_edits: HashMap::new(),
             domain_edits: HashMap::new(),
@@ -258,7 +262,7 @@ impl Playground {
             self.node_tabs.push(id);
         }
         self.selected_node = Some(id);
-        self.right_tab = RightTab::Node(id);
+        self.navigate(self.tab, RightTab::Node(id));
         if let Some(node) = self
             .network
             .as_ref()
@@ -323,6 +327,7 @@ impl Playground {
                         self.selected_node = None;
                     }
                     self.network = Some(net);
+                    self.prune_navigation();
                 }
                 Ok(Some(Event::Progress(message))) => self.status = message,
                 Ok(Some(Event::PeerProgress(progress))) => self.status = progress.message,
@@ -357,10 +362,7 @@ impl Playground {
                                 if expected == *id =>
                             {
                                 self.graph_seeds.remove(id);
-                                self.node_tabs.retain(|node| node != id);
-                                if self.right_tab == RightTab::Node(*id) {
-                                    self.right_tab = RightTab::Network;
-                                }
+                                self.close_node_tab(*id);
                             }
                             (Some(Control::Domain(id)), _) => {
                                 self.domain_edits.remove(&id);
@@ -414,7 +416,12 @@ impl Playground {
                     if pending.job == Job::Query {
                         self.result_tab = if matches!(
                             outcome,
-                            Ok(Outcome::Query(QueryOutcome::Aggregate { .. }))
+                            Ok(Outcome::Query(
+                                QueryOutcome::Aggregate { .. }
+                                    | QueryOutcome::Count { .. }
+                                    | QueryOutcome::Sum { .. }
+                                    | QueryOutcome::Selected { .. }
+                            ))
                         ) {
                             ResultTab::Result
                         } else {
@@ -481,6 +488,7 @@ impl Playground {
         self.history.truncate(8);
     }
     fn draw(&mut self, ui: &mut egui::Ui) {
+        self.navigation_shortcuts(ui.ctx());
         egui::Panel::bottom("status").frame(panel(6)).show(ui, |ui| {
             ui.horizontal(|ui| {
                 if self.pending.is_some() { ui.spinner(); }
@@ -503,13 +511,9 @@ impl Playground {
                         ui.horizontal(|ui| {
                             for (tab, name) in [(Tab::Sql, "SQL"), (Tab::Data, "Data")] {
                                 if tab_button(ui, name, self.tab == tab).clicked() {
-                                    self.tab = tab;
+                                    self.navigate(tab, self.right_tab);
                                 }
                             }
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| self.client_selector(ui),
-                            );
                         });
                     });
                 match self.tab {
@@ -557,26 +561,19 @@ impl Playground {
         {
             self.run_query();
         }
-        egui::Panel::top("database-summary")
+        egui::Panel::top("sql-toolbar")
             .frame(panel(10))
-            .show(ui, |ui| self.database_bar(ui));
-        egui::Panel::bottom("query-results")
-            .default_size(230.0)
-            .size_range(120.0..=420.0)
-            .resizable(true)
-            .frame(panel(10))
-            .show(ui, |ui| self.results(ui));
-        egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(EDITOR).inner_margin(10))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Console.sql").monospace());
-                    if primary_button(ui, "Run", self.can_query())
-                        .on_hover_text("Execute SQL from the selected client (Ctrl+Enter)")
+                ui.horizontal_wrapped(|ui| {
+                    let reason = self.run_disabled_reason();
+                    if run_button(ui, self.can_query())
+                        .on_hover_text("Execute SQL from this client (Ctrl+Enter)")
+                        .on_disabled_hover_text(reason.unwrap_or("SQL is unavailable"))
                         .clicked()
                     {
                         self.run_query();
                     }
+                    self.client_selector(ui);
                     ui.menu_button("Presets", |ui| {
                         for preset in PRESETS {
                             if ui.button(preset.name).on_hover_text(preset.sql).clicked() {
@@ -586,7 +583,20 @@ impl Playground {
                         }
                     });
                 });
-                ui.separator();
+                self.database_bar(ui);
+                if let Some(reason) = self.run_disabled_reason() {
+                    ui.label(RichText::new(reason).small().color(MUTED));
+                }
+            });
+        egui::Panel::bottom("query-results")
+            .default_size(230.0)
+            .size_range(120.0..=420.0)
+            .resizable(true)
+            .frame(panel(10))
+            .show(ui, |ui| self.results(ui));
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(EDITOR).inner_margin(10))
+            .show(ui, |ui| {
                 let height = ui.available_height();
                 egui::ScrollArea::both()
                     .id_salt("sql-editor")
@@ -621,6 +631,23 @@ impl Playground {
                         });
                     });
             });
+    }
+    fn run_disabled_reason(&self) -> Option<&'static str> {
+        if self.worker_stopped {
+            Some("Worker stopped")
+        } else if self.pending.is_some() {
+            Some("Operation running…")
+        } else if self.control_pending.is_some() {
+            Some("Applying network changes…")
+        } else if self.snapshot.is_none() {
+            Some("Create a database in Data")
+        } else if self.active_client.is_none() {
+            Some("Add a client from the Network context menu")
+        } else if !self.can_query() {
+            Some("The selected client is offline")
+        } else {
+            None
+        }
     }
     fn results(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
@@ -666,19 +693,23 @@ impl Playground {
                 {
                     match &record.outcome {
                         Ok(Outcome::Query(QueryOutcome::Aggregate { count, sum, .. })) => {
-                            egui::Grid::new("aggregate-result")
-                                .striped(true)
-                                .min_col_width(120.0)
-                                .show(ui, |ui| {
-                                    for name in ["#", "COUNT(*)", "SUM(amount)"] {
-                                        ui.label(RichText::new(name).strong());
-                                    }
-                                    ui.end_row();
-                                    ui.label("1");
-                                    ui.monospace(count.to_string());
-                                    ui.monospace(sum.to_string());
-                                    ui.end_row();
-                                });
+                            result_table(ui, &["COUNT(*)", "SUM(amount)"], &[vec![*count, *sum]]);
+                        }
+                        Ok(Outcome::Query(QueryOutcome::Count { count, .. })) => {
+                            result_table(ui, &["COUNT(*)"], &[vec![*count]]);
+                        }
+                        Ok(Outcome::Query(QueryOutcome::Sum { sum, .. })) => {
+                            result_table(ui, &["SUM(amount)"], &[vec![*sum]]);
+                        }
+                        Ok(Outcome::Query(QueryOutcome::Selected { columns, rows })) => {
+                            ui.label(RichText::new("Encrypted SELECT · unverified").small().color(MUTED))
+                                .on_hover_text("The owner prepares authenticated encrypted index inputs; peers project the rows with BFV. Only the authorized client decrypts the result. No computation proof is available.");
+                            let headings: Vec<_> = columns.iter().map(|column| match column {
+                                Column::Age => "age",
+                                Column::Amount => "amount",
+                            }).collect();
+                            result_table(ui, &headings, rows);
+                            ui.label(RichText::new(format!("{} rows", rows.len())).small().color(MUTED));
                         }
                         _ => {
                             let (message, color) = outcome_message(&record.outcome);
@@ -688,6 +719,26 @@ impl Playground {
                 }
             });
     }
+}
+
+fn result_table(ui: &mut egui::Ui, columns: &[&str], rows: &[Vec<u32>]) {
+    egui::Grid::new("query-result-table")
+        .striped(true)
+        .min_col_width(80.0)
+        .show(ui, |ui| {
+            ui.label(RichText::new("#").strong().color(MUTED));
+            for column in columns {
+                ui.label(RichText::new(*column).strong());
+            }
+            ui.end_row();
+            for (index, row) in rows.iter().enumerate() {
+                ui.label(RichText::new((index + 1).to_string()).color(MUTED));
+                for value in row {
+                    ui.monospace(value.to_string());
+                }
+                ui.end_row();
+            }
+        });
 }
 
 impl eframe::App for Playground {
@@ -722,7 +773,7 @@ fn highlight_sql(sql: &str) -> egui::text::LayoutJob {
         let word = token
             .trim_end_matches(|character: char| !character.is_alphanumeric() && character != '_');
         let color = match word.to_ascii_uppercase().as_str() {
-            "SELECT" | "FROM" | "WHERE" | "UPDATE" | "SET" | "BETWEEN" | "AND" => {
+            "SELECT" | "FROM" | "WHERE" | "UPDATE" | "SET" | "BETWEEN" | "AND" | "LIMIT" => {
                 Color32::from_rgb(207, 142, 109)
             }
             "COUNT" | "SUM" => Color32::from_rgb(86, 168, 245),

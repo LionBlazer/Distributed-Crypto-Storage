@@ -28,6 +28,18 @@ ALL selected rows. Only then can apply_exact_update_checked_for_experiment stage
 all affected compact pages and the index binding before publishing both images.
 A global u16 overflow changes neither image. Slot/order/limb mismatches reject.
 
+`bfv::Owner::prepare_exact_select_for_experiment` reuses exact authenticated index
+selection to freshly encrypt ORIGINAL age/amount fields plus a projection/active
+mask. `Evaluator::evaluate_indexed_select` performs BFV ciphertext multiplication
+and relinearization to suppress unrequested columns and inactive slots, returning
+encrypted values and presence markers. `complete_exact_select_unverified_for_experiment`
+rechecks both heads and consumes that encrypted output before returning rows with
+their authenticated local ordinals. Bounds/bindings are checked, without an arithmetic
+proof. Plaintext fields retained for preparation are never substituted as query
+answers. The caller owns returned plaintext, global freshness, cross-shard ordering
+and any SQL output limit; the same owner-online input-preparation/leakage boundary
+as exact-index aggregates remains.
+
 Selection is bounded to min(caller budget,256) before input encryption; every posting
 and data page is Merkle/AEAD authenticated, duplicates and every age mismatch reject
 without filtering. Multiple posting/data pages remain supported. Exact aggregate
@@ -42,8 +54,9 @@ counted; public evaluator cloning does not imply free key material. This composi
 is visible access: no Spiral, hidden-address, disk durability or owner-key recovery
 is added. GUI transport/cancellation and all-shard atomic publication stay outside.
 
-Release/locked/offline validation passed 19 BFV-only runtime tests (8 storage
-composition tests and 11 canonical-index tests) and one compile-fail doctest. The
+Release/locked/offline validation passed 22 BFV-only runtime tests (11 storage
+composition tests, including encrypted projections/current-head rejection, and
+11 canonical-index tests) and one compile-fail doctest. The
 legacy default TFHE backend retained all 23 passing tests, including full-scan/coarse
 selection. Strict all-target Clippy passed with both backends and with BFV only.
 Use --no-default-features --features bfv-experiment when validating BFV-only storage

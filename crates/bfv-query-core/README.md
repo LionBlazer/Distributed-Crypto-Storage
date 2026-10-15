@@ -9,11 +9,20 @@ Owner owns the only secret key; PublicSetup contains only original parameters,
 relinearization and rotation keys; PeerEvaluator restores public material only.
 Inputs are fresh encrypted selected fields. Public contracts include generic
 Equal/AtLeast/ClosedRange COUNT/SUM, explicitly caller-asserted exact-index aggregate,
-and indexed amount addition. Pending tokens bind operation/keyset/geometry/query ID
+indexed encrypted row projection, and indexed amount addition. Pending tokens bind operation/keyset/geometry/query ID
 and both opaque112-byte heads. Exact aggregate and UPDATE results remain Unverified;
 UPDATE callers must locally check arithmetic/overflow before writeback.
 
-Private modules are kernel, exact_index and indexed_update. This crate depends
+The indexed SELECT operation freshly encrypts original age/amount lanes and an
+encrypted projection/active mask. The public-only peer performs one ciphertext
+multiplication and relinearization; it returns encrypted projected lanes and presence
+markers. Client completion checks the operation, keyset, context, geometry, projection,
+active slots, value bounds and zeroed unrequested/reserved lanes. An in-bounds forged
+answer can still pass: `UnverifiedSelectedRows` is explicitly not a computation proof.
+The exact-index contract belongs to the caller, as for exact-index aggregates; this
+operation does not conceal or re-evaluate an arbitrary SQL predicate.
+
+Private modules are kernel, exact_index, indexed_select and indexed_update. This crate depends
 only on pinned fhe/fhe-traits0.1.1, rand0.9.2, serde/bincode1.3.3, SHA256 and zeroize;
 it has no storage, SQL, PIR, GUI, fixture or deployment dependency. Complete exact
 selection, trusted heads/freshness, global transaction policy and resource accounting
@@ -25,8 +34,16 @@ keyset. Independent security/noise/CCA and malicious arithmetic proof gates rema
 open. The inherited37 tests/2 compile-fail doctests move with this implementation;
 crate imports change only. Extraction validation passed all 37 runtime tests and
 two compile-fail doctests in release/locked/offline mode, plus strict all-target
-Clippy. The arithmetic source remains byte-identical to the recorded baseline.
+Clippy. Those measurements describe the extracted baseline. Indexed SELECT adds a
+depth-one projection operation with the same parameters and public key material;
+the existing aggregate/update circuits retain their contracts.
 Rust 1.99 is retained from the measured baseline; lower MSRV is not claimed.
+
+With indexed SELECT, release/locked/offline validation passed 45 runtime tests and
+three compile-fail doctests. Controls include all 256 slots at maximum unsigned
+values, every projection mask, inactive/zero rows, fresh ciphertexts, forbidden echo,
+wrong operation/keyset/query/heads/geometry/projection and lower-level/wire rejection.
+An accepted in-bounds forged value remains explicitly unverified.
 
 The owning storage consumer is [compact-query](../compact-query/README.md), whose
 explicit BFV module establishes the owner-built exact-index and compact writeback

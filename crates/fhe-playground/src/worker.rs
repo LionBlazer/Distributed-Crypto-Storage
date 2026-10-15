@@ -785,7 +785,10 @@ impl Runtime {
                 ));
             }
             match plan {
-                fhe_playground::QueryPlan::Aggregate { .. } => {
+                fhe_playground::QueryPlan::Aggregate { .. }
+                | fhe_playground::QueryPlan::Count { .. }
+                | fhe_playground::QueryPlan::Sum { .. }
+                | fhe_playground::QueryPlan::Select { .. } => {
                     replication.read_peers.iter().copied().collect()
                 }
                 fhe_playground::QueryPlan::AddAmount { .. } => {
@@ -1985,5 +1988,59 @@ mod live_worker_tests {
         assert!(
             matches!(result,Event::Finished { outcome:Ok(Outcome::Query(QueryOutcome::Aggregate { count:1,sum:7,.. })),client_id:Some(id),.. } if id==client)
         );
+    }
+    #[test]
+    fn real_worker_select_returns_final_encrypted_projection_through_request_and_response_routes() {
+        let worker = Worker::start(egui::Context::default()).unwrap();
+        worker
+            .send(Command::SetSimulation {
+                speed: 4.0,
+                paused: false,
+            })
+            .unwrap();
+        worker
+            .send(Command::Create(DatabaseDraft {
+                name: "public encrypted SELECT worker fixture".into(),
+                rows: vec![
+                    PlainRow {
+                        age: 18,
+                        amount: 65535,
+                    },
+                    PlainRow { age: 7, amount: 1 },
+                ],
+                peers: vec![],
+            }))
+            .unwrap();
+        let created = until(&worker, |event| matches!(event, Event::Finished { .. }));
+        assert!(matches!(
+            created,
+            Event::Finished {
+                outcome: Ok(Outcome::Created),
+                ..
+            }
+        ));
+        until(
+            &worker,
+            |event| matches!(event,Event::Network(network) if network.links.iter().any(|link|link.from==1&&link.to==2)),
+        );
+
+        worker
+            .send(Command::Query {
+                client_id: 1,
+                sql: "SELECT amount FROM records WHERE age >= 18 LIMIT 1".into(),
+            })
+            .unwrap();
+
+        let result = until(&worker, |event| matches!(event, Event::Finished { .. }));
+        let Event::Finished {
+            outcome: Ok(Outcome::Query(QueryOutcome::Selected { columns, rows })),
+            client_id: Some(1),
+            ..
+        } = result
+        else {
+            panic!("expected actual peer encrypted SELECT completion");
+        };
+        assert_eq!(columns, vec![fhe_playground::Column::Amount]);
+        assert_eq!(rows, vec![vec![65535]]);
     }
 }

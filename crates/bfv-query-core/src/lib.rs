@@ -1,8 +1,13 @@
 //! Experimental exact owner-online BFV roles. Outputs have no computation proof.
 //! Parameters and arithmetic match the measured byte-limb probe; retrieval is external.
 mod exact_index;
+mod indexed_select;
 mod indexed_update;
 pub use exact_index::{PendingIndexedAggregate, PreparedIndexedAggregate};
+pub use indexed_select::{
+    EvaluatedIndexedSelect, IndexedSelectStats, PendingIndexedSelect, PreparedIndexedSelect,
+    ProjectedRow, RowProjection, UnverifiedSelectedRows,
+};
 mod kernel;
 pub use indexed_update::{
     EvaluatedIndexedUpdate, IndexedUpdateStats, PendingIndexedUpdate, PreparedIndexedUpdate,
@@ -50,6 +55,7 @@ pub enum Error {
     BindingMismatch,
     AggregateBounds,
     UpdateBounds,
+    SelectBounds,
     Backend(String),
 }
 impl fmt::Display for Error {

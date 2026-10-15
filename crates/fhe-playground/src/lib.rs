@@ -20,4 +20,4 @@ pub use engine::{
     MAX_LAB_ROWS, MAX_PEERS, PeerAggregate, PeerConfig, PeerHeads, PeerInfo, QueryOutcome,
     ReplicaLocation, ReplicationInfo, format_rows, parse_rows, sample_rows,
 };
-pub use sql::{Comparison, PRESETS, Predicate, Preset, QueryPlan, parse_sql};
+pub use sql::{Column, Comparison, PRESETS, Predicate, Preset, Projection, QueryPlan, parse_sql};

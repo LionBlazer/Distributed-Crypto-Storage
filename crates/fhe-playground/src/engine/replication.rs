@@ -419,20 +419,56 @@ pub(super) fn execute(
     progress: &impl Fn(LabProgress),
 ) -> Result<(QueryOutcome, Option<PreparedUpdate>), LabError> {
     let replicas = db.replication.as_ref().expect("replicated mode");
+    if let QueryPlan::Select {
+        predicate,
+        projection,
+        limit,
+    } = plan
+    {
+        let mut selected = Vec::new();
+        if let Some(range) = predicate.age_range() {
+            for shard in &replicas.shards {
+                let executor = shard
+                    .executor(db)
+                    .ok_or_else(|| LabError::UnavailableShards(vec![shard.id]))?;
+                progress(LabProgress {
+                    peer_id: executor,
+                    message: format!(
+                        "Evaluating encrypted row projection of logical shard {} on peer {executor}...",
+                        shard.id
+                    ),
+                });
+                let table = shard.materialize(db, executor)?;
+                let evaluator = &db
+                    .peers
+                    .iter()
+                    .find(|peer| peer.id == executor)
+                    .expect("current executor")
+                    .evaluator;
+                let rows = evaluate_selected_rows(&db.owner, evaluator, &table, range, projection)?;
+                for (ordinal, row) in rows {
+                    let global = *shard.rows.get(ordinal as usize).ok_or_else(|| {
+                        LabError::Cryptography("Invalid logical row ordinal.".into())
+                    })?;
+                    selected.push((global, row));
+                }
+            }
+        }
+        return Ok((project_rows(selected, projection, limit), None));
+    }
     let (predicate, delta) = match plan {
-        QueryPlan::Aggregate { predicate } => (predicate, None),
+        QueryPlan::Aggregate { predicate }
+        | QueryPlan::Count { predicate }
+        | QueryPlan::Sum { predicate } => (predicate, None),
         QueryPlan::AddAmount { predicate, delta } => (predicate, Some(delta)),
+        QueryPlan::Select { .. } => unreachable!("row reads returned above"),
     };
     let Some(range) = predicate.age_range() else {
         return Ok((
             if delta.is_some() {
                 QueryOutcome::Updated { committed: true }
             } else {
-                QueryOutcome::Aggregate {
-                    count: 0,
-                    sum: 0,
-                    peers: Vec::new(),
-                }
+                aggregate_outcome(plan, 0, 0, Vec::new())
             },
             None,
         ));
@@ -479,14 +515,7 @@ pub(super) fn execute(
             elapsed_ms: start.elapsed().as_secs_f64() * 1000.0,
         });
     }
-    Ok((
-        QueryOutcome::Aggregate {
-            count,
-            sum,
-            peers: contributions,
-        },
-        None,
-    ))
+    Ok((aggregate_outcome(plan, count, sum, contributions), None))
 }
 fn update(
     db: &Database,

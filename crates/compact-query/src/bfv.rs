@@ -10,7 +10,7 @@ mod bfv_owner;
 
 pub use bfv_core::{
     EvaluationStats, IndexedUpdateStats, ParameterProfile, ProofStatus, PublicSetupBytes,
-    UnverifiedAggregate,
+    RowProjection, UnverifiedAggregate,
 };
 
 /// Owns compact AEAD authority and the only BFV secret. No Clone, Debug or secret export.
@@ -45,6 +45,32 @@ pub struct PreparedAggregate {
     request: Vec<u8>,
     pending: bfv_core::PendingIndexedAggregate,
     selection: ExactSelection,
+}
+/// One-use storage/head-bound encrypted SELECT operation.
+pub struct PreparedSelect {
+    request: Vec<u8>,
+    pending: bfv_core::PendingIndexedSelect,
+    selection: ExactSelection,
+}
+impl PreparedSelect {
+    pub fn request(&self) -> &[u8] {
+        &self.request
+    }
+    pub fn selected_rows(&self) -> usize {
+        self.selection.ordinals.len()
+    }
+}
+/// Owner's final BFV-decoded plaintext. Caller owns its lifecycle; no query proof exists.
+#[derive(Debug, PartialEq, Eq)]
+pub struct SelectedRow {
+    pub ordinal: u64,
+    pub age: Option<u8>,
+    pub amount: Option<u16>,
+}
+#[derive(Debug, PartialEq, Eq)]
+pub struct UnverifiedSelectedRows {
+    pub rows: Vec<SelectedRow>,
+    pub proof: ProofStatus,
 }
 impl PreparedAggregate {
     pub fn request(&self) -> &[u8] {

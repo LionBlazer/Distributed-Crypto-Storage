@@ -7,7 +7,7 @@ use compact_query::bfv as backend;
 use compact_query::{self as cq, AgeRange, Table};
 use compact_store::Limits;
 
-use crate::{QueryPlan, parse_sql};
+use crate::{Column, Projection, QueryPlan, parse_sql};
 
 pub const MAX_PEERS: usize = 16;
 pub const MAX_LAB_ROWS: usize = 128;
@@ -156,6 +156,20 @@ pub enum QueryOutcome {
         count: u32,
         sum: u32,
         peers: Vec<PeerAggregate>,
+    },
+    Count {
+        count: u32,
+        peers: Vec<PeerAggregate>,
+    },
+    Sum {
+        sum: u32,
+        peers: Vec<PeerAggregate>,
+    },
+    /// Final owner BFV-decrypted peer projection of authenticated indexed inputs.
+    /// Cells follow columns in the requested order. No computation proof is available.
+    Selected {
+        columns: Vec<Column>,
+        rows: Vec<Vec<u32>>,
     },
     Updated {
         /// The statement succeeded; a constant-false predicate is a successful no-op.
@@ -434,15 +448,23 @@ impl LabEngine {
             return Err(LabError::Unavailable(missing));
         }
         match plan {
-            QueryPlan::Aggregate { predicate } => match predicate.age_range() {
-                Some(range) => db.aggregate(range, &progress),
+            QueryPlan::Aggregate { predicate }
+            | QueryPlan::Count { predicate }
+            | QueryPlan::Sum { predicate } => match predicate.age_range() {
+                Some(range) => db.aggregate(range, plan, &progress),
                 // Public domain reasoning only. No stored row is inspected or FHE claimed.
-                None => Ok(QueryOutcome::Aggregate {
-                    count: 0,
-                    sum: 0,
-                    peers: Vec::new(),
-                }),
+                None => Ok(aggregate_outcome(plan, 0, 0, Vec::new())),
             },
+            QueryPlan::Select {
+                predicate,
+                projection,
+                limit,
+            } => {
+                let Some(range) = predicate.age_range() else {
+                    return Ok(project_rows(Vec::new(), projection, limit));
+                };
+                db.select_rows(range, projection, limit, &progress)
+            }
             QueryPlan::AddAmount { predicate, delta } => {
                 let Some(range) = predicate.age_range() else {
                     return Ok(QueryOutcome::Updated { committed: true });
@@ -476,9 +498,45 @@ impl LabEngine {
 }
 
 impl Database {
+    fn select_rows(
+        &self,
+        range: AgeRange,
+        projection: Projection,
+        limit: Option<usize>,
+        progress: &impl Fn(LabProgress),
+    ) -> Result<QueryOutcome, LabError> {
+        let mut selected = Vec::new();
+        if !self.peers.iter().any(|peer| peer.online) {
+            return Err(LabError::Unavailable(
+                self.peers.iter().map(|peer| peer.id).collect(),
+            ));
+        }
+        for (position, peer) in self.peers.iter().enumerate() {
+            if !peer.online {
+                continue;
+            }
+            progress(LabProgress {
+                peer_id: peer.id,
+                message: format!("Evaluating encrypted row projection on peer {}...", peer.id),
+            });
+            let rows = evaluate_selected_rows(
+                &self.owner,
+                &peer.evaluator,
+                peer.legacy_table(),
+                range,
+                projection,
+            )?;
+            selected.extend(
+                rows.into_iter()
+                    .map(|(ordinal, row)| (ordinal as usize * self.peers.len() + position, row)),
+            );
+        }
+        Ok(project_rows(selected, projection, limit))
+    }
     fn aggregate(
         &self,
         range: AgeRange,
+        plan: QueryPlan,
         progress: &impl Fn(LabProgress),
     ) -> Result<QueryOutcome, LabError> {
         let mut contributions = Vec::new();
@@ -519,11 +577,7 @@ impl Database {
                 elapsed_ms: start.elapsed().as_secs_f64() * 1000.0,
             });
         }
-        Ok(QueryOutcome::Aggregate {
-            count,
-            sum,
-            peers: contributions,
-        })
+        Ok(aggregate_outcome(plan, count, sum, contributions))
     }
     fn add_amount(
         &self,
@@ -589,6 +643,78 @@ impl Database {
             }),
         ))
     }
+}
+fn aggregate_outcome(
+    plan: QueryPlan,
+    count: u32,
+    sum: u32,
+    peers: Vec<PeerAggregate>,
+) -> QueryOutcome {
+    match plan {
+        QueryPlan::Count { .. } => QueryOutcome::Count { count, peers },
+        QueryPlan::Sum { .. } => QueryOutcome::Sum { sum, peers },
+        _ => QueryOutcome::Aggregate { count, sum, peers },
+    }
+}
+// LIMIT bounds returned cells only. Every complete indexed selection must pass
+// authentication and availability checks before this function receives any rows.
+fn project_rows(
+    mut selected: Vec<(usize, Vec<u32>)>,
+    projection: Projection,
+    limit: Option<usize>,
+) -> QueryOutcome {
+    selected.sort_unstable_by_key(|(ordinal, _)| *ordinal);
+    let output_limit = limit.unwrap_or(selected.len());
+    let columns = projection.columns();
+    let rows = selected
+        .into_iter()
+        .take(output_limit)
+        .map(|(_, cells)| cells)
+        .collect();
+    QueryOutcome::Selected { columns, rows }
+}
+fn evaluate_selected_rows(
+    owner: &backend::Owner,
+    evaluator: &backend::Evaluator,
+    table: &Table,
+    range: AgeRange,
+    projection: Projection,
+) -> Result<Vec<(u64, Vec<u32>)>, LabError> {
+    let encrypted_projection = match projection {
+        Projection::Age => backend::RowProjection::Age,
+        Projection::Amount => backend::RowProjection::Amount,
+        Projection::AgeAmount | Projection::AmountAge => backend::RowProjection::AgeAmount,
+    };
+    let query = owner.prepare_exact_select_for_experiment(
+        table,
+        range,
+        encrypted_projection,
+        MAX_LAB_ROWS,
+        Limits::default(),
+    )?;
+    let evaluated = evaluator.evaluate_indexed_select(query.request())?;
+    let result =
+        owner.complete_exact_select_unverified_for_experiment(table, query, &evaluated.output)?;
+    result
+        .rows
+        .into_iter()
+        .map(|row| {
+            let cells = projection
+                .columns()
+                .into_iter()
+                .map(|column| {
+                    match column {
+                        Column::Age => row.age.map(u32::from),
+                        Column::Amount => row.amount.map(u32::from),
+                    }
+                    .ok_or_else(|| {
+                        LabError::Cryptography("Missing encrypted projection column.".into())
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((row.ordinal, cells))
+        })
+        .collect()
 }
 fn validate_profiles(configs: &[PeerConfig], ids: &[usize]) -> Result<(), LabError> {
     if configs.len() > MAX_PEERS

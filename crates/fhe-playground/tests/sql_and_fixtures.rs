@@ -28,7 +28,7 @@ fn keywords_are_case_insensitive_and_whitespace_is_optional_around_symbols() {
 #[test]
 fn unsupported_clauses_and_extra_statements_are_never_ignored() {
     for sql in [
-        "SELECT * FROM records",
+        "SELECT unknown FROM records",
         "SELECT COUNT(*), SUM(amount) FROM other",
         "SELECT COUNT(*), SUM(amount) FROM records LIMIT 1",
         "SELECT COUNT(*), SUM(amount) FROM records ORDER BY age",
@@ -46,6 +46,19 @@ fn unsupported_clauses_and_extra_statements_are_never_ignored() {
         "SELECT COUNT(*), SUM(amount) FROM records WHERE age BETWEEN 18 AND 42 AND age = 19",
         "SELECT COUNT(*), SUM(amount) FROM records WHERE age <= 18 AND age > 0",
         "SELECT COUNT(*), SUM(amount) FROM records WHERE age = 1e2",
+        "SELECT age, age FROM records",
+        "SELECT age, amount, age FROM records",
+        "SELECT amount AS total FROM records",
+        "SELECT * FROM records LIMIT 129",
+        "SELECT * FROM records LIMIT -1",
+        "SELECT * FROM records LIMIT 1 OFFSET 1",
+        "SELECT * FROM records LIMIT 1 WHERE age = 18",
+        "SELECT age, SUM(amount) FROM records",
+        "SELECT SUM(age) FROM records",
+        "SELECT SUM(amount), COUNT(*) FROM records",
+        "SELECT COUNT(age) FROM records",
+        "SELECT * FROM records WHERE amount = 1",
+        "SELECT * FROM records JOIN other ON age = age",
         "",
     ] {
         assert!(
@@ -53,6 +66,44 @@ fn unsupported_clauses_and_extra_statements_are_never_ignored() {
             "unsupported SQL was accepted: {sql}"
         );
     }
+}
+
+#[test]
+fn row_projections_and_limits_have_explicit_plans_and_requested_column_order() {
+    use fhe_playground::{Predicate, Projection};
+    for (sql, projection, limit) in [
+        ("SELECT * FROM records", Projection::AgeAmount, None),
+        (
+            "SELECT age, amount FROM records LIMIT 0",
+            Projection::AgeAmount,
+            Some(0),
+        ),
+        (
+            "SELECT amount, age FROM records LIMIT 128",
+            Projection::AmountAge,
+            Some(128),
+        ),
+        ("SELECT age FROM records LIMIT 1", Projection::Age, Some(1)),
+        ("SELECT amount FROM records", Projection::Amount, None),
+    ] {
+        assert_eq!(
+            parse_sql(sql).unwrap(),
+            QueryPlan::Select {
+                predicate: Predicate::default(),
+                projection,
+                limit,
+            },
+            "{sql}"
+        );
+    }
+    assert!(matches!(
+        parse_sql("SELECT COUNT(*) FROM records WHERE age > 18"),
+        Ok(QueryPlan::Count { .. })
+    ));
+    assert!(matches!(
+        parse_sql("SELECT SUM(amount) FROM records WHERE age BETWEEN 18 AND 42"),
+        Ok(QueryPlan::Sum { .. })
+    ));
 }
 
 #[test]

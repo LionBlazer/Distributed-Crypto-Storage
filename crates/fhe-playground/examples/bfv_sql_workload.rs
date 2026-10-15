@@ -117,6 +117,11 @@ fn check(
     let (predicate, delta) = match parse_sql(sql)? {
         QueryPlan::Aggregate { predicate } => (predicate, None),
         QueryPlan::AddAmount { predicate, delta } => (predicate, Some(delta)),
+        _ => {
+            return Err(
+                "this historical workload covers combined aggregates and UPDATE only".into(),
+            );
+        }
     };
     let count = before.iter().filter(|row| selected(row, predicate)).count();
     match delta {

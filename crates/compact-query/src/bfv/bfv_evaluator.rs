@@ -1,5 +1,11 @@
 use super::*;
 impl Evaluator {
+    pub fn evaluate_indexed_select(
+        &self,
+        request: &[u8],
+    ) -> Result<bfv_core::EvaluatedIndexedSelect> {
+        Ok(self.peer.evaluate_indexed_select_for_experiment(request)?)
+    }
     pub fn evaluate_exact_aggregate(&self, request: &[u8]) -> Result<bfv_core::EvaluatedQuery> {
         Ok(self
             .peer

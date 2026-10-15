@@ -51,6 +51,65 @@ impl Owner {
         self.key.secret_key_serialized_bytes()
     }
 
+    /// Authenticate the complete indexed selection and encrypt ORIGINAL row fields
+    /// and a projection/active mask. No plaintext projected result is produced.
+    pub fn prepare_exact_select_for_experiment(
+        &self,
+        table: &Table,
+        predicate: AgeRange,
+        projection: RowProjection,
+        budget: usize,
+        limits: Limits,
+    ) -> Result<PreparedSelect> {
+        let selection = self.select_exact(table, predicate, budget, limits)?;
+        let context = QueryContext::new(
+            random_id()?,
+            selection.data_head.encode(),
+            selection.index_head.encode(),
+        );
+        let prepared = self.key.prepare_indexed_select_for_experiment(
+            context,
+            &selection.fields,
+            projection,
+        )?;
+        Ok(PreparedSelect {
+            request: prepared.request,
+            pending: prepared.pending,
+            selection,
+        })
+    }
+    /// Recheck both current heads and consume encrypted peer output. Returned fields
+    /// come ONLY from final BFV decoding, never from retained authenticated inputs.
+    pub fn complete_exact_select_unverified_for_experiment(
+        &self,
+        table: &Table,
+        prepared: PreparedSelect,
+        output: &[u8],
+    ) -> Result<UnverifiedSelectedRows> {
+        current(table, &prepared.selection)?;
+        let answer = self
+            .key
+            .decrypt_indexed_select_unverified_for_experiment(prepared.pending, output)?;
+        if answer.rows.len() != prepared.selection.ordinals.len() {
+            return Err(Error::InvalidOutput);
+        }
+        let mut rows = Vec::with_capacity(answer.rows.len());
+        for (expected, row) in answer.rows.into_iter().enumerate() {
+            if row.slot != expected {
+                return Err(Error::InvalidOutput);
+            }
+            rows.push(SelectedRow {
+                ordinal: prepared.selection.ordinals[expected],
+                age: row.age,
+                amount: row.amount,
+            });
+        }
+        Ok(UnverifiedSelectedRows {
+            rows,
+            proof: answer.proof,
+        })
+    }
+
     // This private constructor establishes exact selection under this owner's index-build contract.
     // Neither arbitrary SelectedField vectors nor coarse/full-scan candidates can call these APIs.
     fn select_exact(

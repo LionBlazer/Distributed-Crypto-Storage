@@ -17,9 +17,12 @@ The [egui playground](crates/fhe-playground/README.md) has SQL/data on the left 
 network/node inspectors on the right, up to 16 simulated peers and 8 clients.
 Presets fill the editor; Run or Ctrl+Enter executes them. Graph and connection
 matrix reflect the same protocol links/events. Virtual delivery is in one process.
+Back/Forward arrows, Alt+Left/Right and mouse side buttons navigate between views.
 
-The SQL frontend supports its documented COUNT/SUM and amount-addition subset on
-`age: u8, amount: u16`; it is not an arbitrary-SQL database. The GUI uses the BFV
+The SQL frontend supports row SELECT/projections with age filters and LIMIT,
+COUNT/SUM, and amount addition on `age: u8, amount: u16`; it is not an arbitrary-SQL
+database. Row projection uses actual BFV encrypted masking and returns encrypted
+peer output for client completion. The GUI uses the BFV
 exact-index backend, shared public evaluation keys and compact encrypted pages.
 Complete authenticated index selection precedes fresh FHE; unsupported budgets
 reject rather than truncate. Owner secret keys stay outside peer role objects.
@@ -27,7 +30,7 @@ reject rather than truncate. Owner secret keys stay outside peer role objects.
 | Module | Responsibility |
 | --- | --- |
 | [fhe-playground](crates/fhe-playground/README.md) | Test client/manager, SQL frontend, worker and virtual network visualization |
-| [compact-query](crates/compact-query/README.md) | Complete index selection, fresh FHE aggregates and checked compact updates; explicit BFV backend plus retained legacy TFHE module |
+| [compact-query](crates/compact-query/README.md) | Complete index selection, fresh FHE projections/aggregates and checked compact updates; explicit BFV backend plus retained legacy TFHE module |
 | [bfv-query-core](crates/bfv-query-core/README.md) | Reusable owner/public-peer BFV arithmetic and wire contracts; no storage or GUI dependency |
 | [compact-store](crates/compact-store/README.md) | Owner-only symmetric keys, opaque authenticated pages, independently trusted version roots and constant-size replacements |
 | [replica-store](crates/replica-store/README.md) | Bounded ciphertext replicas, fault-domain placement and atomic local repair batches |

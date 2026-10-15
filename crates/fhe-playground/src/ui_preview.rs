@@ -12,6 +12,11 @@ fn export_ui_previews() {
     std::fs::create_dir_all(&directory).unwrap();
     for (name, tab, peer_count, size) in [
         ("sql", Tab::Sql, 3, [1500, 900]),
+        ("sql-narrow", Tab::Sql, 3, [1180, 720]),
+        ("selected-result", Tab::Sql, 3, [1500, 900]),
+        ("selected-narrow", Tab::Sql, 3, [1180, 720]),
+        ("navigation-peer", Tab::Sql, 3, [1500, 900]),
+        ("navigation-back", Tab::Sql, 3, [1500, 900]),
         ("data", Tab::Data, 3, [1500, 900]),
         ("network", Tab::Sql, 8, [1500, 900]),
         ("network-small", Tab::Sql, 16, [1180, 720]),
@@ -36,6 +41,30 @@ fn export_ui_previews() {
         app.tab = tab;
         if name == "peer-tab" {
             app.open_node(3);
+        }
+        if name.starts_with("selected-") {
+            // Public renderer fixture only: no query is executed or backend
+            // result claimed by this opt-in, window-free preview.
+            app.sql = "SELECT age, amount\nFROM records\nWHERE age >= 18\nLIMIT 10;".into();
+            app.status = "Public result fixture / no backend execution".into();
+            app.history.push_front(Record {
+                job: Job::Query,
+                label: app.sql.clone(),
+                database: "demo".into(),
+                revision: 0,
+                elapsed_ms: 0.0,
+                outcome: Ok(Outcome::Query(QueryOutcome::Selected {
+                    columns: vec![Column::Age, Column::Amount],
+                    rows: vec![vec![18, 20], vec![42, 30]],
+                })),
+            });
+        }
+        if name.starts_with("navigation-") {
+            app.open_node(2);
+            app.open_node(3);
+            if name == "navigation-back" {
+                app.navigate_history(false);
+            }
         }
         let ctx = egui::Context::default();
         set_theme(&ctx);

@@ -481,3 +481,252 @@ fn hard256_materialization_and_reversed_ranges_reject_as_selection_errors() {
         Err(Error::InvalidRange)
     ));
 }
+
+fn selected_rows(
+    owner: &Owner,
+    peer: &Evaluator,
+    table: &Table,
+    range: AgeRange,
+    projection: RowProjection,
+) -> UnverifiedSelectedRows {
+    let prepared = owner
+        .prepare_exact_select_for_experiment(table, range, projection, 256, Limits::default())
+        .unwrap();
+    let evaluated = peer.evaluate_indexed_select(prepared.request()).unwrap();
+    assert_eq!(
+        (
+            evaluated.stats.ct_ct_multiplications,
+            evaluated.stats.relinearizations
+        ),
+        (1, 1)
+    );
+    owner
+        .complete_exact_select_unverified_for_experiment(table, prepared, &evaluated.output)
+        .unwrap()
+}
+
+#[test]
+fn genuine_encrypted_select_preserves_complete_ordered_multpage_range_and_projection() {
+    let (owner, peer) = Owner::generate([16; 16]).unwrap();
+    let table = owner
+        .seal(
+            &[row(42, 255), row(7, 65535), row(18, 0), row(42, 256)],
+            1,
+            Limits::default(),
+        )
+        .unwrap();
+    let range = AgeRange {
+        lower: 18,
+        upper: 42,
+    };
+    let actual = selected_rows(&owner, &peer, &table, range, RowProjection::AgeAmount);
+    assert_eq!(actual.proof, ProofStatus::Unavailable);
+    assert_eq!(
+        actual.rows,
+        vec![
+            SelectedRow {
+                ordinal: 0,
+                age: Some(42),
+                amount: Some(255)
+            },
+            SelectedRow {
+                ordinal: 2,
+                age: Some(18),
+                amount: Some(0)
+            },
+            SelectedRow {
+                ordinal: 3,
+                age: Some(42),
+                amount: Some(256)
+            },
+        ]
+    );
+    let amount = selected_rows(
+        &owner,
+        &peer,
+        &table,
+        AgeRange::equal(42),
+        RowProjection::Amount,
+    );
+    assert_eq!(
+        amount
+            .rows
+            .iter()
+            .map(|row| (row.ordinal, row.age, row.amount))
+            .collect::<Vec<_>>(),
+        vec![(0, None, Some(255)), (3, None, Some(256))]
+    );
+    assert!(
+        selected_rows(
+            &owner,
+            &peer,
+            &table,
+            AgeRange::equal(255),
+            RowProjection::Age
+        )
+        .rows
+        .is_empty()
+    );
+    assert!(matches!(
+        owner.prepare_exact_select_for_experiment(
+            &table,
+            range,
+            RowProjection::Age,
+            2,
+            Limits::default()
+        ),
+        Err(Error::SelectionBudget {
+            selected: 3,
+            budget: 2
+        })
+    ));
+}
+
+#[test]
+fn encrypted_select_rejects_authenticated_wrong_age_foreign_owner_and_mismatched_index() {
+    let (owner, _) = Owner::generate([17; 16]).unwrap();
+    let (other, _) = Owner::generate([18; 16]).unwrap();
+    let mut table = owner.seal(&[row(42, 10)], 1, Limits::default()).unwrap();
+    assert!(
+        other
+            .prepare_exact_select_for_experiment(
+                &table,
+                AgeRange::equal(42),
+                RowProjection::Age,
+                1,
+                Limits::default()
+            )
+            .is_err()
+    );
+    table.index = crate::index::build(&owner.store, &[row(18, 10)], table.commitment()).unwrap();
+    assert!(matches!(
+        owner.prepare_exact_select_for_experiment(
+            &table,
+            AgeRange::equal(18),
+            RowProjection::Age,
+            1,
+            Limits::default()
+        ),
+        Err(Error::InvalidIndex)
+    ));
+    table.index = crate::index::build(&owner.store, &[row(42, 10)], table.commitment()).unwrap();
+    let old = table.commitment().clone();
+    owner
+        .store
+        .replace_page(&mut table.data, &old, 0, &[42, 11, 0], Limits::default())
+        .unwrap();
+    assert!(matches!(
+        owner.prepare_exact_select_for_experiment(
+            &table,
+            AgeRange::equal(42),
+            RowProjection::Age,
+            1,
+            Limits::default()
+        ),
+        Err(Error::WrongVersion)
+    ));
+}
+
+#[test]
+fn encrypted_select_pending_rejects_either_changed_head_and_old_or_corrupt_images() {
+    let (owner, peer) = Owner::generate([19; 16]).unwrap();
+    let mut table = owner.seal(&[row(42, 255)], 1, Limits::default()).unwrap();
+    let old_data = table.snapshot().encode();
+    let old_index = table.encrypted_index().encode();
+    let select = owner
+        .prepare_exact_select_for_experiment(
+            &table,
+            AgeRange::equal(42),
+            RowProjection::AgeAmount,
+            1,
+            Limits::default(),
+        )
+        .unwrap();
+    let output = peer.evaluate_indexed_select(select.request()).unwrap();
+    // Independently replace only the authenticated index header nonce/revision first.
+    let verified = table
+        .index
+        .lookup(0, crate::index::index_limits())
+        .unwrap()
+        .verify(table.index_commitment(), 0, crate::index::index_limits())
+        .unwrap();
+    let plain = owner.store.decrypt(&verified).unwrap();
+    let head = table.index_commitment().clone();
+    owner
+        .store
+        .replace_page(
+            &mut table.index,
+            &head,
+            0,
+            plain.as_bytes(),
+            crate::index::index_limits(),
+        )
+        .unwrap();
+    assert!(matches!(
+        owner.complete_exact_select_unverified_for_experiment(&table, select, &output.output),
+        Err(Error::WrongVersion)
+    ));
+    let select = owner
+        .prepare_exact_select_for_experiment(
+            &table,
+            AgeRange::equal(42),
+            RowProjection::AgeAmount,
+            1,
+            Limits::default(),
+        )
+        .unwrap();
+    let output = peer.evaluate_indexed_select(select.request()).unwrap();
+    let update = owner
+        .prepare_exact_update_for_experiment(&table, AgeRange::equal(42), 1, 1, Limits::default())
+        .unwrap();
+    let evaluated = peer.evaluate_indexed_update(update.request()).unwrap();
+    owner
+        .apply_exact_update_checked_for_experiment(
+            &mut table,
+            update,
+            &evaluated.output,
+            Limits::default(),
+        )
+        .unwrap();
+    assert!(matches!(
+        owner.complete_exact_select_unverified_for_experiment(&table, select, &output.output),
+        Err(Error::WrongVersion)
+    ));
+    assert_eq!(
+        selected_rows(
+            &owner,
+            &peer,
+            &table,
+            AgeRange::equal(42),
+            RowProjection::Amount
+        )
+        .rows[0]
+            .amount,
+        Some(256)
+    );
+    assert!(
+        owner
+            .restore_table_for_experiment(
+                &old_data,
+                &old_index,
+                table.commitment(),
+                table.index_commitment(),
+                Limits::default()
+            )
+            .is_err()
+    );
+    let mut corrupt = table.snapshot().encode();
+    let last = corrupt.len() - 1;
+    corrupt[last] ^= 1;
+    assert!(
+        owner
+            .restore_table_for_experiment(
+                &corrupt,
+                &table.encrypted_index().encode(),
+                table.commitment(),
+                table.index_commitment(),
+                Limits::default()
+            )
+            .is_err()
+    );
+}

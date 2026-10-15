@@ -109,6 +109,19 @@ impl Kernel {
         }
         Ok((sums, n.products, n.rotations))
     }
+    /// Slotwise encrypted projection/active mask; retain per-row values, never aggregate.
+    pub(super) fn project_selected(
+        &self,
+        rows: &Ciphertext,
+        mask: &Ciphertext,
+    ) -> Result<(Ciphertext, usize)> {
+        let mut counters = Counters {
+            products: 0,
+            rotations: 0,
+        };
+        let projected = self.multiply(rows, mask, &mut counters)?;
+        Ok((projected, counters.products))
+    }
     pub(super) fn evaluate(
         &self,
         predicate: PredicateKind,

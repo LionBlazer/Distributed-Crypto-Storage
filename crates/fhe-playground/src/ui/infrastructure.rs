@@ -20,8 +20,22 @@ impl Playground {
             .frame(panel(10))
             .show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
+                    if navigation_button(ui, false, self.navigation.can_step(false))
+                        .on_hover_text("Back (Alt+Left / Mouse X1)")
+                        .on_disabled_hover_text("No earlier view")
+                        .clicked()
+                    {
+                        self.navigate_history(false);
+                    }
+                    if navigation_button(ui, true, self.navigation.can_step(true))
+                        .on_hover_text("Forward (Alt+Right / Mouse X2)")
+                        .on_disabled_hover_text("No later view")
+                        .clicked()
+                    {
+                        self.navigate_history(true);
+                    }
                     if tab_button(ui, "Network", self.right_tab == RightTab::Network).clicked() {
-                        self.right_tab = RightTab::Network;
+                        self.navigate(self.tab, RightTab::Network);
                     }
                     let mut close = None;
                     for id in self.node_tabs.clone() {
@@ -30,7 +44,7 @@ impl Playground {
                             if tab_button(ui, &label, self.right_tab == RightTab::Node(id))
                                 .clicked()
                             {
-                                self.right_tab = RightTab::Node(id);
+                                self.navigate(self.tab, RightTab::Node(id));
                             }
                             if ui
                                 .small_button("x")
@@ -42,10 +56,7 @@ impl Playground {
                         });
                     }
                     if let Some(id) = close {
-                        self.node_tabs.retain(|n| *n != id);
-                        if self.right_tab == RightTab::Node(id) {
-                            self.right_tab = RightTab::Network;
-                        }
+                        self.close_node_tab(id);
                     }
                 });
             });
@@ -207,7 +218,7 @@ impl Playground {
             ui.label("Authorized local client of the same database owner.");
             if primary_button(ui, "Use this client", node.online).clicked() {
                 self.active_client = Some(id);
-                self.tab = Tab::Sql;
+                self.navigate(Tab::Sql, self.right_tab);
             }
             if let Some(state) = &self.snapshot {
                 ui.label(format!(

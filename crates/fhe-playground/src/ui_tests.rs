@@ -527,7 +527,7 @@ fn network_remains_beside_both_sql_and_data_without_old_sidebars() {
     let ctx = egui::Context::default();
     set_theme(&ctx);
     let texts = render(&ctx, &mut app, vec![]);
-    let console = texts.iter().find(|t| t.text == "Console.sql").unwrap();
+    let console = texts.iter().find(|t| t.text == "Run").unwrap();
     let network = texts.iter().find(|t| t.text == "Network").unwrap();
     assert!(console.rect.right() < network.rect.left());
     for obsolete in [
@@ -544,6 +544,353 @@ fn network_remains_beside_both_sql_and_data_without_old_sidebars() {
     assert!(texts.iter().any(|t| t.text == "Network"));
     assert!(texts.iter().any(|t| t.text == "Add row"));
     assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn back_and_forward_restore_views_without_changing_edits_or_running_sql() {
+    let (mut app, commands, _events) = app();
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    app.open_node(2);
+    app.sql = "SELECT age FROM records LIMIT 2;".into();
+    app.draft_name = "unsaved".into();
+    app.draft_rows = "22,99".into();
+    app.peer_edits.get_mut(&2).unwrap().name = "Unsaved peer".into();
+    app.camera.center = egui::vec2(91.0, -31.0);
+    app.camera.zoom = 0.7;
+    app.camera_manipulated = true;
+    app.open_node(3);
+
+    click(&ctx, &mut app, "Back");
+    assert_eq!(app.right_tab, RightTab::Node(2));
+    assert!(app.navigation.can_step(true));
+    click(&ctx, &mut app, "Forward");
+    assert_eq!(app.right_tab, RightTab::Node(3));
+    assert_eq!(app.sql, "SELECT age FROM records LIMIT 2;");
+    assert_eq!(app.draft_name, "unsaved");
+    assert_eq!(app.draft_rows, "22,99");
+    assert_eq!(app.peer_edits[&2].name, "Unsaved peer");
+    assert_eq!(app.camera.center, egui::vec2(91.0, -31.0));
+    assert_eq!(app.camera.zoom, 0.7);
+    assert_eq!(app.active_client, Some(1));
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn new_navigation_after_back_truncates_the_forward_branch_and_deduplicates_visits() {
+    let (mut app, commands, _events) = app();
+    app.open_node(2);
+    app.open_node(3);
+    app.navigate_history(false);
+    app.navigate(Tab::Data, RightTab::Network);
+    app.navigate(Tab::Data, RightTab::Network);
+
+    assert!(!app.navigation.can_step(true));
+    app.navigate_history(false);
+    assert_eq!(app.tab, Tab::Sql);
+    assert_eq!(app.right_tab, RightTab::Node(2));
+    app.navigate_history(true);
+    assert_eq!(app.tab, Tab::Data);
+    assert_eq!(app.right_tab, RightTab::Network);
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn mouse_extra_buttons_and_alt_arrows_follow_the_same_navigation_history() {
+    let (mut app, commands, _events) = app();
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    app.open_node(2);
+    app.open_node(3);
+    let pointer = egui::pos2(1200.0, 600.0);
+    click_point(&ctx, &mut app, pointer, egui::PointerButton::Extra1);
+    assert_eq!(app.right_tab, RightTab::Node(2));
+    click_point(&ctx, &mut app, pointer, egui::PointerButton::Extra2);
+    assert_eq!(app.right_tab, RightTab::Node(3));
+    for (key, expected) in [(egui::Key::ArrowLeft, 2), (egui::Key::ArrowRight, 3)] {
+        render(
+            &ctx,
+            &mut app,
+            vec![egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::ALT,
+            }],
+        );
+        assert_eq!(app.right_tab, RightTab::Node(expected));
+    }
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn deleted_nodes_and_closed_inspectors_are_never_resurrected_by_history() {
+    let (mut app, commands, events) = app();
+    app.open_node(2);
+    app.open_node(3);
+    app.navigate_history(false);
+    let mut net = network(3, 1);
+    net.nodes.retain(|node| node.id != 2);
+    net.links.retain(|link| link.from != 2 && link.to != 2);
+    events.send(Event::Network(net)).unwrap();
+    app.poll();
+
+    assert_eq!(app.right_tab, RightTab::Network);
+    app.navigate_history(true);
+    assert_eq!(app.right_tab, RightTab::Node(3));
+    app.close_node_tab(3);
+    assert_eq!(app.right_tab, RightTab::Network);
+    assert!(!app.navigation.can_step(true));
+    assert!(!app.node_tabs.contains(&2));
+    assert!(!app.node_tabs.contains(&3));
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn pruning_an_inspector_does_not_leave_repeated_identical_network_views() {
+    let (mut app, commands, _events) = app();
+    app.open_node(2);
+    app.navigate(Tab::Sql, RightTab::Network);
+    app.open_node(3);
+    app.close_node_tab(2);
+
+    app.navigate_history(false);
+    assert_eq!(app.right_tab, RightTab::Network);
+    assert!(!app.navigation.can_step(false));
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn closing_an_inspector_preserves_forward_navigation_across_a_left_pane_fallback() {
+    let (mut app, commands, _events) = app();
+    app.open_node(2);
+    app.navigate(Tab::Data, RightTab::Node(2));
+    app.navigate(Tab::Sql, RightTab::Node(2));
+    app.navigate(Tab::Sql, RightTab::Network);
+    app.navigate_history(false);
+    app.navigate_history(false);
+    app.close_node_tab(2);
+
+    assert_eq!(app.tab, Tab::Data);
+    assert_eq!(app.right_tab, RightTab::Network);
+    assert!(app.navigation.can_step(true));
+    app.navigate_history(true);
+    assert_eq!(app.tab, Tab::Sql);
+    assert_eq!(app.right_tab, RightTab::Network);
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn history_changes_only_presentation_while_explicit_client_open_selects_a_session() {
+    let (mut app, commands, _events) = app();
+    app.network = Some(network(3, 2));
+    app.open_node(3);
+    app.open_node(2);
+    assert_eq!(app.active_client, Some(2));
+    app.navigate_history(false);
+    assert_eq!(app.right_tab, RightTab::Node(3));
+    assert_eq!(app.active_client, Some(2));
+    app.navigate_history(true);
+    assert_eq!(app.active_client, Some(2));
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn navigation_history_capacity_keeps_the_current_route_and_nearest_views() {
+    let mut navigation = Navigation::default();
+    for id in 1..=300 {
+        navigation.visit(navigation::Route {
+            left: Tab::Sql,
+            right: RightTab::Node(id),
+        });
+    }
+    let mut steps = 0;
+    while navigation.step(false).is_some() {
+        steps += 1;
+    }
+    assert_eq!(steps, 255);
+    assert_eq!(navigation.step(true).unwrap().right, RightTab::Node(46));
+}
+
+#[test]
+fn sql_toolbar_has_one_run_action_and_explains_missing_clients_and_busy_state() {
+    let (mut app, commands, events) = app();
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    let texts = render(&ctx, &mut app, vec![]);
+    assert_eq!(texts.iter().filter(|text| text.text == "Run").count(), 1);
+    assert!(!texts.iter().any(|text| text.text == "Console.sql"));
+    events.send(Event::Network(network(3, 0))).unwrap();
+    app.poll();
+    let texts = render(&ctx, &mut app, vec![]);
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.text == "Add a client from the Network context menu")
+    );
+    click(&ctx, &mut app, "Run");
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+    events.send(Event::Network(network(3, 1))).unwrap();
+    app.poll();
+    app.run_query();
+    let _ = commands.try_recv().unwrap();
+    let texts = render(&ctx, &mut app, vec![]);
+    assert!(texts.iter().any(|text| text.text == "Operation running…"));
+    click(&ctx, &mut app, "Run");
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn narrow_window_wraps_whole_toolbar_buttons_without_vertical_labels_or_overflow() {
+    let (mut app, commands, _events) = app();
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1180.0, 720.0));
+    let output = ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(screen),
+            ..Default::default()
+        },
+        |ui| app.draw(ui),
+    );
+    let labels = [
+        "Run", "Presets", "Back", "Forward", "Network", "Auto", "Map", "Matrix",
+    ];
+    let mut observed = Vec::new();
+    fn check(shape: &egui::Shape, labels: &[&str], screen: egui::Rect, observed: &mut Vec<String>) {
+        match shape {
+            egui::Shape::Text(text) if labels.contains(&text.galley.job.text.as_str()) => {
+                let label = &text.galley.job.text;
+                let bounds = text.galley.rect.translate(text.pos.to_vec2());
+                assert_eq!(text.galley.rows.len(), 1, "{label} stays on a single line");
+                assert!(
+                    bounds.height() <= 32.0,
+                    "{label} has a normal button-label height: {bounds:?}"
+                );
+                assert!(
+                    screen.contains_rect(bounds),
+                    "{label} remains within the window"
+                );
+                if ["Back", "Forward", "Network", "Auto", "Map", "Matrix"].contains(&label.as_str())
+                {
+                    assert!(
+                        bounds.left() >= screen.width() * 0.41,
+                        "{label} remains in the right pane"
+                    );
+                }
+                observed.push(label.clone());
+            }
+            egui::Shape::Vec(shapes) => {
+                for shape in shapes {
+                    check(shape, labels, screen, observed);
+                }
+            }
+            _ => {}
+        }
+    }
+    for clipped in &output.shapes {
+        check(&clipped.shape, &labels, screen, &mut observed);
+    }
+    for label in labels {
+        assert!(
+            observed.iter().any(|text| text == label),
+            "{label} is visible"
+        );
+    }
+    output.drop_without_applying_deltas();
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn selected_results_render_requested_column_order_and_worker_values() {
+    let (mut app, commands, events) = app();
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    app.sql = "SELECT amount, age FROM records LIMIT 2;".into();
+    app.run_query();
+    let _ = commands.try_recv().unwrap();
+    events
+        .send(Event::Finished {
+            snapshot: Some(snapshot(3)),
+            outcome: Ok(Outcome::Query(QueryOutcome::Selected {
+                columns: vec![Column::Amount, Column::Age],
+                rows: vec![vec![99, 22], vec![71, 38]],
+            })),
+            elapsed_ms: 12.0,
+            client_id: Some(1),
+        })
+        .unwrap();
+    app.poll();
+    let texts = render(&ctx, &mut app, vec![]);
+    let amount = texts.iter().find(|text| text.text == "amount").unwrap();
+    let age = texts.iter().find(|text| text.text == "age").unwrap();
+    assert!(amount.rect.left() < age.rect.left());
+    for value in [
+        "99",
+        "22",
+        "71",
+        "38",
+        "2 rows",
+        "Encrypted SELECT · unverified",
+    ] {
+        assert!(
+            texts.iter().any(|text| text.text == value),
+            "Missing {value}"
+        );
+    }
+    assert_eq!(app.result_tab, ResultTab::Result);
+    assert!(matches!(commands.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn empty_selection_keeps_its_headers_and_standalone_aggregates_only_show_requested_columns() {
+    for (outcome, expected, absent) in [
+        (
+            QueryOutcome::Selected {
+                columns: vec![Column::Age],
+                rows: vec![],
+            },
+            "age",
+            "SUM(amount)",
+        ),
+        (
+            QueryOutcome::Count {
+                count: 3,
+                peers: vec![],
+            },
+            "COUNT(*)",
+            "SUM(amount)",
+        ),
+        (
+            QueryOutcome::Sum {
+                sum: 91,
+                peers: vec![],
+            },
+            "SUM(amount)",
+            "COUNT(*)",
+        ),
+    ] {
+        let (mut app, commands, events) = app();
+        let ctx = egui::Context::default();
+        set_theme(&ctx);
+        app.sql = "SELECT age FROM records LIMIT 0;".into();
+        app.run_query();
+        let _ = commands.try_recv().unwrap();
+        events
+            .send(Event::Finished {
+                snapshot: Some(snapshot(3)),
+                outcome: Ok(Outcome::Query(outcome)),
+                elapsed_ms: 1.0,
+                client_id: Some(1),
+            })
+            .unwrap();
+        app.poll();
+        let texts = render(&ctx, &mut app, vec![]);
+        assert!(texts.iter().any(|text| text.text == expected));
+        assert!(!texts.iter().any(|text| text.text == absent));
+        assert_eq!(app.result_tab, ResultTab::Result);
+    }
 }
 #[test]
 fn ctrl_enter_only_executes_sql_and_never_queues_duplicate_requests() {

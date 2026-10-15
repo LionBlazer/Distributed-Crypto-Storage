@@ -66,9 +66,17 @@ enum ControlKind {
     Tab { selected: bool },
 }
 
+#[derive(Clone, Copy)]
+enum ControlGlyph {
+    Play,
+    Back,
+    Forward,
+}
+
 pub(super) struct ActionButton<'a> {
     label: &'a str,
     kind: ControlKind,
+    glyph: Option<ControlGlyph>,
 }
 
 impl egui::Widget for ActionButton<'_> {
@@ -84,12 +92,20 @@ impl egui::Widget for ActionButton<'_> {
             TEXT
         });
         let text = if primary { text.strong() } else { text };
+        let padding = ui.spacing().button_padding;
+        if self.glyph.is_some() {
+            ui.spacing_mut().button_padding.x += 8.0;
+        }
+        // Allocate in the parent's wrapping row so a whole control moves to the
+        // next line instead of wrapping its label inside the remaining sliver.
         let response = ui.add(
             egui::Button::new(text)
+                .wrap_mode(egui::TextWrapMode::Extend)
                 .fill(Color32::TRANSPARENT)
                 .stroke(Stroke::NONE)
                 .min_size(egui::vec2(0.0, 30.0)),
         );
+        ui.spacing_mut().button_padding = padding;
         let selected = matches!(self.kind, ControlKind::Tab { selected: true });
         let mut visuals = control_visuals(ui, &response, selected);
         if primary && response.enabled() {
@@ -115,6 +131,46 @@ impl egui::Widget for ActionButton<'_> {
                 egui::StrokeKind::Inside,
             ),
         );
+        if let Some(glyph) = self.glyph {
+            let center = egui::pos2(response.rect.left() + 10.0, response.rect.center().y);
+            let color = if primary && response.enabled() {
+                EDITOR
+            } else {
+                visuals.fg_stroke.color
+            };
+            match glyph {
+                ControlGlyph::Play => {
+                    ui.painter().add(egui::Shape::convex_polygon(
+                        vec![
+                            center + egui::vec2(-3.0, -4.5),
+                            center + egui::vec2(4.0, 0.0),
+                            center + egui::vec2(-3.0, 4.5),
+                        ],
+                        color,
+                        Stroke::NONE,
+                    ));
+                }
+                ControlGlyph::Back | ControlGlyph::Forward => {
+                    let direction = if matches!(glyph, ControlGlyph::Forward) {
+                        1.0
+                    } else {
+                        -1.0
+                    };
+                    let tip = center + egui::vec2(4.0 * direction, 0.0);
+                    let tail = center - egui::vec2(4.0 * direction, 0.0);
+                    let stroke = Stroke::new(1.5, color);
+                    ui.painter().line_segment([tail, tip], stroke);
+                    ui.painter().add(egui::Shape::line(
+                        vec![
+                            tip + egui::vec2(-3.5 * direction, -3.5),
+                            tip,
+                            tip + egui::vec2(-3.5 * direction, 3.5),
+                        ],
+                        stroke,
+                    ));
+                }
+            }
+        }
         if response.enabled() {
             response.on_hover_cursor(egui::CursorIcon::PointingHand)
         } else {
@@ -127,6 +183,7 @@ pub(super) fn primary(label: &str) -> ActionButton<'_> {
     ActionButton {
         label,
         kind: ControlKind::Primary,
+        glyph: None,
     }
 }
 
@@ -140,6 +197,7 @@ pub(super) fn action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> eg
         ActionButton {
             label,
             kind: ControlKind::Neutral,
+            glyph: None,
         },
     )
 }
@@ -148,7 +206,34 @@ pub(super) fn tab_button(ui: &mut egui::Ui, label: &str, selected: bool) -> egui
     ui.add(ActionButton {
         label,
         kind: ControlKind::Tab { selected },
+        glyph: None,
     })
+}
+
+pub(super) fn run_button(ui: &mut egui::Ui, enabled: bool) -> egui::Response {
+    ui.add_enabled(
+        enabled,
+        ActionButton {
+            label: "Run",
+            kind: ControlKind::Primary,
+            glyph: Some(ControlGlyph::Play),
+        },
+    )
+}
+
+pub(super) fn navigation_button(ui: &mut egui::Ui, forward: bool, enabled: bool) -> egui::Response {
+    ui.add_enabled(
+        enabled,
+        ActionButton {
+            label: if forward { "Forward" } else { "Back" },
+            kind: ControlKind::Neutral,
+            glyph: Some(if forward {
+                ControlGlyph::Forward
+            } else {
+                ControlGlyph::Back
+            }),
+        },
+    )
 }
 
 /// Shared response-based feedback for painted graph nodes and button backgrounds.

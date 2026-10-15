@@ -3,7 +3,7 @@
 A native **egui / eframe** client and manager for local FHE experiments. This crate
 owns the test UI, a small SQL frontend, and an in-process transport adapter.
 It composes [compact-query](../compact-query/README.md) for compact authenticated
-storage, an owner-assisted encrypted age index, real FHE aggregation/updates and
+storage, an owner-assisted encrypted age index, real FHE projection/aggregation/updates and
 compact writeback; [compact-store](../compact-store/README.md) supplies the page
 limits, [replica-store](../replica-store/README.md) places related ciphertext images
 together, and [peer-protocol](../peer-protocol/README.md) owns connection/message
@@ -51,6 +51,11 @@ tabs, inputs and node cards have distinct hover, pressed, focus and disabled sta
   to open its own inspector tab. The inspector edits a peer's name, storage quota
   and link delay; **Save settings** applies changes. Its shard rows come from the
   owner's fixture, while the peer evaluator holds ciphertexts.
+- **Back / Forward:** return between SQL/Data and opened network/inspector views
+  using the arrow controls, **Alt+Left / Alt+Right** or the mouse's back/forward
+  buttons. New navigation after Back replaces the forward branch. Deleted nodes
+  and closed inspectors are skipped; navigation preserves editor drafts and camera.
+  Moving through history does not change the selected SQL client or execute SQL.
 - **Map / Matrix / Auto:** all modes use the same actual connection and packet
   snapshot. Auto uses a matrix for dense graphs; each undirected connection occupies
   two mirrored cells, while packet activity is directional (row sends to column).
@@ -123,6 +128,13 @@ The only table is `records(age u8, amount u16)`. Keywords are case-insensitive;
 whitespace around operators and a trailing semicolon are optional. Supported forms are:
 
 ```sql
+SELECT * FROM records;
+SELECT age, amount FROM records WHERE age >= 18 LIMIT 20;
+SELECT amount, age FROM records WHERE age BETWEEN 18 AND 42;
+SELECT age FROM records LIMIT 10;
+SELECT amount FROM records WHERE age = 18;
+SELECT COUNT(*) FROM records;
+SELECT SUM(amount) FROM records WHERE age >= 18;
 SELECT COUNT(*), SUM(amount) FROM records;
 SELECT COUNT(*), SUM(amount) FROM records WHERE age >= 18;
 SELECT COUNT(*), SUM(amount) FROM records WHERE age = 18;
@@ -138,16 +150,32 @@ UPDATE records SET amount = amount + 1;
 Age literals must be in `0..=255`, deltas in `0..=65535`. BETWEEN includes both
 endpoints; its AND is part of that one predicate, not general conjunction support.
 The planner normalizes operators to inclusive age bounds without unsigned wrap.
-Omitting WHERE selects all rows. Empty selections return `(0, 0)`; SQL NULL semantics
-are not implemented.
+Omitting WHERE selects all rows. Empty aggregates return zero for each requested
+field; SQL NULL semantics are not implemented.
+
+Row SELECT supports `*`, `age`, `amount`, `age, amount` and `amount, age`.
+The existing owner-online input preparation authenticates the exact encrypted age
+index and selected data pages, then freshly encrypts the original age/amount fields
+and a projection/active mask. The peer performs BFV ciphertext-by-ciphertext masking
+and relinearization, returning encrypted row values and presence markers. Only the
+completed encrypted response supplies the client result table; the inspector fixture
+is never a query source. This is genuine homomorphic projection under the explicit
+exact-index contract, with no cryptographic computation proof. Returned plaintext
+belongs to the client. Optional `LIMIT 0..=128` applies after
+complete indexed selection and global ordering; it is an output limit, not a cap on
+index work or a reason to omit unavailable shards. No ORDER BY is implemented.
+Standalone COUNT and SUM use the existing genuine BFV aggregate operation and
+return only the requested field; replicas never multiply rows.
 
 `age < 0`, `age > 255` and reversed BETWEEN bounds are constant false for the public
 u8 domain. The SQL planner folds these without inspecting any row: reads return
-`(0, 0)` and updates succeed without changing either head, owner rows or revision.
+an empty row table or zero aggregate and updates succeed without changing either
+head, owner rows or revision.
 `Updated.committed` reports a successful statement, not a changed-row count. Normal
 database, peer availability and transport checks still apply. These folded cases do
 not evaluate FHE and carry no FHE timing claim. Every potentially matching range,
-including a valid range with no actual matches, follows authenticated exact-index BFV.
+including a valid range with no actual matches, follows authenticated exact-index
+selection and the appropriate BFV operation.
 The entire statement is parsed, with a 4 KiB limit. Unsupported projections,
 operators, clauses, aliases, comments, quoted identifiers, and multiple statements
 are rejected. CREATE/INSERT/DELETE, CREATE INDEX, joins and transactions are not supported
