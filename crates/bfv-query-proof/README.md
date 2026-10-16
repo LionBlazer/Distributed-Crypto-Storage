@@ -36,8 +36,8 @@ Binding head bytes does not establish their agreement or freshness.
 ## Exact arithmetic and field-wrap protection
 
 Addition uses a Boolean carry and `a + b - c - q*k = 0`, with `a,b,c < q < 2^44`.
-Eight independent residues share a row: eight witness and 32 public columns, padded
-to 16,384 rows. Padding has all-zero operands and carries.
+Ten independent residues share a row: ten witness and 40 public columns in exactly
+8,192 rows. Every row is used; all 81,920 residues remain constrained.
 
 Product requires more than `a*b - c - q*k = 0` in the Goldilocks field: an 88-bit
 integer product could wrap its 64-bit characteristic. For `B = 2^22`, the AIR uses
@@ -59,20 +59,25 @@ the equations by `1,B,B^2` and adding yields exactly `a*b - c - q*k = 0` over th
 integers. Since the verifier independently requires `0 <= c < q`, this proves the
 unique correct modular product. The genuine quotient is below `q < B^2`; genuine
 carries lie in `(-B,B)` and `(-2B,2B)`, so all valid operations have a witness. This
-uses eight independent residues per row: eight zero-constrained dummy main columns
-and 96 public columns, padded to 16,384 rows. Padding uses zero public limbs,
-quotients and signed carries. The quotient/carry certificate is exactly 983,040 bytes;
+uses ten independent residues per row: ten zero-constrained dummy main columns
+and 120 public columns in exactly 8,192 rows. The quotient/carry certificate is exactly 983,040 bytes;
 all its values are functions of already public ciphertext operands and disclose no
 additional plaintext. The verifier commits it with the trusted input and claimed
 output; it never calculates these quotients/carries. A third SHA-256 transcript hash
 binds the exact certificate. Range checks alone cannot accept a result: all three
-limb equations still require a valid STARK proof. Product frame magic `BFVP3M02`
-rejects the earlier witness-only layout.
+limb equations still require a valid STARK proof. Frame magics `BFVP3A02` and
+`BFVP3M03` reject the earlier padded traces and witness-only product layout.
 
 Moving ciphertext-derived auxiliary values into the independently committed public
 certificate avoids 91 Boolean witness columns per residue. This reduces prover
 work without reducing the number of covered coefficients, arithmetic constraints,
 FRI queries, extension degree or security-model threshold.
+
+Packing ten residues per row removes the old eight-lane layout's 37.5% padding.
+It halves trace height while increasing width by 25%, reducing the total trace
+cells and public preprocessing work without skipping any arithmetic. The shared
+backend profile identifies the layout; hosts reject a stale installed kernel.
+Rebuild both SIMD kernels with the launcher when updating this proof format.
 
 Both relations use Goldilocks degree-five extension, standard Poseidon2 width 12,
 FRI blowup eight, 192 queries, binary folding and no grinding. The SDK's security

@@ -38,7 +38,10 @@ impl Operation {
         }
     }
     fn lanes(self) -> usize {
-        8
+        // All 81,920 residues fit exactly into 8,192 rows with ten lanes.
+        // Eight lanes padded 10,240 useful rows to 16,384, wasting 37.5% of
+        // every trace and its public preprocessing without adding coverage.
+        10
     }
     fn height(self) -> usize {
         bfv_linear_circuit::COEFFICIENTS
@@ -71,8 +74,8 @@ impl Operation {
     }
     fn proof_magic(self) -> &'static [u8; 8] {
         match self {
-            Self::Addition => b"BFVP3A01",
-            Self::PublicPolynomialProduct => b"BFVP3M02",
+            Self::Addition => b"BFVP3A02",
+            Self::PublicPolynomialProduct => b"BFVP3M03",
         }
     }
     fn evaluate(self, input: &[u8]) -> Result<Vec<u8>, Error> {

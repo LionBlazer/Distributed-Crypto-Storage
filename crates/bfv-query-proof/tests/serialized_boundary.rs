@@ -100,6 +100,44 @@ fn changing_the_final_residue_of_either_operation_invalidates_its_proof() {
 }
 
 #[test]
+fn changed_residues_across_trace_lanes_and_modulus_boundaries_are_rejected() {
+    for operation in operations() {
+        let f = fixture(operation);
+        // Both sides of a packed-row boundary and of the first modulus boundary.
+        for index in [0, 9, 10, 8191, 8192] {
+            let mut output = f.output.clone();
+            let offset = 40 + index * 8;
+            let residue = u64::from_le_bytes(output[offset..offset + 8].try_into().unwrap());
+            let modulus = bfv_linear_circuit::MODULI[index / bfv_linear_circuit::DEGREE];
+            output[offset..offset + 8].copy_from_slice(&((residue + 1) % modulus).to_le_bytes());
+
+            assert_eq!(
+                verify(&f.input, &output, &f.proof).unwrap_err(),
+                Error::Verification,
+                "{operation:?} residue {index}"
+            );
+        }
+    }
+}
+
+#[test]
+fn previous_padded_trace_proofs_are_rejected_before_decoding() {
+    for (operation, old_magic) in [
+        (Operation::Addition, b"BFVP3A01"),
+        (Operation::PublicPolynomialProduct, b"BFVP3M02"),
+    ] {
+        let f = fixture(operation);
+        let mut proof = f.proof.clone();
+        proof[..8].copy_from_slice(old_magic);
+
+        assert_eq!(
+            verify(&f.input, &f.output, &proof).unwrap_err(),
+            Error::ProofEncoding
+        );
+    }
+}
+
+#[test]
 fn matching_rebound_headers_cannot_replay_either_arithmetic_proof() {
     for operation in operations() {
         let f = fixture(operation);

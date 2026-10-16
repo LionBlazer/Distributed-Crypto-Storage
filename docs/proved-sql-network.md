@@ -138,6 +138,36 @@ ratio, indefinite update capacity or production-scale 1–2 GB memory guarantee.
 
 ## Reproduction and module ownership
 
+### Ten-lane proof layout (2026-10-16)
+
+The arithmetic engine now packs all 81,920 residues into ten lanes and 8,192 rows,
+removing the eight-lane trace's 37.5% padding. Both complete public traces shrink
+without changing BFV parameters, integer constraints, FRI settings or the runtime
+128-bit security-model floor. New proof magics and backend profile v2 reject old
+frames and stale kernels; existing journals containing old proofs are not migrated.
+Rebuild the packaged applications and both kernels together with `dcs-launch`.
+
+One before/after run of `proved_sql` on the same Windows host, with two Rayon
+threads per process, native owner/test compilation, AVX-512 peer kernels, the same
+easy local confirmation profile and four public initial rows on two peers:
+
+| Complete accepted operation | Eight lanes | Ten lanes |
+| --- | ---: | ---: |
+| SELECT all four rows | 1,666 ms | 970 ms |
+| SELECT projected/filter/LIMIT | 1,826 ms | 979 ms |
+| INSERT, including durable confirmation | 1,241 ms | 879 ms |
+| UPDATE three rows across two shards, including confirmation | 2,221 ms | 1,444 ms |
+| SELECT after both writes | 1,854 ms | 1,196 ms |
+| SELECT with one process stopped, including detection | 3,715 ms | 3,031 ms |
+
+These are individual development observations, not tail-latency guarantees. The
+500-ms goal requested on 2026-10-16 remains unmet. The six real-process SQL/fault
+tests passed, including pending-write recovery and rejecting unavailable,
+corrupted or unauthorized state. Portable/AVX2/AVX-512 proofs cross-verified and
+rejected tampering. Memory was not remeasured in this run. Full PostgreSQL SQL,
+transactions, `FOR UPDATE` and `SKIP LOCKED` remain unimplemented; this optimization
+does not change their fail-closed status or the owner-online index trust boundary.
+
 ```powershell
 $env:CARGO_BUILD_JOBS = '2'
 $env:RAYON_NUM_THREADS = '2'
