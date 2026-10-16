@@ -2,6 +2,52 @@
 use super::*;
 use crate::{AgeRange, MAX_ROWS, ROW_BYTES, SCHEMA};
 
+#[test]
+fn canonical_four_row_index_matches_the_shared_format_vector() {
+    // All rows and logical identities below are explicitly PUBLIC NONSECRET.
+    let owner = compact_store::Owner::generate([83; 16]).unwrap();
+    let rows = [
+        PlainRow {
+            age: 255,
+            amount: 0,
+        },
+        PlainRow {
+            age: 0,
+            amount: 65535,
+        },
+        PlainRow {
+            age: 255,
+            amount: 256,
+        },
+        PlainRow {
+            age: 128,
+            amount: 255,
+        },
+    ];
+    let data = seal_data(&owner, &rows);
+    let table = TableId::from_bytes([0x31; 32]).unwrap();
+    let ids: Vec<_> = (1..=4)
+        .map(|last| {
+            let mut bytes = [0; 32];
+            bytes[31] = last;
+            RowId::parse(bytes).unwrap()
+        })
+        .collect();
+    let suffix: Vec<_> = include_str!("../../tests/fixtures/index-v3-four-row-suffix.hex")
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .flat_map(str::split_whitespace)
+        .map(|byte| u8::from_str_radix(byte, 16).expect("fixed public hexadecimal vector"))
+        .collect();
+    assert_eq!(suffix.len(), 2224);
+    let mut expected = data.commitment().encode().to_vec();
+    expected.extend(suffix);
+
+    let encoded = build_plaintext(&rows, data.commitment(), &table, &ids).unwrap();
+
+    assert_eq!(encoded.as_slice(), expected);
+}
+
 fn table_id() -> TableId {
     TableId::from_bytes([71; 32]).unwrap()
 }

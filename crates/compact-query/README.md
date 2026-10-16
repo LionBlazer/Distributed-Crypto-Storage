@@ -1,5 +1,9 @@
 # Compact query
 
+The [public format vector](tests/fixtures/README.md) fixes one nontrivial canonical
+four-row private-index encoding for codec/source-relation compatibility checks.
+It conveys no proof or query authority.
+
 Two explicit experimental storage/FHE contracts share the same canonical Table and
 owner-built encrypted index. `tfhe-backend` is the legacy default and retains its
 FullScan/coarse-candidate encrypted predicate and conditional UPDATE semantics.
