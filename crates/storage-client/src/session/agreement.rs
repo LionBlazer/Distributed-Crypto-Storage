@@ -120,38 +120,26 @@ impl Session {
                 {
                     return Err(Error::Transport(response.err().unwrap()));
                 }
-                if let Ok(Response::RawBundle(bundle)) = response {
-                    if bundle.data_head != state.heads.data
-                        || bundle.index_head != state.heads.index
-                    {
-                        continue;
-                    }
-                    if self
-                        .data
-                        .owner
-                        .restore_table_for_experiment(
-                            &bundle.data,
-                            &bundle.index,
-                            &self.data.table_id,
-                            &data_head,
-                            &index_head,
-                            Limits::default(),
-                        )
-                        .is_err()
-                    {
-                        continue;
-                    }
-                    fetched = Some((bundle, peer.clone()));
+                if let Ok(Response::RawBundle(bundle)) = response
+                    && let Ok(object) = restore_agreed_object(
+                        &self.data.owner,
+                        &self.data.table_id,
+                        &data_head,
+                        &index_head,
+                        bundle,
+                    )
+                {
+                    fetched = Some((object, peer.clone()));
                     break;
                 }
             }
-            let (bundle, peer) = fetched.ok_or(Error::UnavailableShard(state.id))?;
+            let (object, peer) = fetched.ok_or(Error::UnavailableShard(state.id))?;
             staged.push((
                 slot,
                 Shard {
                     info: ShardInfo {
                         id: state.id,
-                        object: *bundle.target_version().map_err(protocol)?.object(),
+                        object,
                         holders: vec![peer.id],
                         rows: data_head.layout().row_count as usize,
                         data_head,
@@ -279,5 +267,73 @@ impl Session {
             ));
         }
         Ok(current)
+    }
+}
+
+// A malformed envelope is one holder's failure, not permission to stop before
+// trying a healthy replica. Return no raw bytes beyond complete owner restore.
+fn restore_agreed_object(
+    owner: &backend::Owner,
+    table: &compact_query::TableId,
+    data: &Commitment,
+    index: &Commitment,
+    raw: RawBundle,
+) -> Result<[u8; 32]> {
+    let version = raw.target_version().map_err(protocol)?;
+    if version.data_head() != data || version.index_head() != index {
+        return Err(protocol("A holder returned different agreed heads"));
+    }
+    owner.restore_table_for_experiment(
+        &raw.data,
+        &raw.index,
+        table,
+        data,
+        index,
+        Limits::default(),
+    )?;
+    Ok(*version.object())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn unsupported_version_is_not_a_restored_candidate_even_with_authentic_images() {
+        let (owner, _) = backend::Owner::generate([98; 16]).unwrap();
+        let table = owner
+            .seal(&[PlainRow { age: 18, amount: 7 }], 4, Limits::default())
+            .unwrap();
+        let raw = RawBundle::from_snapshots(table.snapshot(), table.encrypted_index()).unwrap();
+        let object = *raw.target_version().unwrap().object();
+        for mutation in 0..4 {
+            let mut bad = raw.clone();
+            match mutation {
+                0 => bad.version = 1,
+                1 => bad.version = 3,
+                2 => bad.index_head[56] ^= 1,
+                _ => *bad.data.last_mut().unwrap() ^= 1,
+            }
+            assert!(
+                restore_agreed_object(
+                    &owner,
+                    table.table_id(),
+                    table.commitment(),
+                    table.index_commitment(),
+                    bad,
+                )
+                .is_err()
+            );
+        }
+        assert_eq!(
+            restore_agreed_object(
+                &owner,
+                table.table_id(),
+                table.commitment(),
+                table.index_commitment(),
+                raw,
+            )
+            .unwrap(),
+            object
+        );
     }
 }

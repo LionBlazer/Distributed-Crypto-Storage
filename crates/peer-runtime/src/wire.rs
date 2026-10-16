@@ -69,7 +69,7 @@ pub enum Request {
     Neighbors(Vec<Endpoint>),
     Quota(u64),
     Shutdown,
-    /// Exact-address encrypted page custody, with its own fail-closed v1 payload.
+    /// Exact-address encrypted page custody, with its own fail-closed v2 payload.
     FetchPages(crate::PageBatchRequest),
     FetchReadImage(crate::ReadImageRequest),
     /// Owner-only fixed-geometry padded ciphertext upload; existing tags remain stable.

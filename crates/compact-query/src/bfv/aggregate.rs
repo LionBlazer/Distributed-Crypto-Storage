@@ -6,15 +6,14 @@ use bfv_query_proof::{CheckedOperation, Operation};
 pub struct PreparedProvableAggregate {
     request: Vec<u8>,
     pending: bfv_core::PendingPolynomialAggregate,
-    data_head: Commitment,
-    index_head: Commitment,
+    heads: crate::ReadHeads,
 }
 impl PreparedProvableAggregate {
     pub fn request(&self) -> &[u8] {
         &self.request
     }
-    fn ensure_current(&self, table: &Table) -> Result<()> {
-        if table.commitment() != &self.data_head || table.index_commitment() != &self.index_head {
+    fn ensure_current(&self, heads: &crate::ReadHeads) -> Result<()> {
+        if heads != &self.heads {
             return Err(Error::WrongVersion);
         }
         Ok(())
@@ -46,8 +45,19 @@ impl Owner {
         budget: usize,
         limits: Limits,
     ) -> Result<PreparedProvableAggregate> {
-        let selection = self.proof_selection(
-            table,
+        self.prepare_provable_aggregate_from_source(&table.read_view(), predicate, budget, limits)
+    }
+    /// Uses the same complete selection parser for full snapshots and immutable
+    /// posting prefixes. The caller supplies independently authorized read heads.
+    pub fn prepare_provable_aggregate_from_source(
+        &self,
+        source: &crate::ReadView<'_>,
+        predicate: Option<AgeRange>,
+        budget: usize,
+        limits: Limits,
+    ) -> Result<PreparedProvableAggregate> {
+        let selection = self.proof_selection_read(
+            source,
             predicate,
             crate::index::MaterializationBudget::aggregate(budget),
             limits,
@@ -60,16 +70,13 @@ impl Owner {
         let prepared = self
             .key
             .prepare_polynomial_aggregate(context, &selection.fields)?;
-        let data_head = selection.data_head.clone();
-        let index_head = selection.index_head.clone();
         // Source plaintext is needed only for encrypting the genuine input, never
         // for computing the answer or retaining an aggregate retry capability.
         drop(selection);
         Ok(PreparedProvableAggregate {
             request: prepared.request,
             pending: prepared.pending,
-            data_head,
-            index_head,
+            heads: source.heads().clone(),
         })
     }
     /// Retains the encrypted request and pending capability after a bad replica response.
@@ -80,7 +87,18 @@ impl Owner {
         output: &[u8],
         proof: &[u8],
     ) -> Result<CheckedOperation> {
-        prepared.ensure_current(table)?;
+        self.check_aggregate_proof_for_heads(&table.read_heads(), prepared, output, proof)
+    }
+    /// Checks the exact retained request and complete logical table/head binding
+    /// without retaining either source image while a peer computes its answer.
+    pub fn check_aggregate_proof_for_heads(
+        &self,
+        heads: &crate::ReadHeads,
+        prepared: &PreparedProvableAggregate,
+        output: &[u8],
+        proof: &[u8],
+    ) -> Result<CheckedOperation> {
+        prepared.ensure_current(heads)?;
         let input = self.linear.aggregate_circuit_request(prepared.request())?;
         bfv_query_proof::verify(&input, output, proof)
             .map_err(|error| Error::ComputationProof(error.to_string()))
@@ -92,7 +110,18 @@ impl Owner {
         output: &[u8],
         evidence: CheckedOperation,
     ) -> Result<VerifiedAggregate> {
-        prepared.ensure_current(table)?;
+        self.complete_checked_aggregate_for_heads(&table.read_heads(), prepared, output, evidence)
+    }
+    /// The network caller must establish agreed freshness before this consumes
+    /// the one-use pending state and decrypts the genuine encrypted result.
+    pub fn complete_checked_aggregate_for_heads(
+        &self,
+        heads: &crate::ReadHeads,
+        prepared: PreparedProvableAggregate,
+        output: &[u8],
+        evidence: CheckedOperation,
+    ) -> Result<VerifiedAggregate> {
+        prepared.ensure_current(heads)?;
         let input = self.linear.aggregate_circuit_request(prepared.request())?;
         if evidence.operation() != Operation::PublicPolynomialProduct
             || !evidence.matches_statement(&input, output)

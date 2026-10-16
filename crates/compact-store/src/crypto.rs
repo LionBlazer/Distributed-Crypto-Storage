@@ -153,6 +153,40 @@ impl Owner {
         Ok(snapshot.commitment().clone())
     }
 
+    /// Reissues one authenticated page using its retained path, without a partial
+    /// snapshot. The exact independently trusted source head is required again.
+    /// Authenticates old AEAD before generating a fresh nonce; returns a proposal
+    /// head and ordinary membership response, not SQL proof or publication.
+    pub fn reissue_page(
+        &self,
+        source: crate::VerifiedPagePath,
+        expected: &Commitment,
+        plaintext: &[u8],
+        limits: Limits,
+    ) -> Result<(Commitment, crate::LookupResponse)> {
+        if source.page().commitment() != expected {
+            return Err(Error::WrongVersion);
+        }
+        self.check_owner(expected)?;
+        expected.layout.validate(limits)?;
+        if source.encoded_len() > limits.max_response_bytes {
+            return Err(Error::ResourceLimit);
+        }
+        let index = source.page().page_index();
+        if plaintext.len() != expected.layout.page_plaintext_len(index)? {
+            return Err(Error::InvalidPage);
+        }
+        let mut next = expected.clone();
+        next.revision = next
+            .revision
+            .checked_add(1)
+            .ok_or(Error::RevisionExhausted)?;
+        // This temporary plaintext is erased before new encryption begins.
+        drop(self.decrypt(source.page())?);
+        let packet = self.encrypt_page(&next, index, plaintext)?;
+        source.reissue(next, packet)
+    }
+
     pub fn decrypt(&self, page: &VerifiedPage) -> Result<PlainPage> {
         self.check_owner(&page.commitment)?;
         let revision = page.page_revision();
@@ -320,5 +354,92 @@ mod tests {
                 Err(Error::Authentication)
             ));
         }
+    }
+
+    fn reissue_fixture() -> (Owner, EncryptedSnapshot) {
+        let owner = Owner::generate([83; 16]).unwrap();
+        let image = owner
+            .seal(
+                Layout {
+                    schema: [84; 16],
+                    row_width: 3,
+                    rows_per_page: 2,
+                    row_count: 2,
+                },
+                &[7; 6],
+                Limits::default(),
+            )
+            .unwrap();
+        (owner, image)
+    }
+
+    #[test]
+    fn reissue_authenticates_old_aead_even_when_membership_is_valid_for_modified_bytes() {
+        for offset in [8, 32, 53] {
+            let (owner, original) = reissue_fixture();
+            let original_bytes = original.encode();
+            let mut packet = original.lookup(0, Limits::default()).unwrap().packet;
+            packet[offset] ^= 1;
+            // Complete malformed fixture with a valid Merkle root, invalid AEAD.
+            let hostile =
+                EncryptedSnapshot::from_owner(original.commitment().clone(), vec![packet]);
+            let before = hostile.encode();
+            let head = hostile.commitment();
+            let source = hostile
+                .lookup(0, Limits::default())
+                .unwrap()
+                .verify_for_reissue(head, 0, Limits::default())
+                .unwrap();
+
+            assert!(matches!(
+                owner.reissue_page(source, head, &[9; 6], Limits::default()),
+                Err(Error::Authentication)
+            ));
+
+            assert_eq!(hostile.encode(), before);
+            assert_eq!(original.encode(), original_bytes);
+        }
+    }
+
+    #[test]
+    fn reissue_rejects_a_wrong_key_even_with_matching_owner_metadata() {
+        let (owner, image) = reissue_fixture();
+        let mut wrong_key = Owner::generate(owner.database).unwrap();
+        wrong_key.domain = owner.domain;
+        let before = image.encode();
+        let source = image
+            .lookup(0, Limits::default())
+            .unwrap()
+            .verify_for_reissue(image.commitment(), 0, Limits::default())
+            .unwrap();
+
+        assert!(matches!(
+            wrong_key.reissue_page(source, image.commitment(), &[9; 6], Limits::default()),
+            Err(Error::Authentication)
+        ));
+
+        assert_eq!(image.encode(), before);
+    }
+
+    #[test]
+    fn reissue_rejects_global_revision_exhaustion_without_changing_the_source() {
+        let (owner, original) = reissue_fixture();
+        let mut head = original.commitment().clone();
+        head.revision = u64::MAX;
+        let packet = original.lookup(0, Limits::default()).unwrap().packet;
+        let exhausted = EncryptedSnapshot::from_owner(head, vec![packet]);
+        let before = exhausted.encode();
+        let source = exhausted
+            .lookup(0, Limits::default())
+            .unwrap()
+            .verify_for_reissue(exhausted.commitment(), 0, Limits::default())
+            .unwrap();
+
+        assert!(matches!(
+            owner.reissue_page(source, exhausted.commitment(), &[9; 6], Limits::default()),
+            Err(Error::RevisionExhausted)
+        ));
+
+        assert_eq!(exhausted.encode(), before);
     }
 }

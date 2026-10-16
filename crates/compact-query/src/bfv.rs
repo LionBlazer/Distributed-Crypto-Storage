@@ -8,9 +8,11 @@ use zeroize::{Zeroize, Zeroizing};
 mod aggregate;
 mod bfv_evaluator;
 mod bfv_owner;
+mod update;
 mod verified;
 pub use aggregate::{PreparedProvableAggregate, VerifiedAggregate};
-pub use verified::{VerifiedSelection, VerifiedUpdate};
+pub use update::{UpdatePatch, VerifiedPartialUpdate, VerifiedUpdate};
+pub use verified::VerifiedSelection;
 
 pub use bfv_core::{
     EvaluationStats, IndexedUpdateStats, POLYNOMIAL_AGGREGATE_CAPACITY, ParameterProfile,
@@ -123,6 +125,7 @@ impl PreparedAggregate {
 /// fn cannot_reuse(token: PreparedUpdate) { let moved = token; drop(token); drop(moved); }
 /// ```
 pub struct PreparedUpdate {
+    heads: crate::ReadHeads,
     request: Vec<u8>,
     pending: bfv_core::PendingIndexedUpdate,
     selection: ExactSelection,
@@ -135,6 +138,15 @@ impl PreparedUpdate {
     pub fn selected_rows(&self) -> usize {
         self.selection.ordinals.len()
     }
+}
+fn current_update(heads: &crate::ReadHeads, prepared: &PreparedUpdate) -> Result<()> {
+    if heads != &prepared.heads
+        || heads.data() != &prepared.selection.data_head
+        || heads.index() != &prepared.selection.index_head
+    {
+        return Err(Error::WrongVersion);
+    }
+    Ok(())
 }
 fn current(table: &Table, selection: &ExactSelection) -> Result<()> {
     if table.commitment() != &selection.data_head

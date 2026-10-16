@@ -255,8 +255,8 @@ An owner signature is authorization, not a substitute for these checks or STARKs
 ## Journal RPCs and storage lifecycle
 
 `JobVerifier` commits its FHE parameter descriptor and the exact
-`bfv_query_proof::PROOF_PROFILE_ID` plus the aggregate semantics ID under a separate
-application domain. A
+`bfv_query_proof::PROOF_PROFILE_ID`, aggregate semantics ID and ObjectProfileID under
+application domain v4. A
 setup-only or older proof-format application commitment is incompatible; it cannot
 reuse a new verifier merely because the encryption parameters match.
 

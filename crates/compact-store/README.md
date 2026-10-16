@@ -38,6 +38,20 @@ address-based retrieval, not an FHE evaluator or SQL query proof.
   image accepts only the same exact head and no replacements. This ciphertext-only
   primitive grants no head authorization, SQL proof or freshness; the caller owns
   durable staging and provenance. It does not copy every base page again.
+- LookupResponse::verify_for_reissue uses the same ordinary membership verifier
+  and returns a non-cloneable, non-serializable VerifiedPagePath. It retains the
+  exact old head, address, packet and private siblings. Immutable commitment/address
+  accessors expose only its authenticated binding metadata. Owner::reissue_page consumes
+  it with an independently supplied matching head and same-length new plaintext.
+  It rechecks owner, geometry, resource/response bounds and revision exhaustion,
+  authenticates the old AEAD, then uses the existing fresh-nonce page encryption
+  and Merkle domains to return a new head plus ordinary LookupResponse. Odd missing
+  siblings duplicate the new node when deriving the new root/path. The source stays
+  unchanged; no partial EncryptedSnapshot or Table is constructed. This is a local
+  page proposal, not SQL execution/proof, durable publication or head finality.
+  It does not audit unseen pages or replace complete-image custody admission.
+  An old path rejects against a newer expected head; explicitly trusting the old
+  head again may create another proposal. There is no spent-capability registry.
 - Owner::decrypt accepts VerifiedPage and returns PlainPage; the decrypted buffer
   is zeroized on drop. The application remains responsible for its source plaintext
   and any copies. Public nonce, ciphertext and tag accessors on VerifiedPage permit

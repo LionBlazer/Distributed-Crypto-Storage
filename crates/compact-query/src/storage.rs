@@ -113,18 +113,30 @@ pub(crate) fn replace_amount_pages(
     if table.commitment() != expected_data || table.index_commitment() != expected_index {
         return Err(Error::WrongVersion);
     }
-    let mut data = table.data.clone();
-    let replacements: Vec<_> = pages
-        .iter()
-        .map(|(page, bytes)| (*page, bytes.as_slice()))
-        .collect();
-    let next = owner.replace_pages(&mut data, expected_data, &replacements, limits)?;
+    let data = replace_data_pages(owner, &table.data, expected_data, pages, limits)?;
+    let next = data.commitment().clone();
     let index = index::rebound(owner, &table.index, expected_data, &next, table.table_id())?;
     Ok(Table {
         table_id: table.table_id,
         data,
         index,
     })
+}
+
+pub(crate) fn replace_data_pages(
+    owner: &Owner,
+    source: &EncryptedSnapshot,
+    expected: &Commitment,
+    pages: &BTreeMap<u64, Zeroizing<Vec<u8>>>,
+    limits: Limits,
+) -> Result<EncryptedSnapshot> {
+    let mut data = source.clone();
+    let replacements: Vec<_> = pages
+        .iter()
+        .map(|(page, bytes)| (*page, bytes.as_slice()))
+        .collect();
+    owner.replace_pages(&mut data, expected, &replacements, limits)?;
+    Ok(data)
 }
 
 /// Full output relation was already decoded from genuine peer BFV append and locally

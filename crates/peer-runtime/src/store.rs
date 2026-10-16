@@ -65,7 +65,9 @@ fn object_info(
 impl Store {
     pub(crate) fn open(directory: &Path, quota: u64) -> io::Result<Self> {
         if quota < PROFILE_BYTES as u64 {
-            return Err(io::Error::other("Storage quota cannot fit the custody profile"));
+            return Err(io::Error::other(
+                "Storage quota cannot fit the custody profile",
+            ));
         }
         let fresh = workspace::preflight(directory, false)?;
         fs::create_dir_all(directory)?;

@@ -17,6 +17,8 @@ The [authenticated-candidate comparison](CANDIDATE-MEASUREMENTS.md) measures the
 subsequent writeback refactor without changing custody, wire or proof checks.
 The [shared-packet record](SHARED-PACKETS-MEASUREMENTS.md) retains both ownership
 experiments, including the regression, final timings and separate memory observations.
+The [static aggregate comparison](AGGREGATE-MEASUREMENTS.md) measures complete
+COUNT/SUM over the same million-row source before and after fixed ReadImage preparation.
 
 ## Full accepted operations
 

@@ -18,17 +18,39 @@ impl Session {
                 .ok_or_else(|| protocol("Missing retained mutation result"));
         }
         let plan = sql_plan::parse_sql(sql)?;
-        let read_requests = matches!(plan, QueryPlan::Select { .. }).then(Requests::read_query);
+        let read_requests = matches!(
+            plan,
+            QueryPlan::Select { .. }
+                | QueryPlan::Aggregate { .. }
+                | QueryPlan::Count { .. }
+                | QueryPlan::Sum { .. }
+        )
+        .then(Requests::read_query);
         let initial = self.synchronize_using(read_requests.as_ref())?;
         match &plan {
             QueryPlan::Aggregate { predicate } => {
-                return self.execute_aggregate(initial, *predicate, AggregateProjection::CountSum);
+                return self.execute_aggregate(
+                    initial,
+                    *predicate,
+                    AggregateProjection::CountSum,
+                    read_requests.as_ref().expect("Aggregate read scope"),
+                );
             }
             QueryPlan::Count { predicate } => {
-                return self.execute_aggregate(initial, *predicate, AggregateProjection::Count);
+                return self.execute_aggregate(
+                    initial,
+                    *predicate,
+                    AggregateProjection::Count,
+                    read_requests.as_ref().expect("Aggregate read scope"),
+                );
             }
             QueryPlan::Sum { predicate } => {
-                return self.execute_aggregate(initial, *predicate, AggregateProjection::Sum);
+                return self.execute_aggregate(
+                    initial,
+                    *predicate,
+                    AggregateProjection::Sum,
+                    read_requests.as_ref().expect("Aggregate read scope"),
+                );
             }
             _ => {}
         }

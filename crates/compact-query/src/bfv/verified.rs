@@ -2,7 +2,7 @@
 //! Agreement/freshness and publication belong to the network client, not this module.
 use super::*;
 use crate::{check_schema, index, random_id, storage};
-use bfv_core::{QueryContext, UnverifiedUpdateOutcome};
+use bfv_core::QueryContext;
 
 pub struct VerifiedSelection {
     rows: Vec<SelectedRow>,
@@ -20,49 +20,11 @@ impl VerifiedSelection {
     }
 }
 
-/// Staged owner-finalized ciphertext only. No state is published by this value.
-pub struct VerifiedUpdate {
-    table: Option<Table>,
-    matched_rows: usize,
-    changed_rows: usize,
-    data_pages: Vec<u64>,
-    index_pages: Vec<u64>,
-    evidence: bfv_query_proof::CheckedOperation,
-}
-impl VerifiedUpdate {
-    pub fn overflowed(&self) -> bool {
-        self.table.is_none()
-    }
-    pub fn changed_rows(&self) -> usize {
-        self.changed_rows
-    }
-    /// Complete authenticated selection size, including unchanged values.
-    /// An overflowing stage is still rejected as a whole by its caller.
-    pub fn matched_rows(&self) -> usize {
-        self.matched_rows
-    }
-    /// Exact encrypted data pages reissued by this checked stage. Addresses
-    /// alone provide no authorization, membership, or computation evidence.
-    pub fn replaced_data_pages(&self) -> &[u64] {
-        &self.data_pages
-    }
-    /// Exact encrypted index pages reissued by this checked stage.
-    pub fn replaced_index_pages(&self) -> &[u64] {
-        &self.index_pages
-    }
-    pub fn into_table(self) -> Option<Table> {
-        self.table
-    }
-    pub fn evidence(&self) -> &bfv_query_proof::CheckedOperation {
-        &self.evidence
-    }
-}
-
-fn proof_error(error: bfv_query_proof::Error) -> Error {
+pub(super) fn proof_error(error: bfv_query_proof::Error) -> Error {
     Error::ComputationProof(error.to_string())
 }
 
-fn require_checked_statement(
+pub(super) fn require_checked_statement(
     evidence: &bfv_query_proof::CheckedOperation,
     input: &[u8],
     output: &[u8],
@@ -78,16 +40,7 @@ fn require_checked_statement(
 }
 
 impl Owner {
-    pub(super) fn proof_selection(
-        &self,
-        table: &Table,
-        predicate: Option<AgeRange>,
-        budget: index::MaterializationBudget,
-        limits: Limits,
-    ) -> Result<ExactSelection> {
-        self.proof_selection_read(&table.read_view(), predicate, budget, limits)
-    }
-    fn proof_selection_read(
+    pub(super) fn proof_selection_read(
         &self,
         source: &crate::ReadView<'_>,
         predicate: Option<AgeRange>,
@@ -193,36 +146,6 @@ impl Owner {
         })
     }
 
-    pub fn prepare_provable_update(
-        &self,
-        table: &Table,
-        predicate: Option<AgeRange>,
-        delta: u16,
-        budget: usize,
-        limits: Limits,
-    ) -> Result<PreparedUpdate> {
-        let selection = self.proof_selection(
-            table,
-            predicate,
-            index::MaterializationBudget::rows(budget),
-            limits,
-        )?;
-        let context = QueryContext::new(
-            random_id()?,
-            selection.data_head.encode(),
-            selection.index_head.encode(),
-        );
-        let prepared =
-            self.key
-                .prepare_indexed_update_for_experiment(context, &selection.fields, delta)?;
-        Ok(PreparedUpdate {
-            request: prepared.request,
-            pending: prepared.pending,
-            selection,
-            delta,
-        })
-    }
-
     /// Checks one candidate response without consuming the authenticated pending
     /// selection, so another real executor may be tried after an invalid proof.
     pub fn check_select_proof(
@@ -234,18 +157,6 @@ impl Owner {
     ) -> Result<bfv_query_proof::CheckedOperation> {
         current_select(heads, &prepared.selection)?;
         let input = self.linear.select_circuit_request(prepared.request())?;
-        bfv_query_proof::verify(&input, output, proof).map_err(proof_error)
-    }
-
-    pub fn check_update_proof(
-        &self,
-        table: &Table,
-        prepared: &PreparedUpdate,
-        output: &[u8],
-        proof: &[u8],
-    ) -> Result<bfv_query_proof::CheckedOperation> {
-        current(table, &prepared.selection)?;
-        let input = self.linear.circuit_request(prepared.request())?;
         bfv_query_proof::verify(&input, output, proof).map_err(proof_error)
     }
 
@@ -292,113 +203,6 @@ impl Owner {
         let answer = self.complete_select_for_heads(heads, prepared, &response)?;
         Ok(VerifiedSelection {
             rows: answer.rows,
-            evidence,
-        })
-    }
-
-    /// Genuine proof verification, decryption and bounded writeback; no sum recomputation.
-    /// The caller must verify ALL shards before publishing any staged head.
-    pub fn stage_proved_update(
-        &self,
-        table: &Table,
-        prepared: PreparedUpdate,
-        output: &[u8],
-        proof: &[u8],
-        limits: Limits,
-    ) -> Result<VerifiedUpdate> {
-        let evidence = self.check_update_proof(table, &prepared, output, proof)?;
-        self.stage_checked_update(table, prepared, output, evidence, limits)
-    }
-
-    /// Consumes evidence only after checking its exact input/output identity.
-    pub fn stage_checked_update(
-        &self,
-        table: &Table,
-        prepared: PreparedUpdate,
-        output: &[u8],
-        evidence: bfv_query_proof::CheckedOperation,
-        limits: Limits,
-    ) -> Result<VerifiedUpdate> {
-        current(table, &prepared.selection)?;
-        let input = self.linear.circuit_request(prepared.request())?;
-        require_checked_statement(&evidence, &input, output)?;
-        let response = self
-            .linear
-            .restore_circuit_output(prepared.request(), output)?;
-        let PreparedUpdate {
-            pending,
-            mut selection,
-            ..
-        } = prepared;
-        let matched_rows = selection.ordinals.len();
-        let rows = match self
-            .key
-            .decrypt_indexed_update_unverified_for_experiment(pending, &response)?
-        {
-            UnverifiedUpdateOutcome::Overflow { .. } => {
-                return Ok(VerifiedUpdate {
-                    table: None,
-                    matched_rows,
-                    changed_rows: 0,
-                    data_pages: Vec::new(),
-                    index_pages: Vec::new(),
-                    evidence,
-                });
-            }
-            UnverifiedUpdateOutcome::Values(values) => values.rows,
-        };
-        if rows.len() != selection.ordinals.len()
-            || rows.iter().enumerate().any(|(slot, row)| row.slot != slot)
-        {
-            return Err(Error::InvalidOutput);
-        }
-        let changed_rows = rows
-            .iter()
-            .zip(&selection.fields)
-            .filter(|(row, original)| row.amount != original.amount)
-            .count();
-        if changed_rows == 0 {
-            return Ok(VerifiedUpdate {
-                table: Some(Table {
-                    table_id: table.table_id,
-                    data: table.data.clone(),
-                    index: table.index.clone(),
-                }),
-                matched_rows,
-                changed_rows,
-                data_pages: Vec::new(),
-                index_pages: Vec::new(),
-                evidence,
-            });
-        }
-        for row in rows {
-            let address = table
-                .commitment()
-                .layout()
-                .address_of(selection.ordinals[row.slot])?;
-            let page = selection
-                .pages
-                .get_mut(&address.page_index)
-                .ok_or(Error::InvalidOutput)?;
-            page[address.byte_offset + 1..address.byte_offset + 3]
-                .copy_from_slice(&row.amount.to_le_bytes());
-        }
-        let data_pages = selection.pages.keys().copied().collect();
-        let staged = storage::replace_amount_pages(
-            &self.store,
-            table,
-            &selection.data_head,
-            &selection.index_head,
-            &selection.pages,
-            limits,
-        )?;
-        current(table, &selection)?;
-        Ok(VerifiedUpdate {
-            table: Some(staged),
-            matched_rows,
-            changed_rows,
-            data_pages,
-            index_pages: vec![0],
             evidence,
         })
     }

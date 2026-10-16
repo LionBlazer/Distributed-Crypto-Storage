@@ -174,9 +174,20 @@ separate 256-row bounds. The authenticated total count is preflighted before
 posting traversal or FHE; excess rejects without a result prefix. Arbitrary owner
 vectors cannot construct this storage-bound preparation. Original fields, pages
 and ordinals are dropped/zeroized after encryption; only the encrypted request,
-exact heads and cardinality/keyset/context pending capability remain. No aggregate
-answer comes from retained source fields. The owner-online AEAD-to-FHE boundary
-and aggregate full-snapshot network retrieval remain unchanged.
+exact logical TableId, both heads and cardinality/keyset/context pending capability
+remain. No aggregate answer comes from retained source fields. The owner-online
+AEAD-to-FHE boundary remains unchanged.
+
+`prepare_provable_aggregate_from_source` shares that complete parser through
+`ReadView`; a source can own only the fixed posting prefix and omit the encrypted
+RowId tail. It never constructs a partial Table or pretends the omitted pages
+were audited. Existing full-table preparation forwards to this same implementation.
+`check_aggregate_proof_for_heads` and `complete_checked_aggregate_for_heads` recheck
+the entire `ReadHeads`, including TableId, before proof acceptance or decryption;
+the full-table methods forward with `table.read_heads()`. Only encrypted pending
+state remains during a peer proof wait. The network caller establishes agreed
+freshness before checked completion. Neither these source contracts nor the
+arithmetic proof supply the missing public source-completeness proof or finality.
 
 The new path composes [bfv-query-proof](../bfv-query-proof/README.md) with the private
 exact-selection constructor. `prepare_provable_select` and `prepare_provable_update`
@@ -457,3 +468,35 @@ data at 1.721920x counted material, 371 MB process peak RSS and nine supplied-ta
 point queries at 61–118 ms including image reads/authentication. It does not
 persist keys/catalogs or implement crash recovery, hidden access or global SQL
 routing. Use a dedicated Cargo target to keep experiment artifacts separate.
+
+## Static-source UPDATE foundation
+
+`bfv::Owner::prepare_provable_update_from_source` applies the same complete posting
+parser, every candidate age check and 256-row cap to `ReadView`. The caller supplies
+independently authorized `ReadHeads`; parsing remote heads establishes no provenance
+or freshness. `PreparedUpdate` pins the whole logical TableId and both exact heads,
+including in the historical owner-checked constructor.
+
+`UpdateView` requires an actual full immutable data snapshot, a real index source
+and a sealed authenticated page-zero path. It is not a partial Table. After genuine
+exact-request/output BFV Addition evidence, `stage_checked_update_from_source`
+returns `VerifiedPartialUpdate`: separate overflow/no-change status or an immutable
+`UpdatePatch` with full new data, both new heads, changed data addresses and the
+ordinary index-page-zero LookupResponse. No-op and overflow do not reissue either
+image. The private `bfv/update` decoder applies only actual peer-decoded amounts;
+full Table staging shares this decoder and retains its existing return contract.
+
+Private storage/header helpers stage data and rebind only the first 112 embedded
+head bytes in the authenticated header. `compact-store` page reissue derives the
+new index root from its sealed path, preserving the rest of page zero and all
+unchanged Merkle subtrees, including the private row-identity tail. Staging does
+not require pages beyond the public posting-prefix footprint or a complete
+identity-tail image; the final rounded prefix page can overlap encrypted IDs. Any failure leaves the original
+images unchanged; a caller with a full fixture can independently reconstruct the
+complete index from the exact returned packet and verify both roots.
+
+This foundation adds no live Session/client/RPC integration, object-ID policy,
+publication, SQL locks, public completeness proof or finality. The existing
+owner-online complete-source and malicious-output arithmetic boundaries remain.
+Actual future transport must preserve fixed source footprints, full peer custody
+audits, all-shard staging, authorization and independent agreed freshness.

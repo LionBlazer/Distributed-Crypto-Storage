@@ -122,9 +122,7 @@ impl Requests {
                     Err(error) => last_error = Some(error),
                 },
                 Ok(_) => last_error = Some(Error::MissingComputationProof),
-                Err(error)
-                    if self.remember_failures && error.kind() == io::ErrorKind::Interrupted =>
-                {
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {
                     return Err(Error::Transport(error));
                 }
                 Err(error) => last_error = Some(Error::Transport(error)),
