@@ -2,18 +2,34 @@ use crate::format::{hash, leaf, parent};
 use crate::{
     Commitment, Error, Limits, LookupResponse, MANIFEST_BYTES, PAGE_OVERHEAD, Result, VerifiedPage,
 };
+use std::sync::Arc;
 
 /// Peer-owned opaque ciphertext pages plus a rebuildable in-memory Merkle index.
+/// Clones share immutable ciphertext allocations, with independent slots and trees.
 /// Does not contain plaintext or secret keys. Addresses and lengths are public.
 #[derive(Clone)]
 pub struct EncryptedSnapshot {
     commitment: Commitment,
-    pages: Vec<Vec<u8>>,
+    pages: Vec<Packet>,
     levels: Vec<Vec<[u8; 32]>>,
+}
+
+// The packet allocation is never exposed or mutated after admission. A new
+// version replaces its own slot; old snapshots retain their exact ciphertext.
+#[derive(Clone)]
+struct Packet(Arc<Vec<u8>>);
+impl Packet {
+    fn new(bytes: Vec<u8>) -> Self {
+        Self(Arc::new(bytes))
+    }
+    fn bytes(&self) -> &[u8] {
+        self.0.as_slice()
+    }
 }
 
 impl EncryptedSnapshot {
     pub(crate) fn from_owner(mut commitment: Commitment, pages: Vec<Vec<u8>>) -> Self {
+        let pages: Vec<_> = pages.into_iter().map(Packet::new).collect();
         let levels = build_tree(&pages);
         commitment.root = commitment.with_tree_root(tree_root(&levels));
         Self {
@@ -29,7 +45,12 @@ impl EncryptedSnapshot {
 
     /// Canonical live disk bytes, including manifest, nonce, revision and AEAD tag.
     pub fn encoded_len(&self) -> usize {
-        MANIFEST_BYTES + self.pages.iter().map(Vec::len).sum::<usize>()
+        MANIFEST_BYTES
+            + self
+                .pages
+                .iter()
+                .map(|page| page.bytes().len())
+                .sum::<usize>()
     }
 
     /// Hash payload of the rebuildable index; allocator/Vec overhead is separate.
@@ -41,7 +62,7 @@ impl EncryptedSnapshot {
         let mut bytes = Vec::with_capacity(self.encoded_len());
         bytes.extend_from_slice(&self.commitment.encode());
         for packet in &self.pages {
-            bytes.extend_from_slice(packet);
+            bytes.extend_from_slice(packet.bytes());
         }
         bytes
     }
@@ -99,7 +120,7 @@ impl EncryptedSnapshot {
     pub fn lookup(&self, index: u64, limits: Limits) -> Result<LookupResponse> {
         self.commitment.layout.validate(limits)?;
         let index = usize::try_from(index).map_err(|_| Error::InvalidPage)?;
-        let packet = self.pages.get(index).ok_or(Error::InvalidPage)?;
+        let packet = self.pages.get(index).ok_or(Error::InvalidPage)?.bytes();
         let height = self.levels.len().saturating_sub(1);
         if 16 + packet.len() + height * 32 > limits.max_response_bytes {
             return Err(Error::ResourceLimit);
@@ -113,7 +134,7 @@ impl EncryptedSnapshot {
         }
         let response = LookupResponse {
             index: index as u64,
-            packet: packet.clone(),
+            packet: packet.to_vec(),
             siblings,
         };
         if response.encoded_len() > limits.max_response_bytes {
@@ -181,8 +202,8 @@ impl EncryptedSnapshot {
         index: usize,
         packet: Vec<u8>,
     ) {
-        self.pages[index] = packet;
-        self.levels[0][index] = leaf(index, &self.pages[index]);
+        self.pages[index] = Packet::new(packet);
+        self.levels[0][index] = leaf(index, self.pages[index].bytes());
         let mut position = index;
         for level in 1..self.levels.len() {
             position /= 2;
@@ -196,7 +217,7 @@ impl EncryptedSnapshot {
     }
 }
 
-fn build_tree(pages: &[Vec<u8>]) -> Vec<Vec<[u8; 32]>> {
+fn build_tree(pages: &[Packet]) -> Vec<Vec<[u8; 32]>> {
     if pages.is_empty() {
         return Vec::new();
     }
@@ -204,7 +225,7 @@ fn build_tree(pages: &[Vec<u8>]) -> Vec<Vec<[u8; 32]>> {
         pages
             .iter()
             .enumerate()
-            .map(|(i, page)| leaf(i, page))
+            .map(|(i, page)| leaf(i, page.bytes()))
             .collect::<Vec<_>>(),
     ];
     while levels.last().unwrap().len() > 1 {

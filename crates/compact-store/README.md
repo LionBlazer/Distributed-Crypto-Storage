@@ -16,6 +16,12 @@ address-based retrieval, not an FHE evaluator or SQL query proof.
 - Owner::seal creates an EncryptedSnapshot and its Commitment at revision zero.
   The application obtains this head directly from its owner or another independently
   authenticated source. A commitment parsed from the responding peer has no such trust.
+- EncryptedSnapshot clones share private, immutable ciphertext allocations. Each
+  clone owns an independent page-slot vector and Merkle levels; replacing a slot
+  cannot modify another snapshot. Input packet Vec buffers move into their shared
+  allocation without copying their payload. Public lookups still return separate
+  owned packet buffers, and imports still audit every packet and the complete root.
+  There is no mutable packet accessor, shared plaintext/key cache or serialized Arc.
 - EncryptedSnapshot::lookup returns a LookupResponse for one exact public page
   address, with a Merkle proof. LookupResponse::verify takes the requested address
   and independently known head, returning VerifiedPage only after validation.
@@ -94,7 +100,11 @@ The rebuildable index stores approximately 2 * page_count 32-byte hashes; report
 index_hash_bytes separately. It is held in memory, not silently embedded in canonical
 storage. If persisted, these bytes must be added to disk accounting. Allocator and
 vector overhead, owner keys, plaintext fixtures, image/response copies and process
-memory are additional costs, not represented by that hash-payload counter.
+memory are additional costs, not represented by that hash-payload counter. Shared
+ciphertext adds reference-count/allocation metadata per admitted page; page count
+bounds that metadata for each snapshot. Clones still copy slots and Merkle levels,
+and old packets remain alive while any snapshot retains them. This is request/value
+ownership, not a persistent cache or a measured whole-process memory/speed claim.
 
 Lookup response encoding is index:u64, packet_length:u32, sibling_count:u32, followed
 by the complete packet and 32-byte siblings. Packet encoding is page_revision:u64,
