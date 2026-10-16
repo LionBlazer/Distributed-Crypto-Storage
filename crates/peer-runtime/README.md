@@ -94,8 +94,14 @@ constraints. The journal additionally checks parent state, work and owner signat
 `JobVerifier` keeps at most 128 successful arithmetic-proof digests in RAM, keyed
 by its pinned application commitment and every byte/length of canonical input,
 encrypted output and serialized proof. Entries are inserted only after genuine
-STARK verification. Exact repeated proof validation during mining/publication can
-reuse that evidence; authorization, complete manifest, all original contexts,
+STARK verification. `JobVerifier::check_job` independently derives the canonical
+input from a caller's trusted original request, verifies its exact output/proof,
+returns the checked arithmetic marker and inserts the same bounded digest. The
+owner client uses this API before completion, so its later local journal import
+can reuse the verification instead of performing the identical STARK check again.
+No caller can populate the cache using a marker that omits proof-byte binding.
+Exact repeated proof validation during mining/publication can reuse that evidence;
+authorization, complete manifest, all original contexts,
 old/new head rules, ancestry and requested freshness are still checked separately.
 No root or SQL answer becomes acceptable merely because an arithmetic cache hits.
 

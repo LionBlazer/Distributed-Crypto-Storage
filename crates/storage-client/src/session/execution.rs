@@ -88,10 +88,9 @@ impl Session {
                             ciphertext: &request,
                         },
                         |reply| {
-                            self.data
-                                .owner
-                                .check_update_proof(&table, &prepared, &reply.output, &reply.proof)
-                                .map_err(Error::from)
+                            self.verifier
+                                .check_job(Operation::Update, &request, reply)
+                                .map_err(protocol)
                         },
                     )?;
                     let stage = self.data.owner.stage_checked_update(
@@ -140,10 +139,9 @@ impl Session {
                             ciphertext: &request,
                         },
                         |reply| {
-                            self.data
-                                .owner
-                                .check_insert_proof(&table, &prepared, &reply.output, &reply.proof)
-                                .map_err(Error::from)
+                            self.verifier
+                                .check_job(Operation::Insert, &request, reply)
+                                .map_err(protocol)
                         },
                     )?;
                     let next = self.data.owner.stage_checked_insert(

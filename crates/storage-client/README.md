@@ -108,7 +108,14 @@ Every successful SELECT follows:
    A reorganization or conflicting state requires retry.
 
 INSERT/UPDATE complete every proof and overflow check before sealing verified
-decrypted outputs into new compact images. Actual holders acknowledge storage.
+decrypted outputs into new compact images. Their client-owned `JobVerifier` derives
+the trusted canonical job and verifies each exact output/proof once. Its bounded
+byte-exact cache lets the later local journal import reuse that verification;
+other peers still verify independently. Compact completion independently rechecks
+the authenticated selection's current heads and exact checked input/output binding.
+Authorization, complete manifest coverage, old/new head rules, work and freshness
+remain outside the arithmetic cache and are always checked. Actual holders
+acknowledge storage.
 The owner signs the exact old/new roots and complete encrypted job manifest.
 Peers verify authorization/jobs/work, fsync the transition and confirmation blocks,
 and synchronize. Publication requires a matching durable block acknowledgement.

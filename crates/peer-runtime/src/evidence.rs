@@ -286,7 +286,24 @@ impl JobVerifier {
     ) -> Result<Vec<u8>, RemoteError> {
         circuit_request(&self.evaluator, operation, request)
     }
-    fn verify_arithmetic(&self, input: &[u8], reply: &ProofReply) -> version_journal::Result<()> {
+    /// Derives the exact canonical input from the caller's trusted original job,
+    /// verifies its serialized proof, and retains that successful verification for
+    /// later journal validation. The returned arithmetic marker does not establish
+    /// authenticated SQL selection, authorization, head agreement or freshness.
+    pub fn check_job(
+        &self,
+        operation: Operation,
+        trusted_request: &[u8],
+        reply: &ProofReply,
+    ) -> Result<bfv_query_proof::CheckedOperation, RemoteError> {
+        let input = self.circuit_request(operation, trusted_request)?;
+        let checked =
+            bfv_query_proof::verify(&input, &reply.output, &reply.proof).map_err(crypto)?;
+        self.remember_verified(self.arithmetic_key(&input, reply))
+            .map_err(crypto)?;
+        Ok(checked)
+    }
+    fn arithmetic_key(&self, input: &[u8], reply: &ProofReply) -> [u8; 32] {
         let mut digest = Sha256::new();
         digest.update(b"dcs/peer-runtime/verified-arithmetic/v1");
         digest.update(self.application_commitment);
@@ -294,7 +311,17 @@ impl JobVerifier {
             digest.update((part.len() as u64).to_le_bytes());
             digest.update(part);
         }
-        let key: [u8; 32] = digest.finalize().into();
+        digest.finalize().into()
+    }
+    fn remember_verified(&self, key: [u8; 32]) -> version_journal::Result<()> {
+        self.verified
+            .lock()
+            .map_err(|_| version_journal::Error::RejectedComputationProof)?
+            .insert(key);
+        Ok(())
+    }
+    fn verify_arithmetic(&self, input: &[u8], reply: &ProofReply) -> version_journal::Result<()> {
+        let key = self.arithmetic_key(input, reply);
         if self
             .verified
             .lock()
@@ -308,11 +335,7 @@ impl JobVerifier {
             .map_err(|_| version_journal::Error::RejectedComputationProof)?;
         // Only a successful genuine proof verification can create this entry.
         // Parent/header/context/freshness/manifest validation remains outside it.
-        self.verified
-            .lock()
-            .map_err(|_| version_journal::Error::RejectedComputationProof)?
-            .insert(key);
-        Ok(())
+        self.remember_verified(key)
     }
 }
 pub(crate) fn circuit_request(
@@ -552,7 +575,7 @@ mod tests {
         assert!(MutationEvidence::decode(&trailing).is_err());
     }
     #[test]
-    fn a_cached_genuine_proof_never_accepts_a_different_input_output_or_proof() {
+    fn checking_an_original_job_caches_only_its_exact_verified_input_output_and_proof() {
         use bfv_query_core::{Geometry, Owner, QueryContext, SelectedField};
         // Fresh in-memory FHE keys and actual peer arithmetic. These literal
         // context fixtures test arithmetic caching only, not SQL/head acceptance.
@@ -577,21 +600,150 @@ mod tests {
             output: genuine.output().to_vec(),
             proof: genuine.proof().to_vec(),
         };
-        verifier.verify_arithmetic(&input, &reply).unwrap();
+        let checked = verifier
+            .check_job(Operation::Update, &prepared.request, &reply)
+            .unwrap();
+        assert!(checked.matches_statement(&input, &reply.output));
         verifier.verify_arithmetic(&input, &reply).unwrap();
         assert_eq!(verifier.verified.lock().unwrap().entries.len(), 1);
 
+        assert!(
+            verifier
+                .check_job(Operation::Insert, &prepared.request, &reply)
+                .is_err()
+        );
+        let mut changed_request = prepared.request.clone();
+        let last = changed_request.len() - 1;
+        changed_request[last] ^= 1;
+        assert!(
+            verifier
+                .check_job(Operation::Update, &changed_request, &reply)
+                .is_err()
+        );
         let mut rebound = input.clone();
         rebound[8] ^= 1;
         assert!(verifier.verify_arithmetic(&rebound, &reply).is_err());
         let mut wrong_output = reply.clone();
         wrong_output.output[40] ^= 1;
+        assert!(
+            verifier
+                .check_job(Operation::Update, &prepared.request, &wrong_output)
+                .is_err()
+        );
         assert!(verifier.verify_arithmetic(&input, &wrong_output).is_err());
         let mut wrong_proof = reply;
         let end = wrong_proof.proof.len() - 1;
         wrong_proof.proof[end] ^= 1;
+        assert!(
+            verifier
+                .check_job(Operation::Update, &prepared.request, &wrong_proof)
+                .is_err()
+        );
         assert!(verifier.verify_arithmetic(&input, &wrong_proof).is_err());
         assert_eq!(verifier.verified.lock().unwrap().entries.len(), 1);
+    }
+    #[test]
+    fn cached_arithmetic_still_requires_original_heads_and_pinned_application_parameters() {
+        use bfv_query_core::{Geometry, Owner, QueryContext, SelectedField};
+        use version_journal::{HeadRef, ShardUpdate};
+
+        // Public context fixtures exercise this application's proof boundary.
+        // They are not accepted journal blocks, agreed heads or SQL results.
+        let (owner, setup) = Owner::generate(Geometry::Rows16).unwrap();
+        let verifier = JobVerifier::new(setup.update_parameters().unwrap()).unwrap();
+        let prepared = owner
+            .prepare_indexed_update_for_experiment(
+                QueryContext::new([1; 16], [2; 112], [3; 112]),
+                &[SelectedField {
+                    age: 18,
+                    amount: 20,
+                    active: true,
+                }],
+                5,
+            )
+            .unwrap();
+        let input = verifier
+            .circuit_request(Operation::Update, &prepared.request)
+            .unwrap();
+        let genuine = bfv_query_proof::prove(&input).unwrap();
+        let reply = ProofReply {
+            output: genuine.output().to_vec(),
+            proof: genuine.proof().to_vec(),
+        };
+        verifier
+            .check_job(Operation::Update, &prepared.request, &reply)
+            .unwrap();
+        let manifest = MutationManifest {
+            query_binding: [4; 32],
+            operation: Operation::Update,
+            previous_shards: vec![ShardState {
+                id: 7,
+                heads: HeadPair {
+                    data: [2; 112],
+                    index: [3; 112],
+                },
+            }],
+            jobs: vec![MutationJob {
+                shard: 7,
+                request: prepared.request,
+            }],
+        };
+        let request = manifest.encode().unwrap();
+        let evidence = MutationEvidence { jobs: vec![reply] }.encode().unwrap();
+        let statement = TransitionStatement {
+            genesis: [5; 32],
+            database: [6; 16],
+            application_commitment: verifier.application_commitment(),
+            parent: HeadRef {
+                genesis: [5; 32],
+                database: [6; 16],
+                block: [7; 32],
+                height: 1,
+                state_root: [8; 32],
+            },
+            previous_shards: &manifest.previous_shards,
+            next_shards: &manifest.previous_shards,
+            request: &request,
+            updates: &[],
+            proof: &evidence,
+            next_state_root: [9; 32],
+        };
+
+        // A genuine arithmetic cache hit still runs every surrounding rule.
+        assert!(verifier.verify(TransitionStatement { ..statement }).is_ok());
+        assert!(
+            verifier
+                .verify(TransitionStatement {
+                    application_commitment: [0; 32],
+                    ..statement
+                })
+                .is_err()
+        );
+        let mut rebound = manifest.clone();
+        rebound.previous_shards[0].heads.data[0] ^= 1;
+        let rebound_request = rebound.encode().unwrap();
+        assert!(
+            verifier
+                .verify(TransitionStatement {
+                    previous_shards: &rebound.previous_shards,
+                    request: &rebound_request,
+                    ..statement
+                })
+                .is_err()
+        );
+        let invalid_head_change = [ShardUpdate {
+            id: 7,
+            old: manifest.previous_shards[0].heads,
+            new: manifest.previous_shards[0].heads,
+        }];
+        assert!(
+            verifier
+                .verify(TransitionStatement {
+                    updates: &invalid_head_change,
+                    ..statement
+                })
+                .is_err()
+        );
     }
     #[test]
     fn typed_byte_reads_require_their_exact_proved_operation_and_original_request() {
