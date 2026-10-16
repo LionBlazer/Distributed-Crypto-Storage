@@ -17,19 +17,25 @@ pub struct EncryptedSnapshot {
 // The packet allocation is never exposed or mutated after admission. A new
 // version replaces its own slot; old snapshots retain their exact ciphertext.
 #[derive(Clone)]
-struct Packet(Arc<Vec<u8>>);
+struct Packet(Arc<[u8]>);
 impl Packet {
     fn new(bytes: Vec<u8>) -> Self {
-        Self(Arc::new(bytes))
+        Self(Arc::from(bytes))
+    }
+    fn from_slice(bytes: &[u8]) -> Self {
+        Self(Arc::from(bytes))
     }
     fn bytes(&self) -> &[u8] {
-        self.0.as_slice()
+        self.0.as_ref()
     }
 }
 
 impl EncryptedSnapshot {
-    pub(crate) fn from_owner(mut commitment: Commitment, pages: Vec<Vec<u8>>) -> Self {
-        let pages: Vec<_> = pages.into_iter().map(Packet::new).collect();
+    pub(crate) fn from_owner(commitment: Commitment, pages: Vec<Vec<u8>>) -> Self {
+        Self::from_packets(commitment, pages.into_iter().map(Packet::new).collect())
+    }
+
+    fn from_packets(mut commitment: Commitment, pages: Vec<Packet>) -> Self {
         let levels = build_tree(&pages);
         commitment.root = commitment.with_tree_root(tree_root(&levels));
         Self {
@@ -105,10 +111,10 @@ impl EncryptedSnapshot {
             if u64::from_le_bytes(packet[..8].try_into().unwrap()) > commitment.revision {
                 return Err(Error::InvalidFormat);
             }
-            pages.push(packet.to_vec());
+            pages.push(Packet::from_slice(packet));
             offset += len;
         }
-        let snapshot = Self::from_owner(commitment.clone(), pages);
+        let snapshot = Self::from_packets(commitment.clone(), pages);
         if snapshot.commitment != commitment {
             return Err(Error::InvalidProof);
         }

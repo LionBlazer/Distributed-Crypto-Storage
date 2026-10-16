@@ -18,9 +18,11 @@ address-based retrieval, not an FHE evaluator or SQL query proof.
   authenticated source. A commitment parsed from the responding peer has no such trust.
 - EncryptedSnapshot clones share private, immutable ciphertext allocations. Each
   clone owns an independent page-slot vector and Merkle levels; replacing a slot
-  cannot modify another snapshot. Input packet Vec buffers move into their shared
-  allocation without copying their payload. Public lookups still return separate
-  owned packet buffers, and imports still audit every packet and the complete root.
+  cannot modify another snapshot. Imports copy packet slices directly into combined
+  reference-count/payload allocations without temporary Vec buffers. Converting an
+  owner-created or replacement Vec into a shared slice allocates and copies its
+  payload. Public lookups still return separate owned packet buffers, and imports
+  still audit every packet and the complete root.
   There is no mutable packet accessor, shared plaintext/key cache or serialized Arc.
 - EncryptedSnapshot::lookup returns a LookupResponse for one exact public page
   address, with a Merkle proof. LookupResponse::verify takes the requested address
