@@ -111,7 +111,7 @@ public proof of SQL/AEAD linkage. The current
 [complete-operation measurements](experiments/combined-sql/README.md) observed
 small native fixed-schema reads and writes below the requested 500 ms, including
 durable confirmation. Larger typed workloads, failures, WAN and tail bounds remain
-open; the measured million-row point UPDATE still takes about 1.4 seconds. The
+open; the latest measured million-row point UPDATE still takes about 1.0 second. The
 original [addition experiment](experiments/bfv-addition-proof/README.md)
 and its [measurements](docs/experiment-bfv-addition-proof.md) remain historical evidence.
 

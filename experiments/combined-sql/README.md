@@ -7,6 +7,9 @@ projection and encrypted stable row identities. They do not establish complete
 PostgreSQL, SQL row locks, production consensus, a general 500-ms bound or a
 whole-process resource guarantee.
 
+The [latest combined recheck](#q2-page-custody-and-collection-recheck) below pins
+the later Q2/page-custody/collection integration separately from this original record.
+
 ## Full accepted operations
 
 The Windows x64 host reports `AMD64 Family 26 Model 68 Stepping 0, AuthenticAMD`.
@@ -124,3 +127,72 @@ scenarios and the actual three-daemon Northwind import/typed-read scenario passe
 separately. The latter's single validation run returned all 2,155 order-detail
 rows through 14 proofs in 1.438 s; it is not a three-sample latency estimate and
 does not meet 500 ms. Unsupported full PostgreSQL and live row locking still reject.
+
+## Q2, page custody and collection recheck
+
+Source `94191fa58f208e30c6b26a59c659acf36b24dfbf` combines Q2 ten-band aggregation,
+bounded page custody, one physical-custody audit/hash per read, validated-membership
+collection and PostgreSQL matched UPDATE counts. Live SQL still fetches full images;
+the raw page RPC does not approve exposing query-dependent page addresses. The
+[PostgreSQL contract](../../docs/postgresql-contract.md) records that privacy boundary.
+FHE/STARK profile v3, all 81,920 residues and kernel ABI are unchanged; the semantic
+application anchor is v3 and old Q1/R1/application-v2 journals reject.
+
+Three fresh complete scenarios per fixture ran with owner/peers each using eight
+Rayon threads, native Rust 1.99/MSVC and the same AVX-512 kernels as the original
+record. All exact outputs, genuine proofs, source heads and confirmed freshness
+assertions passed. Writes include durable publication and synchronous collection.
+Other development builds/proof tests were held. No RPC, PID or memory hook ran.
+Startup/table creation remains outside each SQL timer. These six scenarios produced
+36 individual SQL timers; they are not matched estimates of individual changes.
+
+| Source rows | Complete SQL operation | Minimum ms | Median ms | Maximum ms |
+| ---: | --- | ---: | ---: | ---: |
+| 1,000,000 | `UPDATE records SET amount = amount + 1 WHERE age = 42` | 960.821 | 1025.948 | 1083.130 |
+| 1,000,000 | `SELECT * FROM records WHERE age = 42` | 452.721 | 453.185 | 474.222 |
+| 5,119 | `SELECT COUNT(*), SUM(amount) FROM records` | 195.988 | 198.536 | 199.302 |
+| 5,119 | `SELECT COUNT(*) FROM records WHERE age = 18` | 191.774 | 196.221 | 201.643 |
+| 5,119 | `SELECT SUM(amount) FROM records WHERE age = 7` | 192.393 | 197.998 | 198.606 |
+| 5,119 | `SELECT COUNT(*), SUM(amount) FROM records WHERE age = 42` | 191.184 | 199.204 | 207.709 |
+| 5,119 | `SELECT COUNT(*), SUM(amount) FROM records WHERE age = 255` | 193.440 | 197.679 | 199.678 |
+| 5,120 | `SELECT COUNT(*), SUM(amount) FROM records` | 194.533 | 194.935 | 195.016 |
+| 5,120 | `SELECT COUNT(*) FROM records WHERE age = 18` | 195.550 | 196.009 | 197.412 |
+| 5,120 | `SELECT SUM(amount) FROM records WHERE age = 7` | 191.843 | 193.845 | 194.956 |
+| 5,120 | `SELECT COUNT(*), SUM(amount) FROM records WHERE age = 42` | 228.557 | 231.247 | 251.090 |
+| 5,120 | `SELECT COUNT(*), SUM(amount) FROM records WHERE age = 255` | 250.499 | 266.520 | 266.936 |
+
+The million-row fixture has one peer, 999,999 age-7 rows and one age-42 row.
+The [Q2 fixture](../../docs/proved-aggregate-bands.md) has two peers and asymmetric
+2560/2559 or 2560/2560 shards, distinct amount bands, one nonempty zero SUM and
+empty-shard/empty-relation cases. Its output and boundary assertions are unchanged.
+The separate [matched collection comparison](../update-cost/MEASUREMENTS.md#matched-collection-change-on-one-million-rows)
+isolates only collection. Do not attribute this later recheck's difference to one
+patch or compare Q1/Q2 capacities as the same workload.
+
+The million-row UPDATE remains above 500 ms. These three samples per case do not
+establish a tail, throughput, recovery, whole-process RAM or production-consensus
+bound. Memory was not remeasured in this window. Full PostgreSQL, typed aggregates,
+transactions and live row locks remain incomplete.
+
+Raw six logs and all timers are in ignored
+`.local/combined-q2-gc-runs/20261016-045752-059/`. SHA256 identities:
+
+| Artifact | SHA256 |
+| --- | --- |
+| Owner/test `proved_sql-43b267abd6ab93e6.exe` | `3435F65582699697CCE209FD59BA1298C9F0BE971B4C993C030ED61D11B45210` |
+| Peer `dcs-peer.exe` | `B51BA46381B37C69E1161622DC32F6A8D8344B908AC1999F60191A179632F399` |
+
+Both unchanged kernel hashes remain the AVX2/AVX-512 values in the original table.
+Reproduce with the earlier native configuration and exact test names
+`million_row_private_index_crosses_real_custody_frames_and_agreed_update_restore`
+and `q2_real_peers_aggregate_5119_and_5120_asymmetric_rows_with_partial_and_empty_bands`.
+Run each compiled scenario three fresh times; do not build during timing.
+
+All owning BFV-core, compact-query, runtime, storage-client and real-daemon suites
+passed on this combined source, including malformed Q2 bands, old-policy rejection,
+genuine proof tampering, 5121-row capacity rejection, page-RPC corruption and both
+collection failure cases. Four compile-fail contracts, strict native/GUI Clippy,
+formatting, requirement mirroring and document links passed. Portable GUI all-target
+tests and packaging passed; its two opt-in real-process SQL-script scenarios passed
+with the newly packaged peers. The historical Northwind validation above was not
+repeated for this recheck.
