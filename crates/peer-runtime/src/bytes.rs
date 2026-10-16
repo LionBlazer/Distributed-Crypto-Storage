@@ -1,6 +1,15 @@
-//! Shared bounded byte-sequence decoding before bincode can allocate a frame.
-use serde::{Deserializer, de};
+//! Byte encoding and bounded byte-sequence decoding for the custody wire.
+use serde::{Deserializer, Serializer, de};
 use std::fmt;
+
+// Pinned bincode encodes bytes and Vec<u8> as the same length-prefixed payload.
+// Leave decoding on its existing bounded sequence path.
+pub(crate) fn serialize<S: Serializer>(
+    bytes: &[u8],
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error> {
+    serializer.serialize_bytes(bytes)
+}
 
 // A sequence visitor sees bincode's announced length BEFORE allocation. Using
 // deserialize_bytes here would let bincode allocate an unchecked byte vector first.

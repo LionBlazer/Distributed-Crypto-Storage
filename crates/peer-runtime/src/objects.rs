@@ -17,9 +17,13 @@ pub(crate) const DISK_HEADER_BYTES: usize = 40;
 pub struct RawBundle {
     pub version: u16,
     pub nonce: [u8; 32],
+    #[serde(serialize_with = "crate::bytes::serialize")]
     pub data_head: Vec<u8>,
+    #[serde(serialize_with = "crate::bytes::serialize")]
     pub index_head: Vec<u8>,
+    #[serde(serialize_with = "crate::bytes::serialize")]
     pub data: Vec<u8>,
+    #[serde(serialize_with = "crate::bytes::serialize")]
     pub index: Vec<u8>,
 }
 impl std::fmt::Debug for RawBundle {
@@ -262,3 +266,6 @@ mod tests {
         assert!(!format!("{one:?}").contains("nonce"));
     }
 }
+
+#[cfg(test)]
+mod serialization_tests;

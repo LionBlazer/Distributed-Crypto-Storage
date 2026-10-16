@@ -63,6 +63,17 @@ an exact data/index-head pair cache and still reads/authenticates the physical
 bundle. Missing or modified data is rejected; cached names do not prove custody.
 `Copy` transfers actual encrypted bytes directly between authenticated processes.
 
+RawBundle's four byte-vector fields use a private `serialize_bytes` adapter.
+With pinned bincode 1.3.3/fixed integers, this writes the same u64 length and
+payload as ordinary Vec<u8>, in one byte write; the size-check pass also counts
+the payload in one step. Raw, Store/Fetch and disk envelopes keep exact bytes.
+The derived Deserialize implementation, bounded sequence decoders, version/nonce,
+authorization, quotas and complete custody audits are unchanged. Codec contract
+tests compare a plain-Vec shadow in both directions; the real million-row UPDATE
+fixture also checks actual stored ciphertext after its proved result assertions.
+This changes serialization work only; no complete-operation speed or RAM claim
+follows without separate measurement.
+
 `PageBatchRequest::new` binds an immutable object ID, both independently trusted
 compact-store heads, and 1–64 unique `PageAddress { image: PageImage, index }`
 values. `RemotePeer::fetch_pages` returns Merkle-verified ciphertext pages in the

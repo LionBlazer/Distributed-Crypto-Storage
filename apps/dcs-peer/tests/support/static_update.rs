@@ -1,5 +1,6 @@
 //! Live static-source UPDATE still finishes with independently audited full custody.
 use super::*;
+use bincode::Options;
 use peer_runtime::{ActivityPhase, RawBundle, ReadImageRequest};
 use std::sync::{
     Arc, Mutex,
@@ -123,6 +124,49 @@ fn million_row_update_reads_static_source_preserves_identity_tail_and_finishes_w
                 .unwrap()
         ),
         vec![vec![42, 256]]
+    );
+    // This functional codec control is outside the proved query's observed I/O.
+    // It uses the actual stored million-row ciphertext, never fixture answers.
+    assert_plain_vec_serialization(&updated);
+}
+
+fn assert_plain_vec_serialization(raw: &RawBundle) {
+    let options = || {
+        bincode::DefaultOptions::new()
+            .with_fixint_encoding()
+            .with_limit(peer_transport::MAX_FRAME_BYTES as u64)
+            .reject_trailing_bytes()
+    };
+    let current = options().serialize(raw).unwrap();
+    let plain = options()
+        .serialize(&(
+            raw.version,
+            raw.nonce,
+            &raw.data_head,
+            &raw.index_head,
+            &raw.data,
+            &raw.index,
+        ))
+        .unwrap();
+    assert!(
+        current == plain,
+        "Actual ciphertext keeps its plain-Vec bytes"
+    );
+    let decoded: RawBundle = options().deserialize(&plain).unwrap();
+    assert_eq!(&decoded, raw);
+    drop(decoded);
+    drop(plain);
+    type PlainVecFields = (u16, [u8; 32], Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>);
+    let (version, nonce, data_head, index_head, data, index): PlainVecFields =
+        options().deserialize(&current).unwrap();
+    assert!(
+        version == raw.version
+            && nonce == raw.nonce
+            && data_head == raw.data_head
+            && index_head == raw.index_head
+            && data == raw.data
+            && index == raw.index,
+        "The unchanged plain-Vec decoder restores the exact nonce and images"
     );
 }
 
