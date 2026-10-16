@@ -42,6 +42,68 @@ impl VerifiedPage {
     }
 }
 
+/// Authenticated page and Merkle path retained solely for owner page reissue.
+/// Fields stay private; possession grants no authorization, freshness or SQL proof.
+/// The caller supplies the independently trusted expected head again at reissue.
+/// This value is consumed; an old public proof can still be verified again for an
+/// explicitly selected historical head. There is no global spent-head registry.
+///
+/// ```compile_fail
+/// use compact_store::{Commitment, Limits, Owner, VerifiedPagePath};
+/// fn twice(owner: &Owner, source: VerifiedPagePath, head: &Commitment) {
+///     let _ = owner.reissue_page(source, head, &[], Limits::default());
+///     let _ = owner.reissue_page(source, head, &[], Limits::default());
+/// }
+/// ```
+pub struct VerifiedPagePath {
+    page: VerifiedPage,
+    siblings: Vec<[u8; 32]>,
+}
+impl VerifiedPagePath {
+    pub(crate) fn page(&self) -> &VerifiedPage {
+        &self.page
+    }
+    pub(crate) fn encoded_len(&self) -> usize {
+        16 + self.page.packet.len() + self.siblings.len() * 32
+    }
+    pub(crate) fn reissue(
+        self,
+        mut next: Commitment,
+        packet: Vec<u8>,
+    ) -> Result<(Commitment, LookupResponse)> {
+        let mut position = usize::try_from(self.page.index).map_err(|_| Error::InvalidPage)?;
+        let mut width = self.page.commitment.layout.page_count()?;
+        let mut node = leaf(position, &packet);
+        let mut siblings = Vec::with_capacity(self.siblings.len());
+        for old_sibling in self.siblings {
+            // Old duplicate-self siblings were checked by ordinary verification.
+            // A new missing sibling must duplicate the NEW node at this level.
+            let sibling = if position % 2 == 0 && position + 1 == width {
+                node
+            } else {
+                old_sibling
+            };
+            siblings.push(sibling);
+            node = if position % 2 == 0 {
+                parent(&node, &sibling)
+            } else {
+                parent(&sibling, &node)
+            };
+            position /= 2;
+            width = width.div_ceil(2);
+        }
+        next.root = next.with_tree_root(node);
+        Ok((
+            next,
+            LookupResponse {
+                index: self.page.index,
+                packet,
+                siblings,
+            },
+        ))
+    }
+}
+
 impl LookupResponse {
     pub fn encoded_len(&self) -> usize {
         16 + self.packet.len() + self.siblings.len() * 32
@@ -138,6 +200,21 @@ impl LookupResponse {
             commitment: expected.clone(),
             index,
             packet: self.packet.clone(),
+        })
+    }
+
+    /// Runs ordinary exact-head membership verification, retaining its path for
+    /// owner reissue. No raw path or unchecked construction API is exposed.
+    pub fn verify_for_reissue(
+        &self,
+        expected: &Commitment,
+        index: u64,
+        limits: Limits,
+    ) -> Result<VerifiedPagePath> {
+        let page = self.verify(expected, index, limits)?;
+        Ok(VerifiedPagePath {
+            page,
+            siblings: self.siblings.clone(),
         })
     }
 }
