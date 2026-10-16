@@ -127,7 +127,7 @@ The initial logical shard set is fixed; infrastructure peers can be added as
 holders/executors without becoming a voting committee.
 
 `Session::execute(&mut self, sql)` accepts row SELECT/projections, supported age
-filters, LIMIT, atomic literal INSERT batches and additive amount UPDATE on
+filters, LIMIT/OFFSET row windows, atomic literal INSERT batches and additive amount UPDATE on
 `records(age: u8, amount: u16)`, plus COUNT(*), SUM(amount) and their combined
 projection. Aggregates authenticate at most 2560 complete matching rows per shard;
 over-budget groups reject rather than truncate. Each peer computes encrypted
@@ -172,20 +172,23 @@ Every successful fixed-schema row SELECT or COUNT/SUM follows:
 2. Fetch the same static encrypted ReadImage for every such read on the same
    public geometry: the entire data image and padded index posting prefix. Pin
    TableId and both agreed heads; authenticate complete private index coverage and
-   selected pages before preparing original FHE operands. With explicit LIMIT,
-   validate every matching posting and original candidate, retaining only the first
-   `min(local matches, limit)` rows in physical ordinal order. This retained set must
-   fit 256 slots; a larger literal is never silently clamped. Without LIMIT, the
-   complete matching set must fit the existing budget. COUNT/SUM authenticate all
-   matches within their separate 2560-row-per-shard budget and prepare the original
-   encrypted amount limbs and presence markers. Both read forms share a private
+   selected pages before preparing original FHE operands. With a finite LIMIT,
+   validate every matching posting and original candidate, retaining the first
+   `min(local matches, offset + limit)` rows in physical ordinal order. The sum is
+   checked before execution; LIMIT0 retains zero even for a large offset. Each
+   retained prefix must fit 256 slots; it is never silently clamped. LIMIT ALL/NULL
+   is unbounded and OFFSET NULL is zero. Without a finite LIMIT, the complete
+   matching set must fit the existing budget, including rows later skipped.
+   COUNT/SUM authenticate all matches within their separate 2560-row-per-shard
+   budget and prepare the original encrypted amount limbs and presence markers. Both read forms share a private
    static-source adapter with no predicate-dependent transport choice.
 3. Ask a peer for the full-residue STARK and encrypted result. Derive the trusted
    canonical input from the pending request and verify every shard, joining all
    admitted workers while retaining encrypted results.
 4. Recheck confirmed ancestry and state, then recheck current TableId and both
    heads before decrypting any result. Merge proved row prefixes by global
-   `ordinal * shard_count + shard_slot`, then apply the global LIMIT. For aggregates,
+   `ordinal * shard_count + shard_slot`, then skip the global OFFSET and apply LIMIT.
+   This stable implementation order does not add SQL ORDER BY support. For aggregates,
    decrypt each checked encrypted partial count/sum only after this gate and add
    them with overflow checks. Return `VerifiedResult` with the confirmed `HeadRef`.
    A reorganization or conflicting state requires retry.
@@ -203,11 +206,23 @@ leak relative to the existing full-fetch path; public layout, operation timing,
 failures and the existing owner-online conversion boundary remain observable.
 Typed imported-catalog reads and final mutation custody checks retain complete
 images. Initial UPDATE source eligibility is described below.
-The fixed LIMIT path still validates O(matches) source rows, including discarded
-candidates and LIMIT0, plus O(table rows / 64) bitmap traversal. It uses a zeroizing
-bitmap of at most 125,000 bytes per shard and one decrypted data-page scratch
-buffer. It does not stop validation at LIMIT,
-change ReadImage traffic, add OFFSET support or provide general streaming SELECT.
+The fixed pagination path still validates O(matches) source rows, including skipped
+and discarded candidates and LIMIT0, plus O(table rows / 64) bitmap traversal. It
+uses a zeroizing bitmap of at most 125,000 bytes per shard and one decrypted
+data-page scratch buffer. It does not stop source validation at the window or
+change ReadImage traffic. Pagination integer literals fit nonnegative i64 and
+usize; duplicate clauses, FETCH and aggregate pagination reject during parsing.
+The historical unverified Database adapter rejects a nonzero OFFSET before I/O;
+the historical LabEngine applies the window after its encrypted projection.
+
+RowWindow is an owner-side nonserialized plan. OFFSET0 retains the existing LIMIT
+prefix preparation; no wire, operation, proof profile or journal version changes.
+The owner still selects plaintext originals and freshly encrypts the BFV inputs.
+The genuine peer proof covers the existing arithmetic statement; it does not
+independently prove source-to-selection/formation or their complete composition.
+Pagination adds neither production SQL acceptance nor a substitute fixture answer;
+Database::execute retains its separate missing-proof rejection. Fresh agreed
+heads remain mandatory. No latency, memory or complete PostgreSQL claim follows.
 
 The query-scoped endpoint queue spans initial/final synchronization, ReadImage and
 proof requests. Interrupted returns immediately without an uncancelled replica

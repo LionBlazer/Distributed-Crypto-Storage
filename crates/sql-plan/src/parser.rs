@@ -1,6 +1,6 @@
 mod predicate;
 
-use crate::{Column, Error, MAX_SQL_BYTES, Projection, QueryPlan, RowValues};
+use crate::{Column, Error, MAX_SQL_BYTES, Projection, QueryPlan, RowValues, RowWindow};
 
 /// Parses the supported fixed-schema grammar, consuming the entire input.
 /// No SQL clause is silently discarded or evaluated in plaintext as a fallback.
@@ -145,18 +145,55 @@ impl Parser {
         };
         self.expect_from_records()?;
         let predicate = self.predicate()?;
-        let limit = if self.take("LIMIT") {
-            let value =
-                self.number::<usize>("LIMIT must be a non-negative integer fitting usize")?;
-            Some(value)
-        } else {
-            None
-        };
+        let window = self.row_window()?;
         Ok(QueryPlan::Select {
             predicate,
             projection,
-            limit,
+            window,
         })
+    }
+    fn row_window(&mut self) -> Result<RowWindow, Error> {
+        let mut window = RowWindow::default();
+        let (mut limit_seen, mut offset_seen) = (false, false);
+        loop {
+            if self.take("LIMIT") {
+                if limit_seen {
+                    return Err(unsupported("duplicate LIMIT"));
+                }
+                limit_seen = true;
+                window.limit = if self.take("ALL") || self.take("NULL") {
+                    None
+                } else {
+                    Some(self.window_count()?)
+                };
+            } else if self.take("OFFSET") {
+                if offset_seen {
+                    return Err(unsupported("duplicate OFFSET"));
+                }
+                offset_seen = true;
+                window.offset = if self.take("NULL") {
+                    0
+                } else {
+                    self.window_count()?
+                };
+            } else {
+                break;
+            }
+        }
+        window.prefix_limit()?;
+        Ok(window)
+    }
+    fn window_count(&mut self) -> Result<usize, Error> {
+        // Fixed-schema pagination accepts integer literals, not general SQL expressions.
+        let negative = self.take("-");
+        if !negative {
+            self.take("+");
+        }
+        let value = self.number::<i64>("Pagination requires a non-negative bigint literal")?;
+        if negative && value != 0 {
+            return Err(unsupported("Pagination count must not be negative"));
+        }
+        usize::try_from(value).map_err(|_| unsupported("Pagination count does not fit usize"))
     }
     fn column(&mut self) -> Result<Column, Error> {
         if self.take("AGE") {
@@ -209,6 +246,6 @@ impl Parser {
 
 fn unsupported(reason: &str) -> Error {
     Error::UnsupportedSql(format!(
-        "{reason}. Supported: SELECT *, age, amount, COUNT(*), SUM(amount), or COUNT(*), SUM(amount) FROM records; INSERT INTO records (age, amount) VALUES (A, N) [, (A, N) ...]; UPDATE records SET amount = amount + N. Optional read/update WHERE combines age comparisons, [NOT] BETWEEN, [NOT] IN, IS [NOT] NULL and TRUE/FALSE/NULL using AND/OR/NOT and parentheses. Comparison integer literals fit i64; NULL uses SQL three-valued logic. Row SELECT allows a non-negative LIMIT; execution resource budgets are checked by the executor."
+        "{reason}. Supported: SELECT *, age, amount, COUNT(*), SUM(amount), or COUNT(*), SUM(amount) FROM records; INSERT INTO records (age, amount) VALUES (A, N) [, (A, N) ...]; UPDATE records SET amount = amount + N. Optional read/update WHERE combines age comparisons, [NOT] BETWEEN, [NOT] IN, IS [NOT] NULL and TRUE/FALSE/NULL using AND/OR/NOT and parentheses. Comparison integer literals fit i64; NULL uses SQL three-valued logic. Row SELECT accepts LIMIT integer/ALL/NULL and OFFSET integer/NULL; execution resource budgets are checked by the executor."
     ))
 }

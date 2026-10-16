@@ -289,6 +289,9 @@ impl Database {
     /// reply case is rejected; it can never produce AcceptedResult or advance heads.
     pub fn execute(&self, sql: &str) -> Result<AcceptedResult> {
         let plan = sql_plan::parse_sql(sql)?;
+        if matches!(&plan, QueryPlan::Select { window, .. } if window.offset != 0) {
+            return Err(Error::InvalidInput("The historical unverified adapter does not execute OFFSET; use the proof-backed Session".into()));
+        }
         let range = match &plan {
             QueryPlan::Insert { .. } => None,
             QueryPlan::Select { predicate, .. }

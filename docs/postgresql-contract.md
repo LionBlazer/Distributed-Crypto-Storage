@@ -32,14 +32,26 @@ statement atomicity does not provide general transactions. Aggregates perform an
 encrypted coefficient convolution under the existing full-residue product proof,
 with checked client-side limb/shard completion and SQL NULL for empty SUM.
 They currently admit at most 2560 matching rows per shard using ten 256-row bands
-and the unchanged 256-term public kernel. Fixed row SELECT with explicit LIMIT
-validates all matching postings and original rows, then proves at most 256 retained
-rows per shard. Its prefix length is `min(local matches, SQL limit)`, never a silent
-clamp; larger prefixes reject. Proved shard prefixes merge in stable global ordinal
-order before the final LIMIT. LIMIT0 still validates the complete matching source
-and requires genuine proof and final freshness. Without LIMIT the complete matching
-set must fit 256 rows; mutations retain their 256-row boundary. Full source validation
-remains O(matches), with the unchanged static ReadImage footprint.
+and the unchanged 256-term public kernel. Fixed row SELECT accepts LIMIT
+integer/ALL/NULL and OFFSET integer/NULL, in either order without duplicate clauses.
+A NULL limit is unbounded and a NULL offset is zero; counts must be nonnegative
+integer literals fitting i64 and usize. FETCH, general limit expressions and
+aggregate pagination remain unsupported in this fixed-record path.
+All matching postings and original rows are validated before at most 256 retained
+rows per shard enter the existing arithmetic proof. With a finite limit, the prefix
+length is `min(local matches, offset + limit)`, using checked addition and zero for
+LIMIT0. Larger retained prefixes reject without clamping. Shard prefixes merge in
+stable global ordinal order before one global skip/take; this does not implement
+ORDER BY. Even LIMIT0 and windows beyond the end require genuine proof and final
+freshness. Without a finite limit the complete matching set must fit 256 rows,
+including skipped rows; mutations retain their 256-row boundary. Full source
+validation remains O(matches), with the unchanged static ReadImage footprint.
+These are owner-assisted semantics: the owner still selects plaintext originals
+and forms fresh encrypted operands. The arithmetic proof does not independently
+prove source-selection-formation or the complete composition. Pagination changes
+no network acceptance or proof/profile/journal encoding, and establishes no speed,
+production SQL or requirements-complete guarantee. See the
+[fixed-record pagination validation](fixed-select-pagination.md).
 Excess rejects without a partial result. Q2/R2 introduced application domain v3;
 the current [custody profile](salted-custody-objects.md) requires RPC v2 and
 application v4, including ObjectProfileID, and rejects old journals/wires without

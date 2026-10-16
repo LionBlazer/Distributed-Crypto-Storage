@@ -472,7 +472,7 @@ pub(super) fn execute(
         return insert(db, replicas, &incoming, progress);
     }
     if let QueryPlan::Select {
-        projection, limit, ..
+        projection, window, ..
     } = plan
     {
         let mut selected = Vec::new();
@@ -504,7 +504,7 @@ pub(super) fn execute(
                 }
             }
         }
-        return Ok((project_rows(selected, projection, limit), None));
+        return Ok((project_rows(selected, projection, window), None));
     }
     let delta = match plan {
         QueryPlan::Aggregate { .. } | QueryPlan::Count { .. } | QueryPlan::Sum { .. } => None,

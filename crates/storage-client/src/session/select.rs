@@ -2,7 +2,7 @@ use super::source::IndexPrefix;
 use super::*;
 use crate::query_rpc::{ProofJob, Requests};
 use compact_query::ReadView;
-use sql_plan::{Predicate, Projection};
+use sql_plan::{Predicate, Projection, RowWindow};
 
 struct CheckedShard {
     slot: usize,
@@ -16,14 +16,15 @@ impl Session {
         initial: HeadRef,
         predicate: Predicate,
         projection: Projection,
-        limit: Option<usize>,
+        window: RowWindow,
         requests: &Requests,
     ) -> Result<VerifiedResult> {
-        // A row beyond a shard's first K matches already has K earlier global
+        let prefix_limit = window.prefix_limit()?;
+        // K = OFFSET + LIMIT: a row beyond a shard's first K matches has K earlier global
         // matches in that shard. Its omission cannot change the global first K.
         // Every shard still validates its complete source and supplies a real proof.
         let completed = crate::jobs::run(0..self.data.shards.len(), |slot| {
-            self.select_shard(slot, predicate, projection, limit, requests)
+            self.select_shard(slot, predicate, projection, prefix_limit, requests)
         })?;
         // Every genuine proof is checked and every worker joined before freshness.
         // No result ciphertext is decrypted until this exact confirmed state gate.
@@ -54,10 +55,12 @@ impl Session {
             }
         }
         selected.sort_by_key(|(ordinal, _)| *ordinal);
-        let mut rows: Vec<_> = selected.into_iter().map(|(_, row)| row).collect();
-        if let Some(limit) = limit {
-            rows.truncate(limit);
-        }
+        let rows = selected
+            .into_iter()
+            .skip(window.offset)
+            .take(window.limit.unwrap_or(usize::MAX))
+            .map(|(_, row)| row)
+            .collect();
         Ok(VerifiedResult::Selected {
             columns: projection.columns(),
             rows,

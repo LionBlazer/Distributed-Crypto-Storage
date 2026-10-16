@@ -90,6 +90,28 @@ fn select_star_merges_original_row_order_and_projects_only_requested_columns() {
 }
 
 #[test]
+fn row_windows_skip_global_matches_after_historical_encrypted_projection() {
+    let mut engine = lab();
+    assert_eq!(
+        selected(
+            &mut engine,
+            "SELECT amount FROM records WHERE age>=18 OFFSET 1 LIMIT 2"
+        )
+        .1,
+        vec![vec![10], vec![256]]
+    );
+    assert_eq!(
+        selected(&mut engine, "SELECT amount FROM records LIMIT ALL OFFSET 4").1,
+        vec![vec![65535]]
+    );
+    assert!(
+        selected(&mut engine, "SELECT * FROM records LIMIT NULL OFFSET 5")
+            .1
+            .is_empty()
+    );
+}
+
+#[test]
 fn standalone_aggregates_keep_real_peer_bfv_contributions_and_unsigned_sums() {
     let mut engine = lab();
     let QueryOutcome::Count { count, peers } = engine
@@ -153,6 +175,8 @@ fn limit_never_hides_offline_shards_even_for_zero_output_or_public_false_bounds(
     for sql in [
         "SELECT * FROM records LIMIT 1",
         "SELECT age FROM records LIMIT 0",
+        "SELECT age FROM records LIMIT 0 OFFSET 1000",
+        "SELECT age FROM records OFFSET 1000 LIMIT 1",
         "SELECT amount FROM records WHERE age < 0",
         "SELECT COUNT(*) FROM records",
         "SELECT SUM(amount) FROM records",

@@ -35,7 +35,6 @@ fn unsupported_clauses_and_extra_statements_are_never_ignored() {
         "SELECT age, amount, age FROM records",
         "SELECT amount AS total FROM records",
         "SELECT * FROM records LIMIT -1",
-        "SELECT * FROM records LIMIT 1 OFFSET 1",
         "SELECT * FROM records LIMIT 1 WHERE age = 18",
         "SELECT age, SUM(amount) FROM records",
         "SELECT SUM(age) FROM records",
@@ -75,7 +74,7 @@ fn row_projections_and_limits_have_explicit_plans_and_requested_column_order() {
             QueryPlan::Select {
                 predicate: Predicate::default(),
                 projection,
-                limit,
+                window: sql_plan::RowWindow { offset: 0, limit },
             },
             "{sql}"
         );
@@ -251,9 +250,10 @@ fn insert_tuple_count_is_not_coupled_to_executor_capacity() {
 }
 #[test]
 fn output_limit_is_not_coupled_to_a_playground_row_cap() {
-    let QueryPlan::Select { limit, .. } = parse_sql("SELECT * FROM records LIMIT 1000000").unwrap()
+    let QueryPlan::Select { window, .. } =
+        parse_sql("SELECT * FROM records LIMIT 1000000").unwrap()
     else {
         panic!("row selection expected")
     };
-    assert_eq!(limit, Some(1000000));
+    assert_eq!(window.limit, Some(1000000));
 }

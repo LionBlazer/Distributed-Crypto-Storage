@@ -47,6 +47,27 @@ impl Projection {
     }
 }
 
+/// Owner-side output window over the complete matching rows in ordinal order.
+/// This plan value is not a serialized peer request or a computation proof.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RowWindow {
+    pub offset: usize,
+    pub limit: Option<usize>,
+}
+impl RowWindow {
+    /// The prefix each shard must prove before the global offset can be applied.
+    /// An empty window still requires complete source validation and a real proof.
+    pub fn prefix_limit(self) -> Result<Option<usize>, crate::Error> {
+        match self.limit {
+            None => Ok(None),
+            Some(0) => Ok(Some(0)),
+            Some(limit) => self.offset.checked_add(limit).map(Some).ok_or_else(|| {
+                crate::Error::InvalidInput("OFFSET plus LIMIT exceeds the row-window range".into())
+            }),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QueryPlan {
     Aggregate {
@@ -61,8 +82,7 @@ pub enum QueryPlan {
     Select {
         predicate: Predicate,
         projection: Projection,
-        /// Output bound only; the complete exact selection is still authenticated.
-        limit: Option<usize>,
+        window: RowWindow,
     },
     AddAmount {
         predicate: Predicate,

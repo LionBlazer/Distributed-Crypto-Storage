@@ -10,6 +10,8 @@ mod mutation_cancellation;
 mod received_version_import;
 #[path = "support/rpc_observation.rs"]
 mod rpc_observation;
+#[path = "support/select_pagination.rs"]
+mod select_pagination;
 #[path = "support/static_aggregate.rs"]
 mod static_aggregate;
 #[path = "support/static_update.rs"]
@@ -2055,6 +2057,14 @@ fn fixed_select_fetches_identical_static_images_for_projections_limits_absent_an
         ),
         (
             "SELECT amount, age FROM records WHERE age = 18 LIMIT 0",
+            vec![],
+        ),
+        (
+            "SELECT age, amount FROM records WHERE age = 18 OFFSET 2 LIMIT 1",
+            vec![vec![18, 50]],
+        ),
+        (
+            "SELECT age FROM records WHERE age = 18 LIMIT 0 OFFSET 1000000",
             vec![],
         ),
         ("SELECT age FROM records WHERE age = 99", vec![]),

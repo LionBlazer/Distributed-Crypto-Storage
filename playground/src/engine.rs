@@ -6,7 +6,7 @@ use compact_query::bfv as backend;
 use compact_query::{self as cq, AgeRange, Table};
 use compact_store::Limits;
 
-use sql_plan::{Column, Projection, QueryPlan, parse_sql};
+use sql_plan::{Column, Projection, QueryPlan, RowWindow, parse_sql};
 
 pub const MAX_PEERS: usize = 16;
 pub const MAX_LAB_ROWS: usize = 128;
@@ -414,19 +414,19 @@ fn aggregate_outcome(
         _ => QueryOutcome::Aggregate { count, sum, peers },
     }
 }
-// LIMIT bounds returned cells only. Every complete indexed selection must pass
+// Pagination bounds returned cells only. Every complete indexed selection must pass
 // authentication and availability checks before this function receives any rows.
 fn project_rows(
     mut selected: Vec<(usize, Vec<u32>)>,
     projection: Projection,
-    limit: Option<usize>,
+    window: RowWindow,
 ) -> QueryOutcome {
     selected.sort_unstable_by_key(|(ordinal, _)| *ordinal);
-    let output_limit = limit.unwrap_or(selected.len());
     let columns = projection.columns();
     let rows = selected
         .into_iter()
-        .take(output_limit)
+        .skip(window.offset)
+        .take(window.limit.unwrap_or(usize::MAX))
         .map(|(_, cells)| cells)
         .collect();
     QueryOutcome::Selected { columns, rows }

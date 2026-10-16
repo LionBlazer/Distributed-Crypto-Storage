@@ -57,14 +57,14 @@ impl Session {
         if let QueryPlan::Select {
             predicate,
             projection,
-            limit,
+            window,
         } = &plan
         {
             return self.execute_select(
                 initial,
                 *predicate,
                 *projection,
-                *limit,
+                *window,
                 read_requests.as_ref().expect("SELECT read scope"),
             );
         }

@@ -340,6 +340,11 @@ fn historical_unverified_network_adapter_rejects_disjoint_sets_before_any_rpc() 
     ));
     assert!(events.lock().unwrap().is_empty());
     assert!(matches!(
+        database.execute("SELECT * FROM records LIMIT 1 OFFSET 1"),
+        Err(storage_client::Error::InvalidInput(_))
+    ));
+    assert!(events.lock().unwrap().is_empty());
+    assert!(matches!(
         database.execute("SELECT * FROM records WHERE NOT NULL"),
         Err(storage_client::Error::MissingComputationProof)
     ));

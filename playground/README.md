@@ -284,4 +284,10 @@ conditions through storage-client Session and genuine FHE/proof operations. Its
 32-byte compiled condition remains owner-side. The historical local LabEngine
 range-only experiment rejects discontinuous conditions before materializing rows;
 it is not a live fallback. Typed nullable catalogs retain their separate predicate
-contract. See [client ownership and limits](../crates/storage-client/README.md).
+contract. Fixed row pagination accepts literal OFFSET (NULL is zero) and LIMIT
+(ALL/NULL is unbounded); Session proves each checked offset+limit shard prefix,
+merges by global ordinal, then applies the window after final freshness. The
+historical LabEngine applies the same window only after its encrypted projection.
+This retains the owner-assisted source/formation limitation and adds no ORDER BY,
+FETCH or independently proved SQL selection. See
+[client ownership and limits](../crates/storage-client/README.md).

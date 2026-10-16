@@ -431,6 +431,25 @@ mod tests {
     }
 
     #[test]
+    fn pagination_preserves_nulls_and_window_order_and_rejects_a_later_duplicate_before_execution()
+    {
+        let script = SqlScript::parse("SELECT amount FROM records OFFSET NULL LIMIT ALL; SELECT age FROM records OFFSET 2 LIMIT 3").unwrap();
+        let SqlStatement::Query { sql, plan } = &script.statements()[1] else {
+            panic!("row-window query expected");
+        };
+        assert!(
+            matches!(plan, QueryPlan::Select { window, .. } if *window == sql_plan::RowWindow { offset: 2, limit: Some(3) })
+        );
+        assert_eq!(sql_plan::parse_sql(sql).unwrap(), *plan);
+        let error = SqlScript::parse(
+            "UPDATE records SET amount=amount+1; SELECT * FROM records OFFSET NULL OFFSET 1",
+        )
+        .unwrap_err();
+        assert_eq!(error.failed_statement, 2);
+        assert!(error.completed.is_empty());
+    }
+
+    #[test]
     fn malformed_later_tuple_rejects_the_whole_script_before_creation() {
         for tuple in ["(256,30)", "(42,65536)", "(42)", "(42,30", "", "SELECT"] {
             let error = SqlScript::parse(&format!(
