@@ -137,6 +137,10 @@ before claiming these SQL guarantees. A peer-local mutex, owner-only lock manage
 transport acknowledgement or unconfirmed lease would change required guarantees.
 Local TCP disconnect also cannot establish global client death during a partition.
 No such substitution is authorized by this implementation contract.
+The [finality research](lock-finality-research.md) examines one conditional
+PoW-elected reconfigurable-BFT path, its bootstrap/failure assumptions, existing
+verification seams and required adversarial evidence. It selects no production
+protocol and establishes no live lock grant or latency bound.
 
 ## Selective retrieval and the unresolved access policy
 
