@@ -11,8 +11,8 @@ cargo build --release --locked -p dcs-peer
 ```
 
 The [single launcher](../../tools/launcher/README.md) also packages portable peer
-and GUI executables with trusted AVX2/AVX-512 proof kernels. Before reading its
-bootstrap or serving requests, the daemon initializes
+and GUI executables with trusted AVX2/AVX-512 proof kernels. After reading its
+bootstrap and before serving requests, the daemon initializes
 `bfv_query_proof::initialize_backend` from the `proof-kernels` directory beside its
 executable and reports the selected backend on stderr. CPU/OS detection runs once;
 proof operations use the retained implementation. Standalone builds without
@@ -27,6 +27,14 @@ private IPC or caller-managed secret storage, never CLI arguments, source contro
 or telemetry. Stdout emits one public JSON Endpoint after bind/lock succeeds;
 subsequent operations use mutually authenticated TLS. Operator stderr reports
 connection rejections without logging payloads or secret keys.
+
+Local supervisors may opt into `--exit-on-stdin-close`. After the bootstrap frame,
+stdin becomes a lifetime-only pipe: the parent retains its write handle without
+sending more bytes. EOF, pipe failure or unexpected data terminates the entire
+daemon, including an in-flight job. OS handle closure also works when the parent
+crashes or is forcibly terminated and cannot run destructors. This deployment
+option is used by playground; an independent daemon without it keeps running after
+bootstrap EOF or the loss of a network client. It is not a peer-protocol heartbeat.
 
 The [playground](../../playground/README.md) generates independent self-signed peer
 identities, starts each daemon hidden, supplies bootstrap over its private stdin

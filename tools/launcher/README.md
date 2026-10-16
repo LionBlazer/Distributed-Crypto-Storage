@@ -42,6 +42,12 @@ override Cargo configuration ISA flags. Zed keeps the launcher's own artifacts i
 temporary files into place; it does not terminate a running GUI or peer. A failed
 build, missing artifact or failed replacement stops launch with an error.
 
+The launcher starts the GUI with `--exit-on-stdin-close` and keeps its private stdin
+pipe open while waiting. Ctrl+C, a crash or forced launcher termination closes the
+OS handle; the GUI exits and its corresponding lifetime pipes stop the local peer
+processes. Cleanup does not depend on destructors or on checking reusable PIDs.
+The launcher never searches for or terminates unrelated running processes.
+
 The [GUI](../../playground/README.md) and
 [peer](../../apps/dcs-peer/README.md) each initialize their proof backend once,
 before processing requests. Runtime CPU/OS feature detection and ABI validation

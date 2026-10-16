@@ -3,11 +3,16 @@ mod graph_layout;
 mod graph_routing;
 mod process_backend;
 mod samples;
+mod supervision;
 mod traffic;
 mod ui;
 mod worker;
 
 fn main() -> eframe::Result {
+    if let Err(error) = supervision::watch_launcher() {
+        eprintln!("Cannot initialize playground supervision: {error}");
+        std::process::exit(1);
+    }
     if cfg!(debug_assertions) {
         eprintln!("Run the FHE GUI with: cargo run --release --locked -p dcs-launch -- playground");
         std::process::exit(1);

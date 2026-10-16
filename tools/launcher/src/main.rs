@@ -4,7 +4,13 @@
 mod package;
 
 use package::{BuildPlan, Options};
-use std::{env, error::Error, io, path::Path, process::Command};
+use std::{
+    env,
+    error::Error,
+    io,
+    path::Path,
+    process::{Command, Stdio},
+};
 
 fn main() {
     if let Err(error) = run() {
@@ -53,7 +59,20 @@ fn run() -> Result<(), Box<dyn Error>> {
     if options.build_only {
         return Ok(());
     }
-    let status = Command::new(&plan.playground).current_dir(&root).status()?;
+    let mut playground = Command::new(&plan.playground)
+        .arg("--exit-on-stdin-close")
+        .stdin(Stdio::piped())
+        .current_dir(&root)
+        .spawn()?;
+    // This write handle belongs only to this launcher. The OS closes it even
+    // when Ctrl+C/termination bypasses Rust destructors; the GUI observes EOF.
+    // Keep it alive until wait completes, rather than waiting via Command::status.
+    let lifetime = playground
+        .stdin
+        .take()
+        .ok_or_else(|| io::Error::other("the playground supervisor pipe was not created"))?;
+    let status = playground.wait()?;
+    drop(lifetime);
     if !status.success() {
         return Err(io::Error::other(format!("the playground exited with {status}")).into());
     }

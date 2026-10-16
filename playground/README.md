@@ -38,6 +38,13 @@ ISA variants does not establish a latency SLA.
 
 Each peer starts as a separate hidden child process with a real PID, ephemeral TLS
 identity, loopback listener and its own ciphertext directory under `.local/peer-processes/`.
+The manager retains each child's bootstrap stdin pipe and enables the daemon's
+`--exit-on-stdin-close` lifecycle option. A crashed or forcibly terminated GUI
+therefore makes its local peers exit, even when Rust `Drop` cannot run. The launcher
+owns an equivalent lifetime pipe to the GUI. Directly launching the GUI without
+this option remains supported; its managed peers still depend on its lifetime.
+These local process leases do not affect independently deployed peers or network
+availability rules. Existing ciphertext directories are retained after exit.
 Only that peer's TLS credential and public owner authorization metadata cross
 bootstrap IPC. FHE/AEAD and journal authorization keys never enter peer processes.
 Each participant and the owner generate independent self-signed TLS credentials;

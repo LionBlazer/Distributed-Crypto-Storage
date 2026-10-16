@@ -87,6 +87,7 @@ impl OwnedPeer {
         command
             .arg("--state-dir")
             .arg(&self.directory)
+            .arg("--exit-on-stdin-close")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -108,10 +109,12 @@ impl OwnedPeer {
             let secret = zeroize::Zeroizing::new(
                 serde_json::to_vec(&self.bootstrap).map_err(io::Error::other)?,
             );
+            // Retain Child::stdin after bootstrap. Its OS pipe is the lifetime
+            // lease: a killed/crashed GUI closes it without needing Drop to run.
             peer_transport::write_frame(
-                &mut child
+                child
                     .stdin
-                    .take()
+                    .as_mut()
                     .ok_or_else(|| io::Error::other("Missing bootstrap pipe"))?,
                 &secret,
                 64 * 1024,

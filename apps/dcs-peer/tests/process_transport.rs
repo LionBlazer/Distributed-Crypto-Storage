@@ -14,7 +14,7 @@ use std::{
     path::PathBuf,
     process::{Child, Command, Stdio},
     sync::mpsc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 struct Authority {
@@ -58,6 +58,15 @@ struct Process {
 }
 impl Process {
     fn start(authority: &Authority, owner: [u8; 32], id: u64, directory: Option<PathBuf>) -> Self {
+        Self::start_with_supervision(authority, owner, id, directory, false)
+    }
+    fn start_with_supervision(
+        authority: &Authority,
+        owner: [u8; 32],
+        id: u64,
+        directory: Option<PathBuf>,
+        supervised: bool,
+    ) -> Self {
         let directory = directory.unwrap_or_else(|| {
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../../.local/network-tests")
@@ -77,6 +86,9 @@ impl Process {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .env("RAYON_NUM_THREADS", "2");
+        if supervised {
+            command.arg("--exit-on-stdin-close");
+        }
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -92,7 +104,10 @@ impl Process {
             listen: "127.0.0.1:0".parse().unwrap(),
         };
         let secret = zeroize::Zeroizing::new(serde_json::to_vec(&config).unwrap());
-        peer_transport::write_frame(&mut child.stdin.take().unwrap(), &secret, 64 * 1024).unwrap();
+        peer_transport::write_frame(child.stdin.as_mut().unwrap(), &secret, 64 * 1024).unwrap();
+        if !supervised {
+            drop(child.stdin.take());
+        }
         let stdout = child.stdout.take().unwrap();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
@@ -131,6 +146,64 @@ impl Drop for Process {
         self.kill();
     }
 }
+#[test]
+fn supervised_peer_exits_on_owner_pipe_eof_and_releases_its_directory() {
+    // Arrange: a real daemon remains reachable while its owner holds the pipe.
+    let authority = Authority::new();
+    let owner = authority.identity();
+    let connector = Connector::new(&owner, &authority.der).unwrap();
+    let mut process =
+        Process::start_with_supervision(&authority, owner.fingerprint(), 1, None, true);
+    assert_eq!(
+        process.remote(&connector).status().unwrap().pid,
+        process.child.id()
+    );
+
+    // Act: EOF is the same OS notification produced by a forcibly killed owner.
+    drop(process.child.stdin.take());
+
+    // Assert: the complete daemon exits, not just its listener/watchdog thread.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        if let Some(status) = process.child.try_wait().unwrap() {
+            break status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Supervised peer outlived its owner pipe"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert!(status.success());
+    assert!(process.remote(&connector).status().is_err());
+    let reopened = Process::start(
+        &authority,
+        owner.fingerprint(),
+        1,
+        Some(process.directory.clone()),
+    );
+    assert_eq!(
+        reopened.remote(&connector).status().unwrap().pid,
+        reopened.child.id()
+    );
+}
+
+#[test]
+fn independent_peer_remains_reachable_after_its_bootstrap_pipe_closes() {
+    let authority = Authority::new();
+    let owner = authority.identity();
+    let connector = Connector::new(&owner, &authority.der).unwrap();
+
+    let mut process = Process::start(&authority, owner.fingerprint(), 1, None);
+
+    assert!(process.child.stdin.is_none());
+    assert!(process.child.try_wait().unwrap().is_none());
+    assert_eq!(
+        process.remote(&connector).status().unwrap().pid,
+        process.child.id()
+    );
+}
+
 #[test]
 fn frame_activity_reports_real_io_before_completion_and_nothing_for_an_unreachable_peer() {
     use peer_runtime::ActivityPhase;
