@@ -83,6 +83,10 @@ impl Process {
             command.creation_flags(0x08000000);
         }
         let mut child = command.spawn().unwrap();
+        if std::env::var_os("DCS_TEST_REPORT_PIDS").is_some() {
+            // Optional external resource measurement observes only owned children.
+            println!("owned_peer_pid={}", child.id());
+        }
         let config = Bootstrap {
             identity: identity(),
             authority: vec![],

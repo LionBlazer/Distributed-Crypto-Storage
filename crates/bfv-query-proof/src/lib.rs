@@ -6,6 +6,7 @@
 mod circuit;
 mod codec;
 mod dispatch;
+mod preprocessing;
 
 pub use dispatch::{backend_kind, compiled_kind, initialize_backend};
 pub use proof_acceleration::Kind as BackendKind;
@@ -21,8 +22,9 @@ const _: () = {
     );
 };
 
-use circuit::{Config, certificate, config, statement, witness};
+use circuit::{Config, Statement, certificate, config, statement, witness};
 use p3_uni_stark::{Proof, prove_with_preprocessed, setup_preprocessed, verify_with_preprocessed};
+use preprocessing::{PREPROCESSING_CACHE, PreprocessingCache, cache_key};
 use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
 
@@ -153,7 +155,7 @@ impl GeneratedOperation {
 
 #[derive(Debug, Clone, Copy)]
 pub struct VerifierTimings {
-    /// Parse/range checks and independent full public-input/output commitment.
+    /// Parse/range checks and locally derived or reused exact public commitment.
     pub public_preprocessing: Duration,
     pub proof_verification: Duration,
     /// Includes bounded decoding and all phases above, without a prover-owned key.
@@ -202,6 +204,10 @@ pub fn prove(input: &[u8]) -> Result<GeneratedOperation, Error> {
 }
 
 fn prove_engine(input: &[u8]) -> Result<GeneratedOperation, Error> {
+    prove_with_cache(input, &PREPROCESSING_CACHE)
+}
+
+fn prove_with_cache(input: &[u8], cache: &PreprocessingCache) -> Result<GeneratedOperation, Error> {
     let total = Instant::now();
     let operation = Operation::from_input(input)?;
     let started = Instant::now();
@@ -209,11 +215,18 @@ fn prove_engine(input: &[u8]) -> Result<GeneratedOperation, Error> {
     let encrypted_operation = started.elapsed();
     let started = Instant::now();
     let certificate = certificate(operation, input)?;
-    let (air, values) = statement(operation, input, &output, &certificate)?;
+    let Statement {
+        air,
+        values,
+        hashes,
+    } = statement(operation, input, &output, &certificate)?;
     let cfg = config(&air)?;
-    let (preprocessed, _) = setup_preprocessed(&cfg, &air, operation.log_height())
+    let (preprocessed, verifier_key) = setup_preprocessed(&cfg, &air, operation.log_height())
         .map_err(|_| Error::Preprocessing)?
         .ok_or(Error::Preprocessing)?;
+    // This key certifies only the locally derived public preprocessing. It is
+    // safe to retain before proving, and never marks any proof/result accepted.
+    cache.insert(cache_key(operation, &hashes), operation, verifier_key);
     let public_preprocessing = started.elapsed();
     let started = Instant::now();
     let proof = prove_with_preprocessed(
@@ -255,6 +268,15 @@ pub fn verify(input: &[u8], output: &[u8], wire: &[u8]) -> Result<CheckedOperati
 }
 
 fn verify_engine(input: &[u8], output: &[u8], wire: &[u8]) -> Result<CheckedOperation, Error> {
+    verify_with_cache(input, output, wire, &PREPROCESSING_CACHE)
+}
+
+fn verify_with_cache(
+    input: &[u8],
+    output: &[u8],
+    wire: &[u8],
+    cache: &PreprocessingCache,
+) -> Result<CheckedOperation, Error> {
     let total = Instant::now();
     let operation = Operation::from_input(input)?;
     let magic = operation.proof_magic();
@@ -281,11 +303,24 @@ fn verify_engine(input: &[u8], output: &[u8], wire: &[u8]) -> Result<CheckedOper
         return Err(Error::Verification);
     }
     let started = Instant::now();
-    let (air, expected_values) = statement(operation, input, output, certificate)?;
+    let Statement {
+        air,
+        values: expected_values,
+        hashes,
+    } = statement(operation, input, output, certificate)?;
+    // Shape/range and security checks always run, including on a cache hit.
     let cfg = config(&air)?;
-    let (_, verifier_key) = setup_preprocessed(&cfg, &air, operation.log_height())
-        .map_err(|_| Error::Preprocessing)?
-        .ok_or(Error::Preprocessing)?;
+    let key = cache_key(operation, &hashes);
+    let verifier_key = match cache.get(key, operation) {
+        Some(verifier_key) => verifier_key,
+        None => {
+            let (_, verifier_key) = setup_preprocessed(&cfg, &air, operation.log_height())
+                .map_err(|_| Error::Preprocessing)?
+                .ok_or(Error::Preprocessing)?;
+            cache.insert(key, operation, verifier_key.clone());
+            verifier_key
+        }
+    };
     let public_preprocessing = started.elapsed();
     let started = Instant::now();
     // Some SDK rejection paths can panic for malformed internal proof shapes.
@@ -298,8 +333,8 @@ fn verify_engine(input: &[u8], output: &[u8], wire: &[u8]) -> Result<CheckedOper
     .map_err(|_| Error::Verification)?;
     Ok(CheckedOperation {
         operation,
-        input_digest: Sha256::digest(input).into(),
-        output_digest: Sha256::digest(output).into(),
+        input_digest: hashes[0],
+        output_digest: hashes[1],
         timings: VerifierTimings {
             public_preprocessing,
             proof_verification: started.elapsed(),

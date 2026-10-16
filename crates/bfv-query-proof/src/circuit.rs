@@ -134,12 +134,19 @@ pub(super) fn config(air: &ArithmeticAir) -> Result<Config, Error> {
     ))
 }
 
+pub(super) struct Statement {
+    pub air: ArithmeticAir,
+    pub values: Vec<Val>,
+    /// Exact input/output/certificate hashes; the addition certificate is empty.
+    pub hashes: [[u8; 32]; 3],
+}
+
 pub(super) fn statement(
     operation: Operation,
     input: &[u8],
     output: &[u8],
     certificate: &[u8],
-) -> Result<(ArithmeticAir, Vec<Val>), Error> {
+) -> Result<Statement, Error> {
     if input.len() != bfv_linear_circuit::REQUEST_BYTES
         || certificate.len() != operation.certificate_bytes()
     {
@@ -202,12 +209,19 @@ pub(super) fn statement(
     }
     // The verifier performs range checks and commitments only, never either
     // arithmetic relation. The digests bind the entire opaque original request.
-    let mut hashes = vec![Sha256::digest(input), Sha256::digest(output)];
-    if operation == Operation::PublicPolynomialProduct {
-        hashes.push(Sha256::digest(certificate));
-    }
+    let hashes: [[u8; 32]; 3] = [
+        Sha256::digest(input).into(),
+        Sha256::digest(output).into(),
+        Sha256::digest(certificate).into(),
+    ];
+    let transcript_hashes = if operation == Operation::Addition {
+        2
+    } else {
+        3
+    };
     let values = hashes
         .iter()
+        .take(transcript_hashes)
         .flat_map(|hash| {
             hash.as_chunks::<4>()
                 .0
@@ -215,13 +229,14 @@ pub(super) fn statement(
                 .map(|bytes| Val::from_u32(u32::from_le_bytes(*bytes)))
         })
         .collect();
-    Ok((
-        ArithmeticAir {
+    Ok(Statement {
+        air: ArithmeticAir {
             operation,
             public: RowMajorMatrix::new(data, operation.public_columns()),
         },
         values,
-    ))
+        hashes,
+    })
 }
 
 fn modulus(lane: usize) -> u64 {
@@ -336,7 +351,8 @@ mod tests {
             let output = operation.evaluate(&input).unwrap();
             let auxiliary = certificate(operation, &input).unwrap();
             let trace = witness(operation, &input).unwrap();
-            let (air, values) = statement(operation, &input, &output, &auxiliary).unwrap();
+            let Statement { air, values, .. } =
+                statement(operation, &input, &output, &auxiliary).unwrap();
             assert!(p3_air::check_all_constraints(&air, &trace, &values, Some(1)).is_ok());
             for lane in 0..operation.lanes() {
                 for coefficient in [0, bfv_linear_circuit::DEGREE - 1] {
@@ -349,8 +365,11 @@ mod tests {
                     // Rebuild public preprocessing and hashes around the forged
                     // result: rejection must come from arithmetic, not reuse of
                     // a proof with a different SHA-256 transcript.
-                    let (forged, hashes) =
-                        statement(operation, &input, &changed, &auxiliary).unwrap();
+                    let Statement {
+                        air: forged,
+                        values: hashes,
+                        ..
+                    } = statement(operation, &input, &changed, &auxiliary).unwrap();
                     assert!(
                         !p3_air::check_all_constraints(&forged, &trace, &hashes, Some(1)).is_ok(),
                         "{operation:?}, polynomial {lane}, coefficient {coefficient}"

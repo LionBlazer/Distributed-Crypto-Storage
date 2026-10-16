@@ -27,11 +27,65 @@ secret keys, GUI state, process ownership or fixture policies.
 The caller must independently derive the canonical input from its authenticated
 pending request. Accepting a peer's chosen input would prove a different statement.
 The verifier checks input/output shapes and canonical residue bounds, derives its
-own full public preprocessing commitment, and verifies the STARK. It never evaluates
+own full public preprocessing commitment (or reuses its exact local derivation),
+and verifies the STARK. It never evaluates
 the addition/product, calculates a quotient, trusts a prover-supplied key or compares
 several peers' answers. Exact SHA-256 digests of the input and output enter the public
 transcript; the canonical header also binds the original opaque request digest.
 Binding head bytes does not establish their agreement or freshness.
+
+Each linked engine or loaded kernel image keeps its own private FIFO cache of at
+most 128 locally derived SDK `PreprocessedVerifierKey` values: only public width, degree and commitment, never
+trace, LDE, prover data or keys for decrypting ciphertext. Its domain-separated
+SHA-256 key binds `PROOF_PROFILE_ID`, the operation frame magic and the exact
+SHA-256 input/output/certificate identities already computed for the statement.
+The empty addition certificate has an explicit SHA-256 identity in this cache key;
+the existing two-hash addition proof transcript is unchanged.
+
+A prover may seed this cache from its own preprocessing setup before generating
+a proof. This records no accepted result. Verification always repeats canonical
+frame/degree/shape/range and security checks, validates cached width/degree against
+the operation, and runs genuine `verify_with_preprocessed`, including FRI, on every
+call. A miss or poisoned optional cache derives the key independently. Only short
+clone/insert operations hold the cache mutex; no SDK work runs under that lock.
+No peer can supply a preprocessing key. This cache is separate from the runtime's
+bounded cache of already verified exact proof bytes and creates no checked marker.
+Wire format, arithmetic relation, security parameters, profile and ABI are unchanged.
+The fixed zero-height Merkle cap retains one 32-byte root per verifier key, so all 128
+roots occupy 4 KiB per image, plus bounded width/degree, SHA-256/FIFO identities,
+container and allocator metadata. Public matrices, traces, LDEs and SDK prover
+storage are not retained. This cache bound is separate from whole-process memory.
+
+A matched 2026-10-16 evaluation from base `bc5aafbc` used native owner builds,
+v3 AVX512 kernels and eight Rayon threads for each owner/peer process. Three
+unmonitored full accepted-query runs produced these small-fixture observations:
+
+| Full operation | Before min / median / max (ms) | Cache min / median / max (ms) |
+| --- | --- | --- |
+| UPDATE, three matching rows across two shards | 567 / 610 / 651 | 547 / 615 / 634 |
+| Single INSERT | 393 / 435 / 437 | 352 / 415 / 448 |
+| COUNT + SUM, 512 asymmetric rows across two shards | 217.21 / 217.72 / 217.98 | 216.90 / 217.23 / 217.31 |
+
+These observations do not establish a full UPDATE median improvement or a 500 ms
+bound. The cache remains an evaluated branch experiment, pending evidence for
+integration. Both sides used the same v3 relation, one outer peer proof permit,
+worker settings and actual completion/freshness checks. The cache side rebuilt
+both private SIMD kernels; no acceptance marker or cached owner result supplied
+any measured answer. Build before measurement and avoid other builds or monitors.
+For reproduction, use `RUSTFLAGS=-C target-cpu=native`, `RAYON_NUM_THREADS=8`,
+`DCS_TEST_PEER_THREADS=8` and run each exact `dcs-peer --test proved_sql` scenario
+three times with `--exact --nocapture --test-threads=1`:
+`proved_select_insert_update_survive_a_process_loss_and_journal_restart` and
+`real_peers_prove_count_sum_and_empty_sql_null_over_complete_shards`.
+
+Separate successful owned-process memory runs sampled live working sets every
+100 ms and also read OS per-process peak working-set counters. Mutation: owner
+169.9 MiB, peers 174.0 / 173.7 / restarted 172.7 MiB; observed simultaneous sum
+363.3 MiB across 73 samples. Aggregate512: owner 170.5 MiB, peers 168.0 / 168.4 MiB;
+observed simultaneous sum 353.4 MiB across 21 samples. Individual peaks are not
+summed. `DCS_TEST_REPORT_PIDS=1` reports only owned test peer PIDs for observation.
+These small-fixture whole-process observations do not establish a general RAM
+bound, and monitored runs are separate from latency samples.
 
 ## Exact arithmetic and field-wrap protection
 
@@ -151,8 +205,9 @@ an ABI/profile descriptor detects incompatible builds, not a malicious replaceme
 
 Complete
 proving includes the public certificate and preprocessing; complete verification
-includes certificate parsing, bounded SDK decoding, independent preprocessing and
-cryptographic verification. Reporting only the final SDK call omits most work.
+includes certificate parsing, bounded SDK decoding, checked locally derived or
+exactly reused public preprocessing and full cryptographic verification. Reporting
+only the final SDK call omits most work.
 
 ## Local phase measurements
 
