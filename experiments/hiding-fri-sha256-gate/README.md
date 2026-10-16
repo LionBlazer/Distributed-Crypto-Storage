@@ -1,12 +1,22 @@
 # Hiding-FRI public source-primitive gates
 
-Status: validated for fixed public SHA-256, full HChaCha20 and normal ChaCha20
-fixtures. Release build, strict Clippy, both 128-bit SDK reports, three observed
-genuine proof/verify processes and all nineteen serial tests passed. Exact source,
-artifact, failure and observation records are in
-[PRIMITIVES-VALIDATION.md](PRIMITIVES-VALIDATION.md). The historical directory name remains, but the package/CLI is now
-`hiding-fri-source-primitives`, with one private shared backend and three explicit
-primitive modes. There is no compatibility binary or production consumer.
+Status: the public Poly1305 raw and separately padded-segment modes passed their
+isolated lock audit, release build, strict Clippy, seven actual security analyses,
+five observed genuine public-fixture proof/verify processes and all 33 serial
+tests. Their small-fixture policy is at most three blocks, 48 original bytes and
+three segment descriptors. Exact source/artifact identities, retained failed
+compiles and observation limits are in
+[POLY1305-VALIDATION.md](POLY1305-VALIDATION.md). See the private
+[Poly1305 module contract](src/poly1305/README.md).
+
+The preceding revision `128a7f1` validated fixed public SHA-256, full HChaCha20 and
+normal ChaCha20 fixtures: release build, strict Clippy, both 128-bit SDK reports,
+three observed genuine proof/verify processes and nineteen serial tests passed.
+Its exact source, lock, artifacts, failure and observations remain unchanged in
+[PRIMITIVES-VALIDATION.md](PRIMITIVES-VALIDATION.md). Those results do not validate
+the new source or its manifest. The historical directory name remains; the
+package/CLI uses one private shared backend with explicit typed primitive modes.
+There is no compatibility binary or production consumer.
 
 The earlier SHA-only revision was experimentally validated. Its unchanged
 [VALIDATION.md](VALIDATION.md) records that exact old source, lock, binary and
@@ -24,24 +34,27 @@ network API, proof-byte codec, acceptance marker or root Cargo change is added.
 | Private module | Responsibility |
 | --- | --- |
 | `main.rs` | Local command and explicit primitive selection |
-| `primitive.rs` | Typed SHA/ChaCha AIR dispatch and local statement contract |
+| `primitive.rs` | Typed primitive AIR dispatch and local statement contract |
 | `backend.rs` | Shared OS RNGs, hiding PCS/MMCS, profiles, security reports, array accounting, proving/verification |
 | `air.rs`, `statement.rs` | Published P3 SHA compression wrapper and public fixture binding |
 | `chacha/air.rs` | Bit/carry constraints, complete schedule, transitions and boundaries |
 | `chacha/statement.rs` | Public fixtures, little-endian identity, independent RustCrypto oracle |
+| `poly1305/` | Checked small-message layout, canonical radix AIR, public oracle and validated adversarial tests |
 
 The standalone workspace depends on pinned P3 0.8.0, Rand 0.10.3, RustCrypto
-SHA-256 0.10.9 and ChaCha20 0.9.1. P3's VCS pin is
+SHA-256 0.10.9, ChaCha20 0.9.1, Poly1305 0.8.0 and UniversalHash 0.5.1.
+Only the standalone manifest/lock add the latter two exact oracle pins, following
+a separately reviewed offline resolution phase. P3's VCS pin is
 `a21e3ed42905040ad49c519e402f018381c12d0c`. ChaCha20's source pin is
 `b5d39c45c45df97335f4b6effb853cde97810de1`, the exact version used by CSTORE's
 XChaCha20Poly1305 0.10.1. Its `zeroize` feature is requested; fixture buffers and
 SDK matrices still do not provide a production private-witness custody contract.
 No project library depends on this experiment.
 
-The reviewed standalone lock contains 72 packages: all 67 earlier registry
-versions/checksums, four root-pinned additions (`chacha20 0.9.1`, `cipher 0.4.4`,
-`inout 0.1.4`, `zeroize 1.9.1`) and the renamed local package. Rand still uses
-`chacha20 0.10.2`. The root workspace's separate lock is not an experimental
+The current standalone lock contains 76 packages. All 71 previous registry records
+remain exact; four root-pinned packages (`opaque-debug 0.3.1`, `poly1305 0.8.0`,
+`subtle 2.6.1`, `universal-hash 0.5.1`) were added. Poly1305's enabled `zeroize`
+edge uses the already pinned `zeroize 1.9.1`. Rand still uses `chacha20 0.10.2`. The root workspace's separate lock is not an experimental
 dependency; this workspace has no project path dependencies.
 
 Related contracts: [private source proofs](../../docs/private-lock-source-proof.md),
@@ -105,7 +118,13 @@ columns in the next row, but SDK 0.8 opens the **entire 788-column next row**. T
 calculator must use `max_combo=2` and both full-width openings. Hiding requires
 `512 >= 2*(192+5*2)=404`, with five random codewords. No preprocessing is used.
 Analysis starts with the original 512-row domain and reports post-ZK degree bits
-10, including actual constraints/quotient/masking/opening counts. BOTH decoding
+10, including actual constraints/quotient/masking/opening counts. Each private
+Backend is bound to one complete typed public statement (at most 97 field values
+in the current modes), so cached analysis cannot cross empty/nonempty shapes.
+Prove and verify compare those exact values before trace/verification work and
+reuse the compared vector in the SDK call. A different statement uses a fresh
+Backend. Negative replay tests also use that fresh path, preserving actual SDK
+rejection coverage rather than relying only on the wrapper's early guard. BOTH decoding
 reports must reach 128 before the normal Backend/CLI path allocates the full trace
 or proof. Direct public-fixture tests may construct a trace first; their actual
 execution followed numerical review. Verification checks shape and repeats the gate.
@@ -125,12 +144,12 @@ and [ChaCha backend](https://github.com/RustCrypto/stream-ciphers/blob/b5d39c45c
 are review inputs. Calculator/hash/random-oracle assumptions are not production
 security certification or proof of private-data composition.
 
-## Validation and reproduction
+## Previous SHA/ChaCha validation and reproduction
 
-The actual sequence separated reviewed offline lock generation, release build,
+The previous revision's actual sequence separated reviewed offline lock generation, release build,
 strict Clippy/test `--no-run`, security-only CLI modes, and observed proof/test
 processes. Exact commands, native environment and immutable identities are in
-[PRIMITIVES-VALIDATION.md](PRIMITIVES-VALIDATION.md). The compile/security commands are:
+[PRIMITIVES-VALIDATION.md](PRIMITIVES-VALIDATION.md). Its historical compile/security commands were:
 
 ```powershell
 cargo build --release --locked --offline --manifest-path experiments/hiding-fri-sha256-gate/Cargo.toml
@@ -155,3 +174,17 @@ matching false output/carry claim; incorrect HChaCha/ChaCha feedforward; and a v
 alternate entire trace under the original input. Existing SHA and shared RNG,
 masking-budget and single-opening tests remain. Rebuilt tests use the raw SDK
 prover rather than only replay or generator rejection.
+
+## Poly1305 public primitive gate
+
+The CLI selectors `poly1305-raw` and `poly1305-padded` use the same private backend,
+randomness, hiding and verification gates, with a distinct primitive profile and
+typed statement. There is no separate Poly1305 prover, proof codec, production
+acceptance or AEAD composition. Actual reports show 1,361 constraints, eight
+quotient chunks and 1,726 batched functions: inferred degree is three for nonempty
+fixtures and two for empty shapes, with a declared bound of three. Both decoding
+bounds reached 128 under the pinned SDK/model. The [module README](src/poly1305/README.md)
+specifies arithmetic/layout; [POLY1305-VALIDATION.md](POLY1305-VALIDATION.md) records
+the genuine proofs, 33 tests, exact provenance and sparse external observations.
+These results establish no private-source, production security, latency or RAM
+guarantee. Historical validation reports and SOURCE-RELATION.md stay unchanged.

@@ -246,7 +246,9 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for ChaChaAir {
                     );
                 }
             }
-            Kind::Sha256 => unreachable!("separate typed SHA AIR"),
+            Kind::Sha256 | Kind::Poly1305Raw | Kind::Poly1305Padded => {
+                unreachable!("separate typed SHA AIR")
+            }
         }
     }
 }

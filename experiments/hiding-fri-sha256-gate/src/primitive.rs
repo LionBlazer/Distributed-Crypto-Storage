@@ -1,4 +1,4 @@
-//! Private dispatch for the three public-fixture relations sharing one backend.
+//! Private dispatch for the public-fixture relations sharing one backend.
 use std::borrow::Cow;
 
 use p3_air::{Air, AirBuilder, BaseAir};
@@ -7,12 +7,15 @@ use p3_matrix::dense::RowMajorMatrix;
 use crate::air::CompressionAir;
 use crate::backend::Val;
 use crate::chacha::air::ChaChaAir;
+use crate::poly1305::air::Poly1305Air;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
     Sha256,
     HChaCha20,
     ChaCha20,
+    Poly1305Raw,
+    Poly1305Padded,
 }
 
 impl Kind {
@@ -21,6 +24,8 @@ impl Kind {
             Self::Sha256 => "sha256",
             Self::HChaCha20 => "hchacha20",
             Self::ChaCha20 => "chacha20",
+            Self::Poly1305Raw => "poly1305-raw",
+            Self::Poly1305Padded => "poly1305-padded",
         }
     }
 }
@@ -37,6 +42,7 @@ pub(crate) trait PrimitiveStatement {
 pub(crate) enum PrimitiveAir {
     Sha256(CompressionAir),
     ChaCha(ChaChaAir),
+    Poly1305(Box<Poly1305Air>),
 }
 
 impl BaseAir<Val> for PrimitiveAir {
@@ -44,6 +50,7 @@ impl BaseAir<Val> for PrimitiveAir {
         match self {
             Self::Sha256(air) => air.width(),
             Self::ChaCha(air) => air.width(),
+            Self::Poly1305(air) => air.width(),
         }
     }
 
@@ -51,6 +58,7 @@ impl BaseAir<Val> for PrimitiveAir {
         match self {
             Self::Sha256(air) => air.main_next_row_columns(),
             Self::ChaCha(air) => air.main_next_row_columns(),
+            Self::Poly1305(air) => air.main_next_row_columns(),
         }
     }
 
@@ -58,6 +66,7 @@ impl BaseAir<Val> for PrimitiveAir {
         match self {
             Self::Sha256(air) => air.num_public_values(),
             Self::ChaCha(air) => air.num_public_values(),
+            Self::Poly1305(air) => air.num_public_values(),
         }
     }
 
@@ -65,6 +74,7 @@ impl BaseAir<Val> for PrimitiveAir {
         match self {
             Self::Sha256(air) => air.num_periodic_columns(),
             Self::ChaCha(air) => air.num_periodic_columns(),
+            Self::Poly1305(air) => air.num_periodic_columns(),
         }
     }
 
@@ -72,6 +82,7 @@ impl BaseAir<Val> for PrimitiveAir {
         match self {
             Self::Sha256(air) => air.periodic_columns(),
             Self::ChaCha(air) => air.periodic_columns(),
+            Self::Poly1305(air) => air.periodic_columns(),
         }
     }
 
@@ -79,6 +90,7 @@ impl BaseAir<Val> for PrimitiveAir {
         match self {
             Self::Sha256(air) => air.max_constraint_degree(),
             Self::ChaCha(air) => air.max_constraint_degree(),
+            Self::Poly1305(air) => air.max_constraint_degree(),
         }
     }
 }
@@ -88,6 +100,7 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for PrimitiveAir {
         match self {
             Self::Sha256(air) => air.eval(builder),
             Self::ChaCha(air) => air.eval(builder),
+            Self::Poly1305(air) => air.eval(builder),
         }
     }
 }

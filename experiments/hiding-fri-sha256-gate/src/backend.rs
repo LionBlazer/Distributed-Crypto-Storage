@@ -17,8 +17,8 @@ use rand::SeedableRng;
 use rand::rngs::{StdRng, SysRng};
 use sha2::{Digest, Sha256};
 
-use crate::chacha;
 use crate::primitive::{Kind, PrimitiveAir, PrimitiveStatement};
+use crate::{chacha, poly1305};
 
 pub(crate) type Val = Goldilocks;
 type Perm = Poseidon2Goldilocks<12>;
@@ -166,6 +166,32 @@ pub(crate) fn profile_digest(kind: Kind) -> [u8; 32] {
             }
             (chacha::air::WIDTH, 2)
         }
+        Kind::Poly1305Raw | Kind::Poly1305Padded => {
+            hash.update(b"Poly1305/radix26/canonical-every-state/cyclic-carry32/v1");
+            hash.update(b"public-raw-key-clamp-every-row/LE128-tag-plus-S/mod2^128");
+            hash.update(b"raw-tail-append8L/padded-segments-zero-tail-full-hibit/no-empty-block");
+            hash.update(
+                b"segment-count-and-original-lengths-bound/first-H0/final-tag/degree-bound3",
+            );
+            hash.update(poly1305::CLAMP);
+            for value in [
+                poly1305::LIMBS,
+                poly1305::LIMB_BITS,
+                poly1305::MAX_BLOCKS,
+                poly1305::MAX_SEGMENTS,
+                poly1305::MAX_BYTES,
+                poly1305::air::WIDTH,
+                poly1305::statement::PUBLIC_VALUES,
+            ] {
+                hash.update((value as u64).to_le_bytes());
+            }
+            for row in 0..TRACE_HEIGHT {
+                for block in 0..poly1305::MAX_BLOCKS {
+                    hash.update([u8::from(row == block)]);
+                }
+            }
+            (poly1305::air::WIDTH, 2)
+        }
     };
     hash.update(b"rand0.10.3/StdRng/independent-OS-seeds");
     hash.update(b"no-preprocessing/no-grinding/final-poly-log0/fri-arity-log1");
@@ -273,6 +299,9 @@ pub(crate) fn analyze(air: &PrimitiveAir) -> Result<(StarkSecurityParams, Securi
     Ok((parameters, report))
 }
 
+/// One typed PUBLIC statement owns this backend's analytical parameters.
+/// Exact public values bind its lifetime; another statement requires a new
+/// backend even when kind/width match (empty and nonempty degrees may differ).
 pub(crate) struct Backend {
     pub(crate) config: Config,
     pub(crate) parameters: StarkSecurityParams,
@@ -280,12 +309,17 @@ pub(crate) struct Backend {
     kind: Kind,
     width: usize,
     next_row: bool,
+    public_values: Vec<Val>,
 }
 impl Backend {
     pub(crate) fn new(statement: &impl PrimitiveStatement) -> Result<Self, Error> {
         let air = statement.air();
         let (parameters, report) = analyze(&air)?;
         let report = report.require_target()?;
+        let public_values = statement.public_values();
+        if public_values.len() != air.num_public_values() {
+            return Err(Error::Shape);
+        }
         Ok(Self {
             config: config()?,
             parameters,
@@ -293,6 +327,7 @@ impl Backend {
             kind: statement.kind(),
             width: air.width(),
             next_row: !air.main_next_row_columns().is_empty(),
+            public_values,
         })
     }
 
@@ -300,14 +335,15 @@ impl Backend {
         &self,
         statement: &impl PrimitiveStatement,
     ) -> Result<Proof<Config>, Error> {
-        if statement.kind() != self.kind {
-            return Err(Error::Shape);
+        let public_values = statement.public_values();
+        if statement.kind() != self.kind || public_values != self.public_values {
+            return Err(Error::Shape); // Before honest trace generation.
         }
         prove(
             &self.config,
             &statement.air(),
             statement.trace(),
-            &statement.public_values(),
+            &public_values,
         )
         .map_err(|_| Error::Proving)
     }
@@ -317,7 +353,9 @@ impl Backend {
         statement: &impl PrimitiveStatement,
         proof: &Proof<Config>,
     ) -> Result<(), Error> {
+        let public_values = statement.public_values();
         if statement.kind() != self.kind
+            || public_values != self.public_values
             || proof.degree_bits != PROOF_DEGREE_BITS
             || proof.opened_values.trace_local.len() != self.width
             || proof.opened_values.trace_next.as_ref().map(Vec::len)
@@ -335,12 +373,7 @@ impl Backend {
             ..self.report
         }
         .require_target()?;
-        verify(
-            &self.config,
-            &statement.air(),
-            proof,
-            &statement.public_values(),
-        )
-        .map_err(|_| Error::Verification)
+        verify(&self.config, &statement.air(), proof, &public_values)
+            .map_err(|_| Error::Verification)
     }
 }

@@ -123,12 +123,30 @@ fn genuine_proofs_bind_the_public_words_kind_request_shape_and_randomization() {
         let mut changed = statement.clone();
         changed.request[0] ^= 1;
         assert!(backend.verify(&changed, &proof).is_err());
+        assert!(
+            Backend::new(&changed)
+                .unwrap()
+                .verify(&changed, &proof)
+                .is_err()
+        );
         changed = statement.clone();
         changed.input[4] ^= 1;
         assert!(backend.verify(&changed, &proof).is_err());
+        assert!(
+            Backend::new(&changed)
+                .unwrap()
+                .verify(&changed, &proof)
+                .is_err()
+        );
         changed = statement.clone();
         changed.output[0] ^= 1;
         assert!(backend.verify(&changed, &proof).is_err());
+        assert!(
+            Backend::new(&changed)
+                .unwrap()
+                .verify(&changed, &proof)
+                .is_err()
+        );
         changed = statement.clone();
         changed.kind = if statement.kind == Kind::HChaCha20 {
             Kind::ChaCha20
@@ -257,7 +275,7 @@ fn claimed_output(statement: &Statement, trace: &RowMajorMatrix<Val>) -> [u32; W
         Kind::ChaCha20 => {
             core::array::from_fn(|word| state[word].wrapping_add(statement.input[word]))
         }
-        Kind::Sha256 => unreachable!(),
+        Kind::Sha256 | Kind::Poly1305Raw | Kind::Poly1305Padded => unreachable!(),
     }
 }
 

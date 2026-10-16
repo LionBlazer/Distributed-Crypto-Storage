@@ -129,6 +129,12 @@ fn genuine_proof_binds_input_output_identity_height_and_randomization() {
         },
     ] {
         assert!(backend.verify(&changed, &proof).is_err());
+        assert!(
+            Backend::new(&changed)
+                .unwrap()
+                .verify(&changed, &proof)
+                .is_err()
+        );
     }
     proof.degree_bits = usize::MAX;
     assert_eq!(backend.verify(&statement, &proof), Err(Error::Shape));
