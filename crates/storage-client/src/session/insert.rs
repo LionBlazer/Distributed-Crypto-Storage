@@ -73,7 +73,7 @@ impl Session {
             .map(|shard| (shard.info.id, shard.info.rows))
             .collect();
         let targets = insert_targets(&counts, incoming.len(), self.journal.profile().max_updates)?;
-        crate::jobs::run(targets.len(), |target| {
+        crate::jobs::run(0..targets.len(), |target| {
             let (slot, ordinals) = &targets[target];
             let rows = Zeroizing::new(
                 ordinals

@@ -13,7 +13,7 @@ impl Session {
         limit: Option<usize>,
     ) -> Result<VerifiedResult> {
         let requests = Requests::default();
-        let completed = crate::jobs::run(self.data.shards.len(), |slot| {
+        let completed = crate::jobs::run(0..self.data.shards.len(), |slot| {
             self.select_shard(slot, predicate, projection, &requests)
         })?;
         let mut selected: ShardRows = completed.into_iter().flatten().collect();

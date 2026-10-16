@@ -12,7 +12,7 @@ impl Session {
         let mut count = 0u64;
         let mut sum = 0u64;
         let requests = Requests::default();
-        let answers = crate::jobs::run(self.data.shards.len(), |slot| {
+        let answers = crate::jobs::run(0..self.data.shards.len(), |slot| {
             let shard = &self.data.shards[slot];
             let (remote, table) = self.fetch_online(shard)?;
             let prepared = self.data.owner.prepare_provable_aggregate(

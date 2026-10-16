@@ -19,7 +19,7 @@ impl Session {
         delta: u16,
         requests: &Requests,
     ) -> Result<Vec<StagedShardUpdate>> {
-        crate::jobs::run(self.data.shards.len(), |slot| {
+        crate::jobs::run(0..self.data.shards.len(), |slot| {
             self.prepare_update_shard(slot, predicate, delta, requests)
         })
     }

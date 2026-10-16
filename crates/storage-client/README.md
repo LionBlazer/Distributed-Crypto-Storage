@@ -45,8 +45,10 @@ the exact confirmed head used by the proof binding, even if newer empty blocks
 appear while the query executes.
 
 A crate-private `jobs` helper runs at most two independent source-byte blocks at
-once and joins every admitted worker before returning an error. Preferred proof
-executors rotate only across actual holders of this relation; a query-local
+once and joins every admitted worker before returning an error.
+Tasks move into their worker; the private helper preserves input order without
+requiring task cloning or shared mutable handoff.
+Preferred proof executors rotate only across actual holders of this relation; a query-local
 endpoint queue preserves the peer's independent single heavy-work permit. Each
 worker retains the exact original chunk, mask, nonce and binding through genuine
 proof verification and checked completion. Only zeroizing verified bytes are

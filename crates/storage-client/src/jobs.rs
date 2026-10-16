@@ -1,22 +1,24 @@
 //! Bounded owner-side preparation shared by shard operations and typed byte blocks.
+//! Tasks move into their worker, so single-use preparation state needs no shared mutation.
 use crate::{Error, Result};
 
 const WORKERS: usize = 2;
 
-pub(crate) fn run<T: Send>(
-    count: usize,
-    job: impl Fn(usize) -> Result<T> + Sync,
+pub(crate) fn run<I: Send, T: Send>(
+    tasks: impl IntoIterator<Item = I>,
+    job: impl Fn(I) -> Result<T> + Sync,
 ) -> Result<Vec<T>> {
-    let mut completed = Vec::with_capacity(count);
-    for first in (0..count).step_by(WORKERS) {
+    let mut tasks = tasks.into_iter().peekable();
+    let mut completed = Vec::with_capacity(tasks.size_hint().0);
+    while tasks.peek().is_some() {
         let batch = std::thread::scope(|scope| {
             let mut workers = Vec::new();
             let mut spawn_error = None;
             let job = &job;
-            for slot in first..(first + WORKERS).min(count) {
+            for task in tasks.by_ref().take(WORKERS) {
                 match std::thread::Builder::new()
                     .name("dcs-owner-job".into())
-                    .spawn_scoped(scope, move || job(slot))
+                    .spawn_scoped(scope, move || job(task))
                 {
                     Ok(worker) => workers.push(worker),
                     Err(error) => {

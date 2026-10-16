@@ -455,7 +455,7 @@ impl RelationalSession {
         if holders.is_empty() {
             return Err(Error::UnavailableShard(relation.shard.id));
         }
-        let completed = crate::jobs::run(count, |block| {
+        let completed = crate::jobs::run(0..count, |block| {
             let start = block * bfv_query_core::BYTE_SELECT_CAPACITY;
             let end = (start + bfv_query_core::BYTE_SELECT_CAPACITY).min(source.len());
             let original = &source[start..end];
