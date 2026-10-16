@@ -521,3 +521,34 @@ namespace/hardlink race protection, arbitrary power-loss recovery, production GC
 quota accounting, or feasibility of an unbounded file population.
 The [single observed I/O report](../../experiments/storage-io/README.md) retains
 all intervals, initial Full/Copy regressions and the limited fresh-directory scope.
+
+## Opt-in packed-container I/O feasibility fixture
+
+The child test module
+[`chunk_io_feasibility/packed.rs`](src/store/chunk_io_feasibility/packed.rs)
+reuses the same public million-row CSTORE fixture, actual Delta reconstruction,
+canonical writer, complete custody auditor and owner checks. It compares the
+single-file writer with a bounded append-only container of 64-KiB extents.
+It is a test consumer, with no production backend, wire, accounting or acceptance
+change. Its [separate record](../../experiments/storage-io/PACKED-CONTAINER.md)
+describes exact measurement boundaries and validation status.
+
+The ignored test requires `DCS_PACKED_IO_FEASIBILITY=1` and its exact name:
+
+```powershell
+$env:CARGO_BUILD_JOBS = '2'
+$env:RAYON_NUM_THREADS = '2'
+$env:DCS_PACKED_IO_FEASIBILITY = '1'
+cargo test --release --locked --offline -p peer-runtime --lib store::chunk_io_feasibility::packed::million_row_container_reuses_delta_and_reclaims_retired_storage_after_full_audits -- --ignored --exact --nocapture --test-threads=1
+```
+
+Use an isolated Rust 1.99 target and coordinate heavy jobs. A fresh
+`dcs-public-packed-io-<pid>-<time>` OS-temp directory retains public outputs, with
+a 512-MiB file-content bound plus unmeasured filesystem metadata/allocation.
+Only retained original creation handles perform append/retirement writes.
+Every successful read physically reconstructs and audits both complete images;
+contiguous extents can share a read without omitting bytes. A one-use fresh-base
+token permits only exact positional reuse in the same container. Compaction
+writes a fresh container, audits it before unlinking the old owned container,
+and audits the survivor again. This is not a crash/reopen, namespace-race,
+production GC, quota or SQL guarantee.

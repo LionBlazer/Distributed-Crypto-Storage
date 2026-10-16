@@ -13,6 +13,8 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
+mod packed;
+
 const CHUNK_BYTES: usize = 64 * 1024;
 const MAX_CHUNKS: usize = peer_transport::MAX_FRAME_BYTES / CHUNK_BYTES;
 const MAX_CREATED_CHUNKS: usize = 3 * MAX_CHUNKS;
