@@ -1,12 +1,12 @@
 //! Request-local custody admission. Factories own all cryptographic validation;
-//! persistence receives immutable canonical bytes, never an unchecked RawBundle.
+//! persistence receives an immutable checked object, never an unchecked RawBundle.
 use super::object_info;
 use crate::{
     CheckedObject, ObjectInfo, RawBundle, RemoteError, delta::ReconstructedDelta, objects,
 };
 
 pub(super) struct Candidate {
-    bytes: Vec<u8>,
+    raw: RawBundle,
     data_head: [u8; 112],
     index_head: [u8; 112],
     info: ObjectInfo,
@@ -17,25 +17,22 @@ impl Candidate {
     }
     pub(super) fn checked(checked: CheckedObject) -> Result<Self, RemoteError> {
         let (version, bundle) = checked.into_raw_with_version();
-        let bytes = objects::encode_disk(&bundle)?;
-        let info = object_info(
-            &bundle,
-            bytes.len() as u64,
-            *version.object(),
-            version.data_head(),
-        )?;
+        let stored = objects::disk_encoded_len(&bundle)? as u64;
+        let info = object_info(&bundle, stored, *version.object(), version.data_head())?;
+        let data_head = bundle
+            .data_head
+            .as_slice()
+            .try_into()
+            .map_err(|_| RemoteError::Integrity)?;
+        let index_head = bundle
+            .index_head
+            .as_slice()
+            .try_into()
+            .map_err(|_| RemoteError::Integrity)?;
         Ok(Self {
-            bytes,
-            data_head: bundle
-                .data_head
-                .as_slice()
-                .try_into()
-                .map_err(|_| RemoteError::Integrity)?,
-            index_head: bundle
-                .index_head
-                .as_slice()
-                .try_into()
-                .map_err(|_| RemoteError::Integrity)?,
+            raw: bundle,
+            data_head,
+            index_head,
             info,
         })
     }
@@ -58,17 +55,19 @@ impl Candidate {
         if bundle.target_version()?.object() != &object {
             return Err(RemoteError::Integrity);
         }
-        let bytes = objects::encode_disk(&bundle)?;
-        let info = object_info(&bundle, bytes.len() as u64, object, &expected_data)?;
+        let stored = objects::disk_encoded_len(&bundle)? as u64;
+        let info = object_info(&bundle, stored, object, &expected_data)?;
         Ok(Self {
-            bytes,
+            raw: bundle,
             data_head: expected_data.encode(),
             index_head: expected_index.encode(),
             info,
         })
     }
-    pub(super) fn bytes(&self) -> &[u8] {
-        &self.bytes
+    // Only the factories above can produce this immutable, fully checked payload.
+    // Repeating codec preflight cannot change it or skip any custody validation.
+    pub(super) fn write_to(&self, output: &mut impl std::io::Write) -> std::io::Result<()> {
+        objects::write_disk(&self.raw, output)
     }
     pub(super) fn heads(&self) -> (&[u8; 112], &[u8; 112]) {
         (&self.data_head, &self.index_head)

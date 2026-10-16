@@ -209,15 +209,23 @@ These ownership boundaries do not establish a memory or latency improvement.
 Delta reconstruction consumes it and verified new pages into sealed
 `ReconstructedDelta` after both complete new roots match.
 Private `Candidate` consumes that result, rechecks both exact heads and hashes
-the exact target nonce and both heads before encoding immutable disk bytes. The ID
-is the randomized nonce/head commitment, conditional on full snapshot validation;
-it is not a hash of unvalidated raw or disk bytes.
-The full-upload factory retains its ordinary raw-bundle audit. Shared persistence
-accepts only this immutable candidate and preserves quota, sync, rename and map
-registration. It does not reparse images already fully authenticated by that
-construction. No validation flag, mutable prevalidated Bundle or persistent
-custody cache is added. The object/application namespace deliberately changes. Existing-target replay still
-verifies requested new pages and fully reads/authenticates the physical target.
+the exact target nonce and both heads. It privately retains the immutable checked
+RawBundle and exact whole-file length/ObjectInfo, completing codec preflight before
+quota admission or pending-file creation. The ID is the randomized nonce/head
+commitment, conditional on full snapshot validation; it is not a hash of unvalidated
+raw or disk bytes. The full-upload factory retains its ordinary raw-bundle audit.
+Shared persistence accepts only this immutable candidate. The same disk writer
+serves the test-only owned encoder and streams the unchanged serializer into the
+pending file through a bounded 16-KiB buffer. Flush finishes before file sync and atomic rename;
+only then are maps registered. Write/flush/sync/rename failure retains the existing
+pending cleanup and never acknowledges storage. It does not reparse images already
+fully authenticated by that construction. This removes the second full disk Vec;
+reconstruction still encodes both snapshots into RawBundle, every required physical
+read still audits both full images, and no latency or process-memory gain is
+established. No validation flag, mutable prevalidated Bundle or persistent custody
+cache is added. The existing custody profile 2, RPC v2 and application v4 namespaces
+remain unchanged by this refactor. Existing-target replay still verifies requested
+new pages and fully reads/authenticates the physical target.
 
 The runtime does not choose recipient or privacy policy. A consumer must freeze
 known holders and other candidates before query computation; mode may depend only

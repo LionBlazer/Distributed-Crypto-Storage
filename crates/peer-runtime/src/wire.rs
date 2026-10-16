@@ -222,6 +222,13 @@ pub(crate) fn encode<T: Serialize>(value: &T) -> io::Result<Vec<u8>> {
         .serialize(value)
         .map_err(io::Error::other)
 }
+pub(crate) fn encoded_len<T: Serialize>(value: &T) -> io::Result<u64> {
+    bincode::DefaultOptions::new()
+        .with_fixint_encoding()
+        .with_limit(MAX_FRAME_BYTES as u64)
+        .serialized_size(value)
+        .map_err(io::Error::other)
+}
 pub(crate) fn encode_into<T: Serialize>(
     value: &T,
     output: &mut impl std::io::Write,

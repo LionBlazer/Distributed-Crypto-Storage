@@ -328,7 +328,13 @@ impl Store {
                 .create_new(true)
                 .write(true)
                 .open(&pending)?;
-            file.write_all(candidate.bytes())?;
+            {
+                // Coalesce scalar/header writes without allocating another full
+                // disk image. Complete flushing precedes file sync and rename.
+                let mut output = io::BufWriter::with_capacity(16 * 1024, &mut file);
+                candidate.write_to(&mut output)?;
+                output.flush()?;
+            }
             file.sync_all()?;
             drop(file);
             fs::rename(&pending, self.directory.join(filename(&info.id)))
@@ -465,6 +471,50 @@ mod tests {
             data: snapshot.encode(),
             index: snapshot.encode(),
         }
+    }
+    #[test]
+    fn full_upload_quota_rejection_leaves_no_pending_or_published_object() {
+        let directory = Directory::new();
+        let original = bundle();
+        let bytes = objects::encode_disk(&original).unwrap();
+        let quota = PROFILE_BYTES as u64 + bytes.len() as u64 - 1;
+        let mut store = Store::open(&directory.0, quota).unwrap();
+
+        assert!(matches!(
+            store.put(original),
+            Err(RemoteError::ResourceLimit)
+        ));
+
+        assert!(store.objects.is_empty());
+        assert!(!directory.0.join(workspace::PENDING).exists());
+        assert_eq!(store.used(), PROFILE_BYTES as u64);
+    }
+    #[test]
+    fn failed_atomic_rename_removes_the_streamed_pending_and_allows_a_retry() {
+        let directory = Directory::new();
+        let original = bundle();
+        let object = *original.target_version().unwrap().object();
+        let expected = objects::encode_disk(&original).unwrap();
+        let mut store = Store::open(&directory.0, 1024 * 1024).unwrap();
+        let target = directory.0.join(filename(&object));
+        fs::create_dir(&target).unwrap();
+
+        assert!(matches!(
+            store.put(original.clone()),
+            Err(RemoteError::Io(_))
+        ));
+
+        assert!(store.objects.is_empty());
+        assert_eq!(store.used(), PROFILE_BYTES as u64);
+        assert!(!directory.0.join(workspace::PENDING).exists());
+        assert!(target.is_dir());
+        fs::remove_dir(&target).unwrap();
+        let stored = store.put(original.clone()).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), expected);
+        assert_eq!(stored.stored_bytes, expected.len() as u64);
+        drop(store);
+        let mut reopened = Store::open(&directory.0, 1024 * 1024).unwrap();
+        assert_eq!(reopened.get(&object).unwrap(), original);
     }
     #[test]
     fn journal_bytes_and_inflight_reservations_share_the_bundle_disk_quota() {

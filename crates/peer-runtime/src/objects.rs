@@ -235,12 +235,30 @@ impl CheckedObject {
         (self.version, self.data, self.index)
     }
 }
-pub(crate) fn encode_disk(raw: &RawBundle) -> Result<Vec<u8>, RemoteError> {
+// Exact whole-file preflight, before any output or pending-file creation. This
+// checks encoding geometry only; only CheckedObject/Candidate establish custody.
+pub(crate) fn disk_encoded_len(raw: &RawBundle) -> Result<usize, RemoteError> {
     raw.check_frame()?;
-    let mut bytes = Vec::with_capacity(DISK_HEADER_BYTES + raw.data.len() + raw.index.len() + 290);
-    bytes.extend_from_slice(DISK_MAGIC);
-    bytes.extend_from_slice(&OBJECT_PROFILE_ID);
-    crate::wire::encode_into(raw, &mut bytes).map_err(|_| RemoteError::ResourceLimit)?;
+    let body = crate::wire::encoded_len(raw).map_err(|_| RemoteError::ResourceLimit)?;
+    let size = usize::try_from(body)
+        .ok()
+        .and_then(|body| DISK_HEADER_BYTES.checked_add(body))
+        .filter(|size| *size <= MAX_FRAME_BYTES)
+        .ok_or(RemoteError::ResourceLimit)?;
+    Ok(size)
+}
+// The same unchanged serializer serves files and callers requiring an owned Vec.
+// The caller owns flushing/syncing; a failed writer can contain a partial envelope.
+pub(crate) fn write_disk(raw: &RawBundle, output: &mut impl std::io::Write) -> std::io::Result<()> {
+    disk_encoded_len(raw).map_err(std::io::Error::other)?;
+    output.write_all(DISK_MAGIC)?;
+    output.write_all(&OBJECT_PROFILE_ID)?;
+    crate::wire::encode_into(raw, output)
+}
+#[cfg(test)]
+pub(crate) fn encode_disk(raw: &RawBundle) -> Result<Vec<u8>, RemoteError> {
+    let mut bytes = Vec::with_capacity(disk_encoded_len(raw)?);
+    write_disk(raw, &mut bytes).map_err(|_| RemoteError::ResourceLimit)?;
     Ok(bytes)
 }
 pub(crate) fn decode_disk(bytes: &[u8]) -> std::io::Result<RawBundle> {
@@ -347,3 +365,6 @@ mod tests {
 
 #[cfg(test)]
 mod serialization_tests;
+
+#[cfg(test)]
+mod disk_tests;
