@@ -1088,7 +1088,7 @@ fn outcome_summary(outcome: &Outcome) -> (String, Color32) {
         }
         Some(QueryOutcome::Updated { committed: true }) => {
             let message = if let Outcome::VerifiedQuery {
-                changed_rows: Some(count),
+                affected_rows: Some(count),
                 version,
                 ..
             } = outcome.terminal()

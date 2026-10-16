@@ -52,12 +52,12 @@ impl Session {
         let mut stages = Vec::new();
         let mut jobs = Vec::new();
         let mut proofs = Vec::new();
-        let mut changed_rows = 0;
+        let mut affected_rows = 0;
         let mut inserted_rows = 0;
         match &plan {
             QueryPlan::AddAmount { predicate, delta } => {
                 for staged in self.prepare_update_shards(*predicate, *delta, &requests)? {
-                    changed_rows += staged.changed_rows;
+                    affected_rows += staged.affected_rows;
                     if let Some(table) = staged.table {
                         stages.push((staged.slot, table));
                     }
@@ -77,7 +77,7 @@ impl Session {
         }
         if stages.is_empty() {
             return Ok(VerifiedResult::Updated {
-                changed_rows: 0,
+                affected_rows,
                 version: self.finish_read(initial)?,
             });
         }
@@ -181,7 +181,7 @@ impl Session {
             QueryPlan::Insert { .. } => MutationOutcome::Inserted {
                 count: inserted_rows,
             },
-            QueryPlan::AddAmount { .. } => MutationOutcome::Updated { changed_rows },
+            QueryPlan::AddAmount { .. } => MutationOutcome::Updated { affected_rows },
             _ => unreachable!(),
         };
         // Retain exact authorization, result identity and physical-holder metadata

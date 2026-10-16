@@ -170,6 +170,14 @@ Pending publication prevents further acceptance until retry succeeds. Local snap
 metadata changes atomically after every newly agreed shard authenticates. One
 overflowing shard publishes none of an UPDATE.
 
+`VerifiedResult::Updated::affected_rows` counts the complete matched selection,
+including values unchanged by `amount = amount + 0`, following PostgreSQL's
+[UPDATE output](https://www.postgresql.org/docs/18/sql-update.html#SQL-UPDATE-OUTPUTS).
+Even an unchanged or empty selection runs genuine per-shard FHE proofs and the
+final freshness check. If no compact image changes, it returns the current checked
+version without Store, a new transition or a pending write. This does not implement
+triggers or SQL row-lock acquisition; locking syntax remains rejected.
+
 `Error::PendingMutation` distinguishes an ambiguous durable write from a rejected
 statement and includes its stable query identity and submitted head when known.
 `resume_pending()` confirms that exact transition and returns its original outcome;

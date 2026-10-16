@@ -275,7 +275,7 @@ fn stopping_write_publication_retains_the_exact_mutation_for_single_application_
     assert!(matches!(
         session.resume_pending().unwrap(),
         Some(storage_client::VerifiedResult::Updated {
-            changed_rows: 1,
+            affected_rows: 1,
             ..
         })
     ));

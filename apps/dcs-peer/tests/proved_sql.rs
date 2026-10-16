@@ -19,6 +19,105 @@ use storage_client::{Participant, Session, VerifiedResult};
 use version_journal::{ProtocolProfile, Target};
 
 #[test]
+fn zero_delta_update_counts_matched_rows_after_real_proofs_without_publishing_new_images() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let a = Process::start(owner.fingerprint(), 1, None);
+    let b = Process::start(owner.fingerprint(), 2, None);
+    let proofs = Arc::new(AtomicUsize::new(0));
+    let participants: Vec<_> = [&a, &b]
+        .into_iter()
+        .enumerate()
+        .map(|(slot, process)| {
+            let mut participant = process.participant(slot as u64 + 1, &connector);
+            let proofs = proofs.clone();
+            participant.remote = participant.remote.with_activity(Arc::new(move |event| {
+                if event.operation == "fhe-proof"
+                    && event.phase == peer_runtime::ActivityPhase::ReplyReceived
+                {
+                    proofs.fetch_add(1, Ordering::SeqCst);
+                }
+            }));
+            participant
+        })
+        .collect();
+    let mut session = Session::create(
+        "update-count".into(),
+        &[
+            PlainRow {
+                age: 42,
+                amount: 65535,
+            },
+            PlainRow { age: 18, amount: 0 },
+            PlainRow {
+                age: 7,
+                amount: 255,
+            },
+        ],
+        participants.clone(),
+        test_contract(),
+    )
+    .unwrap();
+    let initial = session.version();
+    let initial_heads: Vec<_> = session
+        .shards()
+        .into_iter()
+        .map(|s| (s.data_head, s.index_head))
+        .collect();
+    let initial_objects: Vec<_> = participants
+        .iter()
+        .map(|p| p.remote.status().unwrap().objects.len())
+        .collect();
+
+    for (sql, expected) in [
+        ("UPDATE records SET amount = amount + 0 WHERE age >= 18", 2),
+        ("UPDATE records SET amount = amount + 0 WHERE age > 255", 0),
+        ("UPDATE records SET amount = amount + 1 WHERE age > 255", 0),
+    ] {
+        proofs.store(0, Ordering::SeqCst);
+        let VerifiedResult::Updated {
+            affected_rows,
+            version,
+        } = session.execute(sql).unwrap()
+        else {
+            panic!("Expected accepted UPDATE count");
+        };
+
+        assert_eq!(affected_rows, expected, "{sql}");
+        assert_eq!(
+            proofs.load(Ordering::SeqCst),
+            2,
+            "Each shard returns a real checked proof, including an empty selection"
+        );
+        assert_eq!(version, initial);
+        assert!(session.resume_pending().unwrap().is_none());
+        assert_eq!(
+            session
+                .shards()
+                .into_iter()
+                .map(|s| (s.data_head, s.index_head))
+                .collect::<Vec<_>>(),
+            initial_heads
+        );
+        assert_eq!(
+            participants
+                .iter()
+                .map(|p| p.remote.status().unwrap().objects.len())
+                .collect::<Vec<_>>(),
+            initial_objects
+        );
+    }
+    assert_eq!(
+        rows(session.execute("SELECT * FROM records").unwrap()),
+        vec![vec![42, 65535], vec![18, 0], vec![7, 255]]
+    );
+}
+
+#[test]
 fn one_batch_fills_a254_row_shard_once_and_a255_row_shard_rejects_without_store() {
     let owner = identity();
     let connector = Connector::permissionless(&owner).unwrap();
@@ -492,7 +591,7 @@ fn proved_select_insert_update_survive_a_process_loss_and_journal_restart() {
             "UPDATE records SET amount = amount + 1 WHERE age >= 18"
         ),
         VerifiedResult::Updated {
-            changed_rows: 3,
+            affected_rows: 3,
             ..
         }
     ));
@@ -721,7 +820,7 @@ fn interrupted_confirmation_resumes_the_original_write_without_applying_it_twice
             assert!(matches!(
                 result,
                 VerifiedResult::Updated {
-                    changed_rows: 3,
+                    affected_rows: 3,
                     ..
                 }
             ));
@@ -1234,7 +1333,7 @@ fn update_proves_both_shards_concurrently_before_storing_any_new_copy() {
     assert!(matches!(
         result,
         VerifiedResult::Updated {
-            changed_rows: 2,
+            affected_rows: 2,
             ..
         }
     ));
@@ -1315,7 +1414,7 @@ fn concurrent_update_workers_queue_proofs_on_the_same_surviving_peer() {
     assert!(matches!(
         result,
         VerifiedResult::Updated {
-            changed_rows: 2,
+            affected_rows: 2,
             ..
         }
     ));
@@ -1385,7 +1484,7 @@ fn million_row_private_index_crosses_real_custody_frames_and_agreed_update_resto
     assert!(matches!(
         result,
         VerifiedResult::Updated {
-            changed_rows: 1,
+            affected_rows: 1,
             ..
         }
     ));

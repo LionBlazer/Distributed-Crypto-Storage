@@ -1212,7 +1212,7 @@ mod tests {
         assert!(!pids.contains(&backend.peers[&1].process.pid().unwrap()));
 
         let VerifiedResult::Updated {
-            changed_rows,
+            affected_rows,
             version: updated,
         } = backend
             .query(1, "UPDATE records SET amount = amount + 5 WHERE age = 18")
@@ -1220,7 +1220,7 @@ mod tests {
         else {
             panic!("Expected verified UPDATE");
         };
-        assert_eq!(changed_rows, 1);
+        assert_eq!(affected_rows, 1);
         assert!(updated.height > initial.height);
         assert!(
             backend
@@ -1336,7 +1336,7 @@ mod tests {
         assert!(matches!(
             changed.statements[1].result,
             storage_client::StatementResult::Executed(VerifiedResult::Updated {
-                changed_rows: 1,
+                affected_rows: 1,
                 ..
             })
         ));

@@ -34,7 +34,8 @@ pub enum VerifiedResult {
         version: HeadRef,
     },
     Updated {
-        changed_rows: usize,
+        /// Matched rows, including values unchanged by this supported UPDATE.
+        affected_rows: usize,
         version: HeadRef,
     },
     Inserted {

@@ -153,7 +153,11 @@ No peer response is accepted because failover is enabled.
 
 `stage_proved_update` follows the same proof-first sequence and writes decoded FHE
 amounts into new authenticated compact pages, without recomputing expected sums.
-An encrypted global overflow yields no staged table. `stage_proved_insert` verifies
+`VerifiedUpdate::matched_rows` exposes the complete authenticated selection size;
+`changed_rows` separately counts physical value changes. An unchanged selection
+still consumes the genuine checked arithmetic result and retains the same images.
+An encrypted global overflow yields no staged table and cannot become a successful
+SQL count. `stage_proved_insert` verifies
 the addition of both independently encrypted operands before staging the larger data
 image and rebuilt index. Both methods preserve the original Table; publication and
 all-shard atomicity belong to the network client after every shard has passed all

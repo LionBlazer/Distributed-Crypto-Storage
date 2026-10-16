@@ -2,7 +2,7 @@
 use super::*;
 
 pub(super) enum MutationOutcome {
-    Updated { changed_rows: usize },
+    Updated { affected_rows: usize },
     Inserted { count: usize },
 }
 pub(super) struct StoredMutation {
@@ -150,8 +150,8 @@ impl Session {
             }
         }
         Ok(match pending.outcome {
-            MutationOutcome::Updated { changed_rows } => VerifiedResult::Updated {
-                changed_rows,
+            MutationOutcome::Updated { affected_rows } => VerifiedResult::Updated {
+                affected_rows,
                 version,
             },
             MutationOutcome::Inserted { count } => VerifiedResult::Inserted { count, version },
