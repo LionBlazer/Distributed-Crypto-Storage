@@ -16,7 +16,11 @@ python experiments/update-cost/analyze.py .local/update-cost/run.log
 
 The reader allows at most 4,096 events plus one summary, bounded lines and a
 bounded total line count. It rejects a missing/multiple summary or incomplete/
-truncated envelope. It ignores ordinary fixture output and reads only
+truncated envelope. Successful RPCs require ordered sent/read callbacks with matching
+operation names and Trace byte counts; all offsets and durations must be finite,
+nonnegative and inside the envelope. Failed calls may lack frame callbacks. It
+rejects duplicate phases/completions and orphan activities. It ignores ordinary
+fixture output and reads only
 `rpc_observation=` JSON records. Generated `trace.jsonl` and `analysis.json` are
 written beside the supplied log; keep them under ignored `.local/`.
 
@@ -28,3 +32,13 @@ and request construction. Public callbacks cannot isolate peer proof/FSYNC or
 separate TLS from listener waiting. A source-correlated hypothesis still needs a
 matched complete-operation before/after experiment; this tool sets no clock
 threshold or pass/fail latency target.
+
+Run the owning metadata-contract tests with:
+
+```sh
+python -B -m unittest discover -s experiments/update-cost -p 'test_*.py'
+```
+
+The [2026-10-16 measurements](MEASUREMENTS.md) record the matched peer-listener
+comparison, all observed ordinary SQL operations, exact artifact identities and
+separate memory-observation limitations. The samples support those fixtures only.
