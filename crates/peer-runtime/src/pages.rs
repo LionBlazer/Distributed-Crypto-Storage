@@ -233,7 +233,7 @@ impl PageBatch {
     }
 }
 
-fn lookup_bytes(head: &Commitment, index: u64) -> Result<usize> {
+pub(crate) fn lookup_bytes(head: &Commitment, index: u64) -> Result<usize> {
     let layout = head.layout();
     let mut pages = layout.page_count()?;
     if index >= pages as u64 {
@@ -313,7 +313,7 @@ fn take<'a>(bytes: &'a [u8], offset: &mut usize, length: usize) -> Result<&'a [u
 
 // A sequence visitor sees bincode's announced length BEFORE allocation. Using
 // deserialize_bytes here would let bincode allocate an unchecked byte vector first.
-fn deserialize_frame<'de, D: Deserializer<'de>>(
+pub(crate) fn deserialize_frame<'de, D: Deserializer<'de>>(
     deserializer: D,
     maximum: usize,
 ) -> std::result::Result<Vec<u8>, D::Error> {

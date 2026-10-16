@@ -84,6 +84,7 @@ impl RemotePeer {
             .map_err(|_| io::Error::other("Request identity space exhausted"))?;
         let response_limit = match &request {
             Request::FetchPages(_) => crate::MAX_PAGE_BATCH_RESPONSE_BYTES,
+            Request::FetchReadImage(_) => crate::MAX_READ_IMAGE_RESPONSE_BYTES,
             _ => MAX_FRAME_BYTES,
         };
         let name = request.name().to_string();
@@ -123,6 +124,8 @@ impl RemotePeer {
             }
             let response: WireResponse = if response_limit == crate::MAX_PAGE_BATCH_RESPONSE_BYTES {
                 decode_page_response(&payload)?
+            } else if response_limit == crate::MAX_READ_IMAGE_RESPONSE_BYTES {
+                decode_custody_response(&payload, response_limit, 13)?
             } else {
                 decode(&payload)?
             };
@@ -172,6 +175,25 @@ impl RemotePeer {
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Unexpected page response",
+            )),
+        }
+    }
+    /// Fetches a static public-geometry image footprint, checking the exact
+    /// request and every returned prefix proof. No SQL or freshness is accepted.
+    pub fn fetch_read_image(
+        &self,
+        request: &crate::ReadImageRequest,
+    ) -> io::Result<crate::ReadImage> {
+        match self.call(Request::FetchReadImage(request.clone()))? {
+            Response::ReadImage(image) => {
+                image
+                    .verify(request)
+                    .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+                Ok(image)
+            }
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Unexpected read image response",
             )),
         }
     }
