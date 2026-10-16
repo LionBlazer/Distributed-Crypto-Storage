@@ -17,7 +17,7 @@ use rand::SeedableRng;
 use rand::rngs::{StdRng, SysRng};
 use sha2::{Digest, Sha256};
 
-use crate::primitive::{Kind, PrimitiveAir, PrimitiveStatement};
+use crate::primitive::{Kind, PrimitiveAir, PrimitiveStatement, PublicStatement};
 use crate::{chacha, poly1305};
 
 pub(crate) type Val = Goldilocks;
@@ -133,6 +133,10 @@ pub(crate) fn profile_digest(kind: Kind) -> [u8; 32] {
     hash.update(b"Goldilocks/Poseidon2-12/rate8/digest4/cap0/arity2");
     hash.update(kind.name());
     let (width, opening_points) = match kind {
+        Kind::PairOpening => {
+            crate::opening::profile(&mut hash);
+            (crate::opening::air::WIDTH, 2)
+        }
         Kind::Sha256 => {
             hash.update(b"SHA256-compression/one-public-case/repeat512/u32-big-endian");
             (NUM_SHA256_COLS, 1)
@@ -299,7 +303,7 @@ pub(crate) fn analyze(air: &PrimitiveAir) -> Result<(StarkSecurityParams, Securi
     Ok((parameters, report))
 }
 
-/// One typed PUBLIC statement owns this backend's analytical parameters.
+/// One typed public statement owns this backend's analytical parameters.
 /// Exact public values bind its lifetime; another statement requires a new
 /// backend even when kind/width match (empty and nonempty degrees may differ).
 pub(crate) struct Backend {
@@ -312,7 +316,7 @@ pub(crate) struct Backend {
     public_values: Vec<Val>,
 }
 impl Backend {
-    pub(crate) fn new(statement: &impl PrimitiveStatement) -> Result<Self, Error> {
+    pub(crate) fn new(statement: &impl PublicStatement) -> Result<Self, Error> {
         let air = statement.air();
         let (parameters, report) = analyze(&air)?;
         let report = report.require_target()?;
@@ -335,22 +339,30 @@ impl Backend {
         &self,
         statement: &impl PrimitiveStatement,
     ) -> Result<Proof<Config>, Error> {
+        self.prove_with_trace(statement, || Ok(statement.trace()))
+    }
+
+    /// A witness factory is invoked only after exact public-statement binding.
+    /// It receives no owner key or key-export callback; this backend is experiment-private.
+    pub(crate) fn prove_with_trace(
+        &self,
+        statement: &impl PublicStatement,
+        trace: impl FnOnce() -> Result<p3_matrix::dense::RowMajorMatrix<Val>, Error>,
+    ) -> Result<Proof<Config>, Error> {
         let public_values = statement.public_values();
         if statement.kind() != self.kind || public_values != self.public_values {
-            return Err(Error::Shape); // Before honest trace generation.
+            return Err(Error::Shape);
         }
-        prove(
-            &self.config,
-            &statement.air(),
-            statement.trace(),
-            &public_values,
-        )
-        .map_err(|_| Error::Proving)
+        let trace = trace()?;
+        if trace.width != self.width || trace.values.len() != TRACE_HEIGHT * self.width {
+            return Err(Error::Shape);
+        }
+        prove(&self.config, &statement.air(), trace, &public_values).map_err(|_| Error::Proving)
     }
 
     pub(crate) fn verify(
         &self,
-        statement: &impl PrimitiveStatement,
+        statement: &impl PublicStatement,
         proof: &Proof<Config>,
     ) -> Result<(), Error> {
         let public_values = statement.public_values();

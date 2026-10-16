@@ -10,7 +10,7 @@ use super::air::{
 use super::statement::{Mode, Statement, public_key, reference_tag};
 use super::{LIMB_BITS, LIMBS, MASK, MAX_BLOCKS, MAX_BYTES, RADIX};
 use crate::backend::{self, Backend, Challenge, Error, TRACE_HEIGHT, Val};
-use crate::primitive::PrimitiveStatement;
+use crate::primitive::{PrimitiveStatement, PublicStatement};
 
 #[test]
 fn rfc_tag_and_raw_boundary_lengths_match_independent_oracle_and_actual_trace() {
@@ -149,6 +149,15 @@ fn complete_public_schedule_openings_and_security_gate_use_actual_air() {
 
 #[test]
 fn genuine_proofs_bind_modes_original_lengths_segments_request_key_and_shape() {
+    // The genuine raw fixture must exercise a final carry: SDK boundary
+    // selectors are unnormalized, so a Boolean-complement shortcut rejects it.
+    {
+        let trace = Statement::raw_fixture().trace();
+        assert!(
+            trace.values[(TRACE_HEIGHT - 1) * WIDTH + TAG_CARRY..].contains(&Val::ONE),
+            "The genuine fixture must retain a nonzero final tag carry"
+        );
+    }
     for statement in [Statement::raw_fixture(), Statement::padded_fixture()] {
         let backend = Backend::new(&statement).unwrap();
         let mut proof = backend.prove(&statement).unwrap();

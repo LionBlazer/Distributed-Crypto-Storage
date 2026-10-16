@@ -7,7 +7,7 @@ use universal_hash::{KeyInit, UniversalHash};
 use super::air::Poly1305Air;
 use super::{BLOCK_BYTES, MAX_BLOCKS, MAX_BYTES, MAX_SEGMENTS};
 use crate::backend::{Error, Val, profile_digest};
-use crate::primitive::{Kind, PrimitiveAir, PrimitiveStatement};
+use crate::primitive::{Kind, PrimitiveAir, PrimitiveStatement, PublicStatement};
 use crate::statement::ID_WORDS;
 
 pub(crate) const KEY_PUBLIC: usize = ID_WORDS;
@@ -167,16 +167,14 @@ impl Statement {
         })
     }
 }
-impl PrimitiveStatement for Statement {
+impl PublicStatement for Statement {
     fn kind(&self) -> Kind {
         self.layout.mode.kind()
     }
     fn air(&self) -> PrimitiveAir {
         PrimitiveAir::Poly1305(Box::new(Poly1305Air::new(self)))
     }
-    fn trace(&self) -> RowMajorMatrix<Val> {
-        Poly1305Air::trace(self)
-    }
+
     fn public_values(&self) -> Vec<Val> {
         self.identity_values()
             .into_iter()
@@ -222,4 +220,10 @@ pub(crate) fn public_key() -> [u8; 32] {
         0xa8, 0x01, 0x03, 0x80, 0x8a, 0xfb, 0x0d, 0xb2, 0xfd, 0x4a, 0xbf, 0xf6, 0xaf, 0x41, 0x49,
         0xf5, 0x1b,
     ]
+}
+
+impl PrimitiveStatement for Statement {
+    fn trace(&self) -> RowMajorMatrix<Val> {
+        Poly1305Air::trace(self)
+    }
 }

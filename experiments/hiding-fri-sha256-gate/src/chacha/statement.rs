@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 
 use super::{CONSTANTS, WORDS, air::ChaChaAir};
 use crate::backend::{Val, profile_digest};
-use crate::primitive::{Kind, PrimitiveAir, PrimitiveStatement};
+use crate::primitive::{Kind, PrimitiveAir, PrimitiveStatement, PublicStatement};
 use crate::statement::ID_WORDS;
 
 pub(crate) const PUBLIC_VALUES: usize = ID_WORDS + 2 * WORDS;
@@ -73,17 +73,13 @@ impl Statement {
     }
 }
 
-impl PrimitiveStatement for Statement {
+impl PublicStatement for Statement {
     fn kind(&self) -> Kind {
         self.kind
     }
 
     fn air(&self) -> PrimitiveAir {
         PrimitiveAir::ChaCha(ChaChaAir::new(self))
-    }
-
-    fn trace(&self) -> RowMajorMatrix<Val> {
-        ChaChaAir::trace(self)
     }
 
     fn public_values(&self) -> Vec<Val> {
@@ -140,9 +136,15 @@ pub(crate) fn reference_output(statement: &Statement) -> [u32; WORDS] {
                 *word = u32::from_le_bytes(*bytes);
             }
         }
-        Kind::Sha256 | Kind::Poly1305Raw | Kind::Poly1305Padded => {
+        Kind::Sha256 | Kind::Poly1305Raw | Kind::Poly1305Padded | Kind::PairOpening => {
             unreachable!("SHA has a separate typed fixture")
         }
     }
     result
+}
+
+impl PrimitiveStatement for Statement {
+    fn trace(&self) -> RowMajorMatrix<Val> {
+        ChaChaAir::trace(self)
+    }
 }

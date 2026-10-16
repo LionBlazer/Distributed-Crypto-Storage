@@ -13,7 +13,7 @@ use crate::backend::{
     self, AllocationEstimate, Backend, Challenge, Error, PROOF_DEGREE_BITS, RANDOM_CODEWORDS,
     TRACE_HEIGHT, Val,
 };
-use crate::primitive::PrimitiveStatement;
+use crate::primitive::PublicStatement;
 use crate::statement::{Statement, reference_output};
 
 #[test]

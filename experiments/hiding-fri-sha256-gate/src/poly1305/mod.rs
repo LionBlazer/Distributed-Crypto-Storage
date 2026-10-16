@@ -1,5 +1,6 @@
 //! Public nonsecret Poly1305 research relation, never a private source or AEAD proof.
 pub(crate) mod air;
+pub(crate) mod arithmetic;
 pub(crate) mod statement;
 #[cfg(test)]
 mod tests;

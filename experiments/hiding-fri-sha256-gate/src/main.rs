@@ -1,9 +1,10 @@
-//! Nonaccepting public source-primitive research gates. Never used for SQL acceptance.
+//! Nonaccepting source-opening research gates. Never used for SQL acceptance.
 #![forbid(unsafe_code)]
 
 mod air;
 mod backend;
 mod chacha;
+mod opening;
 mod poly1305;
 mod primitive;
 mod statement;
@@ -14,14 +15,14 @@ use std::time::Instant;
 
 use backend::{AllocationEstimate, Backend, Error, analyze};
 use p3_air::BaseAir;
-use primitive::PrimitiveStatement;
+use primitive::{PrimitiveStatement, PublicStatement};
 
 fn run() -> Result<(), Error> {
     let arguments: Vec<_> = std::env::args().skip(1).collect();
     if !(2..=3).contains(&arguments.len()) || !matches!(arguments[0].as_str(), "security" | "prove")
     {
         eprintln!(
-            "usage: hiding-fri-source-primitives <security|prove> <sha256|hchacha20|chacha20|poly1305-raw|poly1305-padded> [empty: Poly1305 security only]"
+            "usage: hiding-fri-source-primitives <security|prove> <sha256|hchacha20|chacha20|poly1305-raw|poly1305-padded|pair-opening> [empty: Poly1305 security only]"
         );
         return Err(Error::Shape);
     }
@@ -36,6 +37,7 @@ fn run() -> Result<(), Error> {
     let case = if empty { "empty" } else { "fixture" };
 
     match arguments[1].as_str() {
+        "pair-opening" => opening::gate(&arguments[0]),
         "sha256" => gate(&statement::Statement::fixture(), &arguments[0], case),
         "hchacha20" => gate(
             &chacha::statement::Statement::hchacha_fixture(),
@@ -68,6 +70,26 @@ fn run() -> Result<(), Error> {
 }
 
 fn gate(statement: &impl PrimitiveStatement, mode: &str, case: &str) -> Result<(), Error> {
+    security(statement, case)?;
+    if mode == "prove" {
+        let backend = Backend::new(statement)?;
+        let started = Instant::now();
+        let proof = backend.prove(statement)?;
+        let proving = started.elapsed();
+        let started = Instant::now();
+        backend.verify(statement, &proof)?;
+        println!(
+            "{{\"stage\":\"verified_public_primitive\",\"primitive\":\"{}\",\"statement_case\":\"{}\",\"proving_ms\":{},\"verification_ms\":{}}}",
+            statement.kind().name(),
+            case,
+            proving.as_secs_f64() * 1000.0,
+            started.elapsed().as_secs_f64() * 1000.0
+        );
+    }
+    Ok(())
+}
+
+fn security(statement: &impl PublicStatement, case: &str) -> Result<(), Error> {
     let air = statement.air();
     let (_, report) = analyze(&air)?;
     let allocation = AllocationEstimate::for_width(air.width());
@@ -94,21 +116,7 @@ fn gate(statement: &impl PrimitiveStatement, mode: &str, case: &str) -> Result<(
         allocation.main_lde_bytes,
     );
     report.require_target()?;
-    if mode == "prove" {
-        let backend = Backend::new(statement)?;
-        let started = Instant::now();
-        let proof = backend.prove(statement)?;
-        let proving = started.elapsed();
-        let started = Instant::now();
-        backend.verify(statement, &proof)?;
-        println!(
-            "{{\"stage\":\"verified_public_primitive\",\"primitive\":\"{}\",\"statement_case\":\"{}\",\"proving_ms\":{},\"verification_ms\":{}}}",
-            statement.kind().name(),
-            case,
-            proving.as_secs_f64() * 1000.0,
-            started.elapsed().as_secs_f64() * 1000.0,
-        );
-    }
+
     Ok(())
 }
 
