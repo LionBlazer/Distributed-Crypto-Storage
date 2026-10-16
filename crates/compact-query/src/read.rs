@@ -93,6 +93,36 @@ impl<'a> ReadView<'a> {
         &self.heads
     }
 }
+/// Full immutable data plus a bounded real index source and mandatory page-zero
+/// rewrite capability. This is not a partial Table or SQL/freshness authority.
+#[cfg(feature = "bfv-experiment")]
+pub struct UpdateView<'a> {
+    pub(crate) read: ReadView<'a>,
+    pub(crate) data: &'a EncryptedSnapshot,
+    pub(crate) header: compact_store::VerifiedPagePath,
+}
+#[cfg(feature = "bfv-experiment")]
+impl<'a> UpdateView<'a> {
+    pub fn new(
+        heads: ReadHeads,
+        data: &'a EncryptedSnapshot,
+        index: &'a dyn PageSource,
+        header: compact_store::VerifiedPagePath,
+    ) -> Result<Self> {
+        if header.commitment() != heads.index() || header.page_index() != 0 {
+            return Err(Error::WrongVersion);
+        }
+        Ok(Self {
+            read: ReadView::new(heads, data, index)?,
+            data,
+            header,
+        })
+    }
+    pub fn read_view(&self) -> &ReadView<'a> {
+        &self.read
+    }
+}
+
 impl Table {
     pub fn read_heads(&self) -> ReadHeads {
         ReadHeads {

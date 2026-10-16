@@ -60,6 +60,14 @@ pub struct VerifiedPagePath {
     siblings: Vec<[u8; 32]>,
 }
 impl VerifiedPagePath {
+    /// Exact head authenticated by this capability; not consensus provenance.
+    pub fn commitment(&self) -> &Commitment {
+        &self.page.commitment
+    }
+    /// Exact authenticated address; no raw path or sibling access is exposed.
+    pub fn page_index(&self) -> u64 {
+        self.page.index
+    }
     pub(crate) fn page(&self) -> &VerifiedPage {
         &self.page
     }

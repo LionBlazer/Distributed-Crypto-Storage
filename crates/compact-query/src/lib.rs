@@ -13,9 +13,9 @@ mod identity;
 mod index;
 mod read;
 pub use identity::{RowId, RowIds, RowReference, RowReferences, TableId};
-#[cfg(feature = "bfv-experiment")]
-pub use read::ReadView;
 pub use read::{PageSource, ReadHeads, ReadRequirements};
+#[cfg(feature = "bfv-experiment")]
+pub use read::{ReadView, UpdateView};
 #[cfg(feature = "tfhe-backend")]
 mod owner;
 mod storage;
