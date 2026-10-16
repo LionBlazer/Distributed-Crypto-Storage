@@ -323,6 +323,90 @@ fn complete_count_preflight_rejects_before_reading_posting_pages() {
     }
 }
 
+#[cfg(feature = "bfv-experiment")]
+#[test]
+fn limited_candidates_keep_complete_sorted_membership_and_bound_only_the_prefix() {
+    let owner = compact_store::Owner::generate([75; 16]).unwrap();
+    let rows: Vec<_> = (0..5000)
+        .map(|i| PlainRow {
+            age: if i % 2 == 0 { 42 } else { 41 },
+            amount: i,
+        })
+        .collect();
+    let data = seal_data(&owner, &rows);
+    let index = build(&owner, &rows, data.commitment()).unwrap();
+    let heads = crate::ReadHeads::new(
+        table_id(),
+        data.commitment(),
+        index.commitment(),
+        Limits::default(),
+    )
+    .unwrap();
+    for limit in [0, 1, 100, 256] {
+        let candidates = super::select_candidates(
+            &owner,
+            &index,
+            &heads,
+            AgeRange {
+                lower: 41,
+                upper: 42,
+            },
+            limit,
+            MaterializationBudget::rows(MAX_ROWS),
+        )
+        .unwrap();
+        assert_eq!(candidates.retained, limit);
+        assert_eq!(candidates.words.len() * 8, 5000_usize.div_ceil(64) * 8);
+        assert!(candidates.ordinals().eq(0..5000));
+    }
+    for (limit, budget, needed) in [(257, 256, 257), (usize::MAX, 256, 5000), (100, 99, 100)] {
+        let error = super::select_candidates(
+            &owner,
+            &index,
+            &heads,
+            AgeRange {
+                lower: 41,
+                upper: 42,
+            },
+            limit,
+            MaterializationBudget::rows(budget),
+        )
+        .err();
+        assert_eq!(
+            error,
+            Some(Error::SelectionBudget {
+                selected: needed,
+                budget
+            })
+        );
+    }
+    // A large SQL limit does not fail when the actual authenticated result is small.
+    let tiny = seal_data(&owner, &[PlainRow { age: 42, amount: 1 }]);
+    let index = build(
+        &owner,
+        &[PlainRow { age: 42, amount: 1 }],
+        tiny.commitment(),
+    )
+    .unwrap();
+    let heads = crate::ReadHeads::new(
+        table_id(),
+        tiny.commitment(),
+        index.commitment(),
+        Limits::default(),
+    )
+    .unwrap();
+    let candidates = super::select_candidates(
+        &owner,
+        &index,
+        &heads,
+        AgeRange::equal(42),
+        usize::MAX,
+        MaterializationBudget::rows(1),
+    )
+    .unwrap();
+    assert_eq!(candidates.retained, 1);
+}
+
 #[test]
 fn malformed_postings_are_rejected_at_the_selected_bucket_boundary() {
     let owner = compact_store::Owner::generate([65; 16]).unwrap();
@@ -336,6 +420,8 @@ fn malformed_postings_are_rejected_at_the_selected_bucket_boundary() {
         (1, vec![8]),                               // ordinal outside table
         (1, vec![0, 1]),                            // trailing bytes after exact count
         (2, vec![0, 0]),                            // zero delta / duplicate ordinal
+        (2, vec![0, 0x80]),                         // truncated delta after retained row
+        (2, vec![0, 0x81, 0]),                      // noncanonical delta after retained row
         (2, vec![0, 8]),                            // delta outside table
         (2, vec![1, 0xff, 0xff, 0xff, 0xff, 0x0f]), // ordinal addition overflow
     ] {
@@ -352,6 +438,30 @@ fn malformed_postings_are_rejected_at_the_selected_bucket_boundary() {
             selected(&owner, &index, data.commitment(), AgeRange::equal(42)),
             Err(Error::InvalidIndex)
         );
+        #[cfg(feature = "bfv-experiment")]
+        for limit in [0, 1] {
+            let heads = crate::ReadHeads::new(
+                table_id(),
+                data.commitment(),
+                index.commitment(),
+                Limits::default(),
+            )
+            .unwrap();
+            assert!(
+                matches!(
+                    super::select_candidates(
+                        &owner,
+                        &index,
+                        &heads,
+                        AgeRange::equal(42),
+                        limit,
+                        MaterializationBudget::rows(MAX_ROWS),
+                    ),
+                    Err(Error::InvalidIndex)
+                ),
+                "Malformed tail accepted with LIMIT {limit}: {payload:?}"
+            );
+        }
     }
     let data = seal_data(
         &owner,
@@ -390,6 +500,30 @@ fn duplicate_addresses_across_distinct_age_buckets_are_rejected() {
         ],
     );
     let index = raw_index(&owner, data.commitment(), &[(41, 1, &[0]), (42, 1, &[0])]);
+    #[cfg(feature = "bfv-experiment")]
+    for limit in [0, 1] {
+        let heads = crate::ReadHeads::new(
+            table_id(),
+            data.commitment(),
+            index.commitment(),
+            Limits::default(),
+        )
+        .unwrap();
+        assert!(matches!(
+            super::select_candidates(
+                &owner,
+                &index,
+                &heads,
+                AgeRange {
+                    lower: 41,
+                    upper: 42
+                },
+                limit,
+                MaterializationBudget::rows(MAX_ROWS),
+            ),
+            Err(Error::DuplicateAddress)
+        ));
+    }
     assert_eq!(
         selected(
             &owner,
@@ -710,6 +844,21 @@ fn million_row_identity_index_has_exact_bounded_geometry_and_sparse_lookup() {
         8306
     );
     assert_eq!(table.canonical_data_bytes(), 3_187_648);
+    #[cfg(feature = "bfv-experiment")]
+    {
+        let candidates = super::select_candidates(
+            &owner,
+            &table.index,
+            &table.read_heads(),
+            AgeRange::equal(42),
+            0,
+            MaterializationBudget::rows(MAX_ROWS),
+        )
+        .unwrap();
+        assert_eq!(candidates.words.len() * 8, 125_000);
+        assert_eq!(candidates.retained, 0);
+        assert!(candidates.ordinals().eq(0..MAX_TABLE_ROWS as u64));
+    }
     assert_eq!(index_limits().max_rows, 34_017_824);
     assert_eq!(index_limits().max_image_bytes, 34_416_624);
     assert!(Commitment::decode(&table.index_commitment().encode(), Limits::default()).is_err());

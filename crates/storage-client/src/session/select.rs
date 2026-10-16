@@ -33,8 +33,11 @@ impl Session {
         limit: Option<usize>,
         requests: &Requests,
     ) -> Result<VerifiedResult> {
+        // A row beyond a shard's first K matches already has K earlier global
+        // matches in that shard. Its omission cannot change the global first K.
+        // Every shard still validates its complete source and supplies a real proof.
         let completed = crate::jobs::run(0..self.data.shards.len(), |slot| {
-            self.select_shard(slot, predicate, projection, requests)
+            self.select_shard(slot, predicate, projection, limit, requests)
         })?;
         // Every genuine proof is checked and every worker joined before freshness.
         // No result ciphertext is decrypted until this exact confirmed state gate.
@@ -123,6 +126,7 @@ impl Session {
         slot: usize,
         predicate: Predicate,
         projection: Projection,
+        limit: Option<usize>,
         requests: &Requests,
     ) -> Result<CheckedShard> {
         let shard = &self.data.shards[slot];
@@ -136,16 +140,30 @@ impl Session {
         let prepared = {
             let index = IndexPrefix(&image);
             let source = ReadView::new(heads.clone(), image.data(), &index)?;
-            self.data.owner.prepare_provable_select_from_source(
-                &source,
-                predicate.age_range().map(|range| AgeRange {
-                    lower: range.lower,
-                    upper: range.upper,
-                }),
-                kind,
-                256,
-                Limits::default(),
-            )?
+            let predicate = predicate.age_range().map(|range| AgeRange {
+                lower: range.lower,
+                upper: range.upper,
+            });
+            match limit {
+                Some(limit) => self
+                    .data
+                    .owner
+                    .prepare_provable_select_limited_from_source(
+                        &source,
+                        predicate,
+                        kind,
+                        limit,
+                        256,
+                        Limits::default(),
+                    )?,
+                None => self.data.owner.prepare_provable_select_from_source(
+                    &source,
+                    predicate,
+                    kind,
+                    256,
+                    Limits::default(),
+                )?,
+            }
         };
         // Only exact pending ciphertext/head/ordinal state survives the RPC wait.
         drop(image);

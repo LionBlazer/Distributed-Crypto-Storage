@@ -1813,6 +1813,155 @@ fn a_known_holder_endpoint_alias_is_rejected_before_proof_or_full_store() {
 }
 
 #[test]
+fn million_matching_rows_with_explicit_limit_use_real_proofs_and_the_same_static_source_frames() {
+    use std::sync::{Arc, Mutex};
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let process = Process::start(owner.fingerprint(), 1, None);
+    let events = Arc::new(Mutex::new(Vec::<peer_runtime::Trace>::new()));
+    let observed = events.clone();
+    let mut participant = process.participant(1, &connector);
+    participant.remote = participant.remote.with_trace(Arc::new(move |event| {
+        if matches!(
+            event.operation.as_str(),
+            "read-image" | "fhe-proof" | "fetch" | "fetch-version" | "fetch-pages"
+        ) {
+            let mut events = observed.lock().unwrap();
+            assert!(events.len() < 16);
+            events.push(event);
+        }
+    }));
+    let source: Vec<_> = (0..1_000_000)
+        .map(|i| PlainRow {
+            age: if i % 2 == 0 { 42 } else { 18 },
+            amount: (i % 65536) as u16,
+        })
+        .collect();
+    let mut session = Session::create(
+        "million-limited-select".into(),
+        &source,
+        vec![participant],
+        test_contract(),
+    )
+    .unwrap();
+    let initial = session.version();
+    let mut source_shape = None;
+    for (sql, expected) in [
+        (
+            "SELECT amount FROM records WHERE age >= 18 LIMIT 100",
+            (0..100).map(|i| vec![i]).collect::<Vec<_>>(),
+        ),
+        (
+            "SELECT age, amount FROM records WHERE age >= 18 LIMIT 0",
+            vec![],
+        ),
+    ] {
+        events.lock().unwrap().clear();
+        assert_eq!(rows(execute(&mut session, sql)), expected, "{sql}");
+        assert_eq!(session.version(), initial);
+        let events = events.lock().unwrap();
+        let reads: Vec<_> = events
+            .iter()
+            .filter(|e| e.operation == "read-image")
+            .collect();
+        let proofs: Vec<_> = events
+            .iter()
+            .filter(|e| e.operation == "fhe-proof")
+            .collect();
+        assert_eq!(reads.len(), 1);
+        assert_eq!(
+            proofs.len(),
+            1,
+            "LIMIT0 still executes genuine encrypted projection"
+        );
+        assert!(reads[0].succeeded && proofs[0].succeeded);
+        assert!(!events.iter().any(|e| matches!(
+            e.operation.as_str(),
+            "fetch" | "fetch-version" | "fetch-pages"
+        )));
+        let shape = (reads[0].request_bytes, reads[0].response_bytes);
+        if let Some(expected) = source_shape {
+            assert_eq!(shape, expected);
+        } else {
+            source_shape = Some(shape);
+        }
+    }
+    for sql in [
+        "SELECT * FROM records WHERE age >= 18",
+        "SELECT * FROM records WHERE age >= 18 LIMIT 257",
+    ] {
+        events.lock().unwrap().clear();
+        let error = session.execute(sql).unwrap_err();
+        assert!(
+            matches!(error, storage_client::Error::Cryptography(ref message) if message.contains("SelectionBudget")),
+            "{sql}: {error}"
+        );
+        let events = events.lock().unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e.operation == "read-image")
+                .count(),
+            1
+        );
+        assert!(!events.iter().any(|e| e.operation == "fhe-proof"));
+    }
+}
+
+#[test]
+fn limited_shard_prefixes_merge_by_global_ordinal_with_uneven_matching_counts() {
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let a = Process::start(owner.fingerprint(), 1, None);
+    let b = Process::start(owner.fingerprint(), 2, None);
+    let source: Vec<_> = (0..1101)
+        .map(|i| PlainRow {
+            age: if i % 2 == 0 || i % 5 == 1 { 42 } else { 7 },
+            amount: i,
+        })
+        .collect();
+    let mut session = Session::create(
+        "uneven-limited-select".into(),
+        &source,
+        vec![a.participant(1, &connector), b.participant(2, &connector)],
+        test_contract(),
+    )
+    .unwrap();
+    for limit in [0, 1, 100, 256] {
+        let expected: Vec<_> = source
+            .iter()
+            .filter(|row| row.age == 42)
+            .take(limit)
+            .map(|row| vec![42, u32::from(row.amount)])
+            .collect();
+        assert_eq!(
+            rows(
+                session
+                    .execute(&format!(
+                        "SELECT * FROM records WHERE age = 42 LIMIT {limit}"
+                    ))
+                    .unwrap()
+            ),
+            expected
+        );
+    }
+    assert!(
+        session
+            .execute("SELECT * FROM records WHERE age = 42 LIMIT 257")
+            .is_err()
+    );
+    // LIMIT applies after filtering, and its literal itself is not a hard geometry cap.
+    assert!(
+        rows(
+            session
+                .execute("SELECT * FROM records WHERE age = 255 LIMIT 1000")
+                .unwrap()
+        )
+        .is_empty()
+    );
+}
+
+#[test]
 fn fixed_select_fetches_identical_static_images_for_projections_limits_absent_and_false_predicates()
 {
     use std::sync::{Arc, Mutex};

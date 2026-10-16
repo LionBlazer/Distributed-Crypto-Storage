@@ -24,7 +24,14 @@ statement atomicity does not provide general transactions. Aggregates perform an
 encrypted coefficient convolution under the existing full-residue product proof,
 with checked client-side limb/shard completion and SQL NULL for empty SUM.
 They currently admit at most 2560 matching rows per shard using ten 256-row bands
-and the unchanged 256-term public kernel; row and mutation limits remain 256.
+and the unchanged 256-term public kernel. Fixed row SELECT with explicit LIMIT
+validates all matching postings and original rows, then proves at most 256 retained
+rows per shard. Its prefix length is `min(local matches, SQL limit)`, never a silent
+clamp; larger prefixes reject. Proved shard prefixes merge in stable global ordinal
+order before the final LIMIT. LIMIT0 still validates the complete matching source
+and requires genuine proof and final freshness. Without LIMIT the complete matching
+set must fit 256 rows; mutations retain their 256-row boundary. Full source validation
+remains O(matches), with the unchanged static ReadImage footprint.
 Excess rejects without a partial result. Q2/R2 requires application domain v3 and
 rejects old journals/wires without migration; the arithmetic profile is unchanged.
 The [Q2 process record](proved-aggregate-bands.md) reports 5119/5120-row full-query
@@ -54,13 +61,21 @@ padding. This change does not implement type casts or locale collations. See
 Text predicate literals retain their own bytes and may exceed the column's storage
 width; comparison does not store or truncate them. Import field-width validation
 remains mandatory. General numeric coercions and SQL casts remain unimplemented.
-The typed encrypted private-index format/schema is version 2; an older comparator
-ordering is rejected instead of being searched with incompatible partition rules.
+The typed encrypted private-index format/schema is version 3; older/unknown
+formats reject without migration. CHECK language/source provenance is explicit;
+row encoding, comparator ordering and FHE parameters remain unchanged.
 
-Other inherited SQL Server adapter semantics still differ from PostgreSQL. Typed
-imported queries currently lose quoted-identifier case and bind identifiers without
-case sensitivity; PostgreSQL preserves quoted names and folds unquoted names to
-lowercase. See [identifier rules](https://www.postgresql.org/docs/18/sql-syntax-lexical.html).
+Typed live SELECT now binds canonical names exactly: unquoted UTF-8 identifiers
+fold ASCII A-Z only; double-quoted names preserve case and escaped quotes. Tokens
+clip to 63 bytes at UTF-8 boundaries. The flat catalog uses public only; aliases
+hide original qualifiers. Case-distinct canonical names are permitted. SQL Server
+brackets/dbo and ASCII-CI source binding remain import-only; imported actual names
+are preserved. Source CHECK text carries an explicit per-constraint language,
+while canonical FK references use exact resolved names. Unknown/old CHECK
+representations reject. Live admission rejects overlong catalog names before
+keys or RPC rather than renaming owner metadata. U&/UESCAPE, arbitrary schemas and
+search_path remain unsupported. See [identifier rules](https://www.postgresql.org/docs/18/sql-syntax-lexical.html).
+This binding change does not implement general PostgreSQL expressions or DDL.
 The fixed UPDATE outcome reports `affected_rows`, including matched rows whose values
 remain unchanged, as required by PostgreSQL's command tag. Zero-delta and empty
 selections still complete real peer arithmetic proofs and fresh-version checks;

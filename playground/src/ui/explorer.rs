@@ -3,7 +3,10 @@ impl Playground {
     pub(super) fn select_catalog_table(&mut self, index: usize) {
         if let Some((schema, _)) = self.catalog.get(index) {
             self.selected_table = index;
-            self.sql = format!("SELECT TOP 100 * FROM {};", quoted_identifier(&schema.name));
+            self.sql = format!(
+                "SELECT * FROM {} LIMIT 100;",
+                quoted_identifier(&schema.name)
+            );
         }
     }
     pub(super) fn catalog_presets(&mut self, ui: &mut egui::Ui) {
@@ -13,7 +16,10 @@ impl Playground {
         let table = quoted_identifier(&schema.name);
         let mut presets = vec![
             ("All rows", format!("SELECT * FROM {table};")),
-            ("First 100 rows", format!("SELECT TOP 100 * FROM {table};")),
+            (
+                "First 100 rows",
+                format!("SELECT * FROM {table} LIMIT 100;"),
+            ),
         ];
         if let Some(column) = schema.columns.first() {
             let name = quoted_identifier(&column.name);
@@ -82,5 +88,5 @@ impl Playground {
 }
 
 fn quoted_identifier(name: &str) -> String {
-    format!("[{}]", name.replace(']', "]]"))
+    format!("\"{}\"", name.replace('"', "\"\""))
 }

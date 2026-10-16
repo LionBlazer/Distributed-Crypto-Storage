@@ -1,6 +1,6 @@
 use crate::{
-    Column, DataType, Error, ForeignKey, Identity, ImportedDatabase, ImportedTable, Index, Row,
-    SchemaObject, TableSchema, Value, encode_value,
+    CheckConstraint, Column, DataType, Error, ForeignKey, Identity, ImportedDatabase,
+    ImportedTable, Index, Row, SchemaObject, TableSchema, Value, encode_value,
     lexer::{Parser, Token, TokenKind, lex, split_commas, token_text},
     literal_for_type,
 };
@@ -62,6 +62,7 @@ pub fn import_database_dump(sql: &str, limits: ImportLimits) -> Result<ImportedD
     if database.tables.is_empty() {
         return Err(Error::new("SQL dump contains no base tables"));
     }
+    bind_source_foreign_keys(&mut database)?;
     validate_database(&database)?;
     Ok(database)
 }
@@ -139,7 +140,7 @@ fn parse_batch(
                 if unique {
                     return Err(Error::new("unexpected UNIQUE TABLE"));
                 }
-                create_table(&mut parser, database, limits)?;
+                create_table(sql, &mut parser, database, limits)?;
             } else if parser.eat_word("INDEX") {
                 create_index(&mut parser, database, unique)?;
             } else if parser.eat_word("DATABASE") {
@@ -157,7 +158,7 @@ fn parse_batch(
             let name = parser.object_name()?;
             let table = table_mut(database, &name)?;
             if parser.eat_word("ADD") {
-                parse_constraint(&mut parser, &mut table.schema)?;
+                parse_constraint(sql, &mut parser, &mut table.schema)?;
                 storage_placement(&mut parser)?;
             } else {
                 let disabled = parser.eat_word("NOCHECK");
@@ -228,6 +229,7 @@ fn table_mut<'a>(
         .ok_or_else(|| Error::new(format!("unknown table {name:?}")))
 }
 fn create_table(
+    sql: &str,
     parser: &mut Parser<'_>,
     database: &mut ImportedDatabase,
     limits: ImportLimits,
@@ -361,7 +363,7 @@ fn create_table(
     }
     for fragment in constraints {
         let mut constraint = Parser::new(fragment);
-        parse_constraint(&mut constraint, &mut schema)?;
+        parse_constraint(sql, &mut constraint, &mut schema)?;
         if !constraint.done() {
             return Err(Error::new(format!(
                 "unsupported trailing table constraint syntax {:?}",
@@ -482,9 +484,16 @@ fn names(parser: &mut Parser<'_>) -> Result<Vec<String>, Error> {
     Ok(values)
 }
 fn columns(schema: &TableSchema, names: Vec<String>) -> Result<Vec<usize>, Error> {
-    names.iter().map(|name| schema.column_index(name)).collect()
+    names
+        .iter()
+        .map(|name| crate::names::source_column(schema, name))
+        .collect()
 }
-fn parse_constraint(parser: &mut Parser<'_>, schema: &mut TableSchema) -> Result<(), Error> {
+fn parse_constraint(
+    sql: &str,
+    parser: &mut Parser<'_>,
+    schema: &mut TableSchema,
+) -> Result<(), Error> {
     let name = if parser.eat_word("CONSTRAINT") {
         Some(parser.ident()?)
     } else {
@@ -516,8 +525,18 @@ fn parse_constraint(parser: &mut Parser<'_>, schema: &mut TableSchema) -> Result
             referenced_columns,
         });
     } else if parser.eat_word("CHECK") {
-        let expression = parser.group()?;
-        schema.checks.push(token_text(expression));
+        // Token offsets point into the original dump, including escaped names,
+        // literal spellings and comments. Never print an expression back into SQL.
+        let start = parser
+            .tokens
+            .get(parser.position)
+            .ok_or_else(|| parser.expected("CHECK group"))?
+            .end;
+        parser.group()?;
+        let end = parser.tokens[parser.position - 1].start;
+        schema.checks.push(CheckConstraint::SqlServerDumpAsciiCi {
+            source: sql[start..end].to_owned(),
+        });
     } else if parser.eat_word("UNIQUE") {
         parser.eat_word("CLUSTERED");
         parser.eat_word("NONCLUSTERED");
@@ -698,6 +717,35 @@ fn key(schema: &TableSchema, row: &Row, columns: &[usize]) -> Result<Vec<u8>, Er
     }
     Ok(bytes)
 }
+fn bind_source_foreign_keys(database: &mut ImportedDatabase) -> Result<(), Error> {
+    let schemas = database.schemas();
+    for table in &mut database.tables {
+        for foreign in &mut table.schema.foreign_keys {
+            let mut found = schemas
+                .iter()
+                .filter(|schema| schema.name.eq_ignore_ascii_case(&foreign.referenced_table));
+            let target = found.next().ok_or_else(|| {
+                Error::new(format!(
+                    "unknown referenced source table {:?}",
+                    foreign.referenced_table
+                ))
+            })?;
+            if found.next().is_some() {
+                return Err(Error::new("ambiguous source foreign table"));
+            }
+            foreign.referenced_columns = foreign
+                .referenced_columns
+                .iter()
+                .map(|name| {
+                    crate::names::source_column(target, name)
+                        .map(|i| target.columns[i].name.clone())
+                })
+                .collect::<Result<_, _>>()?;
+            foreign.referenced_table = target.name.clone();
+        }
+    }
+    Ok(())
+}
 /// Validate explicitly constructed owner input before it can become encrypted genesis.
 pub fn validate_database(database: &ImportedDatabase) -> Result<(), Error> {
     if database.name.is_empty() || database.tables.is_empty() {
@@ -707,7 +755,7 @@ pub fn validate_database(database: &ImportedDatabase) -> Result<(), Error> {
     }
     let mut names = HashSet::new();
     for table in &database.tables {
-        if table.schema.name.is_empty() || !names.insert(table.schema.name.to_ascii_lowercase()) {
+        if table.schema.name.is_empty() || !names.insert(&table.schema.name) {
             return Err(Error::new("empty or duplicate table name"));
         }
         crate::validate_schema(&table.schema)?;
@@ -750,12 +798,7 @@ pub fn validate_database(database: &ImportedDatabase) -> Result<(), Error> {
             let referenced = database
                 .tables
                 .iter()
-                .position(|target| {
-                    target
-                        .schema
-                        .name
-                        .eq_ignore_ascii_case(&foreign.referenced_table)
-                })
+                .position(|target| target.schema.name == foreign.referenced_table)
                 .ok_or_else(|| {
                     Error::new(format!(
                         "unknown referenced table {:?}",
@@ -763,7 +806,11 @@ pub fn validate_database(database: &ImportedDatabase) -> Result<(), Error> {
                     ))
                 })?;
             let target = &database.tables[referenced];
-            let target_columns = columns(&target.schema, foreign.referenced_columns.clone())?;
+            let target_columns = foreign
+                .referenced_columns
+                .iter()
+                .map(|name| target.schema.column_index(name))
+                .collect::<Result<Vec<_>, _>>()?;
             let keys = unique_keys
                 .get(&(referenced, target_columns.clone()))
                 .ok_or_else(|| {
@@ -798,26 +845,51 @@ enum Truth {
     False,
     Unknown,
 }
-fn validate_check(schema: &TableSchema, rows: &[Row], expression: &str) -> Result<(), Error> {
-    let expression = replace_getdate(expression)?;
-    let quoted_name = schema.name.replace(']', "]]");
-    let plan = crate::plan_select_schemas(
-        std::slice::from_ref(schema),
-        &format!("SELECT * FROM [{quoted_name}] WHERE {expression}"),
-    )?;
-    let predicate = plan
-        .predicate
-        .ok_or_else(|| Error::new("missing CHECK expression"))?;
+fn validate_check(
+    schema: &TableSchema,
+    rows: &[Row],
+    check: &CheckConstraint,
+) -> Result<(), Error> {
+    use crate::names::{Rules, Scope};
+    let (source, rules) = match check {
+        CheckConstraint::PostgreSql18Utf8 { source } => (source, Rules::PostgreSql),
+        CheckConstraint::SqlServerDumpAsciiCi { source } => (source, Rules::SqlServerDump),
+    };
+    if source.len() > 64 * 1024 {
+        return Err(Error::new("CHECK exceeds the 64 KiB planning budget"));
+    }
+    let tokens = lex(source)?;
+    let mut parser = Parser::new(&tokens);
+    let now = if rules == Rules::SqlServerDump
+        && tokens.windows(3).any(|tokens| {
+            tokens[0].kind.word_is("GETDATE")
+                && tokens[1].kind == TokenKind::Symbol('(')
+                && tokens[2].kind == TokenKind::Symbol(')')
+        }) {
+        Some(utc_now()?)
+    } else {
+        None
+    };
+    let scope = Scope {
+        schema,
+        alias: None,
+        rules,
+    };
+    let predicate = crate::predicate::parse(&mut parser, &scope, now.as_deref())?;
+    if !parser.done() {
+        return Err(Error::new("unsupported trailing CHECK expression"));
+    }
     for row in rows {
         if check_truth(schema, &predicate, row)? == Truth::False {
             return Err(Error::new(format!(
-                "CHECK violation in table {:?}: {expression}",
+                "CHECK violation in table {:?}: {source}",
                 schema.name
             )));
         }
     }
     Ok(())
 }
+
 fn check_truth(schema: &TableSchema, expr: &crate::Expr, row: &Row) -> Result<Truth, Error> {
     use crate::{CompareOp, Expr};
     use std::cmp::Ordering;
@@ -864,24 +936,7 @@ fn check_truth(schema: &TableSchema, expr: &crate::Expr, row: &Row) -> Result<Tr
         },
     })
 }
-fn replace_getdate(expression: &str) -> Result<String, Error> {
-    let tokens = lex(expression)?;
-    let mut result = Vec::new();
-    let mut i = 0;
-    while i < tokens.len() {
-        if tokens[i].kind.word_is("getdate")
-            && tokens.get(i + 1).map(|t| &t.kind) == Some(&TokenKind::Symbol('('))
-            && tokens.get(i + 2).map(|t| &t.kind) == Some(&TokenKind::Symbol(')'))
-        {
-            result.push(format!("'{}'", utc_now()?));
-            i += 3;
-        } else {
-            result.push(token_text(&tokens[i..i + 1]));
-            i += 1;
-        }
-    }
-    Ok(result.join(" "))
-}
+
 fn utc_now() -> Result<String, Error> {
     use std::time::{SystemTime, UNIX_EPOCH};
     let seconds = SystemTime::now()
@@ -1064,7 +1119,7 @@ mod tests {
             let mut database = base.clone();
             database.tables[0].schema.columns[0].data_type = invalid;
             assert!(validate_database(&database).is_err());
-            assert!(crate::plan_select(&database, "SELECT * FROM Items WHERE id = 1").is_err());
+            assert!(crate::plan_select(&database, "SELECT * FROM \"Items\" WHERE id = 1").is_err());
             assert!(
                 crate::encode_row(&database.tables[0].schema, &vec![Value::Integer(1)]).is_err()
             );

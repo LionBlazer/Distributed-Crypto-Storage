@@ -53,19 +53,39 @@ fn observed_typed_catalog_prepares_a_real_table_query_without_automatic_executio
     app.apply_display_event(Event::Catalog(catalog()));
 
     assert_eq!(app.catalog.len(), 2);
-    assert_eq!(app.sql, "SELECT TOP 100 * FROM [Customers];");
+    assert_eq!(app.sql, "SELECT * FROM \"Customers\" LIMIT 100;");
     assert!(matches!(
         commands.try_recv(),
         Err(std::sync::mpsc::TryRecvError::Empty)
     ));
     app.select_catalog_table(1);
-    assert_eq!(app.sql, "SELECT TOP 100 * FROM [Order Details];");
-    app.sql = "SELECT OrderID FROM [Order Details] WHERE OrderID = 7;".into();
+    assert_eq!(app.sql, "SELECT * FROM \"Order Details\" LIMIT 100;");
+    app.sql = "SELECT \"OrderID\" FROM \"Order Details\" WHERE \"OrderID\" = 7;".into();
     app.apply_display_event(Event::Catalog(catalog()));
     assert_eq!(
         app.sql,
-        "SELECT OrderID FROM [Order Details] WHERE OrderID = 7;"
+        "SELECT \"OrderID\" FROM \"Order Details\" WHERE \"OrderID\" = 7;"
     );
+}
+
+#[test]
+fn observed_catalog_quotes_embedded_identifier_quotes_for_the_pg_planner() {
+    let (worker, commands, _events) = Worker::test_channel();
+    let mut app = Playground::with_worker(worker);
+    let mut catalog = catalog();
+    catalog[0].0.name = "A\"B".into();
+    let schemas: Vec<_> = catalog.iter().map(|(schema, _)| schema.clone()).collect();
+
+    app.apply_display_event(Event::Catalog(catalog));
+
+    assert_eq!(app.sql, "SELECT * FROM \"A\"\"B\" LIMIT 100;");
+    let plan = relational_types::plan_select_schemas(&schemas, &app.sql).unwrap();
+    assert_eq!(plan.table, 0);
+    assert_eq!(plan.window.limit, Some(100));
+    assert!(matches!(
+        commands.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Empty)
+    ));
 }
 
 #[test]

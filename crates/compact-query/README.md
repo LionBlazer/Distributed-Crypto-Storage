@@ -138,6 +138,21 @@ Full-Table SELECT entry points delegate to the same pipeline and remain useful t
 local storage/proof consumers. UPDATE, INSERT and RowReferences still require the
 complete index, including stable private RowIds.
 
+`prepare_provable_select_limited_from_source` is the explicit bounded-prefix
+entry point. It validates every relevant posting with the same canonical decoder,
+then authenticates/decrypts each candidate-bearing data page once and checks every
+candidate's age, including rows after the requested prefix and LIMIT0. Full source
+validation remains O(matches), plus O(table rows / 64) bitmap traversal; there is
+no early stop. A zeroizing bitmap uses at most 125,000 bytes at one million rows,
+without an all-match ordinal vector. Only
+the first `min(actual matches, limit)` original fields and ordinals survive to FHE
+preparation, and they must fit both the caller budget and 256 slots. A larger limit
+is never clamped; it is valid when actual matches fit. Discarded plaintext only
+validates the source and cannot provide returned cells. The original all-match,
+UPDATE, aggregate and row-reference limits remain unchanged. Cross-shard ordering,
+final SQL truncation and network footprint belong to the caller; this API takes
+no offset and does not implement ordered SQL expressions or streaming results.
+
 The read-source tests refuse genuine membership redirected from another valid head
 or address. Genuine proof integration compares a real incomplete encrypted posting
 prefix with a full snapshot, and refuses independent TableId/data/index changes
@@ -167,8 +182,9 @@ The new path composes [bfv-query-proof](../bfv-query-proof/README.md) with the p
 exact-selection constructor. `prepare_provable_select` and `prepare_provable_update`
 authenticate the complete selected posting lists and data pages before encrypting
 original values. A missing posting, duplicate ordinal, incorrect stored age, changed
-head or over-budget group is rejected; matching groups are never truncated. An
-optional absent range represents only the SQL planner's schema-proven constant-false
+head or over-budget group is rejected; these all-match entry points never truncate
+an over-budget matching group. An optional absent range represents only the SQL
+planner's schema-proven constant-false
 predicate. SELECT's public polynomial expresses column projection across every slot,
 without plaintext match bits or selected count; private presence stays encrypted.
 

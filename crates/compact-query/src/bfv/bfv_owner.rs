@@ -328,6 +328,58 @@ impl Owner {
         }
         Ok(selection)
     }
+    /// Validates every matching posting and original row, retaining only the ordered
+    /// prefix. Discarded plaintext validates the index; returned cells still require FHE.
+    pub(super) fn select_limited_read(
+        &self,
+        source: &crate::ReadView<'_>,
+        predicate: AgeRange,
+        limit: usize,
+        budget: index::MaterializationBudget,
+        limits: Limits,
+    ) -> Result<ExactSelection> {
+        let heads = source.heads();
+        check_schema(heads.data())?;
+        let candidates =
+            index::select_candidates(&self.store, source.index, heads, predicate, limit, budget)?;
+        let mut selection = ExactSelection {
+            data_head: heads.data().clone(),
+            index_head: heads.index().clone(),
+            ordinals: Vec::with_capacity(candidates.retained),
+            fields: Vec::with_capacity(candidates.retained),
+            pages: BTreeMap::new(),
+        };
+        let mut current_page: Option<(u64, compact_store::PlainPage)> = None;
+        for ordinal in candidates.ordinals() {
+            let address = heads.data().layout().address_of(ordinal)?;
+            if current_page.as_ref().map(|(page, _)| *page) != Some(address.page_index) {
+                let verified = crate::read::checked_page(
+                    source.data,
+                    heads.data(),
+                    address.page_index,
+                    limits,
+                )?;
+                current_page = Some((address.page_index, self.store.decrypt(&verified)?));
+            }
+            let bytes = &current_page.as_ref().unwrap().1.as_bytes()
+                [address.byte_offset..address.byte_offset + ROW_BYTES as usize];
+            if !predicate.contains(bytes[0]) {
+                return Err(Error::InvalidIndex);
+            }
+            if selection.fields.len() < candidates.retained {
+                selection.ordinals.push(ordinal);
+                selection.fields.push(bfv_core::SelectedField {
+                    age: bytes[0],
+                    amount: u16::from_le_bytes([bytes[1], bytes[2]]),
+                    active: true,
+                });
+            }
+        }
+        if source.data.commitment() != heads.data() || source.index.commitment() != heads.index() {
+            return Err(Error::WrongVersion);
+        }
+        Ok(selection)
+    }
     pub fn prepare_exact_aggregate_for_experiment(
         &self,
         table: &Table,

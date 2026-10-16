@@ -6,6 +6,9 @@
 mod codec;
 mod dump;
 mod lexer;
+mod names;
+mod pg_keywords;
+mod predicate;
 mod select;
 
 use serde::{Deserialize, Serialize};
@@ -13,9 +16,9 @@ use std::{cmp::Ordering, fmt};
 
 pub use codec::{decode_row, decode_value, encode_row, encode_row_with_ranges, encode_value};
 pub use dump::{ImportLimits, import_database_dump, validate_database};
-pub use select::{
-    CompareOp, Expr, OrderBy, RowWindow, SelectPlan, plan_select, plan_select_schemas,
-};
+pub use names::validate_postgresql_catalog;
+pub use predicate::{CompareOp, Expr};
+pub use select::{OrderBy, RowWindow, SelectPlan, plan_select, plan_select_schemas};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DataType {
@@ -72,25 +75,38 @@ pub struct Index {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "dialect", deny_unknown_fields)]
+pub enum CheckConstraint {
+    /// Supported PostgreSQL predicate subset with exact/UTF-8 identifier rules.
+    PostgreSql18Utf8 { source: String },
+    /// Preserved SQL Server dump predicate; ASCII-CI name binding is explicit.
+    SqlServerDumpAsciiCi { source: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TableSchema {
     pub name: String,
     pub columns: Vec<Column>,
     pub primary_key: Vec<usize>,
     pub foreign_keys: Vec<ForeignKey>,
-    /// Source check expressions, preserved in the authenticated catalogue.
-    pub checks: Vec<String>,
+    /// Source and interpretation are authenticated together; no inferred dialect.
+    pub checks: Vec<CheckConstraint>,
     pub indexes: Vec<Index>,
 }
 
 /// Validate schema shape even for an empty table or a deserialized public struct.
 pub fn validate_schema(schema: &TableSchema) -> Result<(), Error> {
     use std::collections::HashSet;
-    if schema.name.is_empty() || schema.columns.is_empty() || schema.columns.len() > 1024 {
+    if schema.name.is_empty()
+        || schema.name.contains('\0')
+        || schema.columns.is_empty()
+        || schema.columns.len() > 1024
+    {
         return Err(Error::new("invalid table name or column count"));
     }
     let mut names = HashSet::new();
     for column in &schema.columns {
-        if column.name.is_empty() || !names.insert(column.name.to_ascii_lowercase()) {
+        if column.name.is_empty() || column.name.contains('\0') || !names.insert(&column.name) {
             return Err(Error::new("empty or duplicate column name"));
         }
         validate_type(&column.data_type)?;
@@ -155,7 +171,7 @@ impl TableSchema {
     pub fn column_index(&self, name: &str) -> Result<usize, Error> {
         self.columns
             .iter()
-            .position(|column| column.name.eq_ignore_ascii_case(name))
+            .position(|column| column.name == name)
             .ok_or_else(|| Error::new(format!("unknown column {name:?} in table {:?}", self.name)))
     }
     pub fn validate_row(&self, row: &[Value]) -> Result<(), Error> {
@@ -255,7 +271,7 @@ impl ImportedDatabase {
     pub fn table(&self, name: &str) -> Result<&ImportedTable, Error> {
         self.tables
             .iter()
-            .find(|table| table.schema.name.eq_ignore_ascii_case(name))
+            .find(|table| table.schema.name == name)
             .ok_or_else(|| Error::new(format!("unknown table {name:?}")))
     }
     pub fn row_count(&self) -> usize {

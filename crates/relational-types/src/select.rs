@@ -1,34 +1,11 @@
 use crate::{
-    Error, ImportedDatabase, TableSchema, Value,
+    Error, ImportedDatabase, TableSchema,
     lexer::{Parser, TokenKind, lex},
-    literal_for_type,
+    names::{self, Rules, Scope},
+    predicate::{self, Expr},
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum CompareOp {
-    Eq,
-    Ne,
-    Lt,
-    Le,
-    Gt,
-    Ge,
-}
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Expr {
-    Compare {
-        column: usize,
-        op: CompareOp,
-        value: Value,
-    },
-    And(Box<Expr>, Box<Expr>),
-    Or(Box<Expr>, Box<Expr>),
-    Not(Box<Expr>),
-    IsNull {
-        column: usize,
-        negated: bool,
-    },
-}
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OrderBy {
     pub column: usize,
@@ -63,6 +40,7 @@ pub fn plan_select_schemas(schemas: &[TableSchema], sql: &str) -> Result<SelectP
     if sql.len() > 64 * 1024 {
         return Err(Error::new("SELECT exceeds the 64 KiB planning budget"));
     }
+    names::validate_postgresql_catalog(schemas)?;
     let tokens = lex(sql)?;
     let mut parser = Parser::new(&tokens);
     parser.expect_word("SELECT")?;
@@ -78,17 +56,29 @@ pub fn plan_select_schemas(schemas: &[TableSchema], sql: &str) -> Result<SelectP
     let mut columns = Vec::new();
     if !all {
         loop {
-            columns.push(column_name(&mut parser)?);
+            let start = parser.position;
+            Rules::PostgreSql.ident(&mut parser, false)?;
+            let mut parts = 1;
+            while parser.eat_symbol('.') {
+                parts += 1;
+                if parts > 3 {
+                    return Err(Error::new(
+                        "column qualification exceeds schema/table/column",
+                    ));
+                }
+                Rules::PostgreSql.ident(&mut parser, true)?;
+            }
+            columns.push(&tokens[start..parser.position]);
             if !parser.eat_symbol(',') {
                 break;
             }
         }
     }
     parser.expect_word("FROM")?;
-    let table_name = parser.object_name()?;
+    let table_name = names::relation(&mut parser)?;
     let table = schemas
         .iter()
-        .position(|schema| schema.name.eq_ignore_ascii_case(&table_name))
+        .position(|schema| schema.name == table_name)
         .ok_or_else(|| Error::new(format!("unknown table {table_name:?}")))?;
     let schema = &schemas[table];
     crate::validate_schema(schema)?;
@@ -96,22 +86,26 @@ pub fn plan_select_schemas(schemas: &[TableSchema], sql: &str) -> Result<SelectP
         || matches!(parser.peek(), Some(TokenKind::Quoted(_)))
         || matches!(parser.peek(),Some(TokenKind::Word(word)) if !["WHERE","ORDER","LIMIT","OFFSET","FETCH"].iter().any(|keyword|word.eq_ignore_ascii_case(keyword)))
     {
-        Some(parser.ident()?)
+        Some(Rules::PostgreSql.ident(&mut parser, false)?)
     } else {
         None
     };
     // As in SQL, an explicit source alias becomes the qualifier in this scope.
-    let qualifier = alias.as_deref().unwrap_or(&table_name);
+    let scope = Scope {
+        schema,
+        alias: alias.as_deref(),
+        rules: Rules::PostgreSql,
+    };
     let projection = if all {
         (0..schema.columns.len()).collect()
     } else {
         columns
             .iter()
-            .map(|column| column.resolve(schema, qualifier))
+            .map(|column| scope.column(&mut Parser::new(column)))
             .collect::<Result<_, _>>()?
     };
     let predicate = if parser.eat_word("WHERE") {
-        Some(parse_or(&mut parser, schema, qualifier, &mut 0)?)
+        Some(predicate::parse(&mut parser, &scope, None)?)
     } else {
         None
     };
@@ -120,7 +114,7 @@ pub fn plan_select_schemas(schemas: &[TableSchema], sql: &str) -> Result<SelectP
         parser.expect_word("BY")?;
         let mut ordered_columns = vec![false; schema.columns.len()];
         loop {
-            let column = column_name(&mut parser)?.resolve(schema, qualifier)?;
+            let column = scope.column(&mut parser)?;
             let descending = parser.eat_word("DESC");
             if !descending {
                 parser.eat_word("ASC");
@@ -257,202 +251,11 @@ fn row_window(
     }
     Ok(window)
 }
-struct ColumnRef {
-    qualifier: Option<String>,
-    name: String,
-}
-impl ColumnRef {
-    fn resolve(&self, schema: &TableSchema, qualifier: &str) -> Result<usize, Error> {
-        if self
-            .qualifier
-            .as_ref()
-            .is_some_and(|candidate| !candidate.eq_ignore_ascii_case(qualifier))
-        {
-            return Err(Error::new(format!(
-                "unknown column qualifier {:?}; expected {qualifier:?}",
-                self.qualifier
-            )));
-        }
-        schema.column_index(&self.name)
-    }
-}
-fn column_name(parser: &mut Parser<'_>) -> Result<ColumnRef, Error> {
-    let first = parser.ident()?;
-    if parser.eat_symbol('.') {
-        Ok(ColumnRef {
-            qualifier: Some(first),
-            name: parser.ident()?,
-        })
-    } else {
-        Ok(ColumnRef {
-            qualifier: None,
-            name: first,
-        })
-    }
-}
-fn parse_or(
-    parser: &mut Parser<'_>,
-    schema: &TableSchema,
-    qualifier: &str,
-    budget: &mut usize,
-) -> Result<Expr, Error> {
-    let mut expr = parse_and(parser, schema, qualifier, budget)?;
-    while parser.eat_word("OR") {
-        use_budget(budget)?;
-        expr = Expr::Or(
-            Box::new(expr),
-            Box::new(parse_and(parser, schema, qualifier, budget)?),
-        );
-    }
-    Ok(expr)
-}
-fn parse_and(
-    parser: &mut Parser<'_>,
-    schema: &TableSchema,
-    qualifier: &str,
-    budget: &mut usize,
-) -> Result<Expr, Error> {
-    let mut expr = parse_atom(parser, schema, qualifier, budget)?;
-    while parser.eat_word("AND") {
-        use_budget(budget)?;
-        expr = Expr::And(
-            Box::new(expr),
-            Box::new(parse_atom(parser, schema, qualifier, budget)?),
-        );
-    }
-    Ok(expr)
-}
-fn parse_atom(
-    parser: &mut Parser<'_>,
-    schema: &TableSchema,
-    qualifier: &str,
-    budget: &mut usize,
-) -> Result<Expr, Error> {
-    use_budget(budget)?;
-    if parser.eat_word("NOT") {
-        return Ok(Expr::Not(Box::new(parse_atom(
-            parser, schema, qualifier, budget,
-        )?)));
-    }
-    if parser.eat_symbol('(') {
-        let expr = parse_or(parser, schema, qualifier, budget)?;
-        parser.expect_symbol(')')?;
-        return Ok(expr);
-    }
-    let column = column_name(parser)?.resolve(schema, qualifier)?;
-    if parser.eat_word("IS") {
-        let negated = parser.eat_word("NOT");
-        parser.expect_word("NULL")?;
-        return Ok(Expr::IsNull { column, negated });
-    }
-    let negated = parser.eat_word("NOT");
-    if parser.eat_word("BETWEEN") {
-        let lower = typed_literal(parser, schema, column)?;
-        parser.expect_word("AND")?;
-        let upper = typed_literal(parser, schema, column)?;
-        use_budget(budget)?;
-        let expr = Expr::And(
-            Box::new(Expr::Compare {
-                column,
-                op: CompareOp::Ge,
-                value: lower,
-            }),
-            Box::new(Expr::Compare {
-                column,
-                op: CompareOp::Le,
-                value: upper,
-            }),
-        );
-        return Ok(if negated {
-            Expr::Not(Box::new(expr))
-        } else {
-            expr
-        });
-    }
-    if parser.eat_word("IN") {
-        parser.expect_symbol('(')?;
-        let mut expr = Expr::Compare {
-            column,
-            op: CompareOp::Eq,
-            value: typed_literal(parser, schema, column)?,
-        };
-        while parser.eat_symbol(',') {
-            use_budget(budget)?;
-            expr = Expr::Or(
-                Box::new(expr),
-                Box::new(Expr::Compare {
-                    column,
-                    op: CompareOp::Eq,
-                    value: typed_literal(parser, schema, column)?,
-                }),
-            );
-        }
-        parser.expect_symbol(')')?;
-        return Ok(if negated {
-            Expr::Not(Box::new(expr))
-        } else {
-            expr
-        });
-    }
-    if negated {
-        return Err(Error::new("NOT after a column requires BETWEEN or IN"));
-    }
-    let op = match parser.take()? {
-        TokenKind::Operator(op) => match op.as_str() {
-            "=" => CompareOp::Eq,
-            "<>" | "!=" => CompareOp::Ne,
-            "<" => CompareOp::Lt,
-            "<=" => CompareOp::Le,
-            ">" => CompareOp::Gt,
-            ">=" => CompareOp::Ge,
-            _ => return Err(Error::new("unsupported comparison")),
-        },
-        _ => {
-            return Err(Error::new(
-                "expected a typed comparison, IN, BETWEEN or IS NULL",
-            ));
-        }
-    };
-    Ok(Expr::Compare {
-        column,
-        op,
-        value: typed_literal(parser, schema, column)?,
-    })
-}
-fn use_budget(budget: &mut usize) -> Result<(), Error> {
-    *budget += 1;
-    if *budget > 128 {
-        Err(Error::new("predicate exceeds the 128-node planning budget"))
-    } else {
-        Ok(())
-    }
-}
-fn typed_literal(
-    parser: &mut Parser<'_>,
-    schema: &TableSchema,
-    column: usize,
-) -> Result<Value, Error> {
-    let literal = parser.literal()?;
-    // A comparison does not store the literal in this column. Its typmod must
-    // neither reject a longer string nor pad/truncate the predicate operand.
-    if matches!(
-        schema.columns[column].data_type,
-        crate::DataType::Text { .. }
-    ) && let TokenKind::String(text) = &literal
-    {
-        return Ok(Value::Text(text.clone()));
-    }
-    let value = literal_for_type(&schema.columns[column].data_type, &literal)?;
-    if !matches!(value, Value::Null) {
-        crate::validate_value(&schema.columns[column], &value)?;
-    }
-    Ok(value)
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::import_database_dump;
+    use crate::{CompareOp, Value, import_database_dump};
     #[test]
     fn row_windows_bind_null_defaults_offsets_and_fetch_peer_groups() {
         let database =
@@ -580,7 +383,7 @@ mod tests {
     #[test]
     fn names_types_and_boolean_precedence_bind_to_the_selected_schema() {
         let database=import_database_dump("CREATE TABLE [Products] ([ProductID] int NOT NULL,[ProductName] nvarchar(40) NOT NULL,[UnitPrice] money NULL);",Default::default()).unwrap();
-        let plan=plan_select(&database,"SELECT TOP (20) ProductName, UnitPrice FROM dbo.Products WHERE UnitPrice BETWEEN 10 AND 20 OR ProductID IN (1, 2) ORDER BY UnitPrice DESC;").unwrap();
+        let plan=plan_select(&database,"SELECT TOP (20) \"ProductName\", \"UnitPrice\" FROM public.\"Products\" WHERE \"UnitPrice\" BETWEEN 10 AND 20 OR \"ProductID\" IN (1, 2) ORDER BY \"UnitPrice\" DESC;").unwrap();
         assert_eq!(plan.projection, vec![1, 2]);
         assert_eq!(plan.window.limit, Some(20));
         assert_eq!(
@@ -592,9 +395,9 @@ mod tests {
             }]
         );
         assert!(matches!(plan.predicate, Some(Expr::Or(_, _))));
-        assert!(plan_select(&database, "SELECT age FROM Products").is_err());
-        assert!(plan_select(&database, "SELECT * FROM Products FOR UPDATE").is_err());
-        assert!(plan_select(&database, "SELECT COUNT(*) FROM Products").is_err());
+        assert!(plan_select(&database, "SELECT age FROM \"Products\"").is_err());
+        assert!(plan_select(&database, "SELECT * FROM \"Products\" FOR UPDATE").is_err());
+        assert!(plan_select(&database, "SELECT COUNT(*) FROM \"Products\"").is_err());
     }
 
     #[test]
@@ -613,14 +416,17 @@ mod tests {
                 std::iter::repeat_n("1", 500).collect::<Vec<_>>().join(",")
             ),
         ] {
-            let error = plan_select(&database, &format!("SELECT * FROM Items WHERE {predicate}"))
-                .unwrap_err();
+            let error = plan_select(
+                &database,
+                &format!("SELECT * FROM \"Items\" WHERE {predicate}"),
+            )
+            .unwrap_err();
             assert!(error.message.contains("budget"), "{}", error.message);
         }
         assert!(
             plan_select(
                 &database,
-                "SELECT * FROM Items WHERE NOT (id = 1 OR id BETWEEN 2 AND 3)"
+                "SELECT * FROM \"Items\" WHERE NOT (id = 1 OR id BETWEEN 2 AND 3)"
             )
             .is_ok()
         );
@@ -634,11 +440,11 @@ mod tests {
         )
         .unwrap();
         for sql in [
-            "SELECT Items.id FROM dbo.Items WHERE Items.id = 1 ORDER BY Items.label;",
-            "SELECT i.id FROM Items AS i WHERE i.id = 1 ORDER BY i.label;",
-            "SELECT i.id FROM Items i WHERE i.id = 1 ORDER BY i.label;",
-            "SELECT [picked source].id FROM Items [picked source] WHERE [picked source].id = 1 ORDER BY [picked source].label;",
-            "SELECT id FROM Items AS i WHERE id = 1 ORDER BY label;",
+            "SELECT \"Items\".id FROM public.\"Items\" WHERE \"Items\".id = 1 ORDER BY \"Items\".label;",
+            "SELECT i.id FROM \"Items\" AS i WHERE i.id = 1 ORDER BY i.label;",
+            "SELECT i.id FROM \"Items\" i WHERE i.id = 1 ORDER BY i.label;",
+            "SELECT \"picked source\".id FROM \"Items\" \"picked source\" WHERE \"picked source\".id = 1 ORDER BY \"picked source\".label;",
+            "SELECT id FROM \"Items\" AS i WHERE id = 1 ORDER BY label;",
         ] {
             let plan = plan_select(&database, sql).unwrap();
             assert_eq!(plan.projection, vec![0], "{sql}");
@@ -662,13 +468,13 @@ mod tests {
             );
         }
         for sql in [
-            "SELECT wrong.id FROM Items;",
-            "SELECT id FROM Items WHERE wrong.id = 1;",
-            "SELECT id FROM Items ORDER BY wrong.id;",
-            "SELECT Items.id FROM Items AS i;",
-            "SELECT id FROM Items AS i WHERE Items.id = 1;",
-            "SELECT id FROM Items AS i ORDER BY Items.id;",
-            "SELECT other.id FROM Items AS i;",
+            "SELECT wrong.id FROM \"Items\";",
+            "SELECT id FROM \"Items\" WHERE wrong.id = 1;",
+            "SELECT id FROM \"Items\" ORDER BY wrong.id;",
+            "SELECT \"Items\".id FROM \"Items\" AS i;",
+            "SELECT id FROM \"Items\" AS i WHERE \"Items\".id = 1;",
+            "SELECT id FROM \"Items\" AS i ORDER BY \"Items\".id;",
+            "SELECT other.id FROM \"Items\" AS i;",
         ] {
             assert!(
                 plan_select(&database, sql)

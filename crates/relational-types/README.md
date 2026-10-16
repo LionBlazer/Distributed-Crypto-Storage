@@ -2,8 +2,9 @@
 
 Owner-side typed schemas, lossless table-dump import, canonical row encoding and
 schema-bound SELECT planning. The library has no peer evaluator, secret keys,
-network transport or GUI dependency. Its direct dependencies are Serde and Serde JSON;
+network transport or GUI dependency;
 consumers supply encryption, indexing, proofs and version agreement.
+Serde is the runtime dependency; Serde JSON is used by contract tests.
 
 `import_database_dump(sql, ImportLimits)` reads SQL Server base-table dumps into
 `ImportedDatabase`. It preserves every base table, column and row, including NULL,
@@ -21,6 +22,47 @@ as source catalogue objects; they do not become executable query plans. CHECK
 expressions use the supported typed predicate grammar; `GETDATE()` is resolved on
 the owner at import validation. Unsupported statements and expressions fail the
 import before publication instead of silently dropping data or constraints.
+
+Canonical catalog strings are exact object names: `foo` and `Foo`, or columns
+`id` and `ID`, may coexist. `TableSchema::column_index`, `ImportedDatabase::table`
+and generic catalog/FK validation compare these names exactly. The SQL Server
+source adapter separately checks ASCII-case-insensitive uniqueness and binds its
+source column/FK references. FK metadata records resolved exact target names;
+actual table/column names are never folded or renamed.
+
+`TableSchema::checks` contains explicit `CheckConstraint` variants with a flat
+`{dialect, source}` representation. `PostgreSql18Utf8` uses PostgreSQL name binding;
+`SqlServerDumpAsciiCi` preserves the source adapter's declared name rules. An
+unknown/missing language or the former string representation rejects, without
+fallback. Import retains the original CHECK source span, including identifier
+quoting, comments and literal spellings. One private bounded predicate parser binds
+temporary column indices under the declared policy; no bound AST is serialized.
+GETDATE is an import-only operand resolved once per validation, without rewriting
+the source expression. These are the existing supported typed predicate grammar
+and comparisons, not complete PostgreSQL/SQL Server expression engines.
+
+Live SELECT uses PostgreSQL 18 UTF-8 identifier rules: unquoted ASCII letters fold
+to lowercase, quoted names stay exact, doubled double quotes escape a quote, and
+identifier tokens clip to 63 decoded bytes at a UTF-8 boundary. High-bit UTF-8 bytes
+are not Unicode-case-folded or normalized. Empty/NUL names, SQL Server brackets and
+unimplemented U&/UESCAPE identifiers reject. The current flat catalog occupies only
+`public`; qualified `dbo` and other live namespaces reject. An alias hides the
+original qualifier and is bound by the same exact rules. Initial names/aliases use
+PG ColId categories; dotted components use ColLabel, including reserved words.
+`validate_postgresql_catalog` rejects source metadata names longer than 63 bytes
+before live key creation or I/O instead of silently renaming imported objects.
+Lossless source import may still retain such names for owner inspection.
+
+Private `names` owns these binding/admission rules, `predicate` owns shared typed
+expression construction, and `pg_keywords` owns only fixed keyword classification.
+Its 494 entries and [public upstream fixture](tests/fixtures/pg18-kwlist.h) come
+from PostgreSQL 18.0 commit `3d6a828938a5fa0444275d3d2f67b64ec3199eb7`;
+source SHA256 is `fdcdf3694513cba63b4016f63032472b686e381bb35f17c5d645bc2f6f1dac16`.
+Offline parity tests compare every entry/category, plus actual lexical/binding
+examples. The full [PostgreSQL permission notice](POSTGRESQL-LICENSE) accompanies
+the derived classifications and packaged applications; no PostgreSQL parser is
+vendored. Relevant primary contracts are [identifier syntax](https://www.postgresql.org/docs/18/sql-syntax-lexical.html)
+and the pinned [scanner support](https://raw.githubusercontent.com/postgres/postgres/3d6a828938a5fa0444275d3d2f67b64ec3199eb7/src/backend/parser/scansup.c).
 
 `plan_select_schemas` and `plan_select` bind single-table projections, comparisons,
 AND/OR/NOT, IN, BETWEEN, IS NULL and ORDER BY to actual column indices.

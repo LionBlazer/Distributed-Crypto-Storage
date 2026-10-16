@@ -1,0 +1,3 @@
+# Preserve the pinned upstream public source and permission notice byte-for-byte.
+POSTGRESQL-LICENSE -text
+tests/fixtures/pg18-kwlist.h -text

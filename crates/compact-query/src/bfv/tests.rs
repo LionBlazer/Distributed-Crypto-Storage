@@ -3,6 +3,94 @@ use super::*;
 fn row(age: u8, amount: u16) -> PlainRow {
     PlainRow { age, amount }
 }
+
+struct CountedData<'a> {
+    snapshot: &'a compact_store::EncryptedSnapshot,
+    pages: std::cell::RefCell<Vec<u64>>,
+    unavailable: Option<u64>,
+}
+impl crate::PageSource for CountedData<'_> {
+    fn commitment(&self) -> &Commitment {
+        self.snapshot.commitment()
+    }
+    fn lookup(&self, page: u64, limits: Limits) -> Result<compact_store::VerifiedPage> {
+        self.pages.borrow_mut().push(page);
+        if self.unavailable == Some(page) {
+            return Err(Error::Codec("Candidate page unavailable".into()));
+        }
+        Ok(self
+            .snapshot
+            .lookup(page, limits)?
+            .verify(self.snapshot.commitment(), page, limits)?)
+    }
+}
+
+#[test]
+fn limited_select_validates_all_candidate_pages_once_and_rejects_discarded_wrong_age() {
+    let limits = Limits::default();
+    let (owner, _) = Owner::generate([76; 16]).unwrap();
+    let mut rows = vec![row(42, 17); 300];
+    let mut table = owner.seal(&rows, 17, limits).unwrap();
+    for limit in [0, 1, 100, 256] {
+        let counted = CountedData {
+            snapshot: table.snapshot(),
+            pages: Default::default(),
+            unavailable: None,
+        };
+        let source =
+            crate::ReadView::new(table.read_heads(), &counted, table.encrypted_index()).unwrap();
+        let prepared = owner
+            .prepare_provable_select_limited_from_source(
+                &source,
+                Some(AgeRange::equal(42)),
+                RowProjection::Amount,
+                limit,
+                256,
+                limits,
+            )
+            .unwrap();
+        assert_eq!(prepared.selected_rows(), limit);
+        assert_eq!(*counted.pages.borrow(), (0..18).collect::<Vec<_>>());
+    }
+    for limit in [0, 1] {
+        let counted = CountedData {
+            snapshot: table.snapshot(),
+            pages: Default::default(),
+            unavailable: Some(17),
+        };
+        let source =
+            crate::ReadView::new(table.read_heads(), &counted, table.encrypted_index()).unwrap();
+        assert!(matches!(owner.prepare_provable_select_limited_from_source(
+            &source, Some(AgeRange::equal(42)), RowProjection::Amount, limit, 256, limits,
+        ), Err(Error::Codec(message)) if message == "Candidate page unavailable"));
+        assert_eq!(*counted.pages.borrow(), (0..18).collect::<Vec<_>>());
+    }
+    // Genuine owner-encrypted but invalid index: the wrong original age is AFTER
+    // every retained row, on the last page. Even LIMIT0 must reject it.
+    rows[299].age = 7;
+    table = owner.seal(&rows, 17, limits).unwrap();
+    table.index = crate::index::build(
+        &owner.store,
+        &[row(42, 17); 300],
+        table.commitment(),
+        table.table_id(),
+        &crate::RowIds::generate(300).unwrap(),
+    )
+    .unwrap();
+    for limit in [0, 1, 100, 256] {
+        assert!(matches!(
+            owner.prepare_provable_select_limited_from_source(
+                &table.read_view(),
+                Some(AgeRange::equal(42)),
+                RowProjection::Amount,
+                limit,
+                256,
+                limits,
+            ),
+            Err(Error::InvalidIndex)
+        ));
+    }
+}
 fn aggregate(
     owner: &Owner,
     peer: &Evaluator,

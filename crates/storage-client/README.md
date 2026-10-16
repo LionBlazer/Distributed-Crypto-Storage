@@ -41,6 +41,16 @@ selection uses binary bounds over sorted postings. This is the existing explicit
 owner-online, visible-access index model, not a claim of a secret predicate circuit.
 The session retains no imported plaintext row-answer cache.
 
+Catalog table/column names are exact; live SELECT follows PostgreSQL 18 UTF-8
+unquoted folding and quoted exact binding in the single `public` namespace.
+Preserved CamelCase source names therefore require double quotes in queries.
+Source SQL Server CHECK/FK binding is handled before canonical catalog validation;
+checks carry explicit source-language metadata. Overlong live identifiers reject
+before key generation, setup installation or object writes. No name fallback or
+catalog renaming is performed. The typed private index/domain is v3; old or unknown
+formats reject without migration. Neither the fixed private index v3, row encoding,
+FHE profile nor proof ABI changes.
+
 The client authenticates source pages and encrypts **every original cell of each
 selected row** before the peer applies the column mask homomorphically. Unselected
 columns are zeroed in BFV; the client never prepares a projected plaintext answer
@@ -121,8 +131,9 @@ filters, LIMIT, atomic literal INSERT batches and additive amount UPDATE on
 projection. Aggregates authenticate at most 2560 complete matching rows per shard;
 over-budget groups reject rather than truncate. Each peer computes encrypted
 Q2 ten-band coefficient convolution with the fixed 256-term kernel and supplies
-a full-residue product proof. Row SELECT and mutation limits remain 256. Only checked
-encrypted partial results are decrypted and combined with checked u64 arithmetic;
+a full-residue product proof. Row SELECT retains at most 256 rows per shard for FHE;
+mutation limits remain 256. Only checked encrypted partial results are decrypted
+and combined with checked u64 arithmetic;
 empty COUNT is zero and empty SUM is NULL. `VerifiedResult::Aggregated` records
 the requested projection and fresh confirmed head. Typed imported catalogs remain
 immutable and their aggregate syntax remains unsupported. The [Q2 real-process
@@ -160,13 +171,18 @@ Every successful SELECT follows:
 2. Fetch the same static encrypted ReadImage for every row SELECT on the same
    public geometry: the entire data image and padded index posting prefix. Pin
    TableId and both agreed heads; authenticate complete private index coverage and
-   selected pages before preparing original FHE operands.
+   selected pages before preparing original FHE operands. With explicit LIMIT,
+   validate every matching posting and original candidate, retaining only the first
+   `min(local matches, limit)` rows in physical ordinal order. This retained set must
+   fit 256 slots; a larger literal is never silently clamped. Without LIMIT, the
+   complete matching set must fit the existing budget.
 3. Ask a peer for the full-residue STARK and encrypted result. Derive the trusted
    canonical input from the pending request and verify every shard, joining all
    admitted workers while retaining encrypted results.
 4. Recheck confirmed ancestry and state, then recheck current TableId and both
-   heads before decrypting any result. Apply LIMIT after all logical shards have
-   complete verified results; return `VerifiedResult` with the confirmed `HeadRef`.
+   heads before decrypting any result. Merge proved shard prefixes by global
+   `ordinal * shard_count + shard_slot`, then apply the global LIMIT; return
+   `VerifiedResult` with the confirmed `HeadRef`.
    A reorganization or conflicting state requires retry.
 
 Fixed row SELECT never requests predicate-dependent pages or counts and never
@@ -181,6 +197,11 @@ core geometry. This profile introduces no new selection-dependent address/volume
 leak relative to the existing full-fetch path; public layout, operation timing,
 failures and the existing owner-online conversion boundary remain observable.
 The typed imported-catalog path and aggregate/mutation full-image reads are unchanged.
+The fixed LIMIT path still validates O(matches) source rows, including discarded
+candidates and LIMIT0, plus O(table rows / 64) bitmap traversal. It uses a zeroizing
+bitmap of at most 125,000 bytes per shard and one decrypted data-page scratch
+buffer. It does not stop validation at LIMIT,
+change ReadImage traffic, add OFFSET support or provide general streaming SELECT.
 
 The query-scoped endpoint queue spans initial/final synchronization, ReadImage and
 proof requests. Interrupted returns immediately without an uncancelled replica
@@ -273,9 +294,10 @@ same exact endpoint when multiple workers fail over onto one surviving process;
 verification runs after releasing the permit. This queue neither creates database
 locks nor changes the peer's independent heavy-operation/resource admission limit.
 
-Typed complete indices use version 2 of their encrypted schema and comparator
-format. All predicate searches and result ordering compare text using its declared
-column type: variable text preserves trailing spaces; fixed CHAR/NCHAR ignores
+Typed complete indices use version 3 of their encrypted schema/catalog format.
+Version 2 is rejected because CHECK interpretation now has an explicit per-check
+language; the row codec and comparator ordering are unchanged. All predicate
+searches and result ordering compare text using its declared column type: variable text preserves trailing spaces; fixed CHAR/NCHAR ignores
 trailing U+0020. NULL placement remains independent of sort direction. Original
 encoded field bytes are projected unchanged by the genuine proof path. Older
 index formats reject; there is no migration or implicit locale collation.
