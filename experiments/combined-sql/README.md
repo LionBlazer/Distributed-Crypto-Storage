@@ -35,6 +35,8 @@ The [streamed persistence comparison](STREAMED-PERSISTENCE-MEASUREMENTS.md) reco
 removal of the full temporary disk buffer; its overlapping timings establish no speedup.
 The [owned Delta comparison](OWNED-DELTA-MEASUREMENTS.md) records reconstruction in
 the original canonical buffers while retaining all physical audits and target checks.
+The [parallel audit comparison](PARALLEL-AUDIT-MEASUREMENTS.md) records bounded leaf
+hashing, mixed UPDATE samples and complete physical checks without a general latency claim.
 
 ## Full accepted operations
 
