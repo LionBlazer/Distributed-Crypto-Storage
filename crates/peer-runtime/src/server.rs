@@ -261,6 +261,7 @@ fn serve(socket: TcpStream, acceptor: Acceptor, shared: Arc<Shared>) -> io::Resu
     }
     let response_limit = match &wire.request {
         Request::FetchPages(_) => crate::MAX_PAGE_BATCH_RESPONSE_BYTES,
+        Request::FetchReadImage(_) => crate::MAX_READ_IMAGE_RESPONSE_BYTES,
         _ => MAX_FRAME_BYTES,
     };
     let operation = wire.request.name().to_owned();
@@ -382,6 +383,9 @@ fn dispatch(
         Request::Store(bundle) => state.store.put(bundle).map(Response::Stored),
         Request::Fetch { object } => state.store.get(&object).map(Response::Bundle),
         Request::FetchPages(request) => state.store.get_pages(request).map(Response::Pages),
+        Request::FetchReadImage(request) => {
+            state.store.get_read_image(request).map(Response::ReadImage)
+        }
         Request::FetchVersion {
             data_head,
             index_head,

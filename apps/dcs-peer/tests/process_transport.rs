@@ -815,3 +815,90 @@ fn page_rpc_audits_unrequested_bytes_after_store_and_reopen_and_rejects_truncati
     fs::write(&path, &original[..original.len() - 1]).unwrap();
     assert!(peer.fetch_pages(&request).is_err());
 }
+
+#[test]
+fn static_read_image_uses_real_data_prefix_proofs_and_rejects_unrequested_disk_corruption_after_restart()
+ {
+    let authority = Authority::new();
+    let owner_tls = authority.identity();
+    let connector = Connector::new(&owner_tls, &authority.der).unwrap();
+    let mut process = Process::start(&authority, owner_tls.fingerprint(), 1, None);
+    let (owner, bundle) = page_fixture();
+    let data_head =
+        compact_store::Commitment::decode(&bundle.data_head, Limits::default()).unwrap();
+    let index_head =
+        compact_store::Commitment::decode(&bundle.index_head, Limits::default()).unwrap();
+    let request =
+        peer_runtime::ReadImageRequest::new(bundle.id(), &data_head, &index_head, 2).unwrap();
+    let remote = process.remote(&connector);
+    remote.call(Request::Store(bundle.clone())).unwrap();
+
+    let image = remote.fetch_read_image(&request).unwrap();
+
+    assert_eq!(image.data().encode(), bundle.data);
+    assert_eq!(
+        owner
+            .decrypt(&image.index_page(1, Limits::default()).unwrap())
+            .unwrap()
+            .as_bytes(),
+        &[93; 8]
+    );
+    assert!(image.index_page(2, Limits::default()).is_err());
+    assert!(
+        remote
+            .status()
+            .unwrap()
+            .recent
+            .iter()
+            .any(|event| event.operation == "read-image"
+                && event.succeeded
+                && event.sent_bytes == request.encoded_response_bytes().unwrap() as u64)
+    );
+    assert!(remote.call(Request::Quota(1)).is_err());
+    let member = Connector::new(&authority.identity(), &authority.der).unwrap();
+    assert!(process.remote(&member).fetch_read_image(&request).is_ok());
+    assert!(
+        process
+            .remote(&member)
+            .call(Request::Store(bundle.clone()))
+            .is_err()
+    );
+    let foreign = Authority::new();
+    let foreign_connector = Connector::new(&foreign.identity(), &foreign.der).unwrap();
+    assert!(
+        process
+            .remote(&foreign_connector)
+            .fetch_read_image(&request)
+            .is_err()
+    );
+    let mut wrong_pin = process.endpoint.clone();
+    wrong_pin.identity[0] ^= 1;
+    assert!(
+        RemotePeer::new(wrong_pin, connector.clone())
+            .fetch_read_image(&request)
+            .is_err()
+    );
+    let wrong_object =
+        peer_runtime::ReadImageRequest::new([0; 32], &data_head, &index_head, 2).unwrap();
+    assert!(remote.fetch_read_image(&wrong_object).is_err());
+    let wrong_heads =
+        peer_runtime::ReadImageRequest::new(bundle.id(), &index_head, &data_head, 2).unwrap();
+    assert!(remote.fetch_read_image(&wrong_heads).is_err());
+    process.kill();
+    let restarted = Process::start(
+        &authority,
+        owner_tls.fingerprint(),
+        1,
+        Some(process.directory.clone()),
+    );
+    let remote = restarted.remote(&connector);
+    assert!(remote.fetch_read_image(&request).is_ok());
+    let path = bundle_path(&restarted, &bundle.id());
+    let mut damaged = fs::read(&path).unwrap();
+    // Index page2 is outside this static prefix; complete custody must still reject it.
+    *damaged.last_mut().unwrap() ^= 1;
+    fs::write(&path, damaged).unwrap();
+    assert!(remote.fetch_read_image(&request).is_err());
+    assert!(!remote.status().unwrap().objects[0].available);
+    assert!(remote.call(Request::Store(bundle)).is_err());
+}

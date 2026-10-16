@@ -4,6 +4,7 @@
 mod client;
 pub mod evidence;
 mod pages;
+mod read_image;
 mod server;
 mod store;
 mod wire;
@@ -17,6 +18,9 @@ pub use pages::{
     PageBatchRequest, PageError, PageImage,
 };
 pub use peer_transport::{Connector, Endpoint, Identity, RequestControl, RequestScope};
+pub use read_image::{
+    MAX_READ_IMAGE_PREFIX_PAGES, MAX_READ_IMAGE_RESPONSE_BYTES, ReadImage, ReadImageRequest,
+};
 pub use server::{PeerServer, RunningServer};
 pub use wire::{
     Bootstrap, Bundle, JournalBlock, Neighbor, ObjectInfo, Observation, Operation, ProofReply,
