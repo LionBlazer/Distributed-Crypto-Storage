@@ -178,26 +178,10 @@ pub(super) fn circuit_request(
     keyset: [u8; 32],
     wire: &[u8],
 ) -> Result<Vec<u8>> {
-    use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom};
     let request = checked(parameters, keyset, wire)?;
     let original = checked_ciphertext(&request.original, parameters)?;
     let kernel = kernel(parameters)?;
-    let mut polynomial = Poly::try_convert_from(
-        &kernel,
-        parameters.context_at_level(0).map_err(backend)?,
-        true,
-        Representation::PowerBasis,
-    )
-    .map_err(backend)?;
-    polynomial.change_representation(Representation::Ntt);
-    let values = Vec::<u64>::from(&polynomial);
-    let repeated: Vec<_> = values.iter().chain(&values).copied().collect();
-    bfv_product_circuit::encode_request(
-        Sha256::digest(wire).into(),
-        &canonical::coefficients(&original),
-        &repeated,
-    )
-    .map_err(backend)
+    canonical::public_product_request(parameters, wire, &original, &kernel)
 }
 pub(super) fn restore(
     parameters: &Arc<BfvParameters>,
