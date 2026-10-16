@@ -25,6 +25,8 @@ clean timings from the first instrumented window. The subsequent
 latency while retaining complete final custody verification.
 The [borrowed-validation comparison](BORROWED-VALIDATION-MEASUREMENTS.md) retains
 the following refactor's non-improving timings and its narrower allocation claim.
+The [bulk serialization comparison](BULK-SERIALIZATION-MEASUREMENTS.md) measures
+byte-identical custody encoding while retaining the original decoder and audits.
 
 ## Full accepted operations
 
