@@ -204,11 +204,16 @@ impl PrivateIndex {
                     let b = ordered[i][*right];
                     let cmp = match (a, b) {
                         (Value::Null, Value::Null) => Ordering::Equal,
-                        (Value::Null, _) => Ordering::Less,
-                        (_, Value::Null) => Ordering::Greater,
-                        _ => compare_values(a, b).expect("validated same-typed complete index"),
+                        (Value::Null, _) if order.nulls_first => Ordering::Less,
+                        (Value::Null, _) => Ordering::Greater,
+                        (_, Value::Null) if order.nulls_first => Ordering::Greater,
+                        (_, Value::Null) => Ordering::Less,
+                        _ => {
+                            let cmp =
+                                compare_values(a, b).expect("validated same-typed complete index");
+                            if order.descending { cmp.reverse() } else { cmp }
+                        }
                     };
-                    let cmp = if order.descending { cmp.reverse() } else { cmp };
                     if cmp != Ordering::Equal {
                         return cmp;
                     }
@@ -254,5 +259,34 @@ mod tests {
         let (bytes, mut index) = PrivateIndex::build(relation()).unwrap();
         index.cells[0][0].length += 1;
         assert!(index.validate(&index.schema, bytes.len()).is_err());
+    }
+
+    #[test]
+    fn null_placement_is_per_sort_key_and_precedes_the_limit() {
+        let table = relational_types::import_database_dump(
+            "CREATE TABLE ranks (id INT NOT NULL, score INT NULL); INSERT INTO ranks VALUES (1,NULL),(2,10),(3,-5),(4,NULL),(5,10);",
+            relational_types::ImportLimits::default(),
+        )
+        .unwrap()
+        .tables
+        .remove(0);
+        let (bytes, index) = PrivateIndex::build(table).unwrap();
+        index.validate(&index.schema, bytes.len()).unwrap();
+        for (tail, expected) in [
+            ("ORDER BY score", vec![2, 1, 4, 0, 3]),
+            ("ORDER BY score DESC", vec![0, 3, 1, 4, 2]),
+            ("ORDER BY score ASC NULLS FIRST", vec![0, 3, 2, 1, 4]),
+            ("ORDER BY score DESC NULLS LAST", vec![1, 4, 2, 0, 3]),
+            ("ORDER BY score NULLS FIRST, id DESC", vec![3, 0, 2, 4, 1]),
+            ("ORDER BY score LIMIT 1", vec![2]),
+            ("WHERE score IS NULL ORDER BY id DESC", vec![3, 0]),
+            ("WHERE score <> 10 ORDER BY score", vec![2]),
+        ] {
+            let sql = format!("SELECT id FROM ranks {tail}");
+            let plan =
+                relational_types::plan_select_schemas(std::slice::from_ref(&index.schema), &sql)
+                    .unwrap();
+            assert_eq!(index.select(&plan).unwrap(), expected, "{sql}");
+        }
     }
 }

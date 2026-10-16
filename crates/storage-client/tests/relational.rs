@@ -347,6 +347,49 @@ fn typed_tables_stream_more_than_128_rows_with_real_proofs_and_complete_private_
 }
 
 #[test]
+fn proved_projection_uses_postgresql_null_order_before_applying_limit() {
+    let network = Network::new();
+    let database = import_database_dump(
+        "CREATE TABLE ranks (id INT NOT NULL, score INT NULL); INSERT INTO ranks VALUES (1,NULL),(2,10),(3,-5),(4,NULL),(5,10);",
+        ImportLimits::default(),
+    )
+    .unwrap();
+    let mut session =
+        RelationalSession::import(database, network.participants.clone(), test_profile()).unwrap();
+    for (tail, expected) in [
+        ("ORDER BY score LIMIT 1", vec![3]),
+        ("ORDER BY score DESC LIMIT 2", vec![1, 4]),
+        ("ORDER BY score ASC NULLS FIRST LIMIT 2", vec![1, 4]),
+        ("ORDER BY score DESC NULLS LAST LIMIT 3", vec![2, 5, 3]),
+        ("ORDER BY score NULLS FIRST, id DESC", vec![4, 1, 3, 5, 2]),
+    ] {
+        let sql = format!("SELECT id FROM ranks {tail}");
+        network.activity.lock().unwrap().clear();
+        let selected = session.select(&sql).unwrap();
+        assert_eq!(
+            selected.rows,
+            expected
+                .into_iter()
+                .map(|id| vec![Value::Integer(id)])
+                .collect::<Vec<_>>(),
+            "{sql}"
+        );
+        assert_eq!(selected.proof_blocks, 1);
+        assert_eq!(
+            network
+                .activity
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|operation| *operation == "fhe-proof")
+                .count(),
+            1,
+            "{sql} must obtain real encrypted projection evidence"
+        );
+    }
+}
+
+#[test]
 fn damaged_replicas_cannot_silently_omit_rows_or_return_an_unproved_empty_result() {
     let network = Network::new();
     let database = import_database_dump(

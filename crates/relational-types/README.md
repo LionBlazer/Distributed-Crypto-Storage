@@ -24,6 +24,8 @@ import before publication instead of silently dropping data or constraints.
 
 `plan_select_schemas` and `plan_select` bind single-table projections, comparisons,
 AND/OR/NOT, IN, BETWEEN, IS NULL, ORDER BY and TOP/LIMIT to actual column indices.
+ORDER BY resolves PostgreSQL's default NULL placement (ASC NULLS LAST and DESC
+NULLS FIRST) and explicit NULLS FIRST/LAST separately for every ordering column.
 They produce an AST, never an answer. Joins, aggregates, stored programs, row locks
 and mutation plans are rejected here until their separate execution/proof paths
 exist. Text comparisons use case-sensitive Unicode ordinal ordering and ignore

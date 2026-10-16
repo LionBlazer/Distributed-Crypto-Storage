@@ -33,6 +33,8 @@ pub enum Expr {
 pub struct OrderBy {
     pub column: usize,
     pub descending: bool,
+    /// Resolved independently of direction: PostgreSQL defaults to DESC's value.
+    pub nulls_first: bool,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SelectPlan {
@@ -113,7 +115,21 @@ pub fn plan_select_schemas(schemas: &[TableSchema], sql: &str) -> Result<SelectP
             if !descending {
                 parser.eat_word("ASC");
             }
-            order_by.push(OrderBy { column, descending });
+            let nulls_first = if parser.eat_word("NULLS") {
+                if parser.eat_word("FIRST") {
+                    true
+                } else {
+                    parser.expect_word("LAST")?;
+                    false
+                }
+            } else {
+                descending
+            };
+            order_by.push(OrderBy {
+                column,
+                descending,
+                nulls_first,
+            });
             if !parser.eat_symbol(',') {
                 break;
             }
@@ -344,7 +360,8 @@ mod tests {
             plan.order_by,
             vec![OrderBy {
                 column: 2,
-                descending: true
+                descending: true,
+                nulls_first: true,
             }]
         );
         assert!(matches!(plan.predicate, Some(Expr::Or(_, _))));
@@ -411,7 +428,8 @@ mod tests {
                 plan.order_by,
                 vec![OrderBy {
                     column: 1,
-                    descending: false
+                    descending: false,
+                    nulls_first: false,
                 }],
                 "{sql}"
             );
@@ -431,6 +449,54 @@ mod tests {
                     .message
                     .contains("qualifier"),
                 "{sql}"
+            );
+        }
+    }
+
+    #[test]
+    fn null_ordering_options_bind_each_key_and_reject_incomplete_clauses() {
+        let database = import_database_dump(
+            "CREATE TABLE ranks (id INT NOT NULL, score INT NULL);",
+            Default::default(),
+        )
+        .unwrap();
+        for (tail, descending, nulls_first) in [
+            ("", false, false),
+            ("ASC", false, false),
+            ("DESC", true, true),
+            ("NULLS FIRST", false, true),
+            ("ASC NULLS FIRST", false, true),
+            ("DESC NULLS FIRST", true, true),
+            ("ASC NULLS LAST", false, false),
+            ("DESC NULLS LAST", true, false),
+        ] {
+            let sql = format!("SELECT id FROM ranks ORDER BY score {tail}, id DESC NULLS LAST");
+            let plan = plan_select(&database, &sql).unwrap();
+            assert_eq!(
+                plan.order_by,
+                [
+                    OrderBy {
+                        column: 1,
+                        descending,
+                        nulls_first,
+                    },
+                    OrderBy {
+                        column: 0,
+                        descending: true,
+                        nulls_first: false,
+                    },
+                ],
+                "{sql}"
+            );
+        }
+        for tail in ["NULLS", "NULLS MIDDLE", "NULLS FIRST LAST", "ASC DESC"] {
+            assert!(
+                plan_select(
+                    &database,
+                    &format!("SELECT id FROM ranks ORDER BY score {tail}")
+                )
+                .is_err(),
+                "{tail}"
             );
         }
     }

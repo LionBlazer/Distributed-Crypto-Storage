@@ -26,8 +26,10 @@ Each table is a distinct bounded ciphertext shard, replicated on two peers when
 available. All tables share one owner key authority and public BFV setup.
 
 `select(sql)` supports actual table/column names, projections, typed comparisons,
-AND/OR/NOT, IN/BETWEEN, NULL predicates, ORDER BY and TOP/LIMIT. Complete per-column
-private postings are authenticated against the agreed index head; equality/range
+AND/OR/NOT, IN/BETWEEN, NULL predicates, ORDER BY and TOP/LIMIT. Result ordering
+uses PostgreSQL's ASC NULLS LAST / DESC NULLS FIRST defaults, accepts explicit
+NULLS FIRST/LAST per key and applies LIMIT after that complete ordering. Complete
+per-column private postings are authenticated against the agreed index head; equality/range
 selection uses binary bounds over sorted postings. This is the existing explicit
 owner-online, visible-access index model, not a claim of a secret predicate circuit.
 The session retains no imported plaintext row-answer cache.

@@ -20,6 +20,9 @@ immutable single-table SELECT with authenticated owner-private indices and prove
 BFV byte projection. Unsupported operators reject before execution. Neither path
 implements general transactions, DELETE, JOIN or SQL row locks.
 Parsing syntax or preserving imported stored programs does not execute them.
+Typed SELECT ordering follows PostgreSQL's ASC NULLS LAST / DESC NULLS FIRST
+defaults and explicit NULLS FIRST/LAST per key, before applying LIMIT. See
+[sorting rows](https://www.postgresql.org/docs/18/queries-order.html).
 
 Current public proofs attest full BFV addition and public-polynomial products.
 Private AEAD/index-to-FHE preparation remains the designated owner's responsibility.
