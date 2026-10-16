@@ -46,6 +46,7 @@ impl Candidate {
             data: data.encode(),
             index: index.encode(),
         };
+        drop((data, index));
         // This ID is the existing four big-endian-length-prefixed parts hash,
         // NOT the hash of bincode disk bytes. Check it exactly once.
         if bundle.id() != object {

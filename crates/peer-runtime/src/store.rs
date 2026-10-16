@@ -382,9 +382,8 @@ impl Store {
         &mut self,
         request: crate::PageBatchRequest,
     ) -> Result<crate::PageBatch, RemoteError> {
-        let audited = self.read_verified(request.object())?;
-        crate::PageBatch::from_snapshots(request, &audited.data, &audited.index)
-            .map_err(|_| RemoteError::Integrity)
+        let AuditedBundle { data, index, .. } = self.read_verified(request.object())?;
+        crate::PageBatch::from_snapshots(request, &data, &index).map_err(|_| RemoteError::Integrity)
     }
     pub(crate) fn get_read_image(
         &mut self,
