@@ -22,6 +22,7 @@ pub(crate) enum Kind {
     PackedCanonicalIndexOpening,
     StateCertificate,
     VersionSelection,
+    SelectedEncoding,
 }
 
 impl Kind {
@@ -38,6 +39,7 @@ impl Kind {
             Self::PackedCanonicalIndexOpening => "packed-canonical-index-opening",
             Self::StateCertificate => "state-certificate",
             Self::VersionSelection => "version-selection",
+            Self::SelectedEncoding => "selected-encoding",
         }
     }
 }
@@ -61,6 +63,7 @@ pub(crate) enum PrimitiveAir {
     Poly1305(Box<Poly1305Air>),
     Opening(Box<crate::opening::air::OpeningAir>),
     Selection(Box<crate::opening::selection::air::SelectionAir>),
+    Encoding(Box<crate::opening::selection::encoding::air::EncodingAir>),
 }
 
 impl BaseAir<Val> for PrimitiveAir {
@@ -71,6 +74,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Poly1305(air) => air.width(),
             Self::Opening(air) => air.width(),
             Self::Selection(air) => air.width(),
+            Self::Encoding(air) => air.width(),
         }
     }
 
@@ -81,6 +85,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Poly1305(air) => air.main_next_row_columns(),
             Self::Opening(air) => air.main_next_row_columns(),
             Self::Selection(air) => air.main_next_row_columns(),
+            Self::Encoding(air) => air.main_next_row_columns(),
         }
     }
 
@@ -91,6 +96,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Poly1305(air) => air.num_public_values(),
             Self::Opening(air) => air.num_public_values(),
             Self::Selection(air) => air.num_public_values(),
+            Self::Encoding(air) => air.num_public_values(),
         }
     }
 
@@ -101,6 +107,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Poly1305(air) => air.num_periodic_columns(),
             Self::Opening(air) => air.num_periodic_columns(),
             Self::Selection(air) => air.num_periodic_columns(),
+            Self::Encoding(air) => air.num_periodic_columns(),
         }
     }
 
@@ -111,6 +118,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Poly1305(air) => air.periodic_columns(),
             Self::Opening(air) => air.periodic_columns(),
             Self::Selection(air) => air.periodic_columns(),
+            Self::Encoding(air) => air.periodic_columns(),
         }
     }
 
@@ -121,6 +129,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Poly1305(air) => air.max_constraint_degree(),
             Self::Opening(air) => air.max_constraint_degree(),
             Self::Selection(air) => air.max_constraint_degree(),
+            Self::Encoding(air) => air.max_constraint_degree(),
         }
     }
 }
@@ -133,6 +142,7 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for PrimitiveAir {
             Self::Poly1305(air) => air.eval(builder),
             Self::Opening(air) => air.eval(builder),
             Self::Selection(air) => air.eval(builder),
+            Self::Encoding(air) => air.eval(builder),
         }
     }
 }

@@ -105,3 +105,9 @@ already above500ms. Composition is a feasibility experiment, not an interactive
 latency result. Typed/NULL catalogs, independently anchored history, BFV
 key/setup/noise/encoding formation, updates, cross-shard completeness, locks,
 freshness/finality and live acceptance remain separate unmet requirements.
+
+The child [SelectedEncoding gate](encoding/README.md) opens this exact
+request-bound C_sel only after source-first composite verification, then proves the
+complete original BFV plaintext encoding. Its [validation record](../../../SELECTED-ENCODING-VALIDATION.md)
+records the upstream coefficient tests, genuine composite and all 114 serial tests.
+It adds no live SQL acceptance; this module's existing profiles remain unchanged.

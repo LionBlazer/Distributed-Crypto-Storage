@@ -246,3 +246,14 @@ both CLI gates and all 97 serial tests passed. The
 query timings, owned cache accounting and sampled process observations. Its
 distinct profiles preserve earlier gates; production acceptance, freshness,
 full SQL/FHE linkage, private locks and a complete 500 ms operation remain open.
+
+## Selected-encoding validation
+
+The distinct [private selected-encoding module](src/opening/selection/encoding/README.md)
+links the existing request-bound Selection composite to all 8192 BFV plaintext
+coefficients and their modular scaling. Release build, strict Clippy, fourteen
+actual numerical reports, all three upstream matrix gates, the genuine composite
+and all 114 serial tests passed. The [validation record](SELECTED-ENCODING-VALIDATION.md)
+describes exact provenance, measured composite timings and sampled resources.
+Ciphertext formation, peer-only computation, production SQL acceptance and the
+500 ms target remain open. Earlier reports retain their original scope.
