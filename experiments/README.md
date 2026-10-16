@@ -12,6 +12,10 @@ in ignored `.local/`, not in the library source tree.
 - [bfv-addition-proof](bfv-addition-proof/README.md) is a standalone, pinned Plonky3
   proof of exact BFV ciphertext addition. It verifies serialized proofs against
   independently committed public inputs; it does not accept SQL or authorize writes.
+- [hiding-fri-sha256-gate](hiding-fri-sha256-gate/README.md) is a standalone,
+  nonaccepting SHA-256 compression backend experiment with reviewed fixed hiding
+  parameters, real primitive proofs and recorded validation limits. It does not
+  implement private CSTORE opening, SQL completeness or locks.
 - Other directories keep their own manifests, reproduction scripts and README
   files. Some deliberately export pinned historical source revisions into an
   isolated local workspace; these are research candidates, not core imports.

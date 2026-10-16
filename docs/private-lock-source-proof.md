@@ -139,6 +139,14 @@ active-feedback or access-leakage policy is selected by this note.
 
 ## Cost evidence and the next gate
 
+The standalone [hiding-FRI SHA-256 gate](../experiments/hiding-fri-sha256-gate/README.md)
+now validates the pinned public compression primitive with the fixed hiding backend,
+genuine proofs and adversarial tests. Its [validation record](../experiments/hiding-fri-sha256-gate/VALIDATION.md)
+pins source/artifact identities, security reports and limited process observations.
+Public fixtures do not establish witness secrecy or private-source composition.
+SHA chaining/padding, AEAD, authenticated index/control semantics and BFV input
+formation remain unimplemented; this gate supplies no SQL acceptance API.
+
 [Greco's pinned artifact](https://github.com/privacy-ethereum/greco/blob/df72c14c02d5d85f189f087feaab109e7fc1b4f1/README.md)
 implements BFV input-formation proofs on Halo2. At N8192, four 55-bit moduli,
 t65537 and K16, its authors report 9.59165725 s proving / 7.775375 ms verification
