@@ -106,8 +106,11 @@ The reusable [BFV proof engine](crates/bfv-query-proof/README.md) covers all 81,
 ciphertext residues for addition and public-polynomial projection with Plonky3.
 Its proof-first client composition is described in [proved network SQL](docs/proved-sql-network.md).
 Private AEAD/index authentication remains owner-side; this is not an independently
-public proof of SQL/AEAD linkage. Full network queries still exceed the 50–100 ms
-target. The original [addition experiment](experiments/bfv-addition-proof/README.md)
+public proof of SQL/AEAD linkage. The current
+[complete-operation measurements](experiments/update-cost/MEASUREMENTS.md) observed
+small native fixed-schema reads and writes below the requested 500 ms, including
+durable confirmation. Larger typed workloads, failures, WAN and tail bounds remain
+open. The original [addition experiment](experiments/bfv-addition-proof/README.md)
 and its [measurements](docs/experiment-bfv-addition-proof.md) remain historical evidence.
 
 The [measurement ledger](docs/optimization-goal.md) preserves successful and failed

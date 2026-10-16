@@ -59,8 +59,8 @@ remains separate; it cannot silently answer or mutate typed catalog tables.
 `schemas`, `shards`, `rows`, `version`, `replace_participant` and `copy_shard`
 expose catalog metadata and real custody/restart/repair operations. The core never
 starts processes or supplies local consensus parameters. Owner restart/key recovery,
-publicly verifiable AEAD-to-FHE conversion, production consensus and 50–100 ms
-full-operation latency remain unimplemented targets.
+publicly verifiable AEAD-to-FHE conversion, production consensus and a general
+500-ms full-operation bound remain open.
 
 ## Two-column verified network path
 
@@ -202,23 +202,22 @@ Journal storage stops at its cap; proof-body pruning is unimplemented. Collectio
 reclaims superseded known compact versions while retaining current and confirmation
 states. Unknown failed staging is retained and can fill quota. Copies on one host
 share a failure domain. Successful writes do not prove independent availability.
-Full-query latency still exceeds the 50–100 ms target.
+The requested 500-ms full-query bound still needs representative workloads and
+tail measurements; failure recovery can take seconds.
 
 The earlier `Database::execute` remains an unverified diagnostic path: it rejects
 with `MissingComputationProof`, and `AcceptedResult` is uninhabited. The live GUI
 uses the corresponding typed or two-column Session. No unverified diagnostic result can convert to accepted evidence.
 
-Three Windows development runs on 2026-10-16 used the existing four-row/two-peer
-`proved_sql` scenario, native owner compilation, profile-v2 AVX-512 kernels and
-eight Rayon threads in each process. Full UPDATE of three rows across both shards,
-including proof checks, freshness and durable confirmation, took 641.4–663.5 ms
-(median 661.2 ms). The previous sequential preparation observed 691–821 ms
-(median 782 ms) under the same stated configuration. These small samples do not
-establish a larger-workload bound or the requested 500-ms latency. INSERT timing
-also varied despite its unchanged execution. Default-two-thread process tests,
-concurrent UPDATE, overflow rejection and one-survivor failover passed separately.
-Reproduction and the surrounding limitations belong to
-[the network measurements](../../docs/proved-sql-network.md).
+The current [complete-operation record](../../experiments/update-cost/MEASUREMENTS.md)
+includes three genuine native Windows scenarios with two independent peers,
+eight threads per process and profile-v3 AVX-512 kernels. After atomic INSERT
+integration, single-row INSERT took 253.950–270.928 ms and three-row/two-shard
+UPDATE took 410.977–421.218 ms, including authorization, proof/freshness checks and
+durable confirmation. The separate 512-row COUNT/SUM took 190.186–200.803 ms.
+These small local fixtures do not establish a general latency, RAM or consensus
+guarantee. The record preserves full workloads, failed-peer observations, exact
+artifacts and reproduction; earlier measurements remain in the linked history.
 
 ## Verification
 
