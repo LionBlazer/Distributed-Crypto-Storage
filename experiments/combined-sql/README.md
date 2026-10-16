@@ -37,6 +37,8 @@ The [owned Delta comparison](OWNED-DELTA-MEASUREMENTS.md) records reconstruction
 the original canonical buffers while retaining all physical audits and target checks.
 The [parallel audit comparison](PARALLEL-AUDIT-MEASUREMENTS.md) records bounded leaf
 hashing, mixed UPDATE samples and complete physical checks without a general latency claim.
+The [owner-audit comparison](OWNER-AUDIT-MEASUREMENTS.md) records owner CPU opt-in,
+three-pair timings with overlapping ranges and paired regressions.
 
 ## Full accepted operations
 
