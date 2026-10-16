@@ -33,6 +33,8 @@ The [owned-image comparison](OWNED-IMAGE-MEASUREMENTS.md) measures deferred peer
 packet materialization while retaining every complete physical image audit.
 The [streamed persistence comparison](STREAMED-PERSISTENCE-MEASUREMENTS.md) records
 removal of the full temporary disk buffer; its overlapping timings establish no speedup.
+The [owned Delta comparison](OWNED-DELTA-MEASUREMENTS.md) records reconstruction in
+the original canonical buffers while retaining all physical audits and target checks.
 
 ## Full accepted operations
 
