@@ -41,6 +41,8 @@ The [owner-audit comparison](OWNER-AUDIT-MEASUREMENTS.md) records owner CPU opt-
 three-pair timings with overlapping ranges and paired regressions.
 The [received-version comparison](RECEIVED-VERSION-MEASUREMENTS.md) retains the
 next ownership stage's full-operation samples and its remaining 500-ms gap.
+The [compute-custody comparison](COMPUTE-CUSTODY-MEASUREMENTS.md) records borrowed
+peer admission, all three sample pairs and the remaining general 500-ms gap.
 
 ## Full accepted operations
 
