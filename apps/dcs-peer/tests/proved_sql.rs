@@ -253,7 +253,7 @@ fn proved_select_insert_update_survive_a_process_loss_and_journal_restart() {
     assert!(pa.remote.status().is_err());
     assert!(pb.remote.status().unwrap().journal_bytes > 0);
     assert!(
-        database.execute("SELECT COUNT(*) FROM records").is_err(),
+        database.execute("SELECT AVG(amount) FROM records").is_err(),
         "An unsupported proof circuit must fail closed"
     );
 }
@@ -404,6 +404,87 @@ fn interrupted_confirmation_resumes_the_original_write_without_applying_it_twice
         rows(execute(&mut database, "SELECT * FROM records")),
         vec![vec![18, 21], vec![42, 31]]
     );
+}
+
+#[test]
+fn real_peers_prove_count_sum_and_empty_sql_null_over_complete_shards() {
+    use storage_client::AggregateProjection;
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let first = Process::start(owner.fingerprint(), 1, None);
+    let second = Process::start(owner.fingerprint(), 2, None);
+    // Round-robin partitioning gives different input and a different partial sum
+    // to each real peer; age filters also leave exactly one shard empty.
+    let source: Vec<_> = (0..512)
+        .map(|ordinal| {
+            if ordinal % 2 == 0 {
+                PlainRow {
+                    age: 18,
+                    amount: 65535,
+                }
+            } else {
+                PlainRow { age: 7, amount: 1 }
+            }
+        })
+        .collect();
+    let mut session = Session::create(
+        "aggregate".into(),
+        &source,
+        vec![
+            first.participant(1, &connector),
+            second.participant(2, &connector),
+        ],
+        test_contract(),
+    )
+    .unwrap();
+    let expected_version = session.version();
+    for (sql, expected_projection, expected_count, expected_sum) in [
+        (
+            "SELECT COUNT(*), SUM(amount) FROM records",
+            AggregateProjection::CountSum,
+            512,
+            Some(16_777_216),
+        ),
+        (
+            "SELECT COUNT(*) FROM records WHERE age >= 18",
+            AggregateProjection::Count,
+            256,
+            Some(16_776_960),
+        ),
+        (
+            "SELECT SUM(amount) FROM records WHERE age = 7",
+            AggregateProjection::Sum,
+            256,
+            Some(256),
+        ),
+        (
+            "SELECT COUNT(*) FROM records WHERE age > 255",
+            AggregateProjection::Count,
+            0,
+            None,
+        ),
+        (
+            "SELECT SUM(amount) FROM records WHERE age < 7",
+            AggregateProjection::Sum,
+            0,
+            None,
+        ),
+    ] {
+        let VerifiedResult::Aggregated {
+            projection,
+            count,
+            sum,
+            version,
+        } = execute(&mut session, sql)
+        else {
+            panic!("verified aggregate")
+        };
+        assert_eq!(
+            (projection, count, sum),
+            (expected_projection, expected_count, expected_sum)
+        );
+        assert_eq!(version.state_root, expected_version.state_root);
+    }
 }
 
 #[test]

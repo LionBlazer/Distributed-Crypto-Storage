@@ -301,6 +301,11 @@ fn limit_one_rejects_a_missing_later_shard_after_a_valid_first_shard_proof() {
     for process in [&first, &second] {
         process.corrupt_public_fixture_bundle(source[1].object);
     }
+    assert!(
+        matches!(session.execute("SELECT COUNT(*), SUM(amount) FROM records"),
+        Err(storage_client::Error::UnavailableShard(id)) if id == source[1].id),
+        "an unavailable later shard cannot be omitted from an aggregate"
+    );
 
     let result = session.execute("SELECT amount FROM records LIMIT 1");
 

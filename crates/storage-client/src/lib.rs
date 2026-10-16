@@ -15,7 +15,7 @@ pub use script::{
     MAX_SCRIPT_BYTES, MAX_SCRIPT_STATEMENTS, ScriptError, ScriptResult, SqlScript, SqlStatement,
     StatementOutcome, StatementResult,
 };
-pub use session::{Session, VerifiedResult};
+pub use session::{AggregateProjection, Session, VerifiedResult};
 
 #[derive(Debug)]
 pub enum Error {

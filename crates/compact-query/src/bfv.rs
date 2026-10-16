@@ -5,9 +5,11 @@ use bfv_query_core as bfv_core;
 use compact_store::{Commitment, Limits};
 use std::{collections::BTreeMap, sync::Arc};
 use zeroize::{Zeroize, Zeroizing};
+mod aggregate;
 mod bfv_evaluator;
 mod bfv_owner;
 mod verified;
+pub use aggregate::{PreparedProvableAggregate, VerifiedAggregate};
 pub use verified::{VerifiedSelection, VerifiedUpdate};
 
 pub use bfv_core::{

@@ -71,7 +71,14 @@ holders/executors without becoming a voting committee.
 
 `Session::execute(&mut self, sql)` accepts row SELECT/projections, supported age
 filters, LIMIT, single-row INSERT and additive amount UPDATE on
-`records(age: u8, amount: u16)`. COUNT/SUM and unsupported SQL reject explicitly.
+`records(age: u8, amount: u16)`, plus COUNT(*), SUM(amount) and their combined
+projection. Aggregates authenticate at most 256 complete matching rows per shard;
+over-budget groups reject rather than truncate. Each peer computes encrypted
+coefficient convolution and supplies a full-residue product proof. Only checked
+encrypted partial results are decrypted and combined with checked u64 arithmetic;
+empty COUNT is zero and empty SUM is NULL. `VerifiedResult::Aggregated` records
+the requested projection and fresh confirmed head. Typed imported catalogs remain
+immutable and their aggregate syntax remains unsupported.
 
 `SqlScript::parse(sql)` validates a bounded script before any network operation.
 It supports ordinary comments, the exact non-null unsigned `records` schema,
@@ -85,7 +92,7 @@ caller supplies an actual empty-Session creator with its participants and protoc
 profile. A missing table requires CREATE; duplicate unconditional CREATE rejects
 before any statement executes. IF NOT EXISTS preserves the existing table, keys
 and journal. A valid CREATE followed by SELECT performs a real proved read even
-when the table has no rows. Unsupported schema, COUNT/SUM, transactions and
+when the table has no rows. Unsupported schema, transactions and
 `SELECT FOR UPDATE` reject during planning rather than dropping their semantics.
 
 Execution is sequential, not transactional. `ScriptResult` retains each DDL or
@@ -136,7 +143,7 @@ be reconstructed from drafts. Invalid/unavailable holders are skipped, missing
 proofs reject, and temporary peer `Busy` responses have bounded retry/failover.
 `replace_participant` initializes the new journal before replacing handles.
 
-Fixed-schema SELECT authenticates, proves and completes at most two shards
+Fixed-schema SELECT and aggregates authenticate, prove and complete at most two shards
 concurrently. The owner shares its immutable keys with scoped workers; no secret
 key or plaintext is sent to a peer. All workers finish before an error returns;
 all shard proofs and the final confirmed-version check precede result ordering

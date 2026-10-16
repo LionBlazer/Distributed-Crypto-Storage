@@ -18,15 +18,19 @@ impl Session {
                 .ok_or_else(|| protocol("Missing retained mutation result"));
         }
         let plan = sql_plan::parse_sql(sql)?;
-        if matches!(
-            plan,
-            QueryPlan::Aggregate { .. } | QueryPlan::Count { .. } | QueryPlan::Sum { .. }
-        ) {
-            return Err(Error::InvalidInput(
-                "COUNT/SUM computation proofs are not implemented; no query was executed".into(),
-            ));
-        }
         let initial = self.synchronize()?;
+        match plan {
+            QueryPlan::Aggregate { predicate } => {
+                return self.execute_aggregate(initial, predicate, AggregateProjection::CountSum);
+            }
+            QueryPlan::Count { predicate } => {
+                return self.execute_aggregate(initial, predicate, AggregateProjection::Count);
+            }
+            QueryPlan::Sum { predicate } => {
+                return self.execute_aggregate(initial, predicate, AggregateProjection::Sum);
+            }
+            _ => {}
+        }
         if let QueryPlan::Select {
             predicate,
             projection,

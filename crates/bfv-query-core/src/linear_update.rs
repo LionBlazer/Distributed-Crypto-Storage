@@ -46,6 +46,24 @@ pub struct PublicUpdateEvaluator {
     keyset_id: [u8; 32],
 }
 impl PublicUpdateEvaluator {
+    /// Complete original coefficient-packed aggregate and fixed public convolution.
+    pub fn aggregate_circuit_request(&self, request: &[u8]) -> Result<Vec<u8>> {
+        if self.geometry != Geometry::Rows256 {
+            return Err(Error::GeometryLimit);
+        }
+        polynomial_aggregate::circuit_request(&self.parameters, self.keyset_id, request)
+    }
+    /// Representation conversion only; the consumer must verify the exact product.
+    pub fn restore_aggregate_circuit_output(
+        &self,
+        request: &[u8],
+        output: &[u8],
+    ) -> Result<Vec<u8>> {
+        if self.geometry != Geometry::Rows256 {
+            return Err(Error::GeometryLimit);
+        }
+        polynomial_aggregate::restore(&self.parameters, self.keyset_id, request, output)
+    }
     pub fn from_parameters(setup: &PublicUpdateParameters) -> Result<Self> {
         Ok(Self {
             parameters: setup.checked_parameters()?,
@@ -88,6 +106,9 @@ impl PublicUpdateEvaluator {
             ),
             Some(b"BFVBYSQ1") => {
                 typed_projection::request_context(&self.parameters, self.keyset_id, request)
+            }
+            Some(b"BFVPAGQ1") if self.geometry == Geometry::Rows256 => {
+                polynomial_aggregate::request_context(&self.parameters, self.keyset_id, request)
             }
             _ => Err(Error::InvalidShape),
         }

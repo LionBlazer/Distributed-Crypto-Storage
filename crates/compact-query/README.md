@@ -103,6 +103,17 @@ rejection for both aggregate completion and UPDATE.
 
 ## Proved BFV completion
 
+`prepare_provable_aggregate` reuses the private complete authenticated selection
+boundary and encrypts original amount limbs and per-row presence markers for the
+coefficient-convolution kernel. `check_aggregate_proof` verifies the genuine
+full-residue product against the retained request and source heads;
+`complete_checked_aggregate` rechecks exact evidence before decrypting the actual
+peer ciphertext. `VerifiedAggregate` exposes its decrypted count, nullable sum
+and checked evidence. Empty selection still requires a real proof. At most 256
+matching rows per shard are admitted; arbitrary owner vectors cannot construct
+this storage-bound preparation. No aggregate result comes from retained source
+fields, and the existing owner-online AEAD-to-FHE boundary remains unchanged.
+
 The new path composes [bfv-query-proof](../bfv-query-proof/README.md) with the private
 exact-selection constructor. `prepare_provable_select` and `prepare_provable_update`
 authenticate the complete selected posting lists and data pages before encrypting

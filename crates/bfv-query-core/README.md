@@ -28,6 +28,21 @@ plaintext values. Complete authenticated indexed selection, schema semantics,
 chunk coverage, authorization and fresh agreed state belong to the storage client.
 The byte kernel does not prove arbitrary SQL comparisons or hide access patterns.
 
+`Owner::prepare_polynomial_aggregate` packs original selected amount low bytes at
+coefficients 0..255, high bytes at 256..511 and one presence marker per row at
+512..767, using `Encoding::poly`. The fixed public polynomial `1+x+...+x^255`
+produces low sum, high sum and count at coefficients 255, 511 and 767. No source
+aggregate is calculated by the owner. The product degree is at most 1022, below
+8192, and every output coefficient is at most 65280, below the unchanged plaintext
+modulus 114689. Unsigned decoding preserves sums above half the modulus. Geometry
+is Rows256, original selection is at most 256 rows and request/response decoding is
+capped at two MiB. `aggregate_circuit_request` independently constructs the exact
+full-residue public-polynomial statement; `restore_aggregate_circuit_output`
+restores its encrypted result only. A separate genuine proof consumer must check
+the statement before `decrypt_polynomial_aggregate_unverified`. This contract uses
+no rotations and leaves complete selection, source authentication and freshness
+to its caller. The older exact-index rotation experiment remains unverified.
+
 Owner owns the only secret key; PublicSetup contains only original parameters,
 relinearization and rotation keys; PeerEvaluator restores public material only.
 Inputs are fresh encrypted selected fields. Public contracts include generic

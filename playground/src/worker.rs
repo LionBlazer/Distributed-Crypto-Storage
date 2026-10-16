@@ -137,6 +137,23 @@ impl Outcome {
     fn verified(result: storage_client::VerifiedResult) -> Self {
         use storage_client::VerifiedResult;
         let (outcome, version, changed_rows) = match result {
+            VerifiedResult::Aggregated {
+                projection,
+                count,
+                sum,
+                version,
+            } => {
+                use storage_client::AggregateProjection;
+                let (columns, values) = match projection {
+                    AggregateProjection::Count => (vec!["COUNT(*)".into()], vec![Some(count)]),
+                    AggregateProjection::Sum => (vec!["SUM(amount)".into()], vec![sum]),
+                    AggregateProjection::CountSum => (
+                        vec!["COUNT(*)".into(), "SUM(amount)".into()],
+                        vec![Some(count), sum],
+                    ),
+                };
+                (QueryOutcome::Aggregated { columns, values }, version, None)
+            }
             VerifiedResult::Selected {
                 columns,
                 rows,
@@ -704,6 +721,30 @@ mod tests {
         assert!(matches!(inserted, Outcome::VerifiedQuery {
             outcome: QueryOutcome::Inserted { count: 1 }, version, ..
         } if version == public_version(11)));
+    }
+
+    #[test]
+    fn verified_aggregate_display_preserves_sql_null_and_u64_cells() {
+        let outcome = Outcome::verified(storage_client::VerifiedResult::Aggregated {
+            projection: storage_client::AggregateProjection::CountSum,
+            count: 1_000_000,
+            sum: Some(65_535_000_000),
+            version: public_version(7),
+        });
+        assert!(
+            matches!(outcome.query(), Some(QueryOutcome::Aggregated { columns, values })
+            if columns == &["COUNT(*)", "SUM(amount)"] && values == &[Some(1_000_000), Some(65_535_000_000)])
+        );
+        let empty = Outcome::verified(storage_client::VerifiedResult::Aggregated {
+            projection: storage_client::AggregateProjection::Sum,
+            count: 0,
+            sum: None,
+            version: public_version(7),
+        });
+        assert!(
+            matches!(empty.query(), Some(QueryOutcome::Aggregated { columns, values })
+            if columns == &["SUM(amount)"] && values == &[None])
+        );
     }
 
     #[test]

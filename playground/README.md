@@ -128,7 +128,7 @@ complete owner/key recovery remains a separate unresolved requirement.
 - Four presets cover SELECT, filtering, INSERT and UPDATE; operations whose
   computation proofs are not implemented are not offered as live presets.
   They fill the editor; Run or Ctrl+Enter submits the actual encrypted operation.
-- **Strict acceptance:** supported SELECT, INSERT and UPDATE operations use actual
+- **Strict acceptance:** supported fixed-schema SELECT, COUNT/SUM, INSERT and UPDATE operations use actual
   network FHE execution, computation/completeness verification and the validated
   confirmed version before returning results or publishing changes. Missing or
   invalid evidence is rejected; unsupported SQL reports an error. The live adapter

@@ -61,7 +61,7 @@ fn require_checked_statement(
 }
 
 impl Owner {
-    fn proof_selection(
+    pub(super) fn proof_selection(
         &self,
         table: &Table,
         predicate: Option<AgeRange>,
