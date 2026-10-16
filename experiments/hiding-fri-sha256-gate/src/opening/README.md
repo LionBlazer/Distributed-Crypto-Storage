@@ -1,10 +1,13 @@
-# Fixed whole-pair private AEAD byte-opening candidate
+# Fixed whole-pair private source-opening candidates
 
-Status: the frozen R5 candidate passed release build, strict Clippy, eight fresh
+Historical byte-opening status: the frozen R5 candidate passed release build, strict Clippy, eight fresh
 security analyses, all 47 serial tests and one genuine whole-pair proof followed
 by verification. [PAIR-OPENING-VALIDATION.md](../../PAIR-OPENING-VALIDATION.md)
 records exact scope, failures, artifacts and external observation limits. This
-module is a private consumer inside the [standalone experiment](../../README.md),
+module now also contains a validated bounded canonical N4 index relation: nine
+actual numerical cases, one genuine proof and all60 serial tests passed. Its
+[separate report](../../CANONICAL-INDEX-VALIDATION.md) records exact current
+source and limitations. This module is a private consumer inside the [standalone experiment](../../README.md),
 with no production accepting API, Owner-key exporter/importer, wire format or SQL
 connection.
 
@@ -25,7 +28,8 @@ it is not evidence of production secrecy, erasure, key anchoring or finality.
 | `trace.rs` | Separate nonserializable/non-Clone private witness and genuine shared-arithmetic trace generator |
 | `poseidon.rs` | Internal native-equivalent pinned width12 permutation gadget |
 | `commitment.rs` | Two exact fixed-length, domain-separated encodings and native fixture oracle |
-| `tests.rs` | Native/oracle equivalence, full-source admission, genuine whole relation and rebuilt inconsistent-component proof cases |
+| `tests.rs` | Preserved byte-opening native/oracle, admission, genuine and rebuilt inconsistent-component cases |
+| `canonical.rs`, `canonical_tests.rs` | New complete fixed N4 index invariant, bounded witness auxiliaries and owning source/rebuilt cases |
 
 The only project-library edge is experiment -> [compact-store](../../../../crates/compact-store/README.md)
 for the existing complete canonical parser/root checker. There is no reverse edge.
@@ -133,5 +137,57 @@ analysis, never a trace. `prove pair-opening` builds and verifies the entire lin
 relation. Fresh R5 analysis, all 47 genuine/adversarial tests and one genuine proof
 passed; native-P2 equivalence alone is not the AEAD result. The report includes
 the initially failing public Poly1305 proofs and the precise unnormalized-selector
-correction. Any production key custody/interface, private logical-index/source/SQL
-relation, proof protocol, freshness/finality or acceptance design remains unmet.
+correction. Production key custody/interfaces, general/cross-version private
+index/source/SQL relations, proof protocols, freshness/finality and acceptance
+designs remain unmet.
+
+
+## Canonical N4 index relation
+
+`canonical-index-opening` is a distinct Kind/profile sharing the exact AEAD,
+P2 evaluator and one trace-writing loop. `pair-opening` retains its byte-only
+profile, width and tests. Neither selects production cryptography or accepts SQL.
+The [core-owned public codec vector](../../../../crates/compact-query/tests/fixtures/README.md)
+provides an independent byte-compatibility control without a compact-query
+runtime dependency or an Owner-key interface. All fixture keys/rows/IDs are
+explicitly PUBLIC NONSECRET. The index vector excludes the first112 bytes;
+fixture encryption supplies the actual independently constructed data head.
+
+The real N4 index remains2336 bytes: data head112, TableId32, counts256*u32,
+offsets257*u32, four used posting bytes, eight zero bytes and four32-byte IDs.
+Capacity is8 posting bytes before32-byte alignment, not4. Every histogram count
+and prefix offset is constrained from the same four authentic data age bytes.
+A Boolean4x4 permutation covers each ordinal once, sorted by(age,ordinal).
+Eight-bit nonnegative adjacent age differences and zero/inverse auxiliaries
+establish bucket ties; the actual posting word must encode the first absolute
+ordinal and subsequent positive within-bucket deltas. All four values fit one
+canonical varint byte. All unused posting/alignment bytes are zero.
+
+The age and permutation banks are constant on ALL512 rows; ages bind actual
+counter1 XOR bytes atrow80. Eight reusable groups of four byte comparisons check
+all513 header words at the exact existing P2 input slots, including the existing
+stale-word carry path. There is no permanent256-bucket bank. TableId first-half
+popcount captures at CURRENT80, skipping only the predecessor->capture copy;
+row161 combines the second half. Row485 retains all four IDs in I35/I36/I37.
+Popcount inverses enforce nonzero TableId/IDs, and six XOR-popcount inverses
+establish pairwise distinct IDs. Each sum is at most256, below Goldilocks.
+No raw identity is a public value. No ID sort or TableId!=RowId rule is added.
+
+C_open uses the new semantic profile while retaining its exact fixed encoding
+and freshly sampled private salt. It commits the entire authentic row/index byte
+sequence, including the current ordinal->RowId map. C_key is still an independently
+fixed AEAD-key anchor, not a logical-table anchor. The new relation does not prove
+independently expected private TableId, identity continuity across writes/shards,
+a typed/NULL catalog, BFV operand formation, a semantic SQL plan, query result
+completeness, ownership/conflict handling or finality. Those remain separate gates.
+
+Source accounting appends442 columns: ages32, permutation16, sort30,
+header-comparison352, identity inverses11, TableId-half1. W11521/T512 gives
+trace47,190,016B, masked94,420,992B and main LDE755,367,936B under the unchanged
+backend array formulas. Existing512 periodics remain2,097,152B plain payload;
+its estimated LDE is33,554,432B. These are separate bounded array estimates,
+not whole-process RAM or speed claims. Actual numerical analysis found28,949 constraints, degree4,16 quotient chunks
+and23,222 batched functions with both model estimates128. Declared degree bound5
+was retained. One genuine proof/verification and all60 serial tests passed; the
+report preserves the initial Clippy failure and limited resource observations.
+These do not establish production privacy, RAM or interactive latency.

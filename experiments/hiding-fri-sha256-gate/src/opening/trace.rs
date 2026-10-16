@@ -15,18 +15,26 @@ pub(crate) struct Witness {
     key: [u8; 32],
     key_salt: [Val; 4],
     open_salt: [Val; 4],
+    ages: [u8; 4],
 }
 impl Witness {
-    pub(super) fn new(key: [u8; 32], key_salt: [Val; 4], open_salt: [Val; 4]) -> Self {
+    pub(super) fn new(
+        key: [u8; 32],
+        key_salt: [Val; 4],
+        open_salt: [Val; 4],
+        ages: [u8; 4],
+    ) -> Self {
         Self {
             key,
             key_salt,
             open_salt,
+            ages,
         }
     }
     pub(crate) fn trace(&self, statement: &Statement) -> Result<RowMajorMatrix<Val>, Error> {
         let air = OpeningAir::new(statement);
-        let mut template = Val::zero_vec(WIDTH);
+        let width = statement.relation.width();
+        let mut template = Val::zero_vec(width);
         write_bytes(&mut template[MASTER..SUBKEY], &self.key);
         for page in 0..2 {
             let input = words(air.input::<Val, _>(&template, Job::H(page)));
@@ -43,15 +51,19 @@ impl Witness {
             );
         }
         template[SALTS..SALTS + 4].copy_from_slice(&self.key_salt);
-        template[SALTS + 4..].copy_from_slice(&self.open_salt);
+        template[SALTS + 4..WIDTH].copy_from_slice(&self.open_salt);
+        if statement.relation == super::Relation::CanonicalIndex {
+            super::canonical::write_template(&mut template, self.ages);
+        }
         let mut states: [[u32; 16]; 7] =
             core::array::from_fn(|lane| words(air.input::<Val, _>(&template, schedule::job(lane))));
         let mut buffers = [[0_u32; 16]; 7];
         let mut h = [0_u64; LIMBS];
         let mut checkpoint = [Val::ZERO; 12];
         let mut carries = [Val::ZERO; 2];
-        let mut values = Val::zero_vec(TRACE_HEIGHT * WIDTH);
-        for (index, row) in values.as_chunks_mut::<WIDTH>().0.iter_mut().enumerate() {
+        let mut table_half = Val::ZERO;
+        let mut values = Val::zero_vec(TRACE_HEIGHT * width);
+        for (index, row) in values.chunks_exact_mut(width).enumerate() {
             row[BANKS..POLY].copy_from_slice(&template[BANKS..POLY]);
             row[SALTS..].copy_from_slice(&template[SALTS..]);
             let group = index / 81;
@@ -145,8 +157,11 @@ impl Witness {
             if schedule::absorb(index).is_some() {
                 checkpoint = output;
             }
+            if statement.relation == super::Relation::CanonicalIndex {
+                super::canonical::write_row(&air, row, index, &mut table_half);
+            }
         }
-        Ok(RowMajorMatrix::new(values, WIDTH))
+        Ok(RowMajorMatrix::new(values, width))
     }
 }
 fn complete(input: [u32; 16], h: bool) -> [u32; 16] {

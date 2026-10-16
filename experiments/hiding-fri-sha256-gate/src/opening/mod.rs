@@ -2,6 +2,9 @@
 //! Public canonical ciphertext is checked outside AIR; ALL private key/AEAD/XOR
 //! and salted commitment links are constrained inside one hiding relation.
 pub(crate) mod air;
+pub(crate) mod canonical;
+#[cfg(test)]
+mod canonical_tests;
 mod commitment;
 mod fixture;
 mod poseidon;
@@ -18,6 +21,49 @@ pub(crate) const OPEN_DOMAIN: [u8; 16] = *b"DCS/OPEN/PAIR/v1";
 pub(crate) const VERSION: u32 = 1;
 pub(crate) const DATA_SCHEMA: [u8; 16] = *b"CQAGEAMOUNT00001";
 pub(crate) const INDEX_SCHEMA: [u8; 16] = *b"CQAGEINDEX000003";
+
+/// Two bounded research relations; neither is a production accepting API.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Relation {
+    Bytes,
+    CanonicalIndex,
+}
+impl Relation {
+    fn kind(self) -> crate::primitive::Kind {
+        match self {
+            Self::Bytes => crate::primitive::Kind::PairOpening,
+            Self::CanonicalIndex => crate::primitive::Kind::CanonicalIndexOpening,
+        }
+    }
+    fn width(self) -> usize {
+        match self {
+            Self::Bytes => air::WIDTH,
+            Self::CanonicalIndex => canonical::WIDTH,
+        }
+    }
+}
+
+pub(crate) fn index_profile(hash: &mut sha2::Sha256) {
+    use sha2::Digest;
+    profile(hash);
+    hash.update(b"CSTORE-canonical-age-index-N4/experimental-v1/no-SQL-acceptance");
+    hash.update(b"index-v3/header2196/capacity8/aligned2208/total2336");
+    hash.update(b"all-counts256/all-prefix-offsets257/sorted-age-ordinal-permutation4");
+    hash.update(b"canonical-one-byte-postings4/padding8/nonzero-TableId/distinct-nonzero-RowIds4");
+    hash.update(b"ages-constant-all-rows/bind80/TableId-half-capture80-NEXT-skip/check161/IDs485");
+    hash.update(b"header-exact-existing-P2-stream-slots/no-global-identity-or-history-claim");
+    for value in [
+        canonical::WIDTH,
+        canonical::WIDTH - air::WIDTH,
+        442,
+        4,
+        32,
+        256,
+        257,
+    ] {
+        hash.update((value as u64).to_le_bytes());
+    }
+}
 
 /// Pins the candidate construction, constants, geometry and complete public schedule.
 /// This is an unreleased experiment profile, not the production BFV/kernel profile.
@@ -92,10 +138,25 @@ pub(crate) fn profile(hash: &mut sha2::Sha256) {
 }
 
 pub(crate) fn gate(mode: &str) -> Result<(), crate::backend::Error> {
+    gate_relation(mode, Relation::Bytes)
+}
+pub(crate) fn canonical_gate(mode: &str) -> Result<(), crate::backend::Error> {
+    gate_relation(mode, Relation::CanonicalIndex)
+}
+fn gate_relation(mode: &str, relation: Relation) -> Result<(), crate::backend::Error> {
     use crate::backend::{Backend, Error};
     use std::time::Instant;
-    let (statement, witness) = fixture::fixture()?;
-    crate::security(&statement, "fixed-four-row-pair")?;
+    let (statement, witness) = match relation {
+        Relation::Bytes => fixture::fixture()?,
+        Relation::CanonicalIndex => fixture::canonical_fixture()?,
+    };
+    crate::security(
+        &statement,
+        match relation {
+            Relation::Bytes => "fixed-four-row-pair",
+            Relation::CanonicalIndex => "canonical-four-row-index",
+        },
+    )?;
     println!(
         "{{\"stage\":\"candidate_geometry\",\"public_values\":691,\"periodic_columns\":512,\"periodic_payload_bytes\":2097152,\"periodic_lde_payload_estimate_bytes\":33554432,\"declared_degree_bound\":5,\"private_plaintext_bytes\":2348,\"cha_jobs\":42,\"mac_blocks\":163}}"
     );
@@ -106,8 +167,13 @@ pub(crate) fn gate(mode: &str) -> Result<(), crate::backend::Error> {
         let proving = started.elapsed();
         let started = Instant::now();
         backend.verify(&statement, &proof)?;
+        let stage = match relation {
+            Relation::Bytes => "verified_experimental_pair_byte_opening",
+            Relation::CanonicalIndex => "verified_experimental_canonical_index_opening",
+        };
         println!(
-            "{{\"stage\":\"verified_experimental_pair_byte_opening\",\"proving_ms\":{},\"verification_ms\":{}}}",
+            "{{\"stage\":\"{}\",\"proving_ms\":{},\"verification_ms\":{}}}",
+            stage,
             proving.as_secs_f64() * 1000.0,
             started.elapsed().as_secs_f64() * 1000.0
         );

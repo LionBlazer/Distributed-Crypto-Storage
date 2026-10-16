@@ -1,12 +1,22 @@
 # Hiding-FRI source-opening research gates
 
-Current experimental status: the [whole-pair private AEAD byte-opening
+Historical validated source: the [whole-pair private AEAD byte-opening
 candidate](src/opening/README.md) passed release build, strict Clippy, eight fresh
 security analyses, all 47 serial tests and one genuine whole-pair proof/verification.
 Its [validation record](PAIR-OPENING-VALIDATION.md) retains every earlier failure,
 exact scope and observation limits. One composed witness opens both fixed public
 packets; it does not add an Owner-key API, logical SQL proof or live accepting path.
-The shared primitive wrappers are included in the current 47-test run.
+The shared primitive wrappers are included in that exact 47-test run.
+
+Current canonical N4 relation: canonical-index-opening passed release build,
+strict Clippy, nine actual numerical analyses, one genuine proof/verification and
+all60 serial tests. It constrains the real fixed index, every count/offset,
+canonical postings/padding and nonzero/distinct private identities inside the SAME
+AEAD opening. Its distinct semantic Kind/profile and
+[core codec vector](../../crates/compact-query/tests/fixtures/README.md) are recorded in
+[CANONICAL-INDEX-VALIDATION.md](CANONICAL-INDEX-VALIDATION.md) and the
+[module contract](src/opening/README.md#canonical-n4-index-relation).
+No typed SQL, identity-history or live acceptance claim follows.
 
 Historical public-primitive status: the Poly1305 raw and separately padded-segment modes passed their
 isolated lock audit, release build, strict Clippy, seven actual security analyses,
@@ -35,7 +45,7 @@ These are nonaccepting experiments. All exercised fixture keys/plaintexts are
 explicitly PUBLIC NONSECRET; the new candidate puts those known values in private
 witness columns rather than public inputs. The bounded byte-opening is exercised
 under experimental assumptions; it does not certify witness secrecy/ZK, production
-AEAD/key custody, logical index validity, BFV formation, SQL completeness, live locks
+AEAD/key custody, general/cross-version index validity, BFV formation, SQL completeness, live locks
 or finality. No owner key export/import,
 network API, proof-byte codec, acceptance marker or root Cargo change is added.
 
@@ -49,7 +59,7 @@ network API, proof-byte codec, acceptance marker or root Cargo change is added.
 | `air.rs`, `statement.rs` | Published P3 SHA compression wrapper and public fixture binding |
 | `chacha/air.rs` | Bit/carry constraints, complete schedule, transitions and boundaries |
 | `chacha/statement.rs` | Public fixtures, little-endian identity, independent RustCrypto oracle |
-| `opening/` | Fixed private whole-pair byte-opening, immutable banks, linked MAC/XOR/sponge schedule and actual adversarial validation |
+| `opening/` | Shared fixed private whole-pair opening, validated byte relation and bounded canonical N4 index relation |
 | `poly1305/` | Checked small-message layout, canonical radix AIR, public oracle and validated adversarial tests |
 
 The standalone workspace depends on pinned P3 0.8.0, Rand 0.10.3 and RustCrypto
@@ -68,7 +78,7 @@ records below retain their own historical meaning. No root dependency changed.
 
 Related contracts: [private source proofs](../../docs/private-lock-source-proof.md),
 [production arithmetic](../../crates/bfv-query-proof/README.md), and
-[the unimplemented source relation](SOURCE-RELATION.md).
+[the full source-relation contract](SOURCE-RELATION.md).
 
 ## Exact ChaCha relation
 

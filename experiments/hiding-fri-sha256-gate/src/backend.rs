@@ -133,6 +133,10 @@ pub(crate) fn profile_digest(kind: Kind) -> [u8; 32] {
     hash.update(b"Goldilocks/Poseidon2-12/rate8/digest4/cap0/arity2");
     hash.update(kind.name());
     let (width, opening_points) = match kind {
+        Kind::CanonicalIndexOpening => {
+            crate::opening::index_profile(&mut hash);
+            (crate::opening::canonical::WIDTH, 2)
+        }
         Kind::PairOpening => {
             crate::opening::profile(&mut hash);
             (crate::opening::air::WIDTH, 2)

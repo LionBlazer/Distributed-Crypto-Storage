@@ -144,14 +144,28 @@ now validates the pinned public compression primitive with the fixed hiding back
 genuine proofs and adversarial tests. Its [validation record](../experiments/hiding-fri-sha256-gate/VALIDATION.md)
 pins source/artifact identities, security reports and limited process observations.
 Public fixtures do not establish witness secrecy or private-source composition.
-SHA chaining/padding, AEAD, authenticated index/control semantics and BFV input
-formation remain unimplemented; this gate supplies no SQL acceptance API.
+That isolated public SHA result does not implement private source composition.
+The later [whole-pair byte-opening validation](../experiments/hiding-fri-sha256-gate/PAIR-OPENING-VALIDATION.md)
+links the actual fixed two-packet XChaCha20Poly1305 opening, one private key and
+fresh salted plaintext commitment. Its one known nonsecret fixture measured
+3,170.7397ms proving (including witness trace) and743.99ms in-memory verification;
+fixture/public audits/security/backend setup and codec/network/SQL are outside
+those inner timers. These are not full-query or500ms results. Its47-test run and
+limited process samples do not establish production key custody or ZK certification.
+The [canonical N4 index relation](../experiments/hiding-fri-sha256-gate/CANONICAL-INDEX-VALIDATION.md)
+now proves the real bounded counts/offsets/postings/padding and nonzero/distinct
+private identity invariant: release/strict Clippy, nine numerical cases, one
+genuine proof and all60 tests passed. Its one instrumented fixture proof measured
+2759.8668ms proving and649.3903ms in-memory verification, with the same inner timer
+exclusions; this is not a matched speed comparison or full-query measurement. Independent logical-identity/history
+anchors, typed catalogs, semantic plan/control constraints and BFV input formation
+remain unimplemented; none of these gates supplies a SQL acceptance API.
 The same standalone workspace now validates full HChaCha20/ChaCha20 constraints
 with public RFC/draft fixtures and a shared private backend. Its separate
 [primitive validation record](../experiments/hiding-fri-sha256-gate/PRIMITIVES-VALIDATION.md)
 pins current security reports, genuine proofs, nineteen passing tests and sparse
-memory observations. It adds no owner-key import/export, AEAD relation or network
-accepting path; public-fixture success does not establish private-witness secrecy.
+memory observations. That historical primitive run added no owner-key import/export or network
+accepting path; its public-fixture success does not establish private-witness secrecy.
 
 [Greco's pinned artifact](https://github.com/privacy-ethereum/greco/blob/df72c14c02d5d85f189f087feaab109e7fc1b4f1/README.md)
 implements BFV input-formation proofs on Halo2. At N8192, four 55-bit moduli,

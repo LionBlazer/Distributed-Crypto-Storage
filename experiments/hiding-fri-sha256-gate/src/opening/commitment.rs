@@ -4,7 +4,7 @@ use super::{
     statement::{Statement, words},
 };
 use crate::backend::{Val, profile_digest};
-use crate::primitive::Kind;
+use crate::primitive::PublicStatement;
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::default_goldilocks_poseidon2_12;
 use p3_symmetric::Permutation;
@@ -24,7 +24,7 @@ pub(super) fn prefix(statement: &Statement, salt: [Val; 4]) -> Vec<Val> {
             Val::from_u8(12),
             Val::from_u16(2336),
         ])
-        .chain(words(&profile_digest(Kind::PairOpening)))
+        .chain(words(&profile_digest(statement.kind())))
         .chain(words(&statement.request))
         .chain(statement.heads.iter().flat_map(|h| words(h)))
         .chain(statement.key_commitment)

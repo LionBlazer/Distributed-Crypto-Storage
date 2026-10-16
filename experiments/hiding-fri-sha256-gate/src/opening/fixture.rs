@@ -1,6 +1,6 @@
 //! Explicitly PUBLIC NONSECRET keys/plaintexts. No Owner API or key exporter.
 use super::{
-    DATA_SCHEMA, INDEX_SCHEMA, commitment,
+    DATA_SCHEMA, INDEX_SCHEMA, Relation, commitment,
     statement::{Statement, encode_digest, limits},
     trace::Witness,
 };
@@ -38,28 +38,95 @@ pub(super) fn make(
     request: [u8; 32],
     data: [u8; 12],
 ) -> Result<(Statement, Witness), Error> {
+    // Preserve the historical byte-only fixture exactly.
+    let suffix: Vec<_> = (112..2336).map(|i| (i * 113 + 7) as u8).collect();
+    from_suffix(
+        Relation::Bytes,
+        key,
+        (key_salt, open_salt),
+        request,
+        data,
+        &suffix,
+    )
+}
+pub(crate) fn canonical_fixture() -> Result<(Statement, Witness), Error> {
+    let key = core::array::from_fn(|i| i as u8); // PUBLIC NONSECRET fixture key.
+    let mut key_rng = StdRng::try_from_rng(&mut SysRng).map_err(|_| Error::Randomness)?;
+    let key_salt = core::array::from_fn(|_| key_rng.random::<Val>());
+    let mut open_rng = StdRng::try_from_rng(&mut SysRng).map_err(|_| Error::Randomness)?;
+    let open_salt = core::array::from_fn(|_| open_rng.random::<Val>());
+    from_suffix(
+        Relation::CanonicalIndex,
+        key,
+        (key_salt, open_salt),
+        [0x83; 32],
+        [255, 0, 0, 0, 255, 255, 255, 0, 1, 128, 255, 0],
+        &canonical_suffix(),
+    )
+}
+/// Independent codec-owned PUBLIC NONSECRET vector; no compact-query dependency.
+pub(super) fn canonical_suffix() -> Vec<u8> {
+    let text = include_str!(
+        "../../../../crates/compact-query/tests/fixtures/index-v3-four-row-suffix.hex"
+    );
+    let bytes: Vec<_> = text
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .flat_map(str::split_whitespace)
+        .map(|hex| u8::from_str_radix(hex, 16).expect("Reviewed core-owned vector"))
+        .collect();
+    assert_eq!(bytes.len(), 2224);
+    bytes
+}
+/// Fixture encryption never validates semantic index contents. Rebuilt malicious
+/// tests can use genuine AEAD and recomputed commitments for invalid indexes.
+pub(super) fn from_suffix(
+    relation: Relation,
+    key: [u8; 32],
+    (key_salt, open_salt): ([Val; 4], [Val; 4]),
+    request: [u8; 32],
+    data: [u8; 12],
+    suffix: &[u8],
+) -> Result<(Statement, Witness), Error> {
+    if suffix.len() != 2224 {
+        return Err(Error::Shape);
+    }
     let data_image = image(0, &data, key, [0x24; 24], 2, 3);
     let data_head = Commitment::decode(&data_image[..112], limits()).map_err(|_| Error::Shape)?;
-    // The remaining bytes exercise every index ciphertext/ID-tail byte; this
-    // gate proves byte authentication, not semantic validity of this index.
-    let mut index: Vec<_> = (0..2336).map(|i| (i * 113 + 7) as u8).collect();
-    index[..112].copy_from_slice(&data_head.encode());
+    let mut index = data_head.encode().to_vec();
+    index.extend_from_slice(suffix);
     let index_image = image(1, &index, key, [0x91; 24], 1, 3);
     let index_head = Commitment::decode(&index_image[..112], limits()).map_err(|_| Error::Shape)?;
     // Stable C_key is fixed before assembling the request/opening statement.
     let ckey = commitment::digest(&commitment::key_fields(&data_head.encode(), key, key_salt));
-    let mut statement = Statement::checked(
-        [&data_image, &index_image],
-        [&data_head, &index_head],
-        request,
-        encode_digest(ckey),
-        [0; 32],
-    )?;
+    let images = [&data_image[..], &index_image[..]];
+    let expected = [&data_head, &index_head];
+    let mut statement = match relation {
+        Relation::Bytes => {
+            Statement::checked(images, expected, request, encode_digest(ckey), [0; 32])?
+        }
+        Relation::CanonicalIndex => Statement::checked_relation(
+            relation,
+            images,
+            expected,
+            request,
+            encode_digest(ckey),
+            [0; 32],
+        )?,
+    };
     let mut plain = data.to_vec();
     plain.extend(index);
     statement.open_commitment =
         commitment::digest(&commitment::opening_fields(&statement, open_salt, &plain));
-    Ok((statement, Witness::new(key, key_salt, open_salt)))
+    Ok((
+        statement,
+        Witness::new(
+            key,
+            key_salt,
+            open_salt,
+            [data[0], data[3], data[6], data[9]],
+        ),
+    ))
 }
 /// Fixture-only canonical writer. Acceptance always uses compact-store's complete
 /// independent parser/root audit; this is never an alternate accepting validator.

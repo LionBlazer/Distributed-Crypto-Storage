@@ -275,7 +275,11 @@ fn claimed_output(statement: &Statement, trace: &RowMajorMatrix<Val>) -> [u32; W
         Kind::ChaCha20 => {
             core::array::from_fn(|word| state[word].wrapping_add(statement.input[word]))
         }
-        Kind::Sha256 | Kind::Poly1305Raw | Kind::Poly1305Padded | Kind::PairOpening => {
+        Kind::Sha256
+        | Kind::Poly1305Raw
+        | Kind::Poly1305Padded
+        | Kind::PairOpening
+        | Kind::CanonicalIndexOpening => {
             unreachable!()
         }
     }

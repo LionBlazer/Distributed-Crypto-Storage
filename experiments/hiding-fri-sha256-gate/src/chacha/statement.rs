@@ -136,7 +136,11 @@ pub(crate) fn reference_output(statement: &Statement) -> [u32; WORDS] {
                 *word = u32::from_le_bytes(*bytes);
             }
         }
-        Kind::Sha256 | Kind::Poly1305Raw | Kind::Poly1305Padded | Kind::PairOpening => {
+        Kind::Sha256
+        | Kind::Poly1305Raw
+        | Kind::Poly1305Padded
+        | Kind::PairOpening
+        | Kind::CanonicalIndexOpening => {
             unreachable!("SHA has a separate typed fixture")
         }
     }

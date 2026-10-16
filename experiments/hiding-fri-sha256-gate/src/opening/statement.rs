@@ -1,4 +1,4 @@
-use super::{DATA_BYTES, DATA_SCHEMA, INDEX_BYTES, INDEX_SCHEMA};
+use super::{DATA_BYTES, DATA_SCHEMA, INDEX_BYTES, INDEX_SCHEMA, Relation};
 use crate::backend::{Error, Val, profile_digest};
 use crate::primitive::{Kind, PrimitiveAir, PublicStatement};
 use compact_store::{Commitment, Layout, Limits, VerifiedSnapshotBytes};
@@ -15,6 +15,7 @@ pub(crate) const PUBLIC_VALUES: usize = 691;
 /// Canonical/root validation supplies no consensus, custody or logical-index proof.
 #[derive(Clone)]
 pub(crate) struct Statement {
+    pub(super) relation: Relation,
     pub(super) request: [u8; 32],
     pub(super) heads: [[u8; 112]; 2],
     pub(super) packets: [Vec<u8>; 2],
@@ -23,6 +24,16 @@ pub(crate) struct Statement {
 }
 impl Statement {
     pub(crate) fn checked(
+        images: [&[u8]; 2],
+        expected: [&Commitment; 2],
+        request: [u8; 32],
+        key: [u8; 32],
+        opening: [u8; 32],
+    ) -> Result<Self, Error> {
+        Self::checked_relation(Relation::Bytes, images, expected, request, key, opening)
+    }
+    pub(super) fn checked_relation(
+        relation: Relation,
         images: [&[u8]; 2],
         expected: [&Commitment; 2],
         request: [u8; 32],
@@ -62,6 +73,7 @@ impl Statement {
             return Err(Error::Shape);
         }
         Ok(Self {
+            relation,
             request,
             heads: expected.map(Commitment::encode),
             packets: images.map(|bytes| bytes[112..].to_vec()),
@@ -115,13 +127,13 @@ impl Statement {
 }
 impl PublicStatement for Statement {
     fn kind(&self) -> Kind {
-        Kind::PairOpening
+        self.relation.kind()
     }
     fn air(&self) -> PrimitiveAir {
         PrimitiveAir::Opening(Box::new(super::air::OpeningAir::new(self)))
     }
     fn public_values(&self) -> Vec<Val> {
-        words(&profile_digest(Kind::PairOpening))
+        words(&profile_digest(self.kind()))
             .chain(words(&self.request))
             .chain(self.heads.iter().flat_map(|h| words(h)))
             .chain(self.packets.iter().flat_map(|p| words(p)))

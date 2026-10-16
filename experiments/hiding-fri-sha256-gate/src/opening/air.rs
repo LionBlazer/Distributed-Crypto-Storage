@@ -1,5 +1,5 @@
 use super::{
-    commitment, poseidon,
+    DATA_BYTES, commitment, poseidon,
     schedule::{self, Job, Mac},
     statement::{self, PUBLIC_VALUES, Statement},
 };
@@ -90,18 +90,26 @@ impl OpeningAir {
         row: &[T],
         word: usize,
     ) -> E {
-        let (_, lane, slot) = schedule::plain_location(word);
-        let (page, index) = if word < 3 { (0, word) } else { (1, word - 3) };
-        let ciphertext = u32::from_le_bytes(
-            self.source.ciphertext(page)[index * 4..index * 4 + 4]
-                .try_into()
-                .unwrap(),
-        );
         (0..32).fold(E::ZERO, |sum, bit| {
-            let c = E::from_u32((ciphertext >> bit) & 1);
-            let s: E = row[BUFFERS + lane * 512 + slot * 32 + bit].into();
-            sum + (c.clone() + s.clone() - c * s * E::TWO) * E::from_u64(1 << bit)
+            sum + self.plain_bit::<E, _>(row, word * 4 + bit / 8, bit % 8) * E::from_u64(1 << bit)
         })
+    }
+    pub(super) fn plain_bit<E: Algebra<Val>, T: Copy + Into<E>>(
+        &self,
+        row: &[T],
+        byte: usize,
+        bit: usize,
+    ) -> E {
+        let word = byte / 4;
+        let (_, lane, slot) = schedule::plain_location(word);
+        let (page, index) = if byte < DATA_BYTES {
+            (0, byte)
+        } else {
+            (1, byte - DATA_BYTES)
+        };
+        let c = E::from_u8((self.source.ciphertext(page)[index] >> bit) & 1);
+        let s: E = row[BUFFERS + lane * 512 + slot * 32 + (byte % 4) * 8 + bit].into();
+        c.clone() + s.clone() - c * s * E::TWO
     }
     pub(super) fn stream_field<E: Algebra<Val>, T: Copy + Into<E>>(
         &self,
@@ -147,13 +155,13 @@ impl OpeningAir {
 }
 impl BaseAir<Val> for OpeningAir {
     fn width(&self) -> usize {
-        WIDTH
+        self.source.relation.width()
     }
     fn num_public_values(&self) -> usize {
         PUBLIC_VALUES
     }
     fn main_next_row_columns(&self) -> Vec<usize> {
-        (0..WIDTH).collect()
+        (0..self.source.relation.width()).collect()
     }
     fn num_periodic_columns(&self) -> usize {
         TRACE_HEIGHT
@@ -433,6 +441,9 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for OpeningAir {
             builder.when_transition().assert_zero(
                 (AB::Expr::ONE - next_capture.clone()) * (next[CARRY + word] - row[CARRY + word]),
             );
+        }
+        if self.source.relation == super::Relation::CanonicalIndex {
+            super::canonical::evaluate(self, builder, row, next, &selectors);
         }
     }
 }

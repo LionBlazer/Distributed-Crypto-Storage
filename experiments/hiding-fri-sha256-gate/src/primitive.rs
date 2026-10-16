@@ -17,6 +17,7 @@ pub(crate) enum Kind {
     Poly1305Raw,
     Poly1305Padded,
     PairOpening,
+    CanonicalIndexOpening,
 }
 
 impl Kind {
@@ -28,6 +29,7 @@ impl Kind {
             Self::Poly1305Raw => "poly1305-raw",
             Self::Poly1305Padded => "poly1305-padded",
             Self::PairOpening => "pair-opening",
+            Self::CanonicalIndexOpening => "canonical-index-opening",
         }
     }
 }
