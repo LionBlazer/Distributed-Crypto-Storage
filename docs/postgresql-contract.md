@@ -35,6 +35,9 @@ and imported unique/foreign/CHECK validation use the column's comparison rules.
 Projection preserves the imported encoded field bytes, including existing fixed
 padding. This change does not implement type casts or locale collations. See
 [character types](https://www.postgresql.org/docs/18/datatype-character.html).
+Text predicate literals retain their own bytes and may exceed the column's storage
+width; comparison does not store or truncate them. Import field-width validation
+remains mandatory. General numeric coercions and SQL casts remain unimplemented.
 The typed encrypted private-index format/schema is version 2; an older comparator
 ordering is rejected instead of being searched with incompatible partition rules.
 

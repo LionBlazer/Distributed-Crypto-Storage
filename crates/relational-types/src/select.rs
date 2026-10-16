@@ -346,6 +346,15 @@ fn typed_literal(
     column: usize,
 ) -> Result<Value, Error> {
     let literal = parser.literal()?;
+    // A comparison does not store the literal in this column. Its typmod must
+    // neither reject a longer string nor pad/truncate the predicate operand.
+    if matches!(
+        schema.columns[column].data_type,
+        crate::DataType::Text { .. }
+    ) && let TokenKind::String(text) = &literal
+    {
+        return Ok(Value::Text(text.clone()));
+    }
     let value = literal_for_type(&schema.columns[column].data_type, &literal)?;
     if !matches!(value, Value::Null) {
         crate::validate_value(&schema.columns[column], &value)?;
@@ -357,6 +366,34 @@ fn typed_literal(
 mod tests {
     use super::*;
     use crate::import_database_dump;
+    #[test]
+    fn comparison_text_literals_do_not_inherit_the_columns_storage_width() {
+        for sql_type in ["VARCHAR(1)", "NVARCHAR(1)", "CHAR(1)", "NCHAR(1)"] {
+            let source = format!("CREATE TABLE labels (label {sql_type});");
+            let database = import_database_dump(&source, Default::default()).unwrap();
+            for text in ["a", "a ", "longer than one", "海🌊"] {
+                let sql = format!("SELECT label FROM labels WHERE label = '{text}'");
+                let plan = plan_select(&database, &sql).unwrap();
+                assert_eq!(
+                    plan.predicate,
+                    Some(Expr::Compare {
+                        column: 0,
+                        op: CompareOp::Eq,
+                        value: Value::Text(text.into()),
+                    }),
+                    "{sql_type}: {sql}"
+                );
+            }
+            assert!(
+                import_database_dump(
+                    &format!("{source} INSERT INTO labels VALUES ('longer than one');"),
+                    Default::default(),
+                )
+                .is_err(),
+                "storage validation remains mandatory"
+            );
+        }
+    }
     #[test]
     fn names_types_and_boolean_precedence_bind_to_the_selected_schema() {
         let database=import_database_dump("CREATE TABLE [Products] ([ProductID] int NOT NULL,[ProductName] nvarchar(40) NOT NULL,[UnitPrice] money NULL);",Default::default()).unwrap();

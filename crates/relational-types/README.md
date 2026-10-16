@@ -35,6 +35,9 @@ trailing U+0020. Complete-index sorting, predicates and import key/CHECK validat
 use that same distinction. There is no implicit server-default collation or locale.
 These are comparison rules; imported variable spaces and existing fixed-field
 padding remain in the encoded values.
+Text comparison literals keep their own length and bytes instead of inheriting
+the column's storage width or padding; import/storage validation still enforces
+declared widths. Numeric coercions and general SQL casts remain separate work.
 
 `encode_row_with_ranges` returns canonical bytes and the original byte range of
 each field, so a consumer can construct homomorphic projection masks without

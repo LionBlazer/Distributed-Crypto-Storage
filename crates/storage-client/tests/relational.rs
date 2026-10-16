@@ -423,6 +423,10 @@ fn proved_text_projection_preserves_spaces_and_uses_the_column_padding_rules() {
             "WHERE NOT (variable = 'a') ORDER BY variable DESC LIMIT 1",
             vec![3],
         ),
+        ("WHERE variable = 'longer than ten'", vec![]),
+        ("WHERE fixed = 'longer than ten'", vec![]),
+        ("WHERE variable IN ('longer than ten','a ')", vec![1]),
+        ("WHERE fixed < 'longer than ten' ORDER BY id", vec![1, 2, 3]),
     ] {
         let sql = format!("SELECT id, variable, fixed FROM labels {tail}");
         network.activity.lock().unwrap().clear();
