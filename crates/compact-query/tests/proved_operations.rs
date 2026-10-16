@@ -40,6 +40,105 @@ fn prove_update(peer: &PublicUpdateEvaluator, prepared: &PreparedUpdate) -> Gene
 }
 
 #[test]
+fn limited_select_proves_the_ordered_prefix_and_empty_result_without_reusing_other_evidence() {
+    let limits = Limits::default();
+    let (owner, peer) = Owner::generate([77; 16]).unwrap();
+    let public = public_evaluator(&peer);
+    let rows: Vec<_> = (0..600)
+        .map(|i| row(if i % 2 == 0 { 42 } else { 18 }, i))
+        .collect();
+    let table = owner.seal(&rows, 17, limits).unwrap();
+    assert!(matches!(
+        owner.prepare_provable_select(&table, range_all(), RowProjection::Amount, 256, limits,),
+        Err(Error::SelectionBudget {
+            selected: 600,
+            budget: 256
+        })
+    ));
+    assert!(matches!(
+        owner.prepare_provable_select_limited_from_source(
+            &table.read_view(),
+            range_all(),
+            RowProjection::Amount,
+            257,
+            usize::MAX,
+            limits,
+        ),
+        Err(Error::SelectionBudget {
+            selected: 257,
+            budget: 256
+        })
+    ));
+
+    let prefix = owner
+        .prepare_provable_select_limited_from_source(
+            &table.read_view(),
+            range_all(),
+            RowProjection::Amount,
+            100,
+            256,
+            limits,
+        )
+        .unwrap();
+    let empty = owner
+        .prepare_provable_select_limited_from_source(
+            &table.read_view(),
+            range_all(),
+            RowProjection::AgeAmount,
+            0,
+            0,
+            limits,
+        )
+        .unwrap();
+    assert_eq!(prefix.selected_rows(), 100);
+    assert_eq!(empty.selected_rows(), 0);
+    let (_, prefix_proof) = prove_select(&public, &prefix);
+    let (_, empty_proof) = prove_select(&public, &empty);
+    assert!(
+        owner
+            .check_select_proof(
+                &table.read_heads(),
+                &empty,
+                prefix_proof.output(),
+                prefix_proof.proof(),
+            )
+            .is_err(),
+        "Another prefix's genuine proof is not evidence for LIMIT0"
+    );
+    assert!(
+        owner
+            .check_select_proof(
+                &table.read_heads(),
+                &prefix,
+                empty_proof.output(),
+                empty_proof.proof(),
+            )
+            .is_err()
+    );
+    let prefix = owner
+        .complete_proved_select(&table, prefix, prefix_proof.output(), prefix_proof.proof())
+        .unwrap();
+    assert_eq!(
+        prefix.rows(),
+        (0..100)
+            .map(|i| SelectedRow {
+                ordinal: i,
+                age: None,
+                amount: Some(i as u16),
+            })
+            .collect::<Vec<_>>()
+    );
+    let empty = owner
+        .complete_proved_select(&table, empty, empty_proof.output(), empty_proof.proof())
+        .unwrap();
+    assert!(empty.rows().is_empty());
+    assert_eq!(
+        empty.evidence().operation(),
+        Operation::PublicPolynomialProduct
+    );
+}
+
+#[test]
 fn proved_select_covers_complete_postings_across_pages_and_keeps_empty_count_encrypted() {
     let limits = Limits::default();
     let (owner, peer) = Owner::generate([81; 16]).unwrap();

@@ -121,8 +121,9 @@ filters, LIMIT, atomic literal INSERT batches and additive amount UPDATE on
 projection. Aggregates authenticate at most 2560 complete matching rows per shard;
 over-budget groups reject rather than truncate. Each peer computes encrypted
 Q2 ten-band coefficient convolution with the fixed 256-term kernel and supplies
-a full-residue product proof. Row SELECT and mutation limits remain 256. Only checked
-encrypted partial results are decrypted and combined with checked u64 arithmetic;
+a full-residue product proof. Row SELECT retains at most 256 rows per shard for FHE;
+mutation limits remain 256. Only checked encrypted partial results are decrypted
+and combined with checked u64 arithmetic;
 empty COUNT is zero and empty SUM is NULL. `VerifiedResult::Aggregated` records
 the requested projection and fresh confirmed head. Typed imported catalogs remain
 immutable and their aggregate syntax remains unsupported. The [Q2 real-process
@@ -160,13 +161,18 @@ Every successful SELECT follows:
 2. Fetch the same static encrypted ReadImage for every row SELECT on the same
    public geometry: the entire data image and padded index posting prefix. Pin
    TableId and both agreed heads; authenticate complete private index coverage and
-   selected pages before preparing original FHE operands.
+   selected pages before preparing original FHE operands. With explicit LIMIT,
+   validate every matching posting and original candidate, retaining only the first
+   `min(local matches, limit)` rows in physical ordinal order. This retained set must
+   fit 256 slots; a larger literal is never silently clamped. Without LIMIT, the
+   complete matching set must fit the existing budget.
 3. Ask a peer for the full-residue STARK and encrypted result. Derive the trusted
    canonical input from the pending request and verify every shard, joining all
    admitted workers while retaining encrypted results.
 4. Recheck confirmed ancestry and state, then recheck current TableId and both
-   heads before decrypting any result. Apply LIMIT after all logical shards have
-   complete verified results; return `VerifiedResult` with the confirmed `HeadRef`.
+   heads before decrypting any result. Merge proved shard prefixes by global
+   `ordinal * shard_count + shard_slot`, then apply the global LIMIT; return
+   `VerifiedResult` with the confirmed `HeadRef`.
    A reorganization or conflicting state requires retry.
 
 Fixed row SELECT never requests predicate-dependent pages or counts and never
@@ -181,6 +187,11 @@ core geometry. This profile introduces no new selection-dependent address/volume
 leak relative to the existing full-fetch path; public layout, operation timing,
 failures and the existing owner-online conversion boundary remain observable.
 The typed imported-catalog path and aggregate/mutation full-image reads are unchanged.
+The fixed LIMIT path still validates O(matches) source rows, including discarded
+candidates and LIMIT0, plus O(table rows / 64) bitmap traversal. It uses a zeroizing
+bitmap of at most 125,000 bytes per shard and one decrypted data-page scratch
+buffer. It does not stop validation at LIMIT,
+change ReadImage traffic, add OFFSET support or provide general streaming SELECT.
 
 The query-scoped endpoint queue spans initial/final synchronization, ReadImage and
 proof requests. Interrupted returns immediately without an uncancelled replica
