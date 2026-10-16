@@ -1,5 +1,7 @@
 use crate::format::{hash, leaf, parent};
-use crate::{Commitment, Error, Limits, LookupResponse, MANIFEST_BYTES, PAGE_OVERHEAD, Result};
+use crate::{
+    Commitment, Error, Limits, LookupResponse, MANIFEST_BYTES, PAGE_OVERHEAD, Result, VerifiedPage,
+};
 
 /// Peer-owned opaque ciphertext pages plus a rebuildable in-memory Merkle index.
 /// Does not contain plaintext or secret keys. Addresses and lengths are public.
@@ -118,6 +120,59 @@ impl EncryptedSnapshot {
             return Err(Error::ResourceLimit);
         }
         Ok(response)
+    }
+
+    /// Reconstructs an exact target image from an already authenticated base.
+    /// Every replacement must belong to `next`; omitted changes fail the final
+    /// complete-root check. This consumes ciphertext only, supplies no owner
+    /// authorization or SQL proof, and cannot alter the caller's durable base.
+    /// An unchanged image accepts only its exact old head and no replacements.
+    pub fn apply_verified_replacements(
+        mut self,
+        expected: &Commitment,
+        next: &Commitment,
+        replacements: Vec<VerifiedPage>,
+        limits: Limits,
+    ) -> Result<Self> {
+        if self.commitment() != expected {
+            return Err(Error::WrongVersion);
+        }
+        expected.layout.validate(limits)?;
+        next.layout.validate(limits)?;
+        if expected == next && replacements.is_empty() {
+            return Ok(self);
+        }
+        if expected.database != next.database
+            || expected.domain != next.domain
+            || expected.layout != next.layout
+            || expected.revision.checked_add(1) != Some(next.revision)
+        {
+            return Err(Error::WrongVersion);
+        }
+        if replacements.is_empty() || replacements.len() > self.pages.len() {
+            return Err(Error::InvalidPage);
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for page in &replacements {
+            if page.commitment() != next {
+                return Err(Error::WrongVersion);
+            }
+            if !seen.insert(page.index)
+                || page.packet.len() != next.layout.page_plaintext_len(page.index)? + PAGE_OVERHEAD
+            {
+                return Err(Error::InvalidPage);
+            }
+            if page.page_revision() > next.revision {
+                return Err(Error::WrongVersion);
+            }
+        }
+        for page in replacements {
+            self.replace_from_owner(next.clone(), page.index as usize, page.packet);
+        }
+        if self.commitment() != next {
+            return Err(Error::InvalidProof);
+        }
+        Ok(self)
     }
 
     pub(crate) fn replace_from_owner(

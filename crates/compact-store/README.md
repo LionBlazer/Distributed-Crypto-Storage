@@ -23,6 +23,13 @@ address-based retrieval, not an FHE evaluator or SQL query proof.
   independently trusted head. It rejects a mismatched manifest before allocating
   pages, then verifies the full root. Plain `decode` checks internal consistency
   only; a peer-supplied embedded root does not establish authorization or freshness.
+- EncryptedSnapshot::apply_verified_replacements consumes an authenticated base
+  and verified target pages, preserves database/domain/layout, requires the next
+  global revision, and returns only an image whose complete reconstructed root
+  equals the exact target. Omitted or duplicate replacements reject. An unchanged
+  image accepts only the same exact head and no replacements. This ciphertext-only
+  primitive grants no head authorization, SQL proof or freshness; the caller owns
+  durable staging and provenance. It does not copy every base page again.
 - Owner::decrypt accepts VerifiedPage and returns PlainPage; the decrypted buffer
   is zeroized on drop. The application remains responsible for its source plaintext
   and any copies. Public nonce, ciphertext and tag accessors on VerifiedPage permit
