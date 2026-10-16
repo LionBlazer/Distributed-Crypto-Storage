@@ -13,6 +13,7 @@ evaluator answering SQL and no dependency on the playground or its fixtures.
 | [compact-store](../compact-store/README.md) | Exact trusted heads and bounded canonical formats |
 | [peer-runtime](../peer-runtime/README.md) | Remote object transfer, FHE replies, copies and metrics |
 | [bfv-query-core](../bfv-query-core/README.md) | Public parameter descriptor |
+| [bfv-query-proof](../bfv-query-proof/README.md) | Genuine checked statement capability retained until fresh completion |
 | [version-journal](../version-journal/README.md) | Work, signatures, confirmed heads and ancestry |
 
 ## Typed imported catalogs
@@ -66,9 +67,9 @@ across initial/final journal checks, source fetch and all proof blocks. An unrea
 once per query, including concurrent failover; a later query retries it. A missing
 or damaged object excludes only that object at that endpoint. `Interrupted`
 returns without fallback or negative caching. Explicit peer `Busy` retains its
-existing bounded retry and is never negative-cached. The writable Session keeps
-its existing failure policy. An endpoint recovering during this query is retried
-on the next query. This changes retry policy, not the version contract: the final
+existing bounded retry and is never negative-cached. Fixed Session row SELECT
+shares the same read-query policy; mutations keep their existing failure policy.
+An endpoint recovering during this query is retried on the next query. This changes retry policy, not the version contract: the final
 journal synchronization still needs a real response from a remaining reachable
 peer, resolves the pinned version floor, checks every expected shard head, and
 requires `Freshness::Exact(initial)` plus the same current state root. A cached
@@ -156,13 +157,41 @@ Every successful SELECT follows:
 
 1. Synchronize and independently validate work, bodies, authorization and job proofs.
    Resolve the latest locally confirmed descendant of the previous read/write token.
-2. Fetch actual ciphertext at exact data/index heads. Authenticate complete private
-   index coverage and selected pages before preparing original FHE operands.
+2. Fetch the same static encrypted ReadImage for every row SELECT on the same
+   public geometry: the entire data image and padded index posting prefix. Pin
+   TableId and both agreed heads; authenticate complete private index coverage and
+   selected pages before preparing original FHE operands.
 3. Ask a peer for the full-residue STARK and encrypted result. Derive the trusted
-   canonical input from the pending request and verify before decryption.
-4. Recheck confirmed ancestry and state. Apply LIMIT after all logical shards have
+   canonical input from the pending request and verify every shard, joining all
+   admitted workers while retaining encrypted results.
+4. Recheck confirmed ancestry and state, then recheck current TableId and both
+   heads before decrypting any result. Apply LIMIT after all logical shards have
    complete verified results; return `VerifiedResult` with the confirmed `HeadRef`.
    A reorganization or conflicting state requires retry.
+
+Fixed row SELECT never requests predicate-dependent pages or counts and never
+falls back to whole Fetch, FetchPages or selected-ID retrieval. Projection, LIMIT0,
+absent buckets and schema-false predicates use identical ReadImage frame lengths
+for a given geometry; even empty selections require genuine encrypted proofs.
+At one million rows / 256 rows per page this is a 5,461,664-byte whole response,
+instead of the 37,604,546-byte full Bundle response. The runtime still audits the
+entire physical object once, including the omitted RowId tail, so this does not
+claim sparse disk I/O. Its 16-MiB frame cap and 512-prefix-page cap cover the fixed
+core geometry. This profile introduces no new selection-dependent address/volume
+leak relative to the existing full-fetch path; public layout, operation timing,
+failures and the existing owner-online conversion boundary remain observable.
+The typed imported-catalog path and aggregate/mutation full-image reads are unchanged.
+
+The query-scoped endpoint queue spans initial/final synchronization, ReadImage and
+proof requests. Interrupted returns immediately without an uncancelled replica
+fallback; explicit Busy retains bounded retries. Same-query negative availability
+changes retry policy only: final Exact(initial), expected shard heads, state root
+and actual remaining-peer reachability remain mandatory. A subsequent query retries
+recovered endpoints. At most two encrypted read images/preparations coexist; source
+images are dropped before proof waits. No persistent field/page answer cache is added.
+The real-process `proved_sql` tests assert actual frame counts/lengths across query
+variants, complete over-budget rejection, empty-table proofs, interrupted image
+retrieval without fallback, and cancelled final freshness after a real proof reply.
 
 INSERT/UPDATE complete every proof and overflow check before sealing verified
 decrypted outputs into new compact images. Their client-owned `JobVerifier` derives

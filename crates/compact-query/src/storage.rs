@@ -76,7 +76,8 @@ pub(crate) fn restore(
     let index =
         EncryptedSnapshot::decode_for_head(index_bytes, expected_index, index::index_limits())?;
     check_schema(data.commitment())?;
-    index::check_binding(owner, &index, data.commitment(), table_id)?;
+    let heads = crate::ReadHeads::new(*table_id, data.commitment(), index.commitment(), limits)?;
+    index::check_binding(owner, &index, &heads)?;
     Ok(Table {
         table_id: *table_id,
         data,

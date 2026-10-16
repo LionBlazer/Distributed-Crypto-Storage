@@ -92,7 +92,8 @@ The remaining integration boundaries are:
    compact-query private index v3, preserved by genuine amount UPDATE, atomic
    INSERT staging, restore and exact pending retry. Owner-issued references bind
    both exact heads and physical ordinal, with at most 256 sparse ID lookups.
-   Existing network fetch still transfers the full encrypted image. These private
+   Mutation and RowReferences preparation still fetch the full encrypted image;
+   row SELECT uses the static footprint below. These private
    references provide no public row-existence/completeness or lock proof. Typed
    imported tables, checked movement/compaction and a cross-data/lock proof
    relation remain open. Define transaction/statement identities, authorization,
@@ -144,15 +145,24 @@ protocol and establishes no live lock grant or latency bound.
 
 ## Selective retrieval and the unresolved access policy
 
-The bounded `FetchPages` custody RPC is implemented, but live SQL still uses full
-encrypted-image Fetch. For the fixed schema, that Fetch does not disclose which
-private index/data pages the owner subsequently examines. A direct selective SQL
-adapter would disclose page addresses to its peers and change traffic-size metadata.
-The requirements leave permitted access leakage unresolved; the raw custody API
-does not approve such a policy for SQL. Preserve the current live path until an
-explicitly selected leakage profile or private retrieval establishes that boundary.
-PIR candidates and their active-response, setup, memory and full-query costs require
-separate validation. A smaller reply alone does not justify a confidentiality change.
+Fixed row SELECT now uses `FetchReadImage`: the entire data image and every index
+page through the end of its public padded posting capacity. All predicates,
+projections, LIMITs and empty results on the same geometry request the same prefix
+and response length. It omits the private stable-identity tail without disclosing
+which pages the owner subsequently examines. The complete physical object is still
+audited once, including omitted bytes. Source plaintext is erased after fresh FHE
+preparation; every proof and final agreed-state check precedes result decryption.
+This preserves the previous fixed-query address/volume boundary; it establishes
+neither sparse disk I/O nor PIR. Typed SELECT, aggregate and mutation image reads
+remain separate unchanged paths.
+
+The bounded raw `FetchPages` custody RPC does not approve a query-dependent address
+policy for SQL. An adaptive adapter would disclose page addresses and access
+volume; permitted leakage remains unresolved in the requirements. Preserve the
+fixed footprint until an explicitly selected policy or private retrieval establishes
+that boundary. PIR candidates and their active-response, setup, memory and
+full-query costs require separate validation. A smaller reply alone does not
+justify a confidentiality change.
 
 ## Remaining SQL operators
 

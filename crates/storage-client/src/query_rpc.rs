@@ -30,9 +30,9 @@ pub(super) struct Requests {
     remember_failures: bool,
 }
 impl Requests {
-    /// Typed reads share this state across initial/final freshness, fetch and all
-    /// byte blocks. The next query retries endpoints with independent state.
-    pub fn typed_query() -> Self {
+    /// Reads share this state across initial/final freshness, fetch and all
+    /// proof jobs. The next query retries endpoints with independent state.
+    pub fn read_query() -> Self {
         Self {
             remember_failures: true,
             ..Self::default()

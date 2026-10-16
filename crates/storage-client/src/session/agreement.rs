@@ -8,6 +8,12 @@ pub(super) fn now() -> u64 {
 }
 impl Session {
     pub(super) fn synchronize(&mut self) -> Result<HeadRef> {
+        self.synchronize_using(None)
+    }
+    pub(super) fn synchronize_using(
+        &mut self,
+        requests: Option<&crate::query_rpc::Requests>,
+    ) -> Result<HeadRef> {
         self.persist_pending()?;
         let network = self.journal.genesis_id();
         let mut reached = false;
@@ -23,10 +29,20 @@ impl Session {
                         .into_iter()
                         .map(|(h, _)| h.id()),
                 );
-                let response = call_bounded(&participant.remote, || Request::JournalBlocks {
+                let request = || Request::JournalBlocks {
                     network,
                     known: known.clone(),
-                });
+                };
+                let response = match requests {
+                    Some(requests) => requests.call(&participant.remote, None, request),
+                    None => call_bounded(&participant.remote, request),
+                };
+                if requests.is_some()
+                    && let Err(error) = &response
+                    && error.kind() == io::ErrorKind::Interrupted
+                {
+                    return Err(Error::Transport(response.err().unwrap()));
+                }
                 let Ok(Response::JournalBlocks(blocks)) = response else {
                     self.unavailable_this_operation.insert(participant.id);
                     break;
@@ -90,10 +106,21 @@ impl Session {
                 if self.unavailable_this_operation.contains(&peer.id) {
                     continue;
                 }
-                if let Ok(Response::Bundle(bundle)) = peer.remote.call(Request::FetchVersion {
+                let request = || Request::FetchVersion {
                     data_head: state.heads.data.to_vec(),
                     index_head: state.heads.index.to_vec(),
-                }) {
+                };
+                let response = match requests {
+                    Some(requests) => requests.call(&peer.remote, None, request),
+                    None => peer.remote.call(request()),
+                };
+                if requests.is_some()
+                    && let Err(error) = &response
+                    && error.kind() == io::ErrorKind::Interrupted
+                {
+                    return Err(Error::Transport(response.err().unwrap()));
+                }
+                if let Ok(Response::Bundle(bundle)) = response {
                     if bundle.data_head != state.heads.data
                         || bundle.index_head != state.heads.index
                     {
@@ -235,7 +262,14 @@ impl Session {
         Ok(())
     }
     pub(super) fn finish_read(&mut self, expected: HeadRef) -> Result<HeadRef> {
-        let current = self.synchronize()?;
+        self.finish_read_using(expected, None)
+    }
+    pub(super) fn finish_read_using(
+        &mut self,
+        expected: HeadRef,
+        requests: Option<&crate::query_rpc::Requests>,
+    ) -> Result<HeadRef> {
+        let current = self.synchronize_using(requests)?;
         self.journal
             .resolve(Freshness::Exact(expected))
             .map_err(protocol)?;

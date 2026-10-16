@@ -44,7 +44,8 @@ inspector tabs.
 Northwind can be downloaded on demand in Data and imported in full: 13 base tables
 and 3,308 rows, including Unicode text, NULLs, dates, exact decimals and binary
 images. The typed catalog supports SELECT, named projections, comparisons,
-AND/OR/NOT, IN/BETWEEN, IS NULL, ORDER BY and TOP/LIMIT over its actual tables.
+AND/OR/NOT, IN/BETWEEN, IS NULL, ORDER BY and PostgreSQL OFFSET/LIMIT/FETCH windows
+(including WITH TIES) over its actual tables. TOP remains an import-adapter spelling.
 Original rows are projected homomorphically in streamed BFV blocks with genuine
 STARKs, complete authenticated private indices and confirmed-version checks.
 There is no 128-row import/query cap. Imported catalogs are currently immutable;
@@ -66,6 +67,10 @@ The GUI uses the BFV
 exact-index backend, shared public evaluation keys and compact encrypted pages.
 Complete authenticated index selection precedes fresh FHE; unsupported budgets
 reject rather than truncate. Owner secret keys stay outside peer role objects.
+Fixed row SELECT transfers the complete data image and a public, fixed index
+posting prefix, omitting the stable-identity tail. Every predicate/projection/LIMIT
+on the same geometry uses that same footprint. Peers still audit the full physical
+object; this optimization does not establish sparse disk I/O or private PIR.
 
 | Module | Responsibility |
 | --- | --- |

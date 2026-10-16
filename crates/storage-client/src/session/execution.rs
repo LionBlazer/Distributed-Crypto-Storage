@@ -18,7 +18,8 @@ impl Session {
                 .ok_or_else(|| protocol("Missing retained mutation result"));
         }
         let plan = sql_plan::parse_sql(sql)?;
-        let initial = self.synchronize()?;
+        let read_requests = matches!(plan, QueryPlan::Select { .. }).then(Requests::read_query);
+        let initial = self.synchronize_using(read_requests.as_ref())?;
         match &plan {
             QueryPlan::Aggregate { predicate } => {
                 return self.execute_aggregate(initial, *predicate, AggregateProjection::CountSum);
@@ -37,7 +38,13 @@ impl Session {
             limit,
         } = &plan
         {
-            return self.execute_select(initial, *predicate, *projection, *limit);
+            return self.execute_select(
+                initial,
+                *predicate,
+                *projection,
+                *limit,
+                read_requests.as_ref().expect("SELECT read scope"),
+            );
         }
         let requests = Requests::default();
         let before: Vec<_> = self

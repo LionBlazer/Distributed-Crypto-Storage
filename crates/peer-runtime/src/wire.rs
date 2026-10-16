@@ -244,6 +244,7 @@ pub(crate) fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> io::Result
 
 /// Reject a substituted RPC variant before its unrelated vector decoder can
 /// allocate. Page replies and errors have a separate narrow frame budget.
+#[cfg(test)]
 pub(crate) fn decode_page_response(bytes: &[u8]) -> io::Result<WireResponse> {
     decode_custody_response(bytes, crate::MAX_PAGE_BATCH_RESPONSE_BYTES, 12)
 }

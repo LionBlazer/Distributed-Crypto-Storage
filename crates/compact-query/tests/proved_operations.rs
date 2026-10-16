@@ -380,23 +380,34 @@ fn borrowed_select_verification_preserves_pending_but_checked_evidence_cannot_fi
         .unwrap();
     let (input, generated) = prove_select(&public, &prepared);
     assert!(matches!(
-        owner.check_select_proof(&table, &prepared, generated.output(), &[]),
+        owner.check_select_proof(&table.read_heads(), &prepared, generated.output(), &[]),
         Err(Error::ComputationProof(_))
     ));
     // A rejected candidate has not consumed the one-use owner preparation.
     let checked = owner
-        .check_select_proof(&table, &prepared, generated.output(), generated.proof())
+        .check_select_proof(
+            &table.read_heads(),
+            &prepared,
+            generated.output(),
+            generated.proof(),
+        )
         .unwrap();
     assert!(checked.matches_statement(&input, generated.output()));
     let another = owner
         .prepare_provable_select(&table, range_all(), RowProjection::Amount, 256, limits)
         .unwrap();
 
-    let wrong_request = owner.complete_checked_select(&table, another, generated.output(), checked);
+    let wrong_request =
+        owner.complete_checked_select(&table.read_heads(), another, generated.output(), checked);
 
     assert!(matches!(wrong_request, Err(Error::ComputationProof(_))));
     let checked = owner
-        .check_select_proof(&table, &prepared, generated.output(), generated.proof())
+        .check_select_proof(
+            &table.read_heads(),
+            &prepared,
+            generated.output(),
+            generated.proof(),
+        )
         .unwrap();
     let mut changed = generated.output().to_vec();
     let last = changed.len() - 8;
@@ -405,7 +416,8 @@ fn borrowed_select_verification_preserves_pending_but_checked_evidence_cannot_fi
     changed[last..].copy_from_slice(&((value + 1) % modulus).to_le_bytes());
     assert!(!checked.matches_statement(&input, &changed));
 
-    let wrong_output = owner.complete_checked_select(&table, prepared, &changed, checked);
+    let wrong_output =
+        owner.complete_checked_select(&table.read_heads(), prepared, &changed, checked);
 
     assert!(matches!(wrong_output, Err(Error::ComputationProof(_))));
     assert_eq!(encrypted_images(&table), images);
@@ -610,4 +622,175 @@ fn a_whole_batch_requires_one_exact_proof_and_stages_all_rows_once() {
             .unwrap(),
         incoming[1]
     );
+}
+
+/// An immutable, actually incomplete index container: no Table or synthetic
+/// EncryptedSnapshot is constructed for its omitted encrypted RowId tail.
+struct PostingPrefix {
+    head: compact_store::Commitment,
+    pages: Vec<compact_store::LookupResponse>,
+}
+impl compact_query::PageSource for PostingPrefix {
+    fn commitment(&self) -> &compact_store::Commitment {
+        &self.head
+    }
+    fn lookup(
+        &self,
+        page: u64,
+        limits: Limits,
+    ) -> compact_query::Result<compact_store::VerifiedPage> {
+        Ok(self
+            .pages
+            .get(page as usize)
+            .ok_or(Error::InvalidIndex)?
+            .verify(&self.head, page, limits)?)
+    }
+}
+#[test]
+fn a_real_posting_prefix_and_full_snapshot_share_complete_select_and_genuine_proof_completion() {
+    let limits = Limits::default();
+    let (owner, peer) = Owner::generate([93; 16]).unwrap();
+    let public = public_evaluator(&peer);
+    let source: Vec<_> = (0..6040)
+        .map(|i| row(if i % 25 == 0 { 18 } else { 7 }, i as u16))
+        .collect();
+    let table = owner.seal(&source, 17, limits).unwrap();
+    let heads = table.read_heads();
+    let required = heads.read_requirements().unwrap();
+    assert!(
+        u64::from(required.index_prefix_pages)
+            < heads.index().layout().page_count().unwrap() as u64
+    );
+    let index_limits = Limits {
+        max_rows: heads.index().layout().row_count,
+        max_image_bytes: table.encrypted_index().encode().len(),
+        ..limits
+    };
+    let prefix = PostingPrefix {
+        head: heads.index().clone(),
+        pages: (0..u64::from(required.index_prefix_pages))
+            .map(|page| table.encrypted_index().lookup(page, index_limits).unwrap())
+            .collect(),
+    };
+    let view = compact_query::ReadView::new(heads.clone(), table.snapshot(), &prefix).unwrap();
+    let mut results = Vec::new();
+    for view in [&view, &table.read_view()] {
+        let prepared = owner
+            .prepare_provable_select_from_source(
+                view,
+                Some(AgeRange::equal(18)),
+                RowProjection::Amount,
+                256,
+                limits,
+            )
+            .unwrap();
+        assert_eq!(prepared.selected_rows(), 242);
+        let (_, generated) = prove_select(&public, &prepared);
+        let checked = owner
+            .check_select_proof(&heads, &prepared, generated.output(), generated.proof())
+            .unwrap();
+        results.push(
+            owner
+                .complete_checked_select(&heads, prepared, generated.output(), checked)
+                .unwrap()
+                .into_rows(),
+        );
+    }
+    assert_eq!(results[0], results[1]);
+    assert_eq!(
+        results[0]
+            .iter()
+            .map(|row| (row.ordinal, row.amount.unwrap()))
+            .collect::<Vec<_>>(),
+        (0..6040)
+            .step_by(25)
+            .map(|i| (i, i as u16))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        compact_query::PageSource::lookup(
+            &prefix,
+            u64::from(required.index_prefix_pages),
+            index_limits
+        )
+        .is_err()
+    );
+}
+#[test]
+fn checked_select_rechecks_logical_table_and_each_current_head_before_decrypting() {
+    let limits = Limits::default();
+    let (owner, peer) = Owner::generate([94; 16]).unwrap();
+    let public = public_evaluator(&peer);
+    let table = owner.seal(&[row(42, 255)], 1, limits).unwrap();
+    let original = table.read_heads();
+    let changed_root = |head: &compact_store::Commitment, index| {
+        let mut bytes = head.encode();
+        bytes[80] ^= 1;
+        if index {
+            compact_query::decode_index_head(&bytes, 1).unwrap()
+        } else {
+            compact_store::Commitment::decode(&bytes, limits).unwrap()
+        }
+    };
+    let alternatives = [
+        compact_query::ReadHeads::new(
+            compact_query::TableId::from_bytes([95; 32]).unwrap(),
+            original.data(),
+            original.index(),
+            limits,
+        )
+        .unwrap(),
+        compact_query::ReadHeads::new(
+            *original.table_id(),
+            &changed_root(original.data(), false),
+            original.index(),
+            limits,
+        )
+        .unwrap(),
+        compact_query::ReadHeads::new(
+            *original.table_id(),
+            original.data(),
+            &changed_root(original.index(), true),
+            limits,
+        )
+        .unwrap(),
+    ];
+    for changed in alternatives {
+        let prepared = owner
+            .prepare_provable_select(&table, range_all(), RowProjection::AgeAmount, 256, limits)
+            .unwrap();
+        let (_, generated) = prove_select(&public, &prepared);
+        let checked = owner
+            .check_select_proof(&original, &prepared, generated.output(), generated.proof())
+            .unwrap();
+        assert!(matches!(
+            owner.check_select_proof(&changed, &prepared, generated.output(), generated.proof()),
+            Err(Error::WrongVersion)
+        ));
+        assert!(matches!(
+            owner.complete_checked_select(&changed, prepared, generated.output(), checked),
+            Err(Error::WrongVersion)
+        ));
+    }
+    // A different independently supplied logical identity also rejects while
+    // authenticating the encrypted index, before any encrypted SQL is prepared.
+    let wrong = compact_query::ReadHeads::new(
+        compact_query::TableId::from_bytes([95; 32]).unwrap(),
+        original.data(),
+        original.index(),
+        limits,
+    )
+    .unwrap();
+    let view =
+        compact_query::ReadView::new(wrong, table.snapshot(), table.encrypted_index()).unwrap();
+    assert!(matches!(
+        owner.prepare_provable_select_from_source(
+            &view,
+            range_all(),
+            RowProjection::AgeAmount,
+            256,
+            limits
+        ),
+        Err(Error::WrongVersion)
+    ));
 }
