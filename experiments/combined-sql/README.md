@@ -29,6 +29,8 @@ The [bulk serialization comparison](BULK-SERIALIZATION-MEASUREMENTS.md) measures
 byte-identical custody encoding while retaining the original decoder and audits.
 The [bounded bulk decoding comparison](BULK-DECODING-MEASUREMENTS.md) measures the
 subsequent slice decoder while retaining complete custody and SQL acceptance checks.
+The [owned-image comparison](OWNED-IMAGE-MEASUREMENTS.md) measures deferred peer
+packet materialization while retaining every complete physical image audit.
 
 ## Full accepted operations
 
