@@ -10,7 +10,9 @@ const DOMAIN: &[u8] = b"dcs/peer-runtime/salted-head-object/v2";
 pub(crate) const DISK_MAGIC: &[u8; 8] = b"DCSOBJ02";
 pub(crate) const DISK_HEADER_BYTES: usize = 40;
 mod slice;
+pub use slice::ReceivedVersionBytes;
 pub(crate) use slice::decode as decode_slice;
+pub(crate) use slice::receive_version;
 
 /// Untrusted wire envelope. Parsing/version metadata never establishes custody.
 /// Nonce is public to object recipients, but must not enter Status or journals.
@@ -77,14 +79,7 @@ impl RawBundle {
     }
     /// Structural binding ONLY; this does not check either encrypted image.
     pub fn target_version(&self) -> Result<TargetVersion, RemoteError> {
-        if self.version != 2 {
-            return Err(RemoteError::Integrity);
-        }
-        let data = Commitment::decode(&self.data_head, custody_limits())
-            .map_err(|_| RemoteError::Integrity)?;
-        let index = Commitment::decode(&self.index_head, custody_limits())
-            .map_err(|_| RemoteError::Integrity)?;
-        TargetVersion::new(self.nonce, data, index)
+        target_version(self.version, self.nonce, &self.data_head, &self.index_head)
     }
     pub(crate) fn check_frame(&self) -> Result<(), RemoteError> {
         check_size([
@@ -94,6 +89,21 @@ impl RawBundle {
             self.index.len(),
         ])
     }
+}
+fn target_version(
+    version: u16,
+    nonce: [u8; 32],
+    data_head: &[u8],
+    index_head: &[u8],
+) -> Result<TargetVersion, RemoteError> {
+    if version != 2 {
+        return Err(RemoteError::Integrity);
+    }
+    let data =
+        Commitment::decode(data_head, custody_limits()).map_err(|_| RemoteError::Integrity)?;
+    let index =
+        Commitment::decode(index_head, custody_limits()).map_err(|_| RemoteError::Integrity)?;
+    TargetVersion::new(nonce, data, index)
 }
 fn check_size(lengths: [usize; 4]) -> Result<(), RemoteError> {
     let size = lengths

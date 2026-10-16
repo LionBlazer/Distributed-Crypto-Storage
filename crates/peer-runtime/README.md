@@ -85,6 +85,27 @@ The actual whole disk/RPC byte count is capped at 64 MiB, including its existing
 40/14/18-byte envelope. This explicit cap is required because pinned bincode's
 slice API replaces its configured size limit with Infinite.
 
+`RemotePeer::fetch_version(data_head, index_head)` additionally retains a complete
+RawBundle reply in `ReceivedVersionBytes`: one original immutable received frame,
+four checked field ranges and copied version/nonce scalars. The same borrowed
+four-field parser completes all lengths and trailing-byte checks before this
+non-cloneable value exists. `encoded_images()` lends both complete ciphertext
+images; `target_version()` performs the existing metadata-only binding check.
+Neither operation grants custody, owner authority, TableId binding, query proof
+or freshness. Callers must still audit both full images and their trusted heads.
+The original frame drops when its owner import finishes; it is not a custody cache.
+
+The typed method uses the same private exchange as `call`: TLS pinning, request
+identity, 64-MiB whole-frame cap (including the 18-byte response envelope), actual
+Activity/Trace bytes, decoding inside Trace timing and final cancellation check
+are retained. A completely decoded known unexpected successful variant returns
+`Ok(None)` and remains a successful RPC. Remote errors, malformed/unknown variants
+and request-binding failures remain errors; a malformed raw reply never tries a
+second decoder. Ordinary `call`, public RawBundle Deserialize, server dispatch,
+disk encoding and every physical two-image custody audit are unchanged. This
+ownership path removes the four reply-payload copies for its consumer; it does
+not establish complete-operation latency or process-RAM bounds.
+
 The specialized wrappers retain the existing v2 namespace, profiles and enum tags;
 all other RPC variants use the ordinary decoder. A malformed specialized body
 rejects without trying another format. Inner raw version, nonce, head lengths and

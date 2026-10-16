@@ -36,7 +36,9 @@ pub use wire::{
 };
 
 pub use bootstrap::Bootstrap;
-pub use objects::{CheckedObject, OBJECT_PROFILE_ID, RawBundle, TargetVersion};
+pub use objects::{
+    CheckedObject, OBJECT_PROFILE_ID, RawBundle, ReceivedVersionBytes, TargetVersion,
+};
 
 /// Reject incompatible participant state before a producer writes or launches.
 pub fn check_workspace(directory: &std::path::Path) -> std::io::Result<()> {

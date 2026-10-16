@@ -74,6 +74,37 @@ impl RemotePeer {
         self
     }
     pub fn call(&self, request: Request) -> io::Result<Response> {
+        self.exchange(request, |payload, id, response_limit, custody_tag| {
+            let response = match custody_tag {
+                Some(tag) => decode_custody_response(&payload, response_limit, tag)?,
+                None => decode_response(&payload)?,
+            };
+            check_response_binding(response.version, response.id, id)?;
+            response.result.map_err(io::Error::other)
+        })
+    }
+    /// Receives the complete encrypted version without copying its four payload
+    /// fields. None is a valid known unexpected success; RemoteError remains an
+    /// I/O error. The caller must independently validate both complete images,
+    /// their expected heads, owner key and TableId before accepting the version.
+    pub fn fetch_version(
+        &self,
+        data_head: &[u8],
+        index_head: &[u8],
+    ) -> io::Result<Option<crate::ReceivedVersionBytes>> {
+        self.exchange(
+            Request::FetchVersion {
+                data_head: data_head.to_vec(),
+                index_head: index_head.to_vec(),
+            },
+            |payload, id, _, _| crate::objects::receive_version(payload, id),
+        )
+    }
+    fn exchange<T>(
+        &self,
+        request: Request,
+        finish: impl FnOnce(Vec<u8>, u64, usize, Option<u32>) -> io::Result<T>,
+    ) -> io::Result<T> {
         let cancellation = self.control.as_ref().and_then(|control| control.current());
         if let Some(token) = &cancellation {
             token.check()?;
@@ -124,17 +155,7 @@ impl RemotePeer {
                 });
             }
             crate::wire::check_version(&payload)?;
-            let response: WireResponse = match custody_tag {
-                Some(tag) => decode_custody_response(&payload, response_limit, tag)?,
-                None => decode_response(&payload)?,
-            };
-            if response.version != 2 || response.id != id {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Response version/request binding mismatch",
-                ));
-            }
-            response.result.map_err(io::Error::other)
+            finish(payload, id, response_limit, custody_tag)
         })();
         let result = if cancellation
             .as_ref()

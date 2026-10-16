@@ -6,6 +6,8 @@ mod aggregate_measurement;
 mod boolean_predicates;
 #[path = "support/mutation_cancellation.rs"]
 mod mutation_cancellation;
+#[path = "support/received_version_import.rs"]
+mod received_version_import;
 #[path = "support/rpc_observation.rs"]
 mod rpc_observation;
 #[path = "support/static_aggregate.rs"]

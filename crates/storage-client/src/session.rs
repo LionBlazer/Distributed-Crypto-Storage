@@ -83,9 +83,12 @@ pub(super) fn call_bounded(
     remote: &RemotePeer,
     make_request: impl Fn() -> Request,
 ) -> io::Result<Response> {
+    retry_busy(|| remote.call(make_request()))
+}
+pub(super) fn retry_busy<T>(attempt: impl Fn() -> io::Result<T>) -> io::Result<T> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
     loop {
-        match remote.call(make_request()) {
+        match attempt() {
             Err(error)
                 if error
                     .get_ref()

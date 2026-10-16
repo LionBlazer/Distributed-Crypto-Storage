@@ -261,6 +261,26 @@ Pending publication prevents further acceptance until retry succeeds. Local snap
 metadata changes atomically after every newly agreed shard authenticates. One
 overflowing shard publishes none of an UPDATE.
 
+Changed-head final imports use `RemotePeer::fetch_version` and borrow both complete
+images from its single immutable `ReceivedVersionBytes` frame. The endpoint queue
+is released before owner validation. The existing target binding, exact agreed
+data/index heads, full canonical audits, index-header AEAD, TableId and owner-key
+checks still run; no partial image or server claim replaces them. The frame drops
+before trying another holder or retaining staged shard metadata. A nonce-valid
+different object at the same agreed heads is not compared with an older object ID.
+Known unexpected successful RPC variants remain successes for Trace and endpoint
+failure memory, but cannot become imported versions. Store/Delta/Copy, holder
+credit, pending transition identity and proof/freshness acceptance are unchanged.
+
+This ownership change preserves the existing synchronization policy difference:
+`synchronize_using(Some(Requests))` uses the read scheduler's Busy retry and returns
+Interrupted immediately. `synchronize_using(None)` directly calls FetchVersion
+without Busy retry, and its journal/version holder loops can continue after an
+Interrupted error. Those conditional checks in `session/agreement.rs` are a
+separate cancellation follow-up; this change does not claim universal immediate
+cancellation in mutation synchronization. No latency or RAM improvement is
+established by the ownership change alone.
+
 `VerifiedResult::Updated::affected_rows` counts the complete matched selection,
 including values unchanged by `amount = amount + 0`, following PostgreSQL's
 [UPDATE output](https://www.postgresql.org/docs/18/sql-update.html#SQL-UPDATE-OUTPUTS).

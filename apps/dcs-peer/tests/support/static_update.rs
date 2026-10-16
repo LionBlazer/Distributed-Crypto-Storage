@@ -266,9 +266,14 @@ fn corrupt_identity_tail_after_delta_ack_keeps_exact_pending_and_retry_reuses_th
     let administrator = control.clone();
     let jobs = Arc::new(AtomicUsize::new(0));
     let writes = Arc::new(AtomicUsize::new(0));
+    let imports = Arc::new(AtomicUsize::new(0));
     let job_count = jobs.clone();
     let write_count = writes.clone();
+    let import_count = imports.clone();
     let remote = control.clone().with_trace(Arc::new(move |event| {
+        if event.operation == "fetch-version" {
+            import_count.fetch_add(1, Ordering::SeqCst);
+        }
         if event.operation == "fhe-proof" {
             job_count.fetch_add(1, Ordering::SeqCst);
         }
@@ -321,6 +326,7 @@ fn corrupt_identity_tail_after_delta_ack_keeps_exact_pending_and_retry_reuses_th
     jobs.store(0, Ordering::SeqCst);
     writes.store(0, Ordering::SeqCst);
     armed.store(true, Ordering::SeqCst);
+    let old_object = session.shards()[0].object;
     let sql = "UPDATE records SET amount=amount+1 WHERE age=42";
 
     let error = session.execute(sql).unwrap_err();
@@ -330,6 +336,8 @@ fn corrupt_identity_tail_after_delta_ack_keeps_exact_pending_and_retry_reuses_th
     };
     assert_eq!(jobs.load(Ordering::SeqCst), 1);
     assert_eq!(writes.load(Ordering::SeqCst), 1);
+    assert!(imports.load(Ordering::SeqCst) > 0);
+    assert_eq!(session.shards()[0].object, old_object);
     assert!(
         matches!(session.execute(sql), Err(storage_client::Error::PendingMutation { query_binding: same, .. }) if same == query_binding)
     );

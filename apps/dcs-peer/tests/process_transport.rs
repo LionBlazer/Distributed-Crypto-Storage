@@ -1,4 +1,6 @@
 //! Public-fixture, actual OS-process/TLS/FHE tests; no simulated transport or GUI.
+#[path = "support/received_version.rs"]
+mod received_version;
 use compact_query::{AgeRange, PlainRow, bfv as backend};
 use compact_store::Limits;
 use peer_runtime::{
@@ -805,6 +807,13 @@ fn page_rpc_audits_unrequested_bytes_after_store_and_reopen_and_rejects_truncati
     );
     let peer = restarted.remote(&connector);
     assert!(peer.fetch_pages(&request).is_ok());
+    let received = peer
+        .fetch_version(&bundle.data_head, &bundle.index_head)
+        .unwrap()
+        .unwrap();
+    assert!(received.target_version().unwrap() == bundle.target_version().unwrap());
+    assert_eq!(received.encoded_images(), (&*bundle.data, &*bundle.index));
+    drop(received);
     let path = bundle_path(&restarted, bundle.target_version().unwrap().object());
     let original = fs::read(&path).unwrap();
     let mut damaged = original.clone();
@@ -820,11 +829,8 @@ fn page_rpc_audits_unrequested_bytes_after_store_and_reopen_and_rejects_truncati
         .is_err()
     );
     assert!(
-        peer.call(Request::FetchVersion {
-            data_head: bundle.data_head.clone(),
-            index_head: bundle.index_head.clone(),
-        })
-        .is_err()
+        peer.fetch_version(&bundle.data_head, &bundle.index_head)
+            .is_err()
     );
     let recipient = Process::start(&authority, owner.fingerprint(), 2, None);
     let recipient_peer = recipient.remote(&connector);

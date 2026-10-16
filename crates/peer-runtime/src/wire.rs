@@ -344,6 +344,16 @@ pub(crate) fn check_version(bytes: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
+pub(crate) fn check_response_binding(version: u16, id: u64, expected: u64) -> io::Result<()> {
+    if version != 2 || id != expected {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Response version/request binding mismatch",
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod version_tests {
     #[test]

@@ -106,13 +106,13 @@ impl Session {
                 if self.unavailable_this_operation.contains(&peer.id) {
                     continue;
                 }
-                let request = || Request::FetchVersion {
-                    data_head: state.heads.data.to_vec(),
-                    index_head: state.heads.index.to_vec(),
-                };
                 let response = match requests {
-                    Some(requests) => requests.call(&peer.remote, None, request),
-                    None => peer.remote.call(request()),
+                    Some(requests) => {
+                        requests.fetch_version(&peer.remote, &state.heads.data, &state.heads.index)
+                    }
+                    None => peer
+                        .remote
+                        .fetch_version(&state.heads.data, &state.heads.index),
                 };
                 if requests.is_some()
                     && let Err(error) = &response
@@ -120,15 +120,20 @@ impl Session {
                 {
                     return Err(Error::Transport(response.err().unwrap()));
                 }
-                if let Ok(Response::RawBundle(bundle)) = response
-                    && let Ok(object) = restore_agreed_object(
+                // The endpoint queue has been released. All image borrows end
+                // and the received frame drops before failover/staged metadata.
+                let restored = match response {
+                    Ok(Some(frame)) => restore_agreed_object(
                         &self.data.owner,
                         &self.data.table_id,
                         &data_head,
                         &index_head,
-                        bundle,
-                    )
-                {
+                        frame.target_version(),
+                        frame.encoded_images(),
+                    ),
+                    _ => continue,
+                };
+                if let Ok(object) = restored {
                     fetched = Some((object, peer.clone()));
                     break;
                 }
@@ -277,15 +282,16 @@ fn restore_agreed_object(
     table: &compact_query::TableId,
     data: &Commitment,
     index: &Commitment,
-    raw: RawBundle,
+    binding: std::result::Result<peer_runtime::TargetVersion, peer_runtime::RemoteError>,
+    (encoded_data, encoded_index): (&[u8], &[u8]),
 ) -> Result<[u8; 32]> {
-    let version = raw.target_version().map_err(protocol)?;
+    let version = binding.map_err(protocol)?;
     if version.data_head() != data || version.index_head() != index {
         return Err(protocol("A holder returned different agreed heads"));
     }
     owner.validate_table_images_for_experiment(
-        &raw.data,
-        &raw.index,
+        encoded_data,
+        encoded_index,
         table,
         data,
         index,
@@ -319,7 +325,8 @@ mod tests {
                     table.table_id(),
                     table.commitment(),
                     table.index_commitment(),
-                    bad,
+                    bad.target_version(),
+                    (&bad.data, &bad.index),
                 )
                 .is_err()
             );
@@ -330,10 +337,58 @@ mod tests {
                 table.table_id(),
                 table.commitment(),
                 table.index_commitment(),
-                raw,
+                raw.target_version(),
+                (&raw.data, &raw.index),
             )
             .unwrap(),
             object
         );
+    }
+
+    #[test]
+    fn agreed_images_still_require_the_exact_table_owner_and_complete_index_tail() {
+        let (owner, _) = backend::Owner::generate([99; 16]).unwrap();
+        let table = owner
+            .seal(&[PlainRow { age: 42, amount: 7 }], 4, Limits::default())
+            .unwrap();
+        let other = owner
+            .seal(&[PlainRow { age: 42, amount: 7 }], 4, Limits::default())
+            .unwrap();
+        let (wrong_owner, _) = backend::Owner::generate([99; 16]).unwrap();
+        let raw = RawBundle::from_snapshots(table.snapshot(), table.encrypted_index()).unwrap();
+        let check =
+            |authority: &backend::Owner, id: &compact_query::TableId, images: (&[u8], &[u8])| {
+                restore_agreed_object(
+                    authority,
+                    id,
+                    table.commitment(),
+                    table.index_commitment(),
+                    raw.target_version(),
+                    images,
+                )
+            };
+        assert!(check(&owner, other.table_id(), (&raw.data, &raw.index)).is_err());
+        assert!(check(&wrong_owner, table.table_id(), (&raw.data, &raw.index)).is_err());
+        let mut index = raw.index.clone();
+        *index.last_mut().unwrap() ^= 1;
+        assert!(check(&owner, table.table_id(), (&raw.data, &index)).is_err());
+        assert!(check(&owner, table.table_id(), (&raw.data, &raw.index)).is_ok());
+
+        // FetchVersion is addressed by both agreed heads, not an older object
+        // ID. A distinct nonce with the same complete images is a valid object.
+        let original = *raw.target_version().unwrap().object();
+        let mut rebound = raw;
+        rebound.nonce[0] ^= 1;
+        let accepted = restore_agreed_object(
+            &owner,
+            table.table_id(),
+            table.commitment(),
+            table.index_commitment(),
+            rebound.target_version(),
+            (&rebound.data, &rebound.index),
+        )
+        .unwrap();
+        assert_ne!(accepted, original);
+        assert_eq!(&accepted, rebound.target_version().unwrap().object());
     }
 }
