@@ -1,5 +1,7 @@
 //! Actual independently identified OS processes, ciphertext custody, STARK and work journal.
 //! The explicitly easy work target is a public test contract, never a production default.
+#[path = "../../../experiments/combined-sql/aggregate_fixture.rs"]
+mod aggregate_measurement;
 #[path = "support/rpc_observation.rs"]
 mod rpc_observation;
 #[path = "support/static_aggregate.rs"]
