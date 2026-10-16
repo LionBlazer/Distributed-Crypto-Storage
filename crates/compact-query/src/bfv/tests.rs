@@ -67,7 +67,14 @@ fn exact_selection_rejects_complete_groups_over_budget_and_authenticated_wrong_a
             budget: 3
         })
     ));
-    table.index = crate::index::build(&owner.store, &[row(18, 1); 4], table.commitment()).unwrap();
+    table.index = crate::index::build(
+        &owner.store,
+        &[row(18, 1); 4],
+        table.commitment(),
+        table.table_id(),
+        &crate::RowIds::generate(table.commitment().layout().row_count as usize).unwrap(),
+    )
+    .unwrap();
     assert!(matches!(
         owner.prepare_exact_aggregate_for_experiment(
             &table,
@@ -175,6 +182,7 @@ fn multi_page_update_has_fresh_nonces_preserved_index_suffix_no_growth_and_globa
         .restore_table_for_experiment(
             &table.snapshot().encode(),
             &table.index.encode(),
+            table.table_id(),
             table.commitment(),
             table.index_commitment(),
             Limits::default(),
@@ -598,7 +606,14 @@ fn encrypted_select_rejects_authenticated_wrong_age_foreign_owner_and_mismatched
             )
             .is_err()
     );
-    table.index = crate::index::build(&owner.store, &[row(18, 10)], table.commitment()).unwrap();
+    table.index = crate::index::build(
+        &owner.store,
+        &[row(18, 10)],
+        table.commitment(),
+        table.table_id(),
+        &crate::RowIds::generate(table.commitment().layout().row_count as usize).unwrap(),
+    )
+    .unwrap();
     assert!(matches!(
         owner.prepare_exact_select_for_experiment(
             &table,
@@ -609,7 +624,14 @@ fn encrypted_select_rejects_authenticated_wrong_age_foreign_owner_and_mismatched
         ),
         Err(Error::InvalidIndex)
     ));
-    table.index = crate::index::build(&owner.store, &[row(42, 10)], table.commitment()).unwrap();
+    table.index = crate::index::build(
+        &owner.store,
+        &[row(42, 10)],
+        table.commitment(),
+        table.table_id(),
+        &crate::RowIds::generate(table.commitment().layout().row_count as usize).unwrap(),
+    )
+    .unwrap();
     let old = table.commitment().clone();
     owner
         .store
@@ -709,6 +731,7 @@ fn encrypted_select_pending_rejects_either_changed_head_and_old_or_corrupt_image
             .restore_table_for_experiment(
                 &old_data,
                 &old_index,
+                table.table_id(),
                 table.commitment(),
                 table.index_commitment(),
                 Limits::default()
@@ -723,6 +746,7 @@ fn encrypted_select_pending_rejects_either_changed_head_and_old_or_corrupt_image
             .restore_table_for_experiment(
                 &corrupt,
                 &table.encrypted_index().encode(),
+                table.table_id(),
                 table.commitment(),
                 table.index_commitment(),
                 Limits::default()
@@ -741,7 +765,13 @@ fn genuine_insert_grows_actual_ciphertext_and_index_with_monotonic_heads_and_zer
         let old_index = table.index_commitment().clone();
         let old = table.snapshot().encode();
         let prepared = owner
-            .prepare_insert_for_experiment(&table, &[incoming], 256, Limits::default())
+            .prepare_insert_for_experiment(
+                &table,
+                &[incoming],
+                crate::RowIds::generate(1).unwrap(),
+                256,
+                Limits::default(),
+            )
             .unwrap();
         let evaluated = peer.evaluate_indexed_insert(prepared.request()).unwrap();
         assert_eq!(evaluated.stats.ciphertext_additions, 1);
@@ -775,6 +805,7 @@ fn genuine_insert_grows_actual_ciphertext_and_index_with_monotonic_heads_and_zer
                 .restore_table_for_experiment(
                     &old,
                     &table.index.encode(),
+                    table.table_id(),
                     table.commitment(),
                     table.index_commitment(),
                     Limits::default()
@@ -806,7 +837,13 @@ fn in_bounds_wrong_inserted_relation_never_authorizes_any_compact_write() {
     let mut table = owner.seal(&[row(18, 255)], 1, Limits::default()).unwrap();
     let before = (table.snapshot().encode(), table.index.encode());
     let prepared = owner
-        .prepare_insert_for_experiment(&table, &[row(42, 256)], 256, Limits::default())
+        .prepare_insert_for_experiment(
+            &table,
+            &[row(42, 256)],
+            crate::RowIds::generate(1).unwrap(),
+            256,
+            Limits::default(),
+        )
         .unwrap();
     // Test-only wrong relation, with identical public binding and real encrypted peer append.
     // The core's public addition-forgery test independently shows such in-bounds values are not proven.
@@ -844,11 +881,23 @@ fn pending_insert_rejects_either_changed_head_and_wrong_owner_without_mutation()
     let mut table = owner.seal(&[row(18, 255)], 1, Limits::default()).unwrap();
     assert!(
         other
-            .prepare_insert_for_experiment(&table, &[row(42, 1)], 256, Limits::default())
+            .prepare_insert_for_experiment(
+                &table,
+                &[row(42, 1)],
+                crate::RowIds::generate(1).unwrap(),
+                256,
+                Limits::default()
+            )
             .is_err()
     );
     let first = owner
-        .prepare_insert_for_experiment(&table, &[row(42, 1)], 256, Limits::default())
+        .prepare_insert_for_experiment(
+            &table,
+            &[row(42, 1)],
+            crate::RowIds::generate(1).unwrap(),
+            256,
+            Limits::default(),
+        )
         .unwrap();
     let output = peer.evaluate_indexed_insert(first.request()).unwrap();
     let verified = table
@@ -883,11 +932,23 @@ fn pending_insert_rejects_either_changed_head_and_wrong_owner_without_mutation()
     );
     assert_eq!((table.snapshot().encode(), table.index.encode()), before);
     let first = owner
-        .prepare_insert_for_experiment(&table, &[row(42, 1)], 256, Limits::default())
+        .prepare_insert_for_experiment(
+            &table,
+            &[row(42, 1)],
+            crate::RowIds::generate(1).unwrap(),
+            256,
+            Limits::default(),
+        )
         .unwrap();
     let first_output = peer.evaluate_indexed_insert(first.request()).unwrap();
     let second = owner
-        .prepare_insert_for_experiment(&table, &[row(7, 2)], 256, Limits::default())
+        .prepare_insert_for_experiment(
+            &table,
+            &[row(7, 2)],
+            crate::RowIds::generate(1).unwrap(),
+            256,
+            Limits::default(),
+        )
         .unwrap();
     let output = peer.evaluate_indexed_insert(second.request()).unwrap();
     owner
@@ -906,4 +967,42 @@ fn pending_insert_rejects_either_changed_head_and_wrong_owner_without_mutation()
         Error::WrongVersion
     );
     assert_eq!((table.snapshot().encode(), table.index.encode()), before);
+}
+
+#[test]
+fn speculative_appends_keep_old_ids_and_allocate_independent_new_ids() {
+    let (owner, peer) = Owner::generate([86; 16]).unwrap();
+    let table = owner.seal(&[row(42, 1)], 256, Limits::default()).unwrap();
+    let original = owner.row_references(&table, &[0]).unwrap();
+    let mut ids = Vec::new();
+    for _ in 0..2 {
+        let mut branch = table.fork_for_experiment();
+        let prepared = owner
+            .prepare_insert_for_experiment(
+                &branch,
+                &[row(42, 1)],
+                crate::RowIds::generate(1).unwrap(),
+                256,
+                Limits::default(),
+            )
+            .unwrap();
+        let output = peer.evaluate_indexed_insert(prepared.request()).unwrap();
+        owner
+            .apply_insert_checked_for_experiment(
+                &mut branch,
+                prepared,
+                &output.output,
+                Limits::default(),
+            )
+            .unwrap();
+        let refs = owner.row_references(&branch, &[0, 1]).unwrap();
+        assert_eq!(refs.table_id(), original.table_id());
+        assert_eq!(refs.rows()[0].row_id(), original.rows()[0].row_id());
+        ids.push(*refs.rows()[1].row_id());
+    }
+    assert_ne!(ids[0], ids[1]);
+    assert_eq!(
+        owner.row_references(&table, &[0]).unwrap().rows(),
+        original.rows()
+    );
 }

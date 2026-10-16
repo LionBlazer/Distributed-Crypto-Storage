@@ -223,9 +223,10 @@ This is atomic in memory; durable crash-atomic persistence is a separate boundar
 
 ## Index consistency and limits
 
-The V2 encrypted age index contains the exact 112-byte data commitment, 256
+The V3 encrypted private index contains the exact 112-byte data commitment, a
+32-byte logical TableId, 256
 little-endian u32 counts, 257 u32 byte offsets and per-age delta-LEB128 postings.
-The 2164-byte header fits in page zero. Fixed-per-N encrypted zero padding makes
+The 2,196-byte header fits in page zero. Fixed-per-N encrypted zero padding makes
 the total index size independent of age distribution. Each bucket starts with an
 absolute row
 ordinal and then strictly positive gaps. Canonical unsigned encodings, count/byte
@@ -254,9 +255,63 @@ Report canonical data, encrypted index, rebuildable hash payload, keys, replicas
 and transient query traffic separately. A favorable combined data/index size does
 not imply that the same table plus its complete FHE key set fits below 2x. The
 [index-size report](../../docs/experiment-index-compression.md) records the format,
-bounded decoder and actual million-row sizes: 1.743071x for data plus padded
-index, but 61.957164x for one table including the full shared FHE key set and owner
-state. Key amortization is a separate system-level question.
+bounded decoder and historical V2 million-row sizes: 1.743071x for data plus
+padded index, but 61.957164x including shared FHE keys and owner state. Those
+measurements predate the V3 private identity tail and do not describe current
+index expansion. Key amortization is a separate system-level question.
+
+## Private logical row identities
+
+`TableId::generate` allocates one random logical table identity. Standalone
+`Owner::seal` creates a new logical table, including for empty input. A caller
+partitioning one table allocates one TableId and one consuming `RowIds` allocation,
+partitions that allocation in the same original order as its rows, and calls
+`Owner::seal_partition` for each shard. Shard, physical ordinal, row values and
+snapshot revision never contribute to either identity. TableId and RowId are
+nonzero 32-byte CSPRNG values; uniqueness is checked within each allocation and
+against the authenticated old target prefix on append. Across independent
+allocations uniqueness is probabilistic, with 256-bit collision resistance;
+there is no global identity registry. Entropy/collision failures reject without
+silently assigning a replacement identity. Copying or knowing an ID establishes
+neither row existence nor authorization.
+
+The encrypted v3 index appends an ordinal-to-RowId map after the padded postings.
+Its start is aligned to 32 bytes, so one ID never crosses a 4,096-byte page.
+`Owner::row_references` accepts at most 256 distinct in-bounds ordinals, verifies
+page zero against the exact data head and expected logical TableId, then
+verifies/decrypts only needed ID pages, cached within that call. Its immutable
+`RowReferences` carries TableId, both exact heads and ordered ordinal/RowId pairs.
+These are owner-private authenticated metadata, not public FHE/completeness
+proofs, freshness certificates or SQL lock grants. Existing network fetch still
+transfers the complete encrypted bundle; sparse private-page decryption does
+not introduce sparse network retrieval. Ordinary restore authenticates the
+header and full encrypted image roots without scanning/decrypting all row IDs.
+
+Amount-only genuine updates retain every ID. An INSERT preparation owns its
+new-ID allocation before FHE input encryption; checked staging preserves the old
+prefix and appends those exact IDs. One whole SQL allocation is divided across
+parallel target jobs. Retained pending retry reuses the exact encrypted images
+and heads. Restore requires independently supplied logical TableId and both
+heads. Future checked movement, rekeying or compaction must carry these IDs with
+their rows; those operations are not implemented here. No plaintext IDs were
+added to peer RPCs. Private index schema v3 rejects older formats without a
+migration. This is an owner-library format contract; the public arithmetic
+profile, kernel ABI and peer application policy are unchanged.
+
+For 1,000,000 rows the fixed geometry is 2,196 header bytes, 2,015,624 padded
+posting bytes, an aligned ID offset of 2,017,824 and 32,000,000 ID bytes:
+34,017,824 plaintext bytes across 8,306 pages, or 34,416,624 encrypted image bytes
+including all page overhead and its manifest. `decode_index_head` applies that
+exact versioned byte geometry rather than the data-row limit. With 256 data rows
+per page, the 3,187,648-byte data image and two public heads bring bundle parts
+to 37,604,496 bytes, below the unchanged 64 MiB transport/custody bounds. The old
+8 MiB index cap has been replaced by this exact maximum; participant quotas
+remain independently enforced. ID generation uses at most 8 KiB entropy scratch
+and a temporary sorted 32-byte-per-row uniqueness copy, released before index
+construction. The allocation payload peaks near 64 MB at one million rows;
+rows, encrypted/plaintext images, Merkle structures and allocator overhead are
+additional. This calculation and owning geometry tests are not whole-process
+RAM or latency measurements.
 
 ## Experiment boundary
 
@@ -275,7 +330,7 @@ is intentionally usable as an old version; global freshness remains external.
 Both BFV and TFHE completion check the prepared data and index heads against the
 supplied current Table, including an index-only revision change.
 restore_table_for_experiment reconstructs encrypted images with the same live key
-authority and independently supplied heads. It does not persist or restore keys.
+authority and independently supplied TableId and both heads. It does not persist or restore keys.
 
 The bincode round trips accept trusted experiment objects and enforce total wire
 limits; they are not hardened hostile FHE decoders. Metadata/domain/version checks

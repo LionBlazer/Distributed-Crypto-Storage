@@ -32,12 +32,28 @@ impl Owner {
     pub fn seal(&self, rows: &[PlainRow], rows_per_page: u32, limits: Limits) -> Result<Table> {
         crate::storage::seal(&self.store, rows, rows_per_page, limits)
     }
+    /// Seals one partition of an existing logical table, consuming its fresh row-ID allocation.
+    pub fn seal_partition(
+        &self,
+        table_id: &crate::TableId,
+        rows: &[PlainRow],
+        ids: crate::RowIds,
+        rows_per_page: u32,
+        limits: Limits,
+    ) -> Result<Table> {
+        crate::storage::seal_partition(&self.store, table_id, rows, ids, rows_per_page, limits)
+    }
+    /// Authenticated private metadata at this exact table/head pair; no SQL proof or lock grant.
+    pub fn row_references(&self, table: &Table, ordinals: &[u64]) -> Result<crate::RowReferences> {
+        crate::index::references(&self.store, table, ordinals, &mut 0)
+    }
     /// In-memory restart with the same live key authority. The expected heads must
     /// come independently of the encoded peer data. This is not durable key recovery.
     pub fn restore_table_for_experiment(
         &self,
         data: &[u8],
         index_bytes: &[u8],
+        table_id: &crate::TableId,
         expected_data: &Commitment,
         expected_index: &Commitment,
         limits: Limits,
@@ -46,6 +62,7 @@ impl Owner {
             &self.store,
             data,
             index_bytes,
+            table_id,
             expected_data,
             expected_index,
             limits,
@@ -76,6 +93,7 @@ impl Owner {
                     &self.store,
                     &table.index,
                     table.commitment(),
+                    table.table_id(),
                     range,
                     budget,
                     &mut index_response_bytes,
@@ -86,6 +104,7 @@ impl Owner {
                     &self.store,
                     &table.index,
                     table.commitment(),
+                    table.table_id(),
                     &mut index_response_bytes,
                 )?;
                 let count = table.commitment().layout().row_count as usize;

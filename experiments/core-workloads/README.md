@@ -14,3 +14,11 @@ Rayon configures CPU workers; serde_json writes measurement reports. The example
 `disk_tables` retain their existing CLI options. Run, for example,
 `cargo run --release --locked -p core-workloads --example compact_lookup` from
 the repository root. Measurements and generated datasets stay in ignored `.local/`.
+
+
+Current compact-query private index v3 adds encrypted stable TableId/RowId metadata.
+The million-row index is now 34,416,624 encoded bytes; old index-expansion and
+memory measurements predate that format. The local disk consumer retains the
+expected logical TableId with its trusted heads and admits images up to the
+unchanged compact-store 64 MiB bound. This API adaptation is not a rerun of the
+historical TFHE workloads or evidence for their previous resource numbers.

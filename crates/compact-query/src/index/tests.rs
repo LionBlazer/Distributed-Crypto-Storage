@@ -2,6 +2,38 @@
 use super::*;
 use crate::{MAX_ROWS, ROW_BYTES, SCHEMA};
 
+fn table_id() -> TableId {
+    TableId::from_bytes([71; 32]).unwrap()
+}
+fn build(
+    owner: &compact_store::Owner,
+    rows: &[PlainRow],
+    head: &Commitment,
+) -> Result<EncryptedSnapshot> {
+    super::build(
+        owner,
+        rows,
+        head,
+        &table_id(),
+        &RowIds::generate(rows.len())?,
+    )
+}
+fn check_binding(
+    owner: &compact_store::Owner,
+    index: &EncryptedSnapshot,
+    head: &Commitment,
+) -> Result<IndexHeader> {
+    super::check_binding(owner, index, head, &table_id())
+}
+fn rebound(
+    owner: &compact_store::Owner,
+    index: &EncryptedSnapshot,
+    old: &Commitment,
+    new: &Commitment,
+) -> Result<EncryptedSnapshot> {
+    super::rebound(owner, index, old, new, &table_id())
+}
+
 fn seal_data(owner: &compact_store::Owner, rows: &[PlainRow]) -> EncryptedSnapshot {
     let mut bytes = Vec::with_capacity(rows.len() * ROW_BYTES as usize);
     for row in rows {
@@ -44,6 +76,7 @@ fn raw_index(
 ) -> EncryptedSnapshot {
     let mut bytes = vec![0; INDEX_HEADER_BYTES];
     bytes[..MANIFEST_BYTES].copy_from_slice(&head.encode());
+    bytes[TABLE_ID_START..COUNTS_START].copy_from_slice(table_id().as_bytes());
     for age in 0..AGE_BUCKETS {
         if let Some((_, count, payload)) = buckets.iter().find(|entry| entry.0 as usize == age) {
             let start = COUNTS_START + age * 4;
@@ -57,6 +90,13 @@ fn raw_index(
     let padded_len = INDEX_HEADER_BYTES + posting_capacity(head.layout().row_count).unwrap();
     if bytes.len() < padded_len {
         bytes.resize(padded_len, 0);
+    }
+    bytes.resize(identity_offset(head.layout().row_count).unwrap(), 0);
+    for id in RowIds::generate(head.layout().row_count as usize)
+        .unwrap()
+        .as_slice()
+    {
+        bytes.extend_from_slice(id.as_bytes());
     }
     seal_index(owner, &bytes)
 }
@@ -79,7 +119,7 @@ fn selected(
     head: &Commitment,
     range: AgeRange,
 ) -> Result<Vec<u64>> {
-    select(owner, index, head, range, MAX_ROWS, &mut 0)
+    select(owner, index, head, &table_id(), range, MAX_ROWS, &mut 0)
 }
 
 #[test]
@@ -108,7 +148,7 @@ fn complete_selection_matches_uniform_skew_random_and_one_age_fixtures() {
         let index = build(&owner, &rows, data.commitment()).unwrap();
         assert_eq!(
             index.commitment().layout().row_count,
-            (INDEX_HEADER_BYTES + posting_capacity(rows.len() as u64).unwrap()) as u64
+            index_bytes(rows.len() as u64).unwrap() as u64
         );
         let same_size = expected_index_bytes.get_or_insert(index.encoded_len());
         assert_eq!(index.encoded_len(), *same_size);
@@ -160,6 +200,7 @@ fn selected_varint_can_straddle_an_authenticated_page_boundary() {
             &owner,
             &index,
             data.commitment(),
+            &table_id(),
             AgeRange::equal(1),
             1,
             &mut transferred
@@ -185,6 +226,7 @@ fn selective_read_skips_unselected_pages_and_reuses_header_page() {
             &owner,
             &index,
             data.commitment(),
+            &table_id(),
             AgeRange::equal(255),
             1,
             &mut transferred
@@ -214,6 +256,7 @@ fn selective_read_skips_unselected_pages_and_reuses_header_page() {
             &owner,
             &tiny_index,
             tiny.commitment(),
+            &table_id(),
             AgeRange::equal(42),
             1,
             &mut transferred
@@ -240,6 +283,7 @@ fn complete_count_preflight_rejects_before_reading_posting_pages() {
                 &owner,
                 &index,
                 data.commitment(),
+                &table_id(),
                 AgeRange::equal(42),
                 budget,
                 &mut transferred
@@ -359,13 +403,16 @@ fn corrupt_authenticated_counts_offsets_and_binding_are_rejected() {
             Err(Error::InvalidIndex)
         ));
     }
-    let mut old_layout = index.commitment().layout();
-    old_layout.schema = *b"CQAGEINDEX000001";
-    let old_format = owner.seal(old_layout, &valid, index_limits()).unwrap();
-    assert!(matches!(
-        check_binding(&owner, &old_format, data.commitment()),
-        Err(Error::InvalidIndex)
-    ));
+    for schema in [*b"CQAGEINDEX000001", *b"CQAGEINDEX000002"] {
+        let mut old_layout = index.commitment().layout();
+        old_layout.schema = schema;
+        let old_format = owner.seal(old_layout, &valid, index_limits()).unwrap();
+        assert!(matches!(
+            check_binding(&owner, &old_format, data.commitment()),
+            Err(Error::InvalidIndex)
+        ));
+        assert!(crate::decode_index_head(&old_format.commitment().encode(), 2).is_err());
+    }
     let mut wrong_head = valid.clone();
     wrong_head[80] ^= 1;
     let index = seal_index(&owner, &wrong_head);
@@ -506,6 +553,7 @@ fn empty_table_and_empty_buckets_have_no_posting_reads() {
             &owner,
             &index,
             data.commitment(),
+            &table_id(),
             AgeRange {
                 lower: 0,
                 upper: 255
@@ -538,7 +586,7 @@ fn fixed_padding_is_not_posting_data_and_its_ciphertext_is_authenticated() {
     let data = seal_data(&owner, &rows);
     let index = build(&owner, &rows, data.commitment()).unwrap();
     let bytes = plaintext(&owner, &index);
-    assert_eq!(bytes.len(), INDEX_HEADER_BYTES + 20);
+    assert_eq!(bytes.len(), index_bytes(10).unwrap());
     assert_eq!(
         u32::from_le_bytes(
             bytes[OFFSETS_START + 256 * 4..OFFSETS_START + 257 * 4]
@@ -548,7 +596,7 @@ fn fixed_padding_is_not_posting_data_and_its_ciphertext_is_authenticated() {
         10
     );
     assert!(
-        bytes[INDEX_HEADER_BYTES + 10..]
+        bytes[INDEX_HEADER_BYTES + 10..identity_offset(10).unwrap()]
             .iter()
             .all(|byte| *byte == 0)
     );
@@ -585,4 +633,226 @@ fn fixed_padding_is_not_posting_data_and_its_ciphertext_is_authenticated() {
         posting_capacity(1_000_001),
         Err(Error::InvalidIndex)
     ));
+}
+
+#[test]
+fn logical_ids_distinguish_identical_empty_tables_and_duplicate_values() {
+    let owner = compact_store::Owner::generate([81; 16]).unwrap();
+    let first = crate::storage::seal(&owner, &[], 256, Limits::default()).unwrap();
+    let second = crate::storage::seal(&owner, &[], 256, Limits::default()).unwrap();
+    assert_eq!(first.commitment(), second.commitment());
+    assert_ne!(first.table_id(), second.table_id());
+    let rows = [PlainRow { age: 42, amount: 1 }; 3];
+    let table = crate::storage::seal(&owner, &rows, 256, Limits::default()).unwrap();
+
+    let refs = references(&owner, &table, &[2, 0, 1], &mut 0).unwrap();
+
+    assert_eq!(refs.table_id(), table.table_id());
+    assert_eq!(refs.data_head(), table.commitment());
+    assert_eq!(refs.index_head(), table.index_commitment());
+    assert_eq!(
+        refs.rows()
+            .iter()
+            .map(RowReference::ordinal)
+            .collect::<Vec<_>>(),
+        vec![2, 0, 1]
+    );
+    assert_ne!(refs.rows()[0].row_id(), refs.rows()[1].row_id());
+    assert_ne!(refs.rows()[0].row_id(), refs.rows()[2].row_id());
+    assert!(matches!(
+        crate::storage::restore(
+            &owner,
+            &table.data.encode(),
+            &table.index.encode(),
+            first.table_id(),
+            table.commitment(),
+            table.index_commitment(),
+            Limits::default()
+        ),
+        Err(Error::WrongVersion)
+    ));
+}
+
+#[test]
+fn million_row_identity_index_has_exact_bounded_geometry_and_sparse_lookup() {
+    let owner = compact_store::Owner::generate([82; 16]).unwrap();
+    let rows = vec![PlainRow { age: 42, amount: 1 }; MAX_TABLE_ROWS];
+    let table = crate::storage::seal(&owner, &rows, 256, Limits::default()).unwrap();
+    drop(rows);
+    assert_eq!(table.index_commitment().layout().row_count, 34_017_824);
+    assert_eq!(table.encrypted_index_bytes(), 34_416_624);
+    assert_eq!(
+        table.index_commitment().layout().page_count().unwrap(),
+        8306
+    );
+    assert_eq!(table.canonical_data_bytes(), 3_187_648);
+    assert_eq!(index_limits().max_rows, 34_017_824);
+    assert_eq!(index_limits().max_image_bytes, 34_416_624);
+    assert!(Commitment::decode(&table.index_commitment().encode(), Limits::default()).is_err());
+    assert_eq!(
+        crate::decode_index_head(&table.index_commitment().encode(), MAX_TABLE_ROWS as u64)
+            .unwrap(),
+        *table.index_commitment()
+    );
+    assert!(
+        crate::decode_index_head(
+            &table.index_commitment().encode(),
+            MAX_TABLE_ROWS as u64 - 1
+        )
+        .is_err()
+    );
+    let restored = crate::storage::restore(
+        &owner,
+        &table.data.encode(),
+        &table.index.encode(),
+        table.table_id(),
+        table.commitment(),
+        table.index_commitment(),
+        Limits::default(),
+    )
+    .unwrap();
+    let mut transferred = 0;
+
+    let refs = references(&owner, &restored, &[999_999, 0, 999_998], &mut transferred).unwrap();
+
+    // Header plus two ID pages, including membership paths, not 8,306 decrypted pages.
+    assert!(
+        transferred < 3 * 5000,
+        "{transferred} authenticated response bytes"
+    );
+    assert_eq!(refs.rows()[0].ordinal(), 999_999);
+    assert_ne!(refs.rows()[0].row_id(), refs.rows()[2].row_id());
+    assert!(references(&owner, &table, &[0; 257], &mut 0).is_err());
+    assert!(matches!(
+        references(&owner, &table, &[0, 0], &mut 0),
+        Err(Error::DuplicateAddress)
+    ));
+    assert!(references(&owner, &table, &[MAX_TABLE_ROWS as u64], &mut 0).is_err());
+}
+
+#[test]
+fn sparse_identity_lookup_checks_header_before_selected_id_pages_and_rejects_corruption() {
+    let owner = compact_store::Owner::generate([83; 16]).unwrap();
+    let table = crate::storage::seal(
+        &owner,
+        &[PlainRow { age: 42, amount: 1 }; 256],
+        256,
+        Limits::default(),
+    )
+    .unwrap();
+    let mut wrong_table = table.fork_for_experiment();
+    wrong_table.table_id = TableId::generate().unwrap();
+    let mut transferred = 0;
+    assert!(matches!(
+        references(&owner, &wrong_table, &[255], &mut transferred),
+        Err(Error::WrongVersion)
+    ));
+    assert!(transferred < 5000);
+    let encoded = table.index.encode();
+    let mut corrupt = encoded.clone();
+    *corrupt.last_mut().unwrap() ^= 1;
+    assert!(
+        crate::storage::restore(
+            &owner,
+            &table.data.encode(),
+            &corrupt,
+            table.table_id(),
+            table.commitment(),
+            table.index_commitment(),
+            Limits::default()
+        )
+        .is_err()
+    );
+    assert!(
+        crate::storage::restore(
+            &owner,
+            &table.data.encode(),
+            &encoded[..encoded.len() - 1],
+            table.table_id(),
+            table.commitment(),
+            table.index_commitment(),
+            Limits::default()
+        )
+        .is_err()
+    );
+    let other_owner = compact_store::Owner::generate([83; 16]).unwrap();
+    assert!(references(&other_owner, &table, &[255], &mut 0).is_err());
+    // A malicious owner-created mapping with a zero selected ID is also invalid.
+    let mut invalid = table.fork_for_experiment();
+    let offset = identity_offset(256).unwrap() + 255 * ID_BYTES;
+    let page_index = (offset / INDEX_PAGE_BYTES) as u64;
+    let mut page = page_bytes_counted(&owner, &invalid.index, page_index, &mut 0)
+        .unwrap()
+        .as_bytes()
+        .to_vec();
+    page[offset % INDEX_PAGE_BYTES..offset % INDEX_PAGE_BYTES + ID_BYTES].fill(0);
+    let head = invalid.index_commitment().clone();
+    owner
+        .replace_page(&mut invalid.index, &head, page_index, &page, index_limits())
+        .unwrap();
+    assert!(matches!(
+        references(&owner, &invalid, &[255], &mut 0),
+        Err(Error::InvalidIndex)
+    ));
+}
+
+#[test]
+fn partitions_share_one_logical_table_and_private_reorder_preserves_authenticated_row_ids() {
+    let owner = compact_store::Owner::generate([84; 16]).unwrap();
+    let logical = TableId::generate().unwrap();
+    let ids = RowIds::generate(4)
+        .unwrap()
+        .partition(&[0, 1, 0, 1], 2)
+        .unwrap();
+    let mut parts = ids.into_iter();
+    let left = crate::storage::seal_partition(
+        &owner,
+        &logical,
+        &[PlainRow { age: 42, amount: 1 }; 2],
+        parts.next().unwrap(),
+        256,
+        Limits::default(),
+    )
+    .unwrap();
+    let right = crate::storage::seal_partition(
+        &owner,
+        &logical,
+        &[PlainRow { age: 7, amount: 2 }; 2],
+        parts.next().unwrap(),
+        256,
+        Limits::default(),
+    )
+    .unwrap();
+    assert_eq!(left.table_id(), right.table_id());
+    let left_refs = references(&owner, &left, &[0, 1], &mut 0).unwrap();
+    let right_refs = references(&owner, &right, &[0, 1], &mut 0).unwrap();
+    assert!(left_refs.rows().iter().all(|left| {
+        right_refs
+            .rows()
+            .iter()
+            .all(|right| left.row_id() != right.row_id())
+    }));
+    // Owning private-builder contract only: a future checked compaction must carry
+    // IDs with the rows. This does not expose or claim SQL compaction support.
+    let reordered = RowIds::checked(Zeroizing::new(
+        left_refs
+            .rows()
+            .iter()
+            .rev()
+            .map(|row| *row.row_id())
+            .collect(),
+    ))
+    .unwrap();
+    let rebuilt = crate::storage::seal_partition(
+        &owner,
+        &logical,
+        &[PlainRow { age: 42, amount: 1 }; 2],
+        reordered,
+        256,
+        Limits::default(),
+    )
+    .unwrap();
+    let actual = references(&owner, &rebuilt, &[0, 1], &mut 0).unwrap();
+    assert_eq!(actual.rows()[0].row_id(), left_refs.rows()[1].row_id());
+    assert_eq!(actual.rows()[1].row_id(), left_refs.rows()[0].row_id());
 }

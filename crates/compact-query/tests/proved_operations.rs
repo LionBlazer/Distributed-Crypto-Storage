@@ -125,10 +125,17 @@ fn proved_insert_stages_larger_encrypted_images_and_a_subsequent_proved_select_r
         .seal(&[row(18, 255), row(7, 65535)], 1, limits)
         .unwrap();
     let before = encrypted_images(&table);
+    let original_ids = owner.row_references(&table, &[0, 1]).unwrap();
     let old_data = table.commitment().clone();
     let old_index = table.index_commitment().clone();
     let prepared = owner
-        .prepare_insert_for_experiment(&table, &[row(42, 256)], 256, limits)
+        .prepare_insert_for_experiment(
+            &table,
+            &[row(42, 256)],
+            compact_query::RowIds::generate(1).unwrap(),
+            256,
+            limits,
+        )
         .unwrap();
     let input = public.insert_circuit_request(prepared.request()).unwrap();
     let generated = prove(&input).unwrap();
@@ -147,6 +154,29 @@ fn proved_insert_stages_larger_encrypted_images_and_a_subsequent_proved_select_r
         encrypted_images(&table),
         before,
         "staging cannot publish into its source table"
+    );
+    let appended_ids = owner.row_references(&staged, &[0, 1, 2]).unwrap();
+    assert_eq!(appended_ids.table_id(), original_ids.table_id());
+    assert_eq!(&appended_ids.rows()[..2], original_ids.rows());
+    assert!(
+        original_ids
+            .rows()
+            .iter()
+            .all(|row| row.row_id() != appended_ids.rows()[2].row_id())
+    );
+    let restored = owner
+        .restore_table_for_experiment(
+            &staged.snapshot().encode(),
+            &staged.encrypted_index().encode(),
+            staged.table_id(),
+            staged.commitment(),
+            staged.index_commitment(),
+            limits,
+        )
+        .unwrap();
+    assert_eq!(
+        owner.row_references(&restored, &[0, 1, 2]).unwrap().rows(),
+        appended_ids.rows()
     );
     assert_eq!(staged.commitment().layout().row_count, 3);
     assert_eq!(staged.commitment().revision(), old_data.revision() + 1);
@@ -188,6 +218,7 @@ fn proved_insert_stages_larger_encrypted_images_and_a_subsequent_proved_select_r
             .restore_table_for_experiment(
                 &before.0,
                 &before.1,
+                staged.table_id(),
                 staged.commitment(),
                 staged.index_commitment(),
                 limits
@@ -205,6 +236,7 @@ fn proved_update_writes_decoded_carries_but_global_overflow_publishes_neither_im
         .seal(&[row(42, 255), row(7, 65535), row(42, 256)], 1, limits)
         .unwrap();
     let before = encrypted_images(&table);
+    let original_ids = owner.row_references(&table, &[0, 1, 2]).unwrap();
     let sizes = (table.canonical_data_bytes(), table.encrypted_index_bytes());
     let prepared = owner
         .prepare_provable_update(&table, Some(AgeRange::equal(42)), 1, 256, limits)
@@ -225,6 +257,11 @@ fn proved_update_writes_decoded_carries_but_global_overflow_publishes_neither_im
     assert!(!staged.overflowed());
     assert_eq!(staged.changed_rows(), 2);
     let staged = staged.into_table().unwrap();
+    let updated_ids = owner.row_references(&staged, &[0, 1, 2]).unwrap();
+    assert_eq!(updated_ids.table_id(), original_ids.table_id());
+    assert_eq!(updated_ids.rows(), original_ids.rows());
+    assert_ne!(updated_ids.data_head(), original_ids.data_head());
+    assert_ne!(updated_ids.index_head(), original_ids.index_head());
     assert_eq!(encrypted_images(&table), before);
     assert_eq!(
         (
@@ -403,7 +440,13 @@ fn checked_mutation_evidence_is_bound_to_its_pending_request_even_between_two_ad
         .check_update_proof(&table, &prepared, generated.output(), generated.proof())
         .unwrap();
     let incoming = owner
-        .prepare_insert_for_experiment(&table, &[row(21, 12)], 256, limits)
+        .prepare_insert_for_experiment(
+            &table,
+            &[row(21, 12)],
+            compact_query::RowIds::generate(1).unwrap(),
+            256,
+            limits,
+        )
         .unwrap();
     // UPDATE and INSERT both use the same Addition proof primitive. Their exact
     // authenticated requests, rather than an operation-name check, distinguish them.
@@ -429,7 +472,13 @@ fn checked_mutation_evidence_is_bound_to_its_pending_request_even_between_two_ad
     );
     assert_eq!(encrypted_images(&table), images);
     let prepared = owner
-        .prepare_insert_for_experiment(&table, &[row(21, 12)], 256, limits)
+        .prepare_insert_for_experiment(
+            &table,
+            &[row(21, 12)],
+            compact_query::RowIds::generate(1).unwrap(),
+            256,
+            limits,
+        )
         .unwrap();
     let generated = prove(&public.insert_circuit_request(prepared.request()).unwrap()).unwrap();
     assert!(matches!(
@@ -460,19 +509,40 @@ fn a_whole_batch_requires_one_exact_proof_and_stages_all_rows_once() {
     let original = vec![row(18, 255); 254];
     let table = owner.seal(&original, 17, limits).unwrap();
     let before = encrypted_images(&table);
+    let old_ids = owner
+        .row_references(&table, &(0..254).collect::<Vec<_>>())
+        .unwrap();
     assert!(
         owner
-            .prepare_insert_for_experiment(&table, &[], 256, limits)
+            .prepare_insert_for_experiment(
+                &table,
+                &[],
+                compact_query::RowIds::generate(0).unwrap(),
+                256,
+                limits
+            )
             .is_err()
     );
     assert!(
         owner
-            .prepare_insert_for_experiment(&table, &[row(1, 1); 3], 256, limits)
+            .prepare_insert_for_experiment(
+                &table,
+                &[row(1, 1); 3],
+                compact_query::RowIds::generate(3).unwrap(),
+                256,
+                limits
+            )
             .is_err()
     );
     let incoming = [row(42, 256), row(7, 65535)];
     let prepared = owner
-        .prepare_insert_for_experiment(&table, &incoming, 256, limits)
+        .prepare_insert_for_experiment(
+            &table,
+            &incoming,
+            compact_query::RowIds::generate(incoming.len()).unwrap(),
+            256,
+            limits,
+        )
         .unwrap();
     let input = evaluator
         .insert_circuit_request(prepared.request())
@@ -507,6 +577,19 @@ fn a_whole_batch_requires_one_exact_proof_and_stages_all_rows_once() {
         table.commitment().revision() + 1
     );
     assert_eq!(staged.commitment().layout().row_count, 256);
+    let ids = owner
+        .row_references(&staged, &(0..256).collect::<Vec<_>>())
+        .unwrap();
+    assert_eq!(ids.table_id(), old_ids.table_id());
+    assert_eq!(&ids.rows()[..254], old_ids.rows());
+    assert_ne!(ids.rows()[254].row_id(), ids.rows()[255].row_id());
+    assert!(
+        old_ids
+            .rows()
+            .iter()
+            .all(|old| old.row_id() != ids.rows()[254].row_id()
+                && old.row_id() != ids.rows()[255].row_id())
+    );
     assert_eq!(
         owner
             .decrypt_row_for_experiment(&staged, 253, limits)

@@ -68,6 +68,7 @@ fn main() -> Result<()> {
         let restored = owner.restore_table_for_experiment(
             &encoded_data,
             &encoded_index,
+            table.table_id(),
             &data_head,
             &index_head,
             Limits::default(),

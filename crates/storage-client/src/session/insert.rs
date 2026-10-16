@@ -73,6 +73,18 @@ impl Session {
             .map(|shard| (shard.info.id, shard.info.rows))
             .collect();
         let targets = insert_targets(&counts, incoming.len(), self.journal.profile().max_updates)?;
+        // Allocate once in original VALUES order, then move disjoint identity chunks
+        // into each preparation. Stored pending images retain these exact identities.
+        let mut assignments = vec![0; incoming.len()];
+        for (target, (_, range)) in targets.iter().enumerate() {
+            assignments[range.clone()].fill(target);
+        }
+        let ids = compact_query::RowIds::generate(incoming.len())?
+            .partition(&assignments, targets.len())?;
+        let ids: Vec<_> = ids
+            .into_iter()
+            .map(|ids| std::sync::Mutex::new(Some(ids)))
+            .collect();
         shards::run(targets.len(), |target| {
             let (slot, ordinals) = &targets[target];
             let rows = Zeroizing::new(
@@ -87,7 +99,12 @@ impl Session {
                     })
                     .collect::<Vec<_>>(),
             );
-            self.prepare_insert_shard(*slot, &rows, requests)
+            let ids = ids[target]
+                .lock()
+                .map_err(|_| protocol("INSERT identity allocation poisoned"))?
+                .take()
+                .ok_or_else(|| protocol("INSERT identity allocation consumed twice"))?;
+            self.prepare_insert_shard(*slot, &rows, ids, requests)
         })
     }
 
@@ -95,6 +112,7 @@ impl Session {
         &self,
         slot: usize,
         incoming: &[PlainRow],
+        ids: compact_query::RowIds,
         requests: &ProofRequests,
     ) -> Result<StagedShardInsert> {
         let shard = &self.data.shards[slot];
@@ -102,6 +120,7 @@ impl Session {
         let prepared = self.data.owner.prepare_insert_for_experiment(
             &table,
             incoming,
+            ids,
             256,
             Limits::default(),
         )?;

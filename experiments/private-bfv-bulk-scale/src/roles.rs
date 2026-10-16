@@ -22,6 +22,7 @@ use std::{
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct TrustedTable {
     pub table_id: u32,
+    pub logical_id: compact_query::TableId,
     pub data_head: Commitment,
     pub index_head: Commitment,
     pub data_len: usize,
@@ -34,6 +35,7 @@ impl TrustedTable {
         }
         let value = Self {
             table_id,
+            logical_id: *table.table_id(),
             data_head: table.commitment().clone(),
             index_head: table.index_commitment().clone(),
             data_len: table.canonical_data_bytes(),
@@ -229,6 +231,7 @@ impl OwnerTable {
         Ok(self.owner.restore_table_for_experiment(
             data,
             index,
+            &self.trusted.logical_id,
             &self.trusted.data_head,
             &self.trusted.index_head,
             data_limits(),

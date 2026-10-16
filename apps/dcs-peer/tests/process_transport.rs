@@ -298,7 +298,7 @@ fn frame_activity_reports_real_io_before_completion_and_nothing_for_an_unreachab
     );
 }
 
-fn fixture(owner: &backend::Owner) -> Bundle {
+fn fixture(owner: &backend::Owner) -> (Bundle, compact_query::TableId) {
     let table = owner
         .seal(
             &[
@@ -319,12 +319,13 @@ fn fixture(owner: &backend::Owner) -> Bundle {
             Limits::default(),
         )
         .unwrap();
-    Bundle {
+    let bundle = Bundle {
         data_head: table.commitment().encode().to_vec(),
         index_head: table.index_commitment().encode().to_vec(),
         data: table.snapshot().encode(),
         index: table.encrypted_index().encode(),
-    }
+    };
+    (bundle, *table.table_id())
 }
 #[test]
 fn separate_processes_execute_real_fhe_and_copy_ciphertext_without_owner_keys() {
@@ -342,12 +343,13 @@ fn separate_processes_execute_real_fhe_and_copy_ciphertext_without_owner_keys() 
     let Response::Setup(setup_id) = a.call(Request::InstallSetup(setup)).unwrap() else {
         panic!("public setup expected")
     };
-    let bundle = fixture(&owner);
+    let (bundle, table_id) = fixture(&owner);
     let object = bundle.id();
     let table = owner
         .restore_table_for_experiment(
             &bundle.data,
             &bundle.index,
+            &table_id,
             &compact_store::Commitment::decode(&bundle.data_head, Limits::default()).unwrap(),
             &compact_store::Commitment::decode(&bundle.index_head, Limits::default()).unwrap(),
             Limits::default(),
@@ -534,7 +536,7 @@ fn real_disk_tampering_and_quota_failures_never_return_cached_owner_data() {
     let process = Process::start(&authority, owner.fingerprint(), 1, None);
     let peer = process.remote(&connector);
     let (data_owner, _) = backend::Owner::generate(*b"NETWORK-TEST-002").unwrap();
-    let bundle = fixture(&data_owner);
+    let (bundle, _) = fixture(&data_owner);
     let object = bundle.id();
     assert!(matches!(
         peer.call(Request::Store(bundle.clone())).unwrap(),

@@ -8,7 +8,9 @@ pub mod bfv;
 pub mod byte_select;
 #[cfg(feature = "tfhe-backend")]
 mod evaluator;
+mod identity;
 mod index;
+pub use identity::{RowId, RowIds, RowReference, RowReferences, TableId};
 #[cfg(feature = "tfhe-backend")]
 mod owner;
 mod storage;
@@ -27,11 +29,17 @@ pub const MAX_ROWS: usize = 256;
 pub const MAX_TABLE_ROWS: usize = 1_000_000;
 pub const ROW_BYTES: u32 = 3;
 pub const SCHEMA: [u8; 16] = *b"CQAGEAMOUNT00001";
-const INDEX_SCHEMA: [u8; 16] = *b"CQAGEINDEX000002";
-const INDEX_HEADER_BYTES: usize = compact_store::MANIFEST_BYTES + (256 + 257) * 4;
+const INDEX_SCHEMA: [u8; 16] = *b"CQAGEINDEX000003";
+const INDEX_HEADER_BYTES: usize = compact_store::MANIFEST_BYTES + 32 + (256 + 257) * 4;
 #[cfg(feature = "tfhe-backend")]
 const MAX_WIRE_BYTES: u64 = 128 * 1024 * 1024;
 const _: () = assert!((MAX_ROWS as u64) * (u16::MAX as u64) <= u32::MAX as u64);
+
+/// Decodes the fixed private-index format using its byte geometry and exact data-row count.
+/// The returned head still requires independently trusted provenance and owner authentication.
+pub fn decode_index_head(bytes: &[u8], data_rows: u64) -> Result<Commitment> {
+    index::decode_head(bytes, data_rows)
+}
 
 pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -152,6 +160,7 @@ pub struct Evaluator {
 /// The age index contains encrypted counts and padded delta-varint postings, with an exact
 /// encrypted table-head binding. Only AddAmount is supported, so age order is stable.
 pub struct Table {
+    table_id: TableId,
     data: EncryptedSnapshot,
     index: EncryptedSnapshot,
 }
@@ -160,9 +169,13 @@ impl Table {
     /// The caller must select which resulting head becomes authoritative.
     pub fn fork_for_experiment(&self) -> Self {
         Self {
+            table_id: self.table_id,
             data: self.data.clone(),
             index: self.index.clone(),
         }
+    }
+    pub fn table_id(&self) -> &TableId {
+        &self.table_id
     }
     pub fn snapshot(&self) -> &EncryptedSnapshot {
         &self.data

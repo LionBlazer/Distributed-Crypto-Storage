@@ -91,6 +91,7 @@ struct Shard {
 pub enum AcceptedResult {}
 pub struct Database {
     name: String,
+    table_id: compact_query::TableId,
     owner: backend::Owner,
     setup: Vec<u8>,
     setup_id: [u8; 32],
@@ -123,9 +124,14 @@ impl Database {
         let setup = evaluator.encode_public_setup_for_experiment()?;
         // The public evaluator created for parameter generation is never used to execute a query.
         drop(evaluator);
+        let table_id = compact_query::TableId::generate()?;
+        let assignments: Vec<_> = (0..rows.len()).map(|row| row % peers.len()).collect();
+        let row_ids =
+            compact_query::RowIds::generate(rows.len())?.partition(&assignments, peers.len())?;
+        drop(assignments);
         let mut setup_id = None;
         let mut shards = Vec::new();
-        for (slot, peer) in peers.iter().enumerate() {
+        for (slot, (peer, ids)) in peers.iter().zip(row_ids).enumerate() {
             let current = install(&peer.remote, &setup)?;
             if setup_id.is_some_and(|id| id != current) {
                 return Err(Error::Cryptography("Public setup identity mismatch".into()));
@@ -137,7 +143,7 @@ impl Database {
                 .step_by(peers.len())
                 .copied()
                 .collect();
-            let table = owner.seal(&part, 256, Limits::default())?;
+            let table = owner.seal_partition(&table_id, &part, ids, 256, Limits::default())?;
             let bundle = Bundle {
                 data_head: table.commitment().encode().to_vec(),
                 index_head: table.index_commitment().encode().to_vec(),
@@ -163,6 +169,7 @@ impl Database {
         }
         Ok(Self {
             name,
+            table_id,
             owner,
             setup,
             setup_id: setup_id.unwrap(),
@@ -217,6 +224,7 @@ impl Database {
                 let Ok(table) = self.owner.restore_table_for_experiment(
                     &bundle.data,
                     &bundle.index,
+                    &self.table_id,
                     &shard.info.data_head,
                     &shard.info.index_head,
                     Limits::default(),
@@ -345,6 +353,7 @@ impl Database {
                     let prepared = self.owner.prepare_insert_for_experiment(
                         &table,
                         &incoming,
+                        compact_query::RowIds::generate(incoming.len())?,
                         256,
                         Limits::default(),
                     )?;

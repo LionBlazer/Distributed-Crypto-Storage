@@ -1,6 +1,7 @@
 //! Shared canonical storage lifecycle; never owns an FHE key or executes a predicate.
 use crate::{
-    Error, MAX_TABLE_ROWS, PlainRow, ROW_BYTES, Result, SCHEMA, Table, check_schema, index,
+    Error, MAX_TABLE_ROWS, PlainRow, ROW_BYTES, Result, RowIds, SCHEMA, Table, TableId,
+    check_schema, index,
 };
 use compact_store::{Commitment, EncryptedSnapshot, Layout, Limits, Owner};
 use std::collections::BTreeMap;
@@ -12,6 +13,27 @@ pub(crate) fn seal(
     rows_per_page: u32,
     limits: Limits,
 ) -> Result<Table> {
+    seal_partition(
+        owner,
+        &TableId::generate()?,
+        rows,
+        RowIds::generate(rows.len())?,
+        rows_per_page,
+        limits,
+    )
+}
+
+pub(crate) fn seal_partition(
+    owner: &Owner,
+    table_id: &TableId,
+    rows: &[PlainRow],
+    ids: RowIds,
+    rows_per_page: u32,
+    limits: Limits,
+) -> Result<Table> {
+    if ids.len() != rows.len() {
+        return Err(Error::InvalidIndex);
+    }
     if rows.len() > MAX_TABLE_ROWS {
         return Err(Error::SelectionBudget {
             selected: rows.len(),
@@ -33,14 +55,19 @@ pub(crate) fn seal(
         &plain,
         limits,
     )?;
-    let index = index::build(owner, rows, data.commitment())?;
-    Ok(Table { data, index })
+    let index = index::build(owner, rows, data.commitment(), table_id, &ids)?;
+    Ok(Table {
+        table_id: *table_id,
+        data,
+        index,
+    })
 }
 
 pub(crate) fn restore(
     owner: &Owner,
     data: &[u8],
     index_bytes: &[u8],
+    table_id: &TableId,
     expected_data: &Commitment,
     expected_index: &Commitment,
     limits: Limits,
@@ -49,8 +76,12 @@ pub(crate) fn restore(
     let index =
         EncryptedSnapshot::decode_for_head(index_bytes, expected_index, index::index_limits())?;
     check_schema(data.commitment())?;
-    index::check_binding(owner, &index, data.commitment())?;
-    Ok(Table { data, index })
+    index::check_binding(owner, &index, data.commitment(), table_id)?;
+    Ok(Table {
+        table_id: *table_id,
+        data,
+        index,
+    })
 }
 
 pub(crate) fn row(owner: &Owner, table: &Table, ordinal: u64, limits: Limits) -> Result<PlainRow> {
@@ -87,8 +118,12 @@ pub(crate) fn replace_amount_pages(
         .map(|(page, bytes)| (*page, bytes.as_slice()))
         .collect();
     let next = owner.replace_pages(&mut data, expected_data, &replacements, limits)?;
-    let index = index::rebound(owner, &table.index, expected_data, &next)?;
-    Ok(Table { data, index })
+    let index = index::rebound(owner, &table.index, expected_data, &next, table.table_id())?;
+    Ok(Table {
+        table_id: table.table_id,
+        data,
+        index,
+    })
 }
 
 /// Full output relation was already decoded from genuine peer BFV append and locally
@@ -99,13 +134,14 @@ pub(crate) fn grow_checked(
     table: &Table,
     expected_data: &Commitment,
     expected_index: &Commitment,
-    incoming_count: usize,
+    incoming_ids: &RowIds,
     rows: &[PlainRow],
     limits: Limits,
 ) -> Result<Table> {
     if table.commitment() != expected_data || table.index_commitment() != expected_index {
         return Err(Error::WrongVersion);
     }
+    let incoming_count = incoming_ids.len();
     if incoming_count == 0
         || rows.len() > crate::MAX_ROWS
         || expected_data
@@ -128,6 +164,10 @@ pub(crate) fn grow_checked(
         &bytes,
         limits,
     )?;
-    let index = index::grow(owner, rows, data.commitment(), &table.index)?;
-    Ok(Table { data, index })
+    let index = index::grow(owner, rows, data.commitment(), table, incoming_ids)?;
+    Ok(Table {
+        table_id: table.table_id,
+        data,
+        index,
+    })
 }

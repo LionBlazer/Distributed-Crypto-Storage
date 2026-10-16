@@ -670,7 +670,30 @@ fn interrupted_confirmation_resumes_the_original_write_without_applying_it_twice
         let storage_client::Error::PendingMutation { query_binding, .. } = &error else {
             unreachable!()
         };
+        // The retained object includes the complete encrypted ID tail. Retry must
+        // reuse its exact bytes rather than allocate another private row identity.
+        let stored_images = || {
+            control
+                .status()
+                .unwrap()
+                .objects
+                .into_iter()
+                .map(|object| {
+                    let Response::Bundle(bundle) =
+                        control.call(Request::Fetch { object: object.id }).unwrap()
+                    else {
+                        panic!("stored bundle");
+                    };
+                    (object.id, bundle)
+                })
+                .collect::<std::collections::BTreeMap<_, _>>()
+        };
+        let retained = stored_images();
         let again = database.execute(sql).unwrap_err();
+        assert!(
+            stored_images() == retained,
+            "ambiguous retry changed retained encrypted objects"
+        );
         assert!(
             matches!(again, storage_client::Error::PendingMutation { query_binding: same, .. } if same == *query_binding)
         );
@@ -702,6 +725,21 @@ fn interrupted_confirmation_resumes_the_original_write_without_applying_it_twice
             ));
         }
         assert!(database.resume_pending().unwrap().is_none());
+        let confirmed = stored_images();
+        // Confirmation may collect obsolete versions; it cannot replace the
+        // retained committed ciphertext or create another allocated ID tail.
+        assert!(
+            confirmed
+                .iter()
+                .all(|(id, bundle)| retained.get(id) == Some(bundle)),
+            "confirmation created or changed an encrypted object"
+        );
+        let committed = database.shards()[0].object;
+        assert!(retained.contains_key(&committed));
+        assert!(
+            confirmed.get(&committed) == retained.get(&committed),
+            "committed identity image changed during retry"
+        );
         assert_eq!(database.rows(), 3);
         assert_eq!(database.shards()[0].data_head.revision(), index as u64 + 1);
     }
@@ -1123,5 +1161,67 @@ fn concurrent_update_workers_queue_proofs_on_the_same_surviving_peer() {
     assert_eq!(
         rows(session.execute("SELECT * FROM records").unwrap()),
         vec![vec![18, 21], vec![42, 31]]
+    );
+}
+
+#[test]
+fn million_row_private_index_crosses_real_custody_frames_and_agreed_update_restore() {
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let process = Process::start(owner.fingerprint(), 1, None);
+    let participant = process.participant(1, &connector);
+    let remote = participant.remote.clone();
+    let mut source = vec![PlainRow { age: 7, amount: 1 }; compact_query::MAX_TABLE_ROWS];
+    source[999_999].age = 42;
+    let mut database = Session::create(
+        "identity-resource-bound".into(),
+        &source,
+        vec![participant],
+        test_contract(),
+    )
+    .unwrap();
+    drop(source);
+    let original = database.shards();
+    assert_eq!(original[0].index_head.layout().row_count, 34_017_824);
+    assert!(original[0].index_head.layout().row_count > compact_store::Limits::default().max_rows);
+    let status = remote.status().unwrap();
+    let object = status
+        .objects
+        .iter()
+        .find(|object| object.id == original[0].object)
+        .unwrap();
+    assert_eq!(object.index_bytes, 34_416_624);
+    assert_eq!(object.data_bytes, 3_187_648);
+    assert!(object.stored_bytes < peer_transport::MAX_FRAME_BYTES as u64);
+
+    let result = execute(
+        &mut database,
+        "UPDATE records SET amount = amount + 1 WHERE age = 42",
+    );
+
+    assert!(matches!(
+        result,
+        VerifiedResult::Updated {
+            changed_rows: 1,
+            ..
+        }
+    ));
+    assert_eq!(database.rows(), compact_query::MAX_TABLE_ROWS);
+    let updated = database.shards();
+    assert_eq!(
+        updated[0].index_head.layout(),
+        original[0].index_head.layout()
+    );
+    assert_eq!(
+        updated[0].index_head.revision(),
+        original[0].index_head.revision() + 1
+    );
+    assert_ne!(updated[0].object, original[0].object);
+    assert_eq!(
+        rows(execute(
+            &mut database,
+            "SELECT * FROM records WHERE age = 42"
+        )),
+        vec![vec![42, 2]]
     );
 }

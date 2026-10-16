@@ -420,6 +420,7 @@ fn selected_multi_page_update_has_fresh_nonces_no_growth_and_restart() {
             .restore_table_for_experiment(
                 &table.snapshot().encode(),
                 &table.encrypted_index().encode(),
+                table.table_id(),
                 table.commitment(),
                 table.index_commitment(),
                 Limits::default(),
@@ -466,6 +467,7 @@ fn selected_multi_page_update_has_fresh_nonces_no_growth_and_restart() {
         owner.restore_table_for_experiment(
             &table.snapshot().encode(),
             &original.encrypted_index().encode(),
+            table.table_id(),
             table.commitment(),
             original.index_commitment(),
             Limits::default()

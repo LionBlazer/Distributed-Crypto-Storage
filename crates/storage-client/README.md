@@ -229,3 +229,14 @@ The suites exercise all three SQL operations, projection/order/LIMIT, carry,
 all-shard overflow rejection, real copies, process loss, exact-head read-after-write,
 durable peer restart and damaged/missing replicas. Fixtures are public and secrets
 fresh in memory; generated ciphertext and measurements stay outside version control.
+
+
+The writable fixed table now retains one owner-private logical TableId across all
+record shards. Initial row identities are allocated once and partitioned in the
+same round-robin positions as input rows; INSERT allocates once in VALUES order
+and moves disjoint contiguous chunks into its jobs. Fetch and agreed-head restore
+require that expected TableId together with both exact heads. The private index
+v3 identity map is owned by [compact-query](../compact-query/README.md), including
+its sparse owner reference API and exact byte limits. Network fetch still transfers
+full encrypted bundles. The public FHE profile, RPC fields and application policy
+are unchanged; this does not implement SQL locking or finality.
