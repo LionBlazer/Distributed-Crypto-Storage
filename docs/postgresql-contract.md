@@ -49,9 +49,11 @@ Other inherited SQL Server adapter semantics still differ from PostgreSQL. Typed
 imported queries currently lose quoted-identifier case and bind identifiers without
 case sensitivity; PostgreSQL preserves quoted names and folds unquoted names to
 lowercase. See [identifier rules](https://www.postgresql.org/docs/18/sql-syntax-lexical.html).
-The fixed UPDATE outcome reports physically changed rows: `amount = amount + 0`
-reports zero. PostgreSQL's UPDATE command tag counts matched rows, including values
-that remain unchanged; reconciling this outcome with locking remains open. See
+The fixed UPDATE outcome reports `affected_rows`, including matched rows whose values
+remain unchanged, as required by PostgreSQL's command tag. Zero-delta and empty
+selections still complete real peer arithmetic proofs and fresh-version checks;
+unchanged compact images need no new data transition. This implements the count
+for the supported additive operation, without triggers or live SQL locks. See
 [UPDATE output](https://www.postgresql.org/docs/18/sql-update.html#SQL-UPDATE-OUTPUTS).
 These existing boundaries do not establish full PostgreSQL compatibility.
 

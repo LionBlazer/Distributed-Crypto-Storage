@@ -7,7 +7,7 @@ use sql_plan::Predicate;
 pub(super) struct StagedShardUpdate {
     pub slot: usize,
     pub table: Option<Table>,
-    pub changed_rows: usize,
+    pub affected_rows: usize,
     pub job: MutationJob,
     pub proof: ProofReply,
 }
@@ -71,14 +71,14 @@ impl Session {
                 "UPDATE overflowed; no shard was published".into(),
             ));
         }
-        let changed_rows = stage.changed_rows();
+        let affected_rows = stage.matched_rows();
         let next = stage
             .into_table()
             .ok_or_else(|| protocol("Missing proved update"))?;
         Ok(StagedShardUpdate {
             slot,
             table: (next.commitment() != table.commitment()).then_some(next),
-            changed_rows,
+            affected_rows,
             job: MutationJob {
                 shard: shard.info.id,
                 request,

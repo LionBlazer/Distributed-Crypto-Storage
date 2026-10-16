@@ -1733,7 +1733,7 @@ fn verified_network_selection_displays_its_confirmed_version_without_promoting_h
                 height: 7,
                 state_root: [4; 32],
             },
-            changed_rows: None,
+            affected_rows: None,
         };
         let outcome = if batch {
             Outcome::Script {

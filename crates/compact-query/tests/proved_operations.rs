@@ -255,6 +255,7 @@ fn proved_update_writes_decoded_carries_but_global_overflow_publishes_neither_im
 
     assert_eq!(staged.evidence().operation(), Operation::Addition);
     assert!(!staged.overflowed());
+    assert_eq!(staged.matched_rows(), 2);
     assert_eq!(staged.changed_rows(), 2);
     let staged = staged.into_table().unwrap();
     let updated_ids = owner.row_references(&staged, &[0, 1, 2]).unwrap();
@@ -306,6 +307,7 @@ fn proved_update_writes_decoded_carries_but_global_overflow_publishes_neither_im
         .unwrap();
 
     assert!(overflow.overflowed());
+    assert_eq!(overflow.matched_rows(), 3);
     assert_eq!(overflow.changed_rows(), 0);
     assert!(overflow.into_table().is_none());
     assert_eq!(encrypted_images(&staged), staged_before);

@@ -66,7 +66,7 @@ pub enum Outcome {
     VerifiedQuery {
         outcome: QueryOutcome,
         version: version_journal::HeadRef,
-        changed_rows: Option<usize>,
+        affected_rows: Option<usize>,
     },
 }
 
@@ -136,7 +136,7 @@ impl Outcome {
     }
     fn verified(result: storage_client::VerifiedResult) -> Self {
         use storage_client::VerifiedResult;
-        let (outcome, version, changed_rows) = match result {
+        let (outcome, version, affected_rows) = match result {
             VerifiedResult::Aggregated {
                 projection,
                 count,
@@ -160,12 +160,12 @@ impl Outcome {
                 version,
             } => (QueryOutcome::Selected { columns, rows }, version, None),
             VerifiedResult::Updated {
-                changed_rows,
+                affected_rows,
                 version,
             } => (
                 QueryOutcome::Updated { committed: true },
                 version,
-                Some(changed_rows),
+                Some(affected_rows),
             ),
             VerifiedResult::Inserted { count, version } => (
                 QueryOutcome::Inserted {
@@ -178,7 +178,7 @@ impl Outcome {
         Self::VerifiedQuery {
             outcome,
             version,
-            changed_rows,
+            affected_rows,
         }
     }
 }
@@ -704,15 +704,15 @@ mod tests {
         });
         assert!(matches!(selected, Outcome::VerifiedQuery {
             outcome: QueryOutcome::Selected { ref columns, ref rows }, version,
-            changed_rows: None,
+            affected_rows: None,
         } if columns == &[sql_plan::Column::Amount] && rows == &[vec![65535]] && version == public_version(7)));
         let updated = Outcome::verified(storage_client::VerifiedResult::Updated {
-            changed_rows: 2,
+            affected_rows: 2,
             version: public_version(9),
         });
         assert!(matches!(updated, Outcome::VerifiedQuery {
             outcome: QueryOutcome::Updated { committed: true }, version,
-            changed_rows: Some(2),
+            affected_rows: Some(2),
         } if version == public_version(9)));
         let inserted = Outcome::verified(storage_client::VerifiedResult::Inserted {
             count: 1,

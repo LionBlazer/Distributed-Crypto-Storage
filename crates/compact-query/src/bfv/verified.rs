@@ -23,6 +23,7 @@ impl VerifiedSelection {
 /// Staged owner-finalized ciphertext only. No state is published by this value.
 pub struct VerifiedUpdate {
     table: Option<Table>,
+    matched_rows: usize,
     changed_rows: usize,
     evidence: bfv_query_proof::CheckedOperation,
 }
@@ -32,6 +33,11 @@ impl VerifiedUpdate {
     }
     pub fn changed_rows(&self) -> usize {
         self.changed_rows
+    }
+    /// Complete authenticated selection size, including unchanged values.
+    /// An overflowing stage is still rejected as a whole by its caller.
+    pub fn matched_rows(&self) -> usize {
+        self.matched_rows
     }
     pub fn into_table(self) -> Option<Table> {
         self.table
@@ -249,6 +255,7 @@ impl Owner {
             mut selection,
             ..
         } = prepared;
+        let matched_rows = selection.ordinals.len();
         let rows = match self
             .key
             .decrypt_indexed_update_unverified_for_experiment(pending, &response)?
@@ -256,6 +263,7 @@ impl Owner {
             UnverifiedUpdateOutcome::Overflow { .. } => {
                 return Ok(VerifiedUpdate {
                     table: None,
+                    matched_rows,
                     changed_rows: 0,
                     evidence,
                 });
@@ -279,6 +287,7 @@ impl Owner {
                     data: table.data.clone(),
                     index: table.index.clone(),
                 }),
+                matched_rows,
                 changed_rows,
                 evidence,
             });
@@ -306,6 +315,7 @@ impl Owner {
         current(table, &selection)?;
         Ok(VerifiedUpdate {
             table: Some(staged),
+            matched_rows,
             changed_rows,
             evidence,
         })
