@@ -10,6 +10,7 @@ const MAX_EVENTS: usize = 4096;
 #[derive(Clone)]
 pub(super) struct RpcRecorder {
     state: Arc<Mutex<Recording>>,
+    case: &'static str,
 }
 struct Recording {
     started: Option<Instant>,
@@ -36,8 +37,9 @@ enum Detail {
     },
 }
 impl RpcRecorder {
-    pub(super) fn optional() -> Option<Self> {
+    pub(super) fn optional(case: &'static str) -> Option<Self> {
         std::env::var_os("DCS_TEST_RPC_PROFILE").map(|_| Self {
+            case,
             state: Arc::new(Mutex::new(Recording {
                 started: None,
                 events: Vec::with_capacity(MAX_EVENTS),
@@ -118,7 +120,7 @@ impl RpcRecorder {
         println!(
             "rpc_observation={}",
             serde_json::json!({
-                "event": "summary", "case": "two_shard_update", "elapsed_ms": elapsed.as_secs_f64() * 1000.,
+                "event": "summary", "case": self.case, "elapsed_ms": elapsed.as_secs_f64() * 1000.,
                 "event_count": events.len(), "event_limit": MAX_EVENTS, "truncated": truncated,
             })
         );
