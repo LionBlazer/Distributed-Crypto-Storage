@@ -64,12 +64,19 @@ impl Process {
                 ))
         });
         let mut command = Command::new(env!("CARGO_BIN_EXE_dcs-peer"));
+        let threads = std::env::var("DCS_TEST_PEER_THREADS").unwrap_or_else(|_| "2".into());
+        assert!(
+            threads
+                .parse::<usize>()
+                .is_ok_and(|count| (1..=8).contains(&count)),
+            "DCS_TEST_PEER_THREADS must be 1..8"
+        );
         command
             .args(["--state-dir", directory.to_str().unwrap()])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
-            .env("RAYON_NUM_THREADS", "2");
+            .env("RAYON_NUM_THREADS", threads);
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -396,5 +403,160 @@ fn interrupted_confirmation_resumes_the_original_write_without_applying_it_twice
     assert_eq!(
         rows(execute(&mut database, "SELECT * FROM records")),
         vec![vec![18, 21], vec![42, 31]]
+    );
+}
+
+#[test]
+fn select_sends_proof_work_to_two_real_peers_before_reading_either_reply() {
+    use peer_runtime::{ActivityPhase, RpcActivity};
+    use std::{
+        collections::BTreeSet,
+        sync::{Arc, Condvar, Mutex},
+    };
+
+    #[derive(Default)]
+    struct Observed {
+        sent: BTreeSet<[u8; 32]>,
+        timed_out: bool,
+        early_reply: bool,
+    }
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let first = Process::start(owner.fingerprint(), 1, None);
+    let second = Process::start(owner.fingerprint(), 2, None);
+    let observed = Arc::new((Mutex::new(Observed::default()), Condvar::new()));
+    let gate = observed.clone();
+    let activity: Arc<dyn Fn(RpcActivity) + Send + Sync> = Arc::new(move |event| {
+        if event.operation != "fhe-proof" {
+            return;
+        }
+        let (state, ready) = &*gate;
+        let mut state = state.lock().unwrap();
+        match event.phase {
+            ActivityPhase::RequestSent => {
+                state.sent.insert(event.peer);
+                ready.notify_all();
+                let (mut state, timeout) = ready
+                    .wait_timeout_while(state, Duration::from_secs(5), |state| state.sent.len() < 2)
+                    .unwrap();
+                state.timed_out |= timeout.timed_out() && state.sent.len() < 2;
+            }
+            ActivityPhase::ReplyReceived => state.early_reply |= state.sent.len() < 2,
+        }
+    });
+    let mut a = first.participant(1, &connector);
+    let mut b = second.participant(2, &connector);
+    a.remote = a.remote.with_activity(activity.clone());
+    b.remote = b.remote.with_activity(activity);
+    let mut session = Session::create(
+        "concurrent-select".into(),
+        &[
+            PlainRow {
+                age: 18,
+                amount: 20,
+            },
+            PlainRow {
+                age: 42,
+                amount: 30,
+            },
+        ],
+        vec![a, b],
+        test_contract(),
+    )
+    .unwrap();
+
+    let result = session
+        .execute("SELECT amount,age FROM records LIMIT 1")
+        .unwrap();
+
+    assert_eq!(rows(result), vec![vec![20, 18]]);
+    let state = observed.0.lock().unwrap();
+    assert_eq!(state.sent.len(), 2);
+    assert!(!state.timed_out, "proof requests ran sequentially");
+    assert!(
+        !state.early_reply,
+        "a reply was read before both proof requests were sent"
+    );
+}
+
+#[test]
+fn cancelling_both_select_workers_preserves_the_next_query() {
+    use peer_runtime::{ActivityPhase, RpcActivity};
+    use std::sync::{
+        Arc, Condvar, Mutex,
+        atomic::{AtomicBool, Ordering},
+    };
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let first = Process::start(owner.fingerprint(), 1, None);
+    let second = Process::start(owner.fingerprint(), 2, None);
+    let control = peer_transport::RequestControl::default();
+    let observed = Arc::new((Mutex::new((0usize, false)), Condvar::new()));
+    let gate = observed.clone();
+    let armed = Arc::new(AtomicBool::new(true));
+    let requests = control.clone();
+    let activity: Arc<dyn Fn(RpcActivity) + Send + Sync> = Arc::new(move |event| {
+        if event.operation != "fhe-proof"
+            || event.phase != ActivityPhase::RequestSent
+            || !armed.load(Ordering::SeqCst)
+        {
+            return;
+        }
+        let (state, ready) = &*gate;
+        let mut state = state.lock().unwrap();
+        state.0 += 1;
+        if state.0 == 2 {
+            armed.store(false, Ordering::SeqCst);
+            requests.cancel();
+            ready.notify_all();
+        } else {
+            let (mut state, timeout) = ready
+                .wait_timeout_while(state, Duration::from_secs(5), |state| state.0 < 2)
+                .unwrap();
+            state.1 |= timeout.timed_out() && state.0 < 2;
+        }
+    });
+    let mut a = first.participant(1, &connector);
+    let mut b = second.participant(2, &connector);
+    a.remote = a
+        .remote
+        .with_control(control.clone())
+        .with_activity(activity.clone());
+    b.remote = b
+        .remote
+        .with_control(control.clone())
+        .with_activity(activity);
+    let mut session = Session::create(
+        "cancel-concurrent-select".into(),
+        &[
+            PlainRow {
+                age: 18,
+                amount: 20,
+            },
+            PlainRow {
+                age: 42,
+                amount: 30,
+            },
+        ],
+        vec![a, b],
+        test_contract(),
+    )
+    .unwrap();
+    let scope = control.begin().unwrap();
+
+    let result = session.execute("SELECT * FROM records");
+
+    assert!(
+        matches!(result, Err(storage_client::Error::Transport(error)) if error.kind() == std::io::ErrorKind::Interrupted)
+    );
+    assert!(scope.cancellation().is_cancelled());
+    let (sent, timed_out) = *observed.0.lock().unwrap();
+    assert_eq!(sent, 2);
+    assert!(!timed_out);
+    drop(scope);
+    let _next = control.begin().unwrap();
+    assert_eq!(
+        rows(session.execute("SELECT * FROM records").unwrap()),
+        vec![vec![18, 20], vec![42, 30]]
     );
 }

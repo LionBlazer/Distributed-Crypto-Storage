@@ -3,7 +3,7 @@
 use super::*;
 use ed25519_dalek::SigningKey;
 use peer_runtime::{
-    JournalBlock, ProofReply,
+    JournalBlock,
     evidence::{JobVerifier, MutationEvidence, MutationJob, MutationManifest},
 };
 use version_journal::{
@@ -13,6 +13,7 @@ use version_journal::{
 mod agreement;
 mod execution;
 mod pending;
+mod select;
 use pending::{MutationOutcome, PendingMutation, StoredMutation};
 
 /// Successful results carry the independently checked confirmed version.
@@ -47,7 +48,7 @@ pub struct Session {
     unavailable_this_operation: std::collections::BTreeSet<u64>,
 }
 
-fn protocol(error: impl fmt::Display) -> Error {
+pub(super) fn protocol(error: impl fmt::Display) -> Error {
     Error::Cryptography(error.to_string())
 }
 fn heads(info: &ShardInfo) -> HeadPair {

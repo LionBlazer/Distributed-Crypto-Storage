@@ -136,8 +136,6 @@ is unimplemented. Compact collection reclaims superseded known versions while
 unknown failed staging remains. The tiny test database demonstrates no 2x storage
 ratio, indefinite update capacity or production-scale 1–2 GB memory guarantee.
 
-## Reproduction and module ownership
-
 ### Ten-lane proof layout (2026-10-16)
 
 The arithmetic engine now packs all 81,920 residues into ten lanes and 8,192 rows,
@@ -167,6 +165,53 @@ corrupted or unauthorized state. Portable/AVX2/AVX-512 proofs cross-verified and
 rejected tampering. Memory was not remeasured in this run. Full PostgreSQL SQL,
 transactions, `FOR UPDATE` and `SKIP LOCKED` remain unimplemented; this optimization
 does not change their fail-closed status or the owner-online index trust boundary.
+
+### Bounded concurrent SELECT (2026-10-16)
+
+The fixed-schema client now processes at most two shards concurrently, with a
+query-local queue per exact executor endpoint. Both SQL clients share the same
+proof-request/failover implementation. All shard results must authenticate and
+verify before the final freshness check, global ordering and LIMIT; writes remain
+sequential. Two requests failing over to one surviving peer queue their own work
+without increasing its heavy-operation allowance.
+
+At the unchanged two-thread budget, one subsequent development run observed
+839 ms for the initial two-shard SELECT and 743 ms for projected/filter/LIMIT.
+With eight Rayon threads in the owner and explicitly eight in each peer, the
+same four-row real-process scenario observed 329 ms and 351 ms respectively;
+SELECT after writes took 436 ms. INSERT still took 653 ms and the two-shard
+UPDATE 1,094 ms including durable confirmation. A stopped-process SELECT took
+2,417 ms including failure detection. These tiny-loopback observations establish
+neither a larger workload bound nor a 500-ms guarantee for ordinary writes.
+
+A second eight-thread run monitored the owned test process and its direct peer
+children using Windows process counters, with 100 ms sleeps between discovery
+and sampling. Owner peak working set was 237,297,664 bytes (226.3 MiB); the
+largest individual peer peak was 194,654,208 bytes (185.6 MiB). The largest sampled
+simultaneous owner/peer working set was 310,743,040 bytes (296.3 MiB). Individual
+OS peaks and sampled simultaneous totals differ; this is no process-memory bound.
+Under that monitoring, the same SELECTs took 381/336/373 ms, but INSERT and UPDATE
+took 1,749/2,322 ms. These slower writes are retained as observed outliers rather
+than attributed conclusively to the monitor. The complete measurement excludes
+compilation and includes normal setup separately; generated logs stay in `.local/`.
+
+The two-thread default remains the reproducible low-CPU test profile. To repeat
+the eight-thread observation, add `DCS_TEST_PEER_THREADS=8` and
+`RAYON_NUM_THREADS=8` to the native-build environment and run the exact
+`proved_select_insert_update_survive_a_process_loss_and_journal_restart` test.
+The test helper accepts peer budgets from one to eight; production resource
+policy remains outside the storage-client library.
+
+Real-process regressions observe both proof frames sent before either response
+is read, reject LIMIT 1 when both copies of a later shard are corrupt, and cancel
+both SELECT workers before successfully running a new query. Typed streaming,
+existing replica failures and pending-write recovery remain covered separately.
+
+The [PostgreSQL implementation contract](postgresql-contract.md) records the
+remaining operator, transaction, lock-state and finality work. No SQL locking
+behavior is supplied by the internal RPC queue.
+
+## Reproduction and module ownership
 
 ```powershell
 $env:CARGO_BUILD_JOBS = '2'

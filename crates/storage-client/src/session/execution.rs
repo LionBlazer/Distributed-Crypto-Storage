@@ -1,5 +1,6 @@
 use super::*;
-use sql_plan::{Projection, QueryPlan};
+use crate::proof::{ProofJob, ProofRequests};
+use sql_plan::QueryPlan;
 
 impl Session {
     /// Snapshot preparation, complete private index authentication, one executor's
@@ -26,6 +27,15 @@ impl Session {
             ));
         }
         let initial = self.synchronize()?;
+        if let QueryPlan::Select {
+            predicate,
+            projection,
+            limit,
+        } = plan
+        {
+            return self.execute_select(initial, predicate, projection, limit);
+        }
+        let requests = ProofRequests::default();
         let before: Vec<_> = self
             .data
             .shards
@@ -48,7 +58,6 @@ impl Session {
         } else {
             (0..self.data.shards.len()).collect()
         };
-        let mut selected = Vec::new();
         let mut stages = Vec::new();
         let mut jobs = Vec::new();
         let mut proofs = Vec::new();
@@ -57,64 +66,6 @@ impl Session {
             let shard = &self.data.shards[slot];
             let (remote, table) = self.fetch_online(shard)?;
             match plan {
-                QueryPlan::Select {
-                    predicate,
-                    projection,
-                    ..
-                } => {
-                    let kind = match projection {
-                        Projection::Age => backend::RowProjection::Age,
-                        Projection::Amount => backend::RowProjection::Amount,
-                        _ => backend::RowProjection::AgeAmount,
-                    };
-                    let prepared = self.data.owner.prepare_provable_select(
-                        &table,
-                        predicate.age_range().map(|r| AgeRange {
-                            lower: r.lower,
-                            upper: r.upper,
-                        }),
-                        kind,
-                        256,
-                        Limits::default(),
-                    )?;
-                    let (reply, checked) = request_proof(
-                        &remote,
-                        &shard.peers,
-                        shard.info.object,
-                        self.data.setup_id,
-                        Operation::Select,
-                        prepared.request(),
-                        |reply| {
-                            self.data
-                                .owner
-                                .check_select_proof(&table, &prepared, &reply.output, &reply.proof)
-                                .map_err(Error::from)
-                        },
-                    )?;
-                    let answer = self.data.owner.complete_checked_select(
-                        &table,
-                        prepared,
-                        &reply.output,
-                        checked,
-                    )?;
-                    for row in answer.into_rows() {
-                        let values = projection
-                            .columns()
-                            .into_iter()
-                            .map(|column| match column {
-                                sql_plan::Column::Age => row.age.map(u32::from),
-                                sql_plan::Column::Amount => row.amount.map(u32::from),
-                            })
-                            .collect::<Option<Vec<_>>>()
-                            .ok_or_else(|| {
-                                protocol("Proved projection omitted a requested column")
-                            })?;
-                        selected.push((
-                            row.ordinal * self.data.shards.len() as u64 + slot as u64,
-                            values,
-                        ));
-                    }
-                }
                 QueryPlan::AddAmount { predicate, delta } => {
                     let prepared = self.data.owner.prepare_provable_update(
                         &table,
@@ -127,13 +78,15 @@ impl Session {
                         Limits::default(),
                     )?;
                     let request = prepared.request().to_vec();
-                    let (reply, checked) = request_proof(
+                    let (reply, checked) = requests.request(
                         &remote,
                         &shard.peers,
-                        shard.info.object,
-                        self.data.setup_id,
-                        Operation::Update,
-                        &request,
+                        ProofJob {
+                            object: shard.info.object,
+                            setup: self.data.setup_id,
+                            operation: Operation::Update,
+                            ciphertext: &request,
+                        },
                         |reply| {
                             self.data
                                 .owner
@@ -177,13 +130,15 @@ impl Session {
                         Limits::default(),
                     )?;
                     let request = prepared.request().to_vec();
-                    let (reply, checked) = request_proof(
+                    let (reply, checked) = requests.request(
                         &remote,
                         &shard.peers,
-                        shard.info.object,
-                        self.data.setup_id,
-                        Operation::Insert,
-                        &request,
+                        ProofJob {
+                            object: shard.info.object,
+                            setup: self.data.setup_id,
+                            operation: Operation::Insert,
+                            ciphertext: &request,
+                        },
                         |reply| {
                             self.data
                                 .owner
@@ -207,22 +162,6 @@ impl Session {
                 }
                 _ => unreachable!("unsupported proof operations rejected before execution"),
             }
-        }
-        if let QueryPlan::Select {
-            projection, limit, ..
-        } = plan
-        {
-            let version = self.finish_read(initial)?;
-            selected.sort_by_key(|(ordinal, _)| *ordinal);
-            let mut rows: Vec<_> = selected.into_iter().map(|(_, row)| row).collect();
-            if let Some(limit) = limit {
-                rows.truncate(limit);
-            }
-            return Ok(VerifiedResult::Selected {
-                columns: projection.columns(),
-                rows,
-                version,
-            });
         }
         if stages.is_empty() {
             return Ok(VerifiedResult::Updated {
@@ -333,41 +272,4 @@ impl Session {
         self.resume_pending_record()?
             .ok_or_else(|| protocol("Missing retained mutation result"))
     }
-}
-fn request_proof<T>(
-    preferred: &RemotePeer,
-    peers: &[Participant],
-    object: [u8; 32],
-    setup: [u8; 32],
-    operation: Operation,
-    request: &[u8],
-    verify: impl Fn(&ProofReply) -> Result<T>,
-) -> Result<(ProofReply, T)> {
-    let mut candidates = vec![preferred];
-    candidates.extend(
-        peers
-            .iter()
-            .map(|peer| &peer.remote)
-            .filter(|peer| peer.endpoint() != preferred.endpoint()),
-    );
-    let mut last_error = None;
-    for remote in candidates {
-        match call_bounded(remote, || Request::Prove {
-            object,
-            setup,
-            operation,
-            ciphertext: request.to_vec(),
-        }) {
-            Ok(Response::Proved(reply)) => match verify(&reply) {
-                Ok(checked) => return Ok((reply, checked)),
-                Err(error) => last_error = Some(error),
-            },
-            Ok(Response::UnverifiedCiphertext(_)) => {
-                last_error = Some(Error::MissingComputationProof)
-            }
-            Ok(_) => last_error = Some(protocol("Executor supplied no genuine proof reply")),
-            Err(error) => last_error = Some(Error::Transport(error)),
-        }
-    }
-    Err(last_error.unwrap_or_else(|| protocol("No proof executor available")))
 }

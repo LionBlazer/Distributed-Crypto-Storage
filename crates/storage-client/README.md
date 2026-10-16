@@ -129,6 +129,19 @@ be reconstructed from drafts. Invalid/unavailable holders are skipped, missing
 proofs reject, and temporary peer `Busy` responses have bounded retry/failover.
 `replace_participant` initializes the new journal before replacing handles.
 
+Fixed-schema SELECT authenticates, proves and completes at most two shards
+concurrently. The owner shares its immutable keys with scoped workers; no secret
+key or plaintext is sent to a peer. All workers finish before an error returns;
+all shard proofs and the final confirmed-version check precede result ordering
+and LIMIT. Unavailable later shards still reject a query returning only one row.
+Writes remain sequential until their complete all-shard validation succeeds.
+
+Both SQL paths use the same private proof-request scheduler for genuine proof
+verification and replica failover. A query-local permit serializes RPCs to the
+same exact endpoint when multiple workers fail over onto one surviving process;
+verification runs after releasing the permit. This queue neither creates database
+locks nor changes the peer's independent heavy-operation/resource admission limit.
+
 ## Security and lifecycle limits
 
 This is the owner-online exact-index model. The owner authenticates private complete

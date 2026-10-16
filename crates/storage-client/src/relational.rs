@@ -5,6 +5,7 @@ mod agreement;
 mod index;
 
 use super::{Error, Participant, Result, ShardInfo, install};
+use crate::proof::{ProofJob, ProofRequests};
 use bfv_query_core::{Geometry, PublicUpdateEvaluator, QueryContext};
 use compact_store::{EncryptedSnapshot, Layout, Limits};
 use peer_runtime::{Bundle, JobVerifier, Operation, Request, Response};
@@ -437,6 +438,13 @@ impl RelationalSession {
         let count = source.len().div_ceil(bfv_query_core::BYTE_SELECT_CAPACITY);
         let mut result = Zeroizing::new(Vec::with_capacity(source.len()));
         let nonce: [u8; 16] = random()?;
+        let requests = ProofRequests::default();
+        let holders: Vec<_> = self
+            .participants
+            .iter()
+            .filter(|peer| relation.shard.holders.contains(&peer.id))
+            .cloned()
+            .collect();
         for (block, original) in source
             .chunks(bfv_query_core::BYTE_SELECT_CAPACITY)
             .enumerate()
@@ -470,44 +478,31 @@ impl RelationalSession {
                     &projection_mask[start..start + original.len()],
                 )
                 .map_err(crypto)?;
-            let mut accepted = None;
-            let mut last = None;
-            for peer in std::iter::once(&remote).chain(
-                self.participants
-                    .iter()
-                    .filter(|p| p.id != remote.id && relation.shard.holders.contains(&p.id)),
-            ) {
-                let response = super::session::call_bounded(&peer.remote, || Request::Prove {
+            let (reply, checked) = requests.request(
+                &remote.remote,
+                &holders,
+                ProofJob {
                     object: relation.shard.object,
                     setup: self.setup_id,
                     operation: Operation::ByteSelect,
-                    ciphertext: prepared.request.clone(),
-                });
-                match response {
-                    Ok(Response::Proved(reply)) => match compact_query::byte_select::check(
+                    ciphertext: &prepared.request,
+                },
+                |reply| {
+                    compact_query::byte_select::check(
                         &self.evaluator,
                         &prepared,
                         &reply.output,
                         &reply.proof,
-                    ) {
-                        Ok(checked) => {
-                            accepted = Some((reply.output, checked));
-                            break;
-                        }
-                        Err(error) => last = Some(crypto(error)),
-                    },
-                    Ok(_) => last = Some(Error::MissingComputationProof),
-                    Err(error) => last = Some(Error::Transport(error)),
-                }
-            }
-            let (output, checked) =
-                accepted.ok_or_else(|| last.unwrap_or(Error::MissingComputationProof))?;
+                    )
+                    .map_err(crypto)
+                },
+            )?;
             result.extend_from_slice(
                 compact_query::byte_select::complete_checked(
                     &self.fhe,
                     &self.evaluator,
                     prepared,
-                    &output,
+                    &reply.output,
                     checked,
                 )
                 .map_err(crypto)?

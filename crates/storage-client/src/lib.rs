@@ -7,6 +7,7 @@ use compact_store::{Commitment, Limits};
 use peer_runtime::{Bundle, Operation, RemotePeer, Request, Response, Status};
 use sql_plan::{Projection, QueryPlan};
 use std::{fmt, io};
+mod proof;
 pub mod relational;
 mod script;
 mod session;

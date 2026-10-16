@@ -272,6 +272,50 @@ fn corrupted_physical_copy_falls_back_to_a_real_replica_but_losing_both_copies_n
 }
 
 #[test]
+fn limit_one_rejects_a_missing_later_shard_after_a_valid_first_shard_proof() {
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let first = Process::start(owner.fingerprint(), 1);
+    let second = Process::start(owner.fingerprint(), 2);
+    let mut session = Session::create(
+        "limited-completeness".into(),
+        &[
+            PlainRow {
+                age: 18,
+                amount: 20,
+            },
+            PlainRow {
+                age: 42,
+                amount: 30,
+            },
+        ],
+        vec![
+            first.participant(1, &connector),
+            second.participant(2, &connector),
+        ],
+        test_contract(),
+    )
+    .unwrap();
+    let source = session.shards();
+    let version = session.version();
+    for process in [&first, &second] {
+        process.corrupt_public_fixture_bundle(source[1].object);
+    }
+
+    let result = session.execute("SELECT amount FROM records LIMIT 1");
+
+    assert!(
+        matches!(result, Err(storage_client::Error::UnavailableShard(id)) if id == source[1].id),
+        "LIMIT must not hide the unavailable second shard after a valid first-shard proof"
+    );
+    assert_eq!(session.version(), version);
+    for (old, current) in source.iter().zip(session.shards()) {
+        assert_eq!(old.data_head, current.data_head);
+        assert_eq!(old.index_head, current.index_head);
+    }
+}
+
+#[test]
 fn all_processes_offline_prevent_proved_reads_and_writes_after_a_successful_read() {
     let owner = identity();
     let connector = Connector::permissionless(&owner).unwrap();
