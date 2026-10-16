@@ -1,7 +1,7 @@
 //! Designated-client composition of complete authenticated selection and real FHE proofs.
 //! Agreement/freshness and publication belong to the network client, not this module.
 use super::*;
-use crate::{MAX_ROWS, check_schema, index, random_id, storage};
+use crate::{check_schema, index, random_id, storage};
 use bfv_core::{QueryContext, UnverifiedUpdateOutcome};
 
 pub struct VerifiedSelection {
@@ -71,7 +71,7 @@ impl Owner {
         &self,
         table: &Table,
         predicate: Option<AgeRange>,
-        budget: usize,
+        budget: index::MaterializationBudget,
         limits: Limits,
     ) -> Result<ExactSelection> {
         match predicate {
@@ -107,7 +107,12 @@ impl Owner {
         budget: usize,
         limits: Limits,
     ) -> Result<PreparedSelect> {
-        let selection = self.proof_selection(table, predicate, budget.min(MAX_ROWS), limits)?;
+        let selection = self.proof_selection(
+            table,
+            predicate,
+            index::MaterializationBudget::rows(budget),
+            limits,
+        )?;
         let context = QueryContext::new(
             random_id()?,
             selection.data_head.encode(),
@@ -131,7 +136,12 @@ impl Owner {
         budget: usize,
         limits: Limits,
     ) -> Result<PreparedUpdate> {
-        let selection = self.proof_selection(table, predicate, budget.min(MAX_ROWS), limits)?;
+        let selection = self.proof_selection(
+            table,
+            predicate,
+            index::MaterializationBudget::rows(budget),
+            limits,
+        )?;
         let context = QueryContext::new(
             random_id()?,
             selection.data_head.encode(),

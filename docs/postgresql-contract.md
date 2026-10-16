@@ -23,8 +23,12 @@ It preflights shard capacity and immutable protocol frame/update budgets; this
 statement atomicity does not provide general transactions. Aggregates perform an
 encrypted coefficient convolution under the existing full-residue product proof,
 with checked client-side limb/shard completion and SQL NULL for empty SUM.
-They currently admit at most 256 matching rows per shard and reject excess;
-general typed aggregation remains open. Typed imported catalogs provide
+They currently admit at most 2560 matching rows per shard using ten 256-row bands
+and the unchanged 256-term public kernel; row and mutation limits remain 256.
+Excess rejects without a partial result. Q2/R2 requires application domain v3 and
+rejects old journals/wires without migration; the arithmetic profile is unchanged.
+The [Q2 process record](proved-aggregate-bands.md) reports 5119/5120-row full-query
+samples; general typed aggregation remains open. Typed imported catalogs provide
 immutable single-table SELECT with authenticated owner-private indices and proved
 BFV byte projection. Unsupported operators reject before execution. Neither path
 implements general transactions, DELETE, JOIN or SQL row locks.
@@ -125,6 +129,18 @@ before claiming these SQL guarantees. A peer-local mutex, owner-only lock manage
 transport acknowledgement or unconfirmed lease would change required guarantees.
 Local TCP disconnect also cannot establish global client death during a partition.
 No such substitution is authorized by this implementation contract.
+
+## Selective retrieval and the unresolved access policy
+
+The bounded `FetchPages` custody RPC is implemented, but live SQL still uses full
+encrypted-image Fetch. For the fixed schema, that Fetch does not disclose which
+private index/data pages the owner subsequently examines. A direct selective SQL
+adapter would disclose page addresses to its peers and change traffic-size metadata.
+The requirements leave permitted access leakage unresolved; the raw custody API
+does not approve such a policy for SQL. Preserve the current live path until an
+explicitly selected leakage profile or private retrieval establishes that boundary.
+PIR candidates and their active-response, setup, memory and full-query costs require
+separate validation. A smaller reply alone does not justify a confidentiality change.
 
 ## Remaining SQL operators
 

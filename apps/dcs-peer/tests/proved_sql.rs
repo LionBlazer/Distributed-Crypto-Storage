@@ -332,7 +332,7 @@ fn immutable_mutation_profile_rejection_never_stores_or_creates_a_sticky_pending
 }
 
 #[test]
-fn a_real_peer_rejects_initializing_an_old_application_policy_with_the_new_insert_contract() {
+fn a_real_peer_rejects_initializing_an_old_application_policy_with_the_q2_aggregate_contract() {
     let owner = identity();
     let connector = Connector::permissionless(&owner).unwrap();
     let process = Process::start(owner.fingerprint(), 1, None);
@@ -347,7 +347,7 @@ fn a_real_peer_rejects_initializing_an_old_application_policy_with_the_new_inser
     let (_, setup) = bfv_query_core::Owner::generate(bfv_query_core::Geometry::Rows256).unwrap();
     let descriptor = setup.update_parameters().unwrap();
     let descriptor_bytes = descriptor.to_bytes().unwrap();
-    let mut previous = b"dcs/peer-runtime/proved-job-application/v1".to_vec();
+    let mut previous = b"dcs/peer-runtime/proved-job-application/v2".to_vec();
     previous.extend_from_slice(&(descriptor_bytes.len() as u64).to_le_bytes());
     previous.extend_from_slice(&descriptor_bytes);
     previous.extend_from_slice(&bfv_query_proof::PROOF_PROFILE_ID);
@@ -929,6 +929,176 @@ fn real_peers_prove_count_sum_and_empty_sql_null_over_complete_shards() {
         );
         assert_eq!(version.state_root, expected_version.state_root);
     }
+}
+
+#[test]
+fn q2_real_peers_aggregate_5119_and_5120_asymmetric_rows_with_partial_and_empty_bands() {
+    use storage_client::AggregateProjection;
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let first = Process::start(owner.fingerprint(), 1, None);
+    let second = Process::start(owner.fingerprint(), 2, None);
+    for total in [5119usize, 5120] {
+        eprintln!("aggregate_fixture_rows={total}");
+        let source: Vec<_> = (0..total)
+            .map(|ordinal| {
+                let shard = ordinal % 2;
+                let slot = ordinal / 2;
+                let band = slot / 256;
+                if shard == 0 && slot == 257 {
+                    PlainRow { age: 42, amount: 0 }
+                } else {
+                    PlainRow {
+                        age: if shard == 0 { 18 } else { 7 },
+                        amount: if shard == 0 {
+                            65535 - band as u16 * 257
+                        } else {
+                            band as u16 * 256 + (slot % 256) as u16
+                        },
+                    }
+                }
+            })
+            .collect();
+        let mut session = Session::create(
+            format!("aggregate-q2-{total}"),
+            &source,
+            vec![
+                first.participant(1, &connector),
+                second.participant(2, &connector),
+            ],
+            test_contract(),
+        )
+        .unwrap();
+        let initial = session.version();
+        for (sql, projection, age) in [
+            (
+                "SELECT COUNT(*), SUM(amount) FROM records",
+                AggregateProjection::CountSum,
+                None,
+            ),
+            (
+                "SELECT COUNT(*) FROM records WHERE age = 18",
+                AggregateProjection::Count,
+                Some(18),
+            ),
+            (
+                "SELECT SUM(amount) FROM records WHERE age = 7",
+                AggregateProjection::Sum,
+                Some(7),
+            ),
+            (
+                "SELECT COUNT(*), SUM(amount) FROM records WHERE age = 42",
+                AggregateProjection::CountSum,
+                Some(42),
+            ),
+            (
+                "SELECT COUNT(*), SUM(amount) FROM records WHERE age = 255",
+                AggregateProjection::CountSum,
+                Some(255),
+            ),
+        ] {
+            // Fixture expectations exist only in this public test; the SQL path
+            // encrypts every original selected value and accepts the peer proof.
+            let expected: Vec<_> = source
+                .iter()
+                .filter(|row| age.is_none_or(|age| row.age == age))
+                .collect();
+            let expected_sum = (!expected.is_empty()).then(|| {
+                expected
+                    .iter()
+                    .map(|row| u64::from(row.amount))
+                    .sum::<u64>()
+            });
+            let VerifiedResult::Aggregated {
+                projection: actual,
+                count,
+                sum,
+                version,
+            } = execute(&mut session, sql)
+            else {
+                panic!("verified Q2 aggregate")
+            };
+            assert_eq!(
+                (actual, count, sum),
+                (projection, expected.len() as u64, expected_sum),
+                "{total}: {sql}"
+            );
+            assert_eq!(version.state_root, initial.state_root);
+        }
+    }
+}
+
+#[test]
+fn aggregate_capacity_failure_on_one_shard_returns_no_prefix_and_publishes_nothing() {
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let first = Process::start(owner.fingerprint(), 1, None);
+    let second = Process::start(owner.fingerprint(), 2, None);
+    let participants = vec![
+        first.participant(1, &connector),
+        second.participant(2, &connector),
+    ];
+    let mut session = Session::create(
+        "aggregate-overflow".into(),
+        &vec![
+            PlainRow {
+                age: 18,
+                amount: 65535
+            };
+            5121
+        ],
+        participants.clone(),
+        test_contract(),
+    )
+    .unwrap();
+    let initial = session.version();
+    let heads = || {
+        session
+            .shards()
+            .into_iter()
+            .map(|shard| (shard.object, shard.data_head, shard.index_head))
+            .collect::<Vec<_>>()
+    };
+    let original = heads();
+    let before: Vec<_> = participants
+        .iter()
+        .map(|peer| {
+            peer.remote
+                .status()
+                .unwrap()
+                .objects
+                .into_iter()
+                .map(|object| (object.id, object.stored_bytes))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert!(
+        session
+            .execute("SELECT COUNT(*), SUM(amount) FROM records")
+            .is_err()
+    );
+    assert_eq!(session.version(), initial);
+    assert_eq!(
+        session
+            .shards()
+            .into_iter()
+            .map(|shard| (shard.object, shard.data_head, shard.index_head))
+            .collect::<Vec<_>>(),
+        original
+    );
+    for (peer, objects) in participants.iter().zip(before) {
+        assert_eq!(
+            peer.remote
+                .status()
+                .unwrap()
+                .objects
+                .into_iter()
+                .map(|object| (object.id, object.stored_bytes))
+                .collect::<Vec<_>>(),
+            objects
+        );
+    }
+    assert!(session.resume_pending().unwrap().is_none());
 }
 
 #[test]

@@ -109,13 +109,16 @@ holders/executors without becoming a voting committee.
 `Session::execute(&mut self, sql)` accepts row SELECT/projections, supported age
 filters, LIMIT, atomic literal INSERT batches and additive amount UPDATE on
 `records(age: u8, amount: u16)`, plus COUNT(*), SUM(amount) and their combined
-projection. Aggregates authenticate at most 256 complete matching rows per shard;
+projection. Aggregates authenticate at most 2560 complete matching rows per shard;
 over-budget groups reject rather than truncate. Each peer computes encrypted
-coefficient convolution and supplies a full-residue product proof. Only checked
+Q2 ten-band coefficient convolution with the fixed 256-term kernel and supplies
+a full-residue product proof. Row SELECT and mutation limits remain 256. Only checked
 encrypted partial results are decrypted and combined with checked u64 arithmetic;
 empty COUNT is zero and empty SUM is NULL. `VerifiedResult::Aggregated` records
 the requested projection and fresh confirmed head. Typed imported catalogs remain
-immutable and their aggregate syntax remains unsupported.
+immutable and their aggregate syntax remains unsupported. The [Q2 real-process
+record](../../docs/proved-aggregate-bands.md) gives the exact 5119/5120-row fixture,
+three full-query samples, artifact hashes and remaining limits.
 
 `SqlScript::parse(sql)` validates a bounded script before any network operation.
 It supports ordinary comments, the exact non-null unsigned `records` schema,

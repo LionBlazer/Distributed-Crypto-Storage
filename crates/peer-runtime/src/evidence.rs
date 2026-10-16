@@ -270,10 +270,13 @@ impl JobVerifier {
         let evaluator =
             Arc::new(PublicUpdateEvaluator::from_parameters(&parameters).map_err(crypto)?);
         let mut application = Sha256::new();
-        application.update(b"dcs/peer-runtime/proved-job-application/v2");
+        application.update(b"dcs/peer-runtime/proved-job-application/v3");
         application.update((bytes.len() as u64).to_le_bytes());
         application.update(&bytes);
         application.update(bfv_query_proof::PROOF_PROFILE_ID);
+        application
+            .update((bfv_query_core::POLYNOMIAL_AGGREGATE_SEMANTICS_ID.len() as u64).to_le_bytes());
+        application.update(bfv_query_core::POLYNOMIAL_AGGREGATE_SEMANTICS_ID);
         Ok(Self {
             evaluator,
             application_commitment: application.finalize().into(),

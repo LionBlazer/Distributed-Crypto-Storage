@@ -113,10 +113,16 @@ coefficient-convolution kernel. `check_aggregate_proof` verifies the genuine
 full-residue product against the retained request and source heads;
 `complete_checked_aggregate` rechecks exact evidence before decrypting the actual
 peer ciphertext. `VerifiedAggregate` exposes its decrypted count, nullable sum
-and checked evidence. Empty selection still requires a real proof. At most 256
-matching rows per shard are admitted; arbitrary owner vectors cannot construct
-this storage-bound preparation. No aggregate result comes from retained source
-fields, and the existing owner-online AEAD-to-FHE boundary remains unchanged.
+and checked evidence. Empty selection still requires a real proof. The private
+aggregate materialization budget admits at most 2560 matching rows per shard,
+while row SELECT, UPDATE, INSERT, legacy TFHE and RowReferences retain their
+separate 256-row bounds. The authenticated total count is preflighted before
+posting traversal or FHE; excess rejects without a result prefix. Arbitrary owner
+vectors cannot construct this storage-bound preparation. Original fields, pages
+and ordinals are dropped/zeroized after encryption; only the encrypted request,
+exact heads and cardinality/keyset/context pending capability remain. No aggregate
+answer comes from retained source fields. The owner-online AEAD-to-FHE boundary
+and existing full snapshot network retrieval remain unchanged.
 
 The new path composes [bfv-query-proof](../bfv-query-proof/README.md) with the private
 exact-selection constructor. `prepare_provable_select` and `prepare_provable_update`
@@ -244,9 +250,10 @@ only page zero needs replacement, including its unchanged posting suffix.
 There is no public arbitrary-age mutation or peer-built untrusted index API.
 
 The table limit is 1,000,000 rows. MAX_ROWS is a distinct hard limit of 256 selected
-rows per request, checked from authenticated counts or the full-scan count
-before any FHE pad encryption. A lower caller budget is honored. SelectionBudget
-returns the full selected count and effective budget; it never truncates a group.
+rows for row operations and the legacy TFHE paths below (proved Q2 aggregates have
+the separate 2560-row budget described above), checked from authenticated counts
+or the full-scan count before any FHE pad encryption. A lower caller budget is
+honored. SelectionBudget returns the full selected count and effective budget; it never truncates a group.
 Private outputs use an encrypted bit and u16 sum for exactly one selected row,
 and ten-bit COUNT plus 24-bit SUM otherwise. Owner-facing values remain u32;
 the largest SUM is 256 * 65535 = 16,776,960. Conditional zero selection uses

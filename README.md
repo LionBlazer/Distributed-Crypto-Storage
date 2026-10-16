@@ -59,7 +59,8 @@ confirmed version. INSERT/UPDATE publish actual compact ciphertext only after al
 proof/overflow checks and durable journal confirmation. COUNT(*), SUM(amount) and
 their combined projection also use genuine encrypted convolution with full-residue
 proofs. Empty COUNT is zero and empty SUM is SQL NULL. The fixed-schema path admits
-at most 256 matching rows per shard, authenticates complete owner-online selection
+at most 256 matching rows per shard for row operations and 2560 for proved Q2
+aggregates, authenticates complete owner-online selection
 and checks the confirmed version; it does not provide public AEAD-to-FHE linkage.
 The GUI uses the BFV
 exact-index backend, shared public evaluation keys and compact encrypted pages.

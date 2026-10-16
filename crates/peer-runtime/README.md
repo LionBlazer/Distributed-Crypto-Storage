@@ -115,7 +115,8 @@ the actual ciphertext request to the canonical circuit and runs `bfv_query_proof
 STARK. Supported proved operations are exact-index `SELECT`, `INSERT`, additive
 `UPDATE`, coefficient-packed `Aggregate`, and schema-independent `ByteSelect` over
 bounded encrypted byte chunks. The proved aggregate accepts only the new
-`BFVPAGQ1` coefficient layout and fixed 256-term public convolution; the historical
+`BFVPAGQ2` contiguous ten-band coefficient layout (2560 selected rows) and fixed
+256-term public convolution; the historical
 rotation-based aggregate remains an explicitly unverified diagnostic. Neither
 read-only operation is permitted in a mutation manifest. `ByteSelect` carries its own
 schema/query/table/page binding and uses the same full-residue public-mask product
@@ -143,9 +144,10 @@ Version-3 INSERT metadata binds each old row count and incoming batch count; eac
 new data head must grow by exactly that job's authorized count. `JobVerifier` checks pinned crypto parameters, original contexts,
 all job proofs, allowed changed shard IDs and head revision/schema/domain/count
 constraints. The journal additionally checks parent state, work and owner signature.
-The application commitment uses domain version 2 for these batch-aware transition
-rules, alongside the unchanged FHE/STARK profile identity. Old application anchors
-reject during initialization; older INSERT wires and journals are not migrated.
+The application commitment uses domain version 3 for these batch-aware transition
+rules and the length-delimited Q2/R2 aggregate semantics ID, alongside the unchanged
+FHE/STARK profile identity. Version-2 application anchors reject during initialization;
+older aggregate/INSERT wires and journals are not migrated.
 
 `JobVerifier` keeps at most 128 successful arithmetic-proof digests in RAM, keyed
 by its pinned application commitment and every byte/length of canonical input,
@@ -170,7 +172,8 @@ An owner signature is authorization, not a substitute for these checks or STARKs
 ## Journal RPCs and storage lifecycle
 
 `JobVerifier` commits its FHE parameter descriptor and the exact
-`bfv_query_proof::PROOF_PROFILE_ID` under a separate application domain. A
+`bfv_query_proof::PROOF_PROFILE_ID` plus the aggregate semantics ID under a separate
+application domain. A
 setup-only or older proof-format application commitment is incompatible; it cannot
 reuse a new verifier merely because the encryption parameters match.
 
