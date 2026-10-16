@@ -224,11 +224,11 @@ fields show their length instead of flooding the result grid with hex. No local
 plaintext imported table is used to answer a query.
 
 ```sql
-SELECT CustomerID, CompanyName
-FROM Customers WHERE Country = 'Germany' ORDER BY CustomerID;
-SELECT * FROM [Order Details];
-SELECT ProductID, ProductName, UnitPrice
-FROM Products WHERE UnitPrice >= 50 ORDER BY UnitPrice DESC;
+SELECT "CustomerID", "CompanyName"
+FROM "Customers" WHERE "Country" = 'Germany' ORDER BY "CustomerID";
+SELECT * FROM "Order Details";
+SELECT "ProductID", "ProductName", "UnitPrice"
+FROM "Products" WHERE "UnitPrice" >= 50 ORDER BY "UnitPrice" DESC;
 ```
 
 Rows/cells stream through 8,191-byte BFV blocks; neither 128 rows nor one BFV block

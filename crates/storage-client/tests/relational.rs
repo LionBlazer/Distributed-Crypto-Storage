@@ -645,7 +645,13 @@ fn malformed_owner_tables_are_rejected_before_creating_keys_or_writing_peer_stat
     )
     .unwrap();
     type Malformation = (&'static str, fn(&mut ImportedDatabase));
-    let malformed_cases: [Malformation; 7] = [
+    let malformed_cases: [Malformation; 9] = [
+        ("overlong PG table identifier", |database| {
+            database.tables[0].schema.name = "x".repeat(64);
+        }),
+        ("overlong PG column identifier", |database| {
+            database.tables[0].schema.columns[0].name = "x".repeat(64);
+        }),
         ("missing cell", |database| {
             database.tables[0].rows[0].pop();
         }),

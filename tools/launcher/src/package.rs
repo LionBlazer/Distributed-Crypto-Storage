@@ -111,6 +111,7 @@ pub(super) struct BuildPlan {
     pub playground: PathBuf,
     pub peer: PathBuf,
     pub kernel_directory: PathBuf,
+    postgresql_notice: (PathBuf, PathBuf),
 }
 
 impl BuildPlan {
@@ -171,6 +172,10 @@ impl BuildPlan {
             playground: release.join(format!("fhe-playground{executable_suffix}")),
             peer: release.join(format!("dcs-peer{executable_suffix}")),
             kernel_directory: release.join("proof-kernels"),
+            postgresql_notice: (
+                root.join("crates/relational-types/POSTGRESQL-LICENSE"),
+                release.join("POSTGRESQL-LICENSE.txt"),
+            ),
         })
     }
 
@@ -201,6 +206,12 @@ impl BuildPlan {
             install_file(&source, &destination)?;
         }
         Ok(())
+    }
+
+    pub fn install_notices(&self) -> io::Result<()> {
+        let (source, destination) = &self.postgresql_notice;
+        fs::create_dir_all(destination.parent().expect("release directory"))?;
+        install_file(source, destination)
     }
 
     pub fn check_applications(&self) -> io::Result<()> {
@@ -306,6 +317,20 @@ mod tests {
         }
     }
 
+    #[test]
+    fn application_package_ships_the_full_pinned_postgresql_permission_notice() {
+        let directory = TestDirectory::new();
+        let plan = BuildPlan::new(&directory.0, "x86_64-pc-windows-msvc").unwrap();
+        let source = &plan.postgresql_notice.0;
+        fs::create_dir_all(source.parent().unwrap()).unwrap();
+        let license = include_bytes!("../../../crates/relational-types/POSTGRESQL-LICENSE");
+        fs::write(source, license).unwrap();
+        plan.install_notices().unwrap();
+        assert_eq!(
+            fs::read(plan.peer.parent().unwrap().join("POSTGRESQL-LICENSE.txt")).unwrap(),
+            license
+        );
+    }
     #[test]
     fn build_only_is_explicit_and_unknown_commands_are_rejected() {
         assert_eq!(

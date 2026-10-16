@@ -58,7 +58,7 @@ impl PrivateIndex {
             })
             .collect();
         let index = Self {
-            format: 2,
+            format: 3,
             schema: table.schema,
             cells,
             columns,
@@ -70,7 +70,7 @@ impl PrivateIndex {
     }
 
     pub(super) fn validate(&self, schema: &TableSchema, bytes: usize) -> Result<()> {
-        if self.format != 2
+        if self.format != 3
             || &self.schema != schema
             || self.data_bytes != bytes
             || self.columns.len() != schema.columns.len()
@@ -260,6 +260,33 @@ mod tests {
     use super::*;
     fn relation() -> ImportedTable {
         relational_types::import_database_dump("CREATE TABLE things (id INT NOT NULL, name NVARCHAR(20) NULL); INSERT INTO things VALUES (1,'one'),(2,NULL),(3,'three');", relational_types::ImportLimits::default()).unwrap().tables.remove(0)
+    }
+    #[test]
+    fn old_or_unknown_typed_index_versions_and_check_language_changes_fail_closed() {
+        let (bytes, mut index) = PrivateIndex::build(relation()).unwrap();
+        assert_eq!(index.format, 3);
+        for format in [2, 4, u32::MAX] {
+            index.format = format;
+            let decoded: PrivateIndex = serde_json::from_slice(&json(&index).unwrap()).unwrap();
+            assert!(decoded.validate(&decoded.schema, bytes.len()).is_err());
+        }
+        let mut pg = index.schema.clone();
+        pg.checks
+            .push(relational_types::CheckConstraint::PostgreSql18Utf8 {
+                source: "id > 0".into(),
+            });
+        let mut source = pg.clone();
+        source.checks[0] = relational_types::CheckConstraint::SqlServerDumpAsciiCi {
+            source: "id > 0".into(),
+        };
+        assert_ne!(
+            schema_id(&pg, false).unwrap(),
+            schema_id(&source, false).unwrap()
+        );
+        assert_ne!(
+            schema_id(&pg, true).unwrap(),
+            schema_id(&source, true).unwrap()
+        );
     }
     #[test]
     fn complete_postings_handle_sql_unknown_and_deterministic_order_without_reading_rows() {

@@ -310,3 +310,98 @@ fn cancelling_a_later_typed_block_joins_workers_and_never_falls_back_after_inter
     *peers.observed.0.lock().unwrap() = Observed::default();
     assert_rows(&peers.session.select(SQL).unwrap());
 }
+
+#[test]
+fn pg_case_distinct_catalog_names_use_real_proofs_and_bad_binding_sends_no_rpc() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let mut process = Process::start(owner.fingerprint(), 1, None);
+    let requests = Arc::new(AtomicUsize::new(0));
+    let replies = Arc::new(AtomicUsize::new(0));
+    let sent = requests.clone();
+    let proved = replies.clone();
+    let mut participant = process.participant(1, &connector);
+    participant.remote = participant.remote.with_activity(Arc::new(move |event| {
+        if event.phase == ActivityPhase::RequestSent {
+            sent.fetch_add(1, Ordering::SeqCst);
+        }
+        if event.operation == "fhe-proof" && event.phase == ActivityPhase::ReplyReceived {
+            proved.fetch_add(1, Ordering::SeqCst);
+        }
+    }));
+    let mut catalog = import_database_dump("CREATE TABLE foo (id INT NOT NULL PRIMARY KEY, label NVARCHAR(40) NOT NULL); INSERT INTO foo VALUES(1,'lower');", ImportLimits::default()).unwrap();
+    catalog.tables[0].schema.columns[1].name = "ID".into();
+    catalog.tables[0]
+        .schema
+        .checks
+        .push(relational_types::CheckConstraint::PostgreSql18Utf8 {
+            source: "id = 1 AND \"ID\" = 'lower'".into(),
+        });
+    let mut upper = catalog.tables[0].clone();
+    upper.schema.name = "Foo".into();
+    upper.rows[0] = vec![Value::Integer(2), Value::Text("upper".into())];
+    upper.schema.checks[0] = relational_types::CheckConstraint::PostgreSql18Utf8 {
+        source: "id = 2 AND \"ID\" = 'upper'".into(),
+    };
+    catalog.tables.push(upper);
+    let mut session =
+        RelationalSession::import(catalog, vec![participant], test_contract()).unwrap();
+    let initial = session.version();
+    for (sql, columns, expected) in [
+        (
+            "SELECT ID, \"ID\" FROM FOO",
+            vec!["id", "ID"],
+            vec![Value::Integer(1), Value::Text("lower".into())],
+        ),
+        (
+            "SELECT p.\"ID\", p.id FROM public.\"Foo\" AS p WHERE p.id = 2 ORDER BY p.id LIMIT 1",
+            vec!["ID", "id"],
+            vec![Value::Text("upper".into()), Value::Integer(2)],
+        ),
+        (
+            "SELECT \"P\".id FROM \"Foo\" AS \"P\"",
+            vec!["id"],
+            vec![Value::Integer(2)],
+        ),
+    ] {
+        replies.store(0, Ordering::SeqCst);
+        let answer = session.select(sql).unwrap();
+        assert_eq!(answer.rows, vec![expected], "{sql}");
+        assert_eq!(answer.columns, columns, "{sql}");
+        assert_eq!(answer.version, initial);
+        assert!(answer.proof_blocks > 0);
+        assert_eq!(answer.proof_blocks, replies.load(Ordering::SeqCst));
+    }
+    for sql in [
+        "SELECT id FROM \"FOO\"",
+        "SELECT p.id FROM \"Foo\" AS \"P\"",
+        "SELECT \"Foo\".id FROM \"Foo\" AS p",
+        "SELECT id FROM dbo.foo",
+        "SELECT id FROM [foo]",
+        "SELECT U&\"id\" FROM foo",
+    ] {
+        requests.store(0, Ordering::SeqCst);
+        assert!(
+            matches!(
+                session.select(sql),
+                Err(storage_client::Error::InvalidInput(_))
+            ),
+            "{sql}"
+        );
+        assert_eq!(
+            requests.load(Ordering::SeqCst),
+            0,
+            "Bad identifier binding reached actual I/O: {sql}"
+        );
+    }
+    process.kill();
+    let restarted = Process::start(owner.fingerprint(), 1, Some(process.directory.clone()));
+    session
+        .replace_participant(restarted.participant(1, &connector))
+        .unwrap();
+    assert_eq!(
+        session.select("SELECT \"ID\" FROM \"Foo\"").unwrap().rows,
+        vec![vec![Value::Text("upper".into())]]
+    );
+}

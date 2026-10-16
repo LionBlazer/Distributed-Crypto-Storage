@@ -31,7 +31,8 @@ settings cannot redirect these builds. All outputs reside under the checkout:
 Each target directory contains `<host-triple>/release`. On x86-64 both kernel
 variants are built even when this CPU cannot execute them. Their known cdylib
 artifacts are copied into the applications' adjacent `proof-kernels/` directory
-using the shared ABI filenames. Non-x86-64 hosts build only the portable
+using the shared ABI filenames. The full PostgreSQL keyword-data permission
+notice is installed as `POSTGRESQL-LICENSE.txt` beside both applications. Non-x86-64 hosts build only the portable
 applications; the SDK's compiled platform backend remains available. No build uses
 `target-cpu=native`.
 
