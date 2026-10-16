@@ -27,6 +27,8 @@ The [borrowed-validation comparison](BORROWED-VALIDATION-MEASUREMENTS.md) retain
 the following refactor's non-improving timings and its narrower allocation claim.
 The [bulk serialization comparison](BULK-SERIALIZATION-MEASUREMENTS.md) measures
 byte-identical custody encoding while retaining the original decoder and audits.
+The [bounded bulk decoding comparison](BULK-DECODING-MEASUREMENTS.md) measures the
+subsequent slice decoder while retaining complete custody and SQL acceptance checks.
 
 ## Full accepted operations
 
