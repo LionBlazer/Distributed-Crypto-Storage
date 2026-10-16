@@ -88,6 +88,9 @@ Current public proofs attest full BFV addition and public-polynomial products.
 Private AEAD/index-to-FHE preparation remains the designated owner's responsibility.
 Adding plaintext owner execution of a missing operator would not implement its
 required peer-side encrypted computation and proof of correct, complete results.
+The [private source-proof research contract](private-lock-source-proof.md) records
+the proposed CSTORE/index/RowId/FHE/control linkage, primary-source ZK evidence and
+unresolved key, privacy, resource and finality gates. It introduces no accepting API.
 
 ## Transaction and lock protocol work
 
