@@ -44,6 +44,39 @@ work-journal/freshness check precedes acceptance. Returned `Selected.version` is
 the exact confirmed head used by the proof binding, even if newer empty blocks
 appear while the query executes.
 
+A crate-private `jobs` helper runs at most two independent source-byte blocks at
+once and joins every admitted worker before returning an error. Preferred proof
+executors rotate only across actual holders of this relation; a query-local
+endpoint queue preserves the peer's independent single heavy-work permit. Each
+worker retains the exact original chunk, mask, nonce and binding through genuine
+proof verification and checked completion. Only zeroizing verified bytes are
+collected in block order; no proof replies or expanded traces are retained for
+completed blocks. All blocks and the final freshness check precede row decoding.
+
+The private `query_rpc::Requests` scheduler gives typed reads one failure context
+across initial/final journal checks, source fetch and all proof blocks. An unreachable exact address/identity is attempted
+once per query, including concurrent failover; a later query retries it. A missing
+or damaged object excludes only that object at that endpoint. `Interrupted`
+returns without fallback or negative caching. Explicit peer `Busy` retains its
+existing bounded retry and is never negative-cached. The writable Session keeps
+its existing failure policy. An endpoint recovering during this query is retried
+on the next query. This changes retry policy, not the version contract: the final
+journal synchronization still needs a real response from a remaining reachable
+peer, resolves the pinned version floor, checks every expected shard head, and
+requires `Freshness::Exact(initial)` plus the same current state root. A cached
+failure cannot stand in for reachability or a freshness proof. This remains the
+confirmed-known-head model under honest reachability, not proof of an unseen
+globally newest state.
+
+The scalar verifier field is the locked Goldilocks transparent `u64` layout
+(8 bytes). One 8,192-by-100 public product matrix is 6.25 MiB; its raw blowup-eight
+LDE is 50 MiB, or 100 MiB for two concurrent checks before clones, FFT/Merkle,
+canonical frames and other SDK allocations. These sizes are not process-peak
+measurements or a RAM guarantee. At most two prepared/proof workspaces coexist;
+completed zeroizing byte chunks total at most the existing 8-MiB selected original
+source budget (at most 1,025 blocks of up to 8,191 bytes). Result-cell, output,
+source and index limits remain unchanged.
+
 The 8,191-byte BFV block size is not a row limit: arbitrary-width cells and tables
 stream over multiple blocks. Current resource budgets are 8 MiB per encoded table
 and per encrypted-index plaintext, the caller's `profile.max_shards` table count,
@@ -229,3 +262,8 @@ The suites exercise all three SQL operations, projection/order/LIMIT, carry,
 all-shard overflow rejection, real copies, process loss, exact-head read-after-write,
 durable peer restart and damaged/missing replicas. Fixtures are public and secrets
 fresh in memory; generated ciphertext and measurements stay outside version control.
+
+The [typed block measurements](../../experiments/typed-select/README.md) record
+matched full 300-row/four-proof observations, exact before/after artifact identity,
+separate owned-process memory scope and reproduction. They support that fixed
+local workload only.

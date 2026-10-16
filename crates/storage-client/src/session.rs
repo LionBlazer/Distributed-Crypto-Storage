@@ -16,7 +16,6 @@ mod execution;
 mod insert;
 mod pending;
 mod select;
-mod shards;
 mod update;
 use pending::{MutationOutcome, PendingMutation, StoredMutation};
 

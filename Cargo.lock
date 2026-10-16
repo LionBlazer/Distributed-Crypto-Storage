@@ -806,6 +806,7 @@ dependencies = [
  "peer-runtime",
  "peer-transport",
  "rcgen",
+ "relational-types",
  "serde_json",
  "storage-client",
  "version-journal",

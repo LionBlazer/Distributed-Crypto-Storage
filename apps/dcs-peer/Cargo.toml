@@ -16,6 +16,7 @@ zeroize = "1"
 bfv-query-core = { path = "../../crates/bfv-query-core" }
 compact-query = { path = "../../crates/compact-query", default-features = false, features = ["bfv-experiment"] }
 compact-store = { path = "../../crates/compact-store" }
+relational-types = { path = "../../crates/relational-types" }
 storage-client = { path = "../../crates/storage-client" }
 version-journal = { path = "../../crates/version-journal" }
 rcgen = "=0.14.8"

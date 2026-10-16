@@ -1,6 +1,6 @@
 //! One statement's bounded encrypted batch preparation, before any Store or authorization.
 use super::*;
-use crate::proof::{ProofJob, ProofRequests};
+use crate::query_rpc::{ProofJob, Requests};
 use peer_runtime::ProofReply;
 use sql_plan::RowValues;
 use zeroize::Zeroizing;
@@ -62,7 +62,7 @@ impl Session {
     pub(super) fn prepare_insert_shards(
         &self,
         incoming: &[RowValues],
-        requests: &ProofRequests,
+        requests: &Requests,
     ) -> Result<Vec<StagedShardInsert>> {
         // Counts come from the freshly authenticated agreed heads. Preflight the
         // whole statement before fetching/proving/storing even its first shard.
@@ -73,7 +73,7 @@ impl Session {
             .map(|shard| (shard.info.id, shard.info.rows))
             .collect();
         let targets = insert_targets(&counts, incoming.len(), self.journal.profile().max_updates)?;
-        shards::run(targets.len(), |target| {
+        crate::jobs::run(targets.len(), |target| {
             let (slot, ordinals) = &targets[target];
             let rows = Zeroizing::new(
                 ordinals
@@ -95,7 +95,7 @@ impl Session {
         &self,
         slot: usize,
         incoming: &[PlainRow],
-        requests: &ProofRequests,
+        requests: &Requests,
     ) -> Result<StagedShardInsert> {
         let shard = &self.data.shards[slot];
         let (remote, table) = self.fetch_online(shard)?;

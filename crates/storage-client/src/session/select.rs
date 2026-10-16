@@ -1,5 +1,5 @@
 use super::*;
-use crate::proof::{ProofJob, ProofRequests};
+use crate::query_rpc::{ProofJob, Requests};
 use sql_plan::{Predicate, Projection};
 
 type ShardRows = Vec<(u64, Vec<u32>)>;
@@ -12,8 +12,8 @@ impl Session {
         projection: Projection,
         limit: Option<usize>,
     ) -> Result<VerifiedResult> {
-        let requests = ProofRequests::default();
-        let completed = shards::run(self.data.shards.len(), |slot| {
+        let requests = Requests::default();
+        let completed = crate::jobs::run(self.data.shards.len(), |slot| {
             self.select_shard(slot, predicate, projection, &requests)
         })?;
         let mut selected: ShardRows = completed.into_iter().flatten().collect();
@@ -35,7 +35,7 @@ impl Session {
         slot: usize,
         predicate: Predicate,
         projection: Projection,
-        requests: &ProofRequests,
+        requests: &Requests,
     ) -> Result<ShardRows> {
         let shard = &self.data.shards[slot];
         let (remote, table) = self.fetch_online(shard)?;

@@ -5,7 +5,7 @@ mod agreement;
 mod index;
 
 use super::{Error, Participant, Result, ShardInfo, install};
-use crate::proof::{ProofJob, ProofRequests};
+use crate::query_rpc::{ProofJob, Requests};
 use bfv_query_core::{Geometry, PublicUpdateEvaluator, QueryContext};
 use compact_store::{EncryptedSnapshot, Layout, Limits};
 use peer_runtime::{Bundle, JobVerifier, Operation, Request, Response};
@@ -284,34 +284,42 @@ impl RelationalSession {
     fn fetch(
         &self,
         relation: &Relation,
-    ) -> Result<(Participant, EncryptedSnapshot, EncryptedSnapshot)> {
+        requests: &Requests,
+    ) -> Result<(EncryptedSnapshot, EncryptedSnapshot)> {
         for peer in &self.participants {
             if !relation.shard.holders.contains(&peer.id) {
                 continue;
             }
-            if let Ok(Response::Bundle(bundle)) = peer.remote.call(Request::Fetch {
-                object: relation.shard.object,
+            let bundle = match requests.call(&peer.remote, Some(relation.shard.object), || {
+                Request::Fetch {
+                    object: relation.shard.object,
+                }
             }) {
-                if bundle.id() != relation.shard.object
-                    || bundle.data_head != relation.shard.data_head.encode()
-                    || bundle.index_head != relation.shard.index_head.encode()
-                {
-                    continue;
+                Ok(Response::Bundle(bundle)) => bundle,
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {
+                    return Err(error.into());
                 }
-                if let (Ok(data), Ok(index)) = (
-                    EncryptedSnapshot::decode_for_head(
-                        &bundle.data,
-                        &relation.shard.data_head,
-                        limits(),
-                    ),
-                    EncryptedSnapshot::decode_for_head(
-                        &bundle.index,
-                        &relation.shard.index_head,
-                        limits(),
-                    ),
-                ) {
-                    return Ok((peer.clone(), data, index));
-                }
+                _ => continue,
+            };
+            if bundle.id() != relation.shard.object
+                || bundle.data_head != relation.shard.data_head.encode()
+                || bundle.index_head != relation.shard.index_head.encode()
+            {
+                continue;
+            }
+            if let (Ok(data), Ok(index)) = (
+                EncryptedSnapshot::decode_for_head(
+                    &bundle.data,
+                    &relation.shard.data_head,
+                    limits(),
+                ),
+                EncryptedSnapshot::decode_for_head(
+                    &bundle.index,
+                    &relation.shard.index_head,
+                    limits(),
+                ),
+            ) {
+                return Ok((data, index));
             }
         }
         Err(Error::UnavailableShard(relation.shard.id))
@@ -364,9 +372,10 @@ impl RelationalSession {
     pub fn select(&mut self, sql: &str) -> Result<Selected> {
         let started = Instant::now();
         let plan = relational_types::plan_select_schemas(&self.schemas(), sql).map_err(invalid)?;
-        let version = self.synchronize()?;
+        let requests = Requests::typed_query();
+        let version = self.synchronize(&requests)?;
         let relation = &self.relations[plan.table];
-        let (remote, data, encrypted_index) = self.fetch(relation)?;
+        let (data, encrypted_index) = self.fetch(relation, &requests)?;
         let index: PrivateIndex =
             serde_json::from_slice(&self.decrypt_image(&encrypted_index)?).map_err(crypto)?;
         index.validate(
@@ -436,19 +445,20 @@ impl RelationalSession {
             projection_mask.push(false);
         }
         let count = source.len().div_ceil(bfv_query_core::BYTE_SELECT_CAPACITY);
-        let mut result = Zeroizing::new(Vec::with_capacity(source.len()));
         let nonce: [u8; 16] = random()?;
-        let requests = ProofRequests::default();
         let holders: Vec<_> = self
             .participants
             .iter()
             .filter(|peer| relation.shard.holders.contains(&peer.id))
             .cloned()
             .collect();
-        for (block, original) in source
-            .chunks(bfv_query_core::BYTE_SELECT_CAPACITY)
-            .enumerate()
-        {
+        if holders.is_empty() {
+            return Err(Error::UnavailableShard(relation.shard.id));
+        }
+        let completed = crate::jobs::run(count, |block| {
+            let start = block * bfv_query_core::BYTE_SELECT_CAPACITY;
+            let end = (start + bfv_query_core::BYTE_SELECT_CAPACITY).min(source.len());
+            let original = &source[start..end];
             let binding = version_journal::hash(&json(&(
                 "typed-select-v1",
                 &relation.schema,
@@ -468,7 +478,6 @@ impl RelationalSession {
                 relation.shard.data_head.encode(),
                 relation.shard.index_head.encode(),
             );
-            let start = block * bfv_query_core::BYTE_SELECT_CAPACITY;
             let prepared = self
                 .fhe
                 .prepare_byte_select(
@@ -479,7 +488,7 @@ impl RelationalSession {
                 )
                 .map_err(crypto)?;
             let (reply, checked) = requests.request(
-                &remote.remote,
+                &holders[block % holders.len()].remote,
                 &holders,
                 ProofJob {
                     object: relation.shard.object,
@@ -497,7 +506,7 @@ impl RelationalSession {
                     .map_err(crypto)
                 },
             )?;
-            result.extend_from_slice(
+            Ok(Zeroizing::new(
                 compact_query::byte_select::complete_checked(
                     &self.fhe,
                     &self.evaluator,
@@ -506,10 +515,26 @@ impl RelationalSession {
                     checked,
                 )
                 .map_err(crypto)?
-                .bytes(),
-            );
+                .into_bytes(),
+            ))
+        })?;
+        let mut result = Zeroizing::new(Vec::with_capacity(source.len()));
+        for bytes in completed {
+            result.extend_from_slice(&bytes);
         }
         result.truncate(meaningful);
+        let columns = plan
+            .projection
+            .iter()
+            .map(|column| relation.schema.columns[*column].name.clone())
+            .collect();
+        let current = self.synchronize(&requests)?;
+        self.journal
+            .resolve(Freshness::Exact(version))
+            .map_err(crypto)?;
+        if current.state_root != version.state_root {
+            return Err(crypto("Catalog changed during SELECT; result rejected"));
+        }
         let rows = output_cells
             .into_iter()
             .map(|row| {
@@ -518,18 +543,6 @@ impl RelationalSession {
                     .collect::<Result<Row>>()
             })
             .collect::<Result<Vec<Row>>>()?;
-        let columns = plan
-            .projection
-            .iter()
-            .map(|column| relation.schema.columns[*column].name.clone())
-            .collect();
-        let current = self.synchronize()?;
-        self.journal
-            .resolve(Freshness::Exact(version))
-            .map_err(crypto)?;
-        if current.state_root != version.state_root {
-            return Err(crypto("Catalog changed during SELECT; result rejected"));
-        }
         Ok(Selected {
             columns,
             rows,

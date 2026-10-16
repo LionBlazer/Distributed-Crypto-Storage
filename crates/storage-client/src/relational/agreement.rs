@@ -76,10 +76,10 @@ impl RelationalSession {
                 ));
             }
         }
-        self.floor = self.synchronize()?;
+        self.floor = self.synchronize(&Requests::default())?;
         Ok(())
     }
-    pub(super) fn synchronize(&mut self) -> Result<HeadRef> {
+    pub(super) fn synchronize(&mut self, requests: &Requests) -> Result<HeadRef> {
         let mut reached = false;
         for peer in &self.participants {
             for _ in 0..=self.journal.profile().max_headers {
@@ -90,9 +90,9 @@ impl RelationalSession {
                         .into_iter()
                         .map(|(h, _)| h.id()),
                 );
-                match peer.remote.call(Request::JournalBlocks {
+                match requests.call(&peer.remote, None, || Request::JournalBlocks {
                     network: self.journal.genesis_id(),
-                    known,
+                    known: known.clone(),
                 }) {
                     Ok(Response::JournalBlocks(blocks)) if blocks.is_empty() => {
                         reached = true;
@@ -107,6 +107,9 @@ impl RelationalSession {
                         self.journal
                             .import_block(header, &block.body, now(), &self.verifier)
                             .map_err(crypto)?;
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {
+                        return Err(error.into());
                     }
                     _ => break,
                 }
