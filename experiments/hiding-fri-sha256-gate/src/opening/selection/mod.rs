@@ -1,10 +1,10 @@
 //! Private nonaccepting composition: authenticated canonical source FIRST, then
 //! complete bounded original-row selection. No SQL/FHE/key-custody acceptance API.
 pub(crate) mod air;
-mod statement;
+pub(super) mod statement;
 #[cfg(test)]
 mod tests;
-mod trace;
+pub(super) mod trace;
 
 use crate::backend::{Backend, Config, Error, Val};
 use crate::opening::{

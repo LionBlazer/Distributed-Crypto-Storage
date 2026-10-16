@@ -166,7 +166,9 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for ChaChaAir {
             | Kind::PairOpening
             | Kind::CanonicalIndexOpening
             | Kind::SelectionOpening
-            | Kind::PackedCanonicalIndexOpening => {
+            | Kind::PackedCanonicalIndexOpening
+            | Kind::StateCertificate
+            | Kind::VersionSelection => {
                 unreachable!("separate typed SHA AIR")
             }
         }

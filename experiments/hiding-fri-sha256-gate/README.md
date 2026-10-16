@@ -235,3 +235,14 @@ specifies arithmetic/layout; [POLY1305-VALIDATION.md](POLY1305-VALIDATION.md) re
 the genuine proofs, 33 tests, exact provenance and sparse external observations.
 These results establish no private-source, production security, latency or RAM
 guarantee. Historical validation reports and SOURCE-RELATION.md stay unchanged.
+
+## Version-bound certificate validation
+
+The [state-certificate module](src/opening/state/README.md) proves one fixed
+version and supports fresh private Selection queries over its genuinely verified
+certificate. Release build, strict Clippy, thirteen actual numerical reports,
+both CLI gates and all 97 serial tests passed. The
+[validation record](VERSION-STATE-VALIDATION.md) separates cold admission and warm
+query timings, owned cache accounting and sampled process observations. Its
+distinct profiles preserve earlier gates; production acceptance, freshness,
+full SQL/FHE linkage, private locks and a complete 500 ms operation remain open.

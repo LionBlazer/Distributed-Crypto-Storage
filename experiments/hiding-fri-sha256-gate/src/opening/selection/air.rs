@@ -1,6 +1,6 @@
 //! One source-opening sponge plus complete private membership and stable compaction.
 use super::{
-    PLAN_DOMAIN, SELECT_DOMAIN, VERSION,
+    VERSION,
     statement::{self, Statement},
 };
 use crate::backend::{TRACE_HEIGHT, Val};
@@ -84,7 +84,11 @@ impl SelectionAir {
                 _ => E::ZERO,
             },
             Stream::Plan => match field {
-                0..=3 => E::from(source::words(&PLAN_DOMAIN).nth(field).unwrap()),
+                0..=3 => E::from(
+                    source::words(&self.statement.plan_domain())
+                        .nth(field)
+                        .unwrap(),
+                ),
                 4 => E::from_u32(VERSION),
                 5..=84 => E::from(self.context[field - 5]),
                 85..=92 => row[TABLE + field - 85].into(),
@@ -99,7 +103,11 @@ impl SelectionAir {
                 _ => E::ZERO,
             },
             Stream::Selected => match field {
-                0..=3 => E::from(source::words(&SELECT_DOMAIN).nth(field).unwrap()),
+                0..=3 => E::from(
+                    source::words(&self.statement.selected_domain())
+                        .nth(field)
+                        .unwrap(),
+                ),
                 4 => E::from_u32(VERSION),
                 5..=12 => E::from(self.values[field - 5]),
                 13..=20 => E::from(self.values[8 + field - 13]),

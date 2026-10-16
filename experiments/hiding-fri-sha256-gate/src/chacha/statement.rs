@@ -142,7 +142,9 @@ pub(crate) fn reference_output(statement: &Statement) -> [u32; WORDS] {
         | Kind::PairOpening
         | Kind::CanonicalIndexOpening
         | Kind::SelectionOpening
-        | Kind::PackedCanonicalIndexOpening => {
+        | Kind::PackedCanonicalIndexOpening
+        | Kind::StateCertificate
+        | Kind::VersionSelection => {
             unreachable!("SHA has a separate typed fixture")
         }
     }

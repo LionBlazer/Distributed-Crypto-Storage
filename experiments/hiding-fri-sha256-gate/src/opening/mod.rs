@@ -14,6 +14,7 @@ mod packed_tests;
 mod poseidon;
 pub(crate) mod schedule;
 pub(crate) mod selection;
+pub(crate) mod state;
 pub(crate) mod statement;
 #[cfg(test)]
 mod tests;
@@ -33,6 +34,7 @@ pub(super) enum Relation {
     Bytes,
     CanonicalIndex,
     PackedCanonicalIndex,
+    StateCertificate,
 }
 impl Relation {
     fn kind(self) -> crate::primitive::Kind {
@@ -40,10 +42,11 @@ impl Relation {
             Self::Bytes => crate::primitive::Kind::PairOpening,
             Self::CanonicalIndex => crate::primitive::Kind::CanonicalIndexOpening,
             Self::PackedCanonicalIndex => crate::primitive::Kind::PackedCanonicalIndexOpening,
+            Self::StateCertificate => crate::primitive::Kind::StateCertificate,
         }
     }
     fn packed(self) -> bool {
-        matches!(self, Self::PackedCanonicalIndex)
+        matches!(self, Self::PackedCanonicalIndex | Self::StateCertificate)
     }
     fn is_canonical(self) -> bool {
         !matches!(self, Self::Bytes)
@@ -52,7 +55,7 @@ impl Relation {
         match self {
             Self::Bytes => air::WIDTH,
             Self::CanonicalIndex => canonical::WIDTH,
-            Self::PackedCanonicalIndex => layout::PACKED_WIDTH,
+            Self::PackedCanonicalIndex | Self::StateCertificate => layout::PACKED_WIDTH,
         }
     }
 }
@@ -269,6 +272,7 @@ fn gate_relation(mode: &str, relation: Relation) -> Result<(), crate::backend::E
         Relation::Bytes => fixture::fixture()?,
         Relation::CanonicalIndex => fixture::canonical_fixture()?,
         Relation::PackedCanonicalIndex => fixture::packed_canonical_fixture()?,
+        Relation::StateCertificate => return Err(Error::Shape),
     };
     crate::security(
         &statement,
@@ -276,6 +280,7 @@ fn gate_relation(mode: &str, relation: Relation) -> Result<(), crate::backend::E
             Relation::Bytes => "fixed-four-row-pair",
             Relation::CanonicalIndex => "canonical-four-row-index",
             Relation::PackedCanonicalIndex => "packed-canonical-four-row-index",
+            Relation::StateCertificate => return Err(Error::Shape),
         },
     )?;
     println!(
@@ -294,6 +299,7 @@ fn gate_relation(mode: &str, relation: Relation) -> Result<(), crate::backend::E
             Relation::PackedCanonicalIndex => {
                 "verified_experimental_packed_canonical_index_opening"
             }
+            Relation::StateCertificate => return Err(Error::Shape),
         };
         println!(
             "{{\"stage\":\"{}\",\"proving_ms\":{},\"verification_ms\":{}}}",

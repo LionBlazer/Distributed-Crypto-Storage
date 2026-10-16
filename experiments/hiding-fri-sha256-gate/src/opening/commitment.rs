@@ -18,7 +18,12 @@ pub(super) fn key_fields(head: &[u8; 112], key: [u8; 32], salt: [Val; 4]) -> Vec
         .collect()
 }
 pub(super) fn prefix(statement: &Statement, salt: [Val; 4]) -> Vec<Val> {
-    let out: Vec<_> = words(&OPEN_DOMAIN)
+    let domain = if statement.relation == super::Relation::StateCertificate {
+        super::state::STATE_DOMAIN
+    } else {
+        OPEN_DOMAIN
+    };
+    let out: Vec<_> = words(&domain)
         .chain([
             Val::from_u32(VERSION),
             Val::from_u8(12),

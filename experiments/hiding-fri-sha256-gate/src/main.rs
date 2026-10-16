@@ -22,7 +22,7 @@ fn run() -> Result<(), Error> {
     if !(2..=3).contains(&arguments.len()) || !matches!(arguments[0].as_str(), "security" | "prove")
     {
         eprintln!(
-            "usage: hiding-fri-source-primitives <security|prove> <sha256|hchacha20|chacha20|poly1305-raw|poly1305-padded|pair-opening|canonical-index-opening|selection-opening|packed-canonical-index-opening> [empty: Poly1305 security only]"
+            "usage: hiding-fri-source-primitives <security|prove> <sha256|hchacha20|chacha20|poly1305-raw|poly1305-padded|pair-opening|canonical-index-opening|selection-opening|packed-canonical-index-opening|state-certificate|version-selection> [empty: Poly1305 security only]"
         );
         return Err(Error::Shape);
     }
@@ -39,6 +39,8 @@ fn run() -> Result<(), Error> {
     match arguments[1].as_str() {
         "pair-opening" => opening::gate(&arguments[0]),
         "canonical-index-opening" => opening::canonical_gate(&arguments[0]),
+        "state-certificate" => opening::state::gate(&arguments[0], false),
+        "version-selection" => opening::state::gate(&arguments[0], true),
         "selection-opening" => opening::selection::gate(&arguments[0]),
         "packed-canonical-index-opening" => opening::packed_canonical_gate(&arguments[0]),
         "sha256" => gate(&statement::Statement::fixture(), &arguments[0], case),

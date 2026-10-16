@@ -5,21 +5,21 @@ use crate::opening::{Relation, commitment, statement as source};
 use crate::primitive::{Kind, PrimitiveAir, PublicStatement};
 use p3_field::PrimeCharacteristicRing;
 
-pub(super) const OPEN: usize = 76;
-pub(super) const PLAN: usize = 80;
-pub(super) const SELECTED: usize = 84;
-pub(super) const PUBLIC_VALUES: usize = 88;
+pub(in crate::opening) const OPEN: usize = 76;
+pub(in crate::opening) const PLAN: usize = 80;
+pub(in crate::opening) const SELECTED: usize = 84;
+pub(in crate::opening) const PUBLIC_VALUES: usize = 88;
 
 /// This private research descriptor is the client compiler's final TRUE set,
 /// never SQL text, a peer predicate, a typed/nullable plan or a projected answer.
-pub(super) struct Plan {
-    pub(super) table: [u8; 32],
-    pub(super) mask: [u8; 32],
-    pub(super) projection: u8,
-    pub(super) limit: u8,
+pub(in crate::opening) struct Plan {
+    pub(in crate::opening) table: [u8; 32],
+    pub(in crate::opening) mask: [u8; 32],
+    pub(in crate::opening) projection: u8,
+    pub(in crate::opening) limit: u8,
 }
 impl Plan {
-    pub(super) fn new(
+    pub(in crate::opening) fn new(
         table: [u8; 32],
         mask: [u8; 32],
         projection: u8,
@@ -42,13 +42,14 @@ impl Plan {
 /// not to the prover. Neither constructor nor selection-only verification confers
 /// source authority: verify_composite must check the canonical source proof first.
 #[derive(Clone)]
-pub(super) struct Statement {
-    pub(super) source: source::Statement,
-    pub(super) plan: [Val; 4],
-    pub(super) selected: [Val; 4],
+pub(in crate::opening) struct Statement {
+    pub(in crate::opening) source: source::Statement,
+    pub(in crate::opening) plan: [Val; 4],
+    pub(in crate::opening) selected: [Val; 4],
+    query_request: Option<[u8; 32]>,
 }
 impl Statement {
-    pub(super) fn checked(
+    pub(in crate::opening) fn checked(
         source: &source::Statement,
         expected_plan: [u8; 32],
         selected: [u8; 32],
@@ -58,21 +59,60 @@ impl Statement {
         }
         Ok(Self {
             source: source.clone(),
+            query_request: None,
             plan: source::decode_digest(expected_plan)?,
             selected: source::decode_digest(selected)?,
         })
     }
-    pub(super) fn require_source(&self, expected: &source::Statement) -> Result<(), Error> {
-        if expected.relation != Relation::CanonicalIndex
+    pub(in crate::opening) fn for_state(
+        state: &crate::opening::state::StateStatement,
+        request: [u8; 32],
+        expected_plan: [u8; 32],
+        selected: [u8; 32],
+    ) -> Result<Self, Error> {
+        Ok(Self {
+            source: state.source().clone(),
+            query_request: Some(request),
+            plan: source::decode_digest(expected_plan)?,
+            selected: source::decode_digest(selected)?,
+        })
+    }
+    pub(super) fn request(&self) -> [u8; 32] {
+        self.query_request.unwrap_or(self.source.request)
+    }
+    pub(super) fn plan_domain(&self) -> [u8; 16] {
+        if self.query_request.is_some() {
+            crate::opening::state::PLAN_DOMAIN
+        } else {
+            PLAN_DOMAIN
+        }
+    }
+    pub(super) fn selected_domain(&self) -> [u8; 16] {
+        if self.query_request.is_some() {
+            crate::opening::state::SELECT_DOMAIN
+        } else {
+            SELECT_DOMAIN
+        }
+    }
+    pub(in crate::opening) fn require_source(
+        &self,
+        expected: &source::Statement,
+    ) -> Result<(), Error> {
+        if expected.relation
+            != (if self.query_request.is_some() {
+                Relation::StateCertificate
+            } else {
+                Relation::CanonicalIndex
+            })
             || self.source.public_values() != expected.public_values()
         {
             return Err(Error::Shape);
         }
         Ok(())
     }
-    pub(super) fn context(&self) -> Vec<Val> {
-        source::words(&profile_digest(Kind::SelectionOpening))
-            .chain(source::words(&self.source.request))
+    pub(in crate::opening) fn context(&self) -> Vec<Val> {
+        source::words(&profile_digest(self.kind()))
+            .chain(source::words(&self.request()))
             .chain(self.source.heads.iter().flat_map(|h| source::words(h)))
             .chain(self.source.key_commitment)
             .chain(self.source.open_commitment)
@@ -81,7 +121,11 @@ impl Statement {
 }
 impl PublicStatement for Statement {
     fn kind(&self) -> Kind {
-        Kind::SelectionOpening
+        if self.query_request.is_some() {
+            Kind::VersionSelection
+        } else {
+            Kind::SelectionOpening
+        }
     }
     fn air(&self) -> PrimitiveAir {
         PrimitiveAir::Selection(Box::new(air::SelectionAir::new(self)))
@@ -95,8 +139,8 @@ impl PublicStatement for Statement {
     }
 }
 
-pub(super) fn plan_fields(statement: &Statement, witness: &Witness) -> Vec<Val> {
-    source::words(&PLAN_DOMAIN)
+pub(in crate::opening) fn plan_fields(statement: &Statement, witness: &Witness) -> Vec<Val> {
+    source::words(&statement.plan_domain())
         .chain([Val::from_u32(VERSION)])
         .chain(statement.context())
         .chain(source::words(&witness.plan.table))
@@ -109,11 +153,11 @@ pub(super) fn plan_fields(statement: &Statement, witness: &Witness) -> Vec<Val> 
         .chain([Val::ZERO; 5])
         .collect()
 }
-pub(super) fn selected_fields(statement: &Statement, witness: &Witness) -> Vec<Val> {
-    let mut fields: Vec<_> = source::words(&SELECT_DOMAIN)
+pub(in crate::opening) fn selected_fields(statement: &Statement, witness: &Witness) -> Vec<Val> {
+    let mut fields: Vec<_> = source::words(&statement.selected_domain())
         .chain([Val::from_u32(VERSION)])
-        .chain(source::words(&profile_digest(Kind::SelectionOpening)))
-        .chain(source::words(&statement.source.request))
+        .chain(source::words(&profile_digest(statement.kind())))
+        .chain(source::words(&statement.request()))
         .chain(statement.source.open_commitment)
         .chain(statement.plan)
         .chain([Val::from_u8(4)])
@@ -149,7 +193,7 @@ pub(super) fn selected_fields(statement: &Statement, witness: &Witness) -> Vec<V
     fields
 }
 
-pub(super) fn commitments(
+pub(in crate::opening) fn commitments(
     source: &source::Statement,
     witness: &Witness,
 ) -> Result<Statement, Error> {

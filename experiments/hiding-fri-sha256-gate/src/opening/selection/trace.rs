@@ -8,10 +8,10 @@ use crate::opening::{poseidon, statement::words};
 use p3_field::{Field, PrimeCharacteristicRing};
 use p3_matrix::dense::RowMajorMatrix;
 
-pub(super) struct Witness {
-    pub(super) plain: [u8; 2348],
-    pub(super) plan: Plan,
-    pub(super) salts: [[Val; 4]; 3],
+pub(in crate::opening) struct Witness {
+    pub(in crate::opening) plain: [u8; 2348],
+    pub(in crate::opening) plan: Plan,
+    pub(in crate::opening) salts: [[Val; 4]; 3],
 }
 fn bits(out: &mut [Val], value: u64) {
     for (bit, cell) in out.iter_mut().enumerate() {
@@ -26,10 +26,13 @@ fn inverse(value: Val) -> Val {
     }
 }
 impl Witness {
-    pub(super) fn new(plain: [u8; 2348], plan: Plan, salts: [[Val; 4]; 3]) -> Self {
+    pub(in crate::opening) fn new(plain: [u8; 2348], plan: Plan, salts: [[Val; 4]; 3]) -> Self {
         Self { plain, plan, salts }
     }
-    pub(super) fn trace(&self, statement: &Statement) -> Result<RowMajorMatrix<Val>, Error> {
+    pub(in crate::opening) fn trace(
+        &self,
+        statement: &Statement,
+    ) -> Result<RowMajorMatrix<Val>, Error> {
         let air = SelectionAir::new(statement);
         let mut template = Val::zero_vec(WIDTH);
         for (i, byte) in self.plan.mask.iter().enumerate() {

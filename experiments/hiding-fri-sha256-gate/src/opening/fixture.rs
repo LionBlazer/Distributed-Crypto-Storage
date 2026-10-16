@@ -111,15 +111,20 @@ pub(super) fn from_suffix(
         Relation::Bytes => {
             Statement::checked(images, expected, request, encode_digest(ckey), [0; 32])?
         }
-        Relation::CanonicalIndex | Relation::PackedCanonicalIndex => Statement::checked_relation(
-            relation,
-            images,
-            expected,
-            request,
-            encode_digest(ckey),
-            [0; 32],
-        )?,
+        Relation::CanonicalIndex | Relation::PackedCanonicalIndex | Relation::StateCertificate => {
+            Statement::checked_relation(
+                relation,
+                images,
+                expected,
+                request,
+                encode_digest(ckey),
+                [0; 32],
+            )?
+        }
     };
+    if relation == Relation::StateCertificate {
+        statement.request = super::state::version_tag(&statement);
+    }
     let mut plain = data.to_vec();
     plain.extend(index);
     statement.open_commitment =

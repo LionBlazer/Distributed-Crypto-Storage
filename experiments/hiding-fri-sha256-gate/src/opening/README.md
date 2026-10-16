@@ -276,3 +276,12 @@ weaken or replace the old cases. Reproduction uses
 `prove packed-canonical-index-opening` as described in the report; proofs remain private
 in-process test artifacts. This candidate adds no key authority, identity history,
 BFV formation, private query completeness, freshness, finality or live consumer.
+
+## Version-bound certificate
+
+The [separate state module](state/README.md) reuses packed source and Selection
+evaluators under new domains/profiles. Its single-entry cache requires actual
+source verification and exact expected state. Both new numerical reports passed
+with bounds 128/128; genuine cold/warm CLI proofs and all 97 tests passed. The
+[validation record](../../VERSION-STATE-VALIDATION.md) describes exact timing,
+capacity and sampled-memory scopes. Agreement and freshness remain external.
