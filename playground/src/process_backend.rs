@@ -1568,7 +1568,7 @@ mod tests {
             "no plaintext imported answer cache"
         );
 
-        let answer=backend.execute_typed(1,"SELECT CustomerID, CompanyName FROM Customers WHERE Country = 'Germany' ORDER BY CustomerID;").unwrap();
+        let answer=backend.execute_typed(1,"SELECT \"CustomerID\", \"CompanyName\" FROM \"Customers\" WHERE \"Country\" = 'Germany' ORDER BY \"CustomerID\";").unwrap();
         eprintln!(
             "German customers: {:?}, {} proof blocks",
             answer.elapsed, answer.proof_blocks
@@ -1581,7 +1581,7 @@ mod tests {
         assert_eq!(answer.columns, ["CustomerID", "CompanyName"]);
 
         let answer = backend
-            .execute_typed(1, "SELECT * FROM [Order Details];")
+            .execute_typed(1, "SELECT * FROM \"Order Details\";")
             .unwrap();
         eprintln!(
             "All order details: {:?}, {} rows, {} proof blocks",
@@ -1611,7 +1611,7 @@ mod tests {
                 >= 3308
         );
 
-        let answer=backend.execute_typed(1,"SELECT ProductID, ProductName, UnitPrice FROM Products WHERE UnitPrice >= 50 ORDER BY UnitPrice DESC;").unwrap();
+        let answer=backend.execute_typed(1,"SELECT \"ProductID\", \"ProductName\", \"UnitPrice\" FROM \"Products\" WHERE \"UnitPrice\" >= 50 ORDER BY \"UnitPrice\" DESC;").unwrap();
         assert!(!answer.rows.is_empty());
         assert_eq!(
             answer.rows[0][1],

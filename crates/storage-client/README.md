@@ -41,6 +41,16 @@ selection uses binary bounds over sorted postings. This is the existing explicit
 owner-online, visible-access index model, not a claim of a secret predicate circuit.
 The session retains no imported plaintext row-answer cache.
 
+Catalog table/column names are exact; live SELECT follows PostgreSQL 18 UTF-8
+unquoted folding and quoted exact binding in the single `public` namespace.
+Preserved CamelCase source names therefore require double quotes in queries.
+Source SQL Server CHECK/FK binding is handled before canonical catalog validation;
+checks carry explicit source-language metadata. Overlong live identifiers reject
+before key generation, setup installation or object writes. No name fallback or
+catalog renaming is performed. The typed private index/domain is v3; old or unknown
+formats reject without migration. Neither the fixed private index v3, row encoding,
+FHE profile nor proof ABI changes.
+
 The client authenticates source pages and encrypts **every original cell of each
 selected row** before the peer applies the column mask homomorphically. Unselected
 columns are zeroed in BFV; the client never prepares a projected plaintext answer
@@ -273,9 +283,10 @@ same exact endpoint when multiple workers fail over onto one surviving process;
 verification runs after releasing the permit. This queue neither creates database
 locks nor changes the peer's independent heavy-operation/resource admission limit.
 
-Typed complete indices use version 2 of their encrypted schema and comparator
-format. All predicate searches and result ordering compare text using its declared
-column type: variable text preserves trailing spaces; fixed CHAR/NCHAR ignores
+Typed complete indices use version 3 of their encrypted schema/catalog format.
+Version 2 is rejected because CHECK interpretation now has an explicit per-check
+language; the row codec and comparator ordering are unchanged. All predicate
+searches and result ordering compare text using its declared column type: variable text preserves trailing spaces; fixed CHAR/NCHAR ignores
 trailing U+0020. NULL placement remains independent of sort direction. Original
 encoded field bytes are projected unchanged by the genuine proof path. Older
 index formats reject; there is no migration or implicit locale collation.

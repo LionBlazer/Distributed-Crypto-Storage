@@ -52,6 +52,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
     }
     plan.install_kernels()?;
+    plan.install_notices()?;
     plan.check_applications()?;
     println!("playground={}", plan.playground.display());
     println!("peer={}", plan.peer.display());

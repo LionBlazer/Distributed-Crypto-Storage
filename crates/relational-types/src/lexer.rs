@@ -4,6 +4,7 @@ use crate::Error;
 pub(crate) enum TokenKind {
     Word(String),
     Quoted(String),
+    Bracketed(String),
     String(String),
     Number(String),
     Binary(Vec<u8>),
@@ -16,7 +17,7 @@ impl TokenKind {
     }
     pub fn identifier(&self) -> Option<&str> {
         match self {
-            Self::Word(s) | Self::Quoted(s) => Some(s),
+            Self::Word(s) | Self::Quoted(s) | Self::Bracketed(s) => Some(s),
             _ => None,
         }
     }
@@ -142,7 +143,11 @@ pub(crate) fn lex(sql: &str) -> Result<Vec<Token>, Error> {
             if !done {
                 return Err(Error::new("unterminated quoted SQL identifier"));
             }
-            TokenKind::Quoted(text)
+            if end == b']' {
+                TokenKind::Bracketed(text)
+            } else {
+                TokenKind::Quoted(text)
+            }
         } else if bytes[i..].starts_with(b"0x") || bytes[i..].starts_with(b"0X") {
             i += 2;
             let hex_start = i;
@@ -386,10 +391,9 @@ pub(crate) fn token_text(tokens: &[Token]) -> String {
     tokens
         .iter()
         .map(|t| match &t.kind {
-            TokenKind::Word(s)
-            | TokenKind::Quoted(s)
-            | TokenKind::Number(s)
-            | TokenKind::Operator(s) => s.clone(),
+            TokenKind::Word(s) | TokenKind::Number(s) | TokenKind::Operator(s) => s.clone(),
+            TokenKind::Quoted(s) => format!("\"{}\"", s.replace('"', "\"\"")),
+            TokenKind::Bracketed(s) => format!("[{}]", s.replace(']', "]]")),
             TokenKind::String(s) => format!("'{}'", s.replace('\'', "''")),
             TokenKind::Binary(bytes) => format!(
                 "0x{}",

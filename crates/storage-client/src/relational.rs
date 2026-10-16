@@ -43,7 +43,7 @@ fn json(value: &impl Serialize) -> Result<Vec<u8>> {
 fn schema_id(schema: &TableSchema, index: bool) -> Result<[u8; 16]> {
     let mut bytes = json(schema)?;
     bytes.extend_from_slice(if index {
-        b"typed-index-v2"
+        b"typed-index-v3"
     } else {
         b"typed-data-v1"
     });
@@ -126,6 +126,7 @@ impl RelationalSession {
     ) -> Result<Self> {
         profile.validate().map_err(crypto)?;
         relational_types::validate_database(&database).map_err(invalid)?;
+        relational_types::validate_postgresql_catalog(&database.schemas()).map_err(invalid)?;
         if database.tables.is_empty()
             || database.tables.len() > profile.max_shards as usize
             || participants.is_empty()
