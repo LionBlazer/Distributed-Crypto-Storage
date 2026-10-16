@@ -228,6 +228,12 @@ the trusted canonical job and verifies each exact output/proof once. Its bounded
 byte-exact cache lets the later local journal import reuse that verification;
 other peers still verify independently. Compact completion independently rechecks
 the authenticated selection's current heads and exact checked input/output binding.
+An interrupted proof RPC ends proof preparation for a new mutation immediately,
+without trying an uncancelled holder. This boundary applies independently of the
+read scheduler's optional memory of unavailable executors. All workers still join
+and no newly staged mutation is stored or authorized after that preparation error.
+This does not redefine cancellation in other mutation phases or discard an already
+authorized pending mutation; its exact publication/recovery contract remains below.
 Authorization, complete manifest coverage, old/new head rules, work and freshness
 remain outside the arithmetic cache and are always checked. Actual holders
 acknowledge storage.
