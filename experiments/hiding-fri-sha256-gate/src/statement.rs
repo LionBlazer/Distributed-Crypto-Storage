@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 
 use crate::air::CompressionAir;
 use crate::backend::{Val, profile_digest};
-use crate::primitive::{Kind, PrimitiveAir, PrimitiveStatement};
+use crate::primitive::{Kind, PrimitiveAir, PrimitiveStatement, PublicStatement};
 use p3_matrix::dense::RowMajorMatrix;
 
 pub(crate) const COMPRESSION_WORDS: usize = 32;
@@ -75,16 +75,14 @@ impl Statement {
     }
 }
 
-impl PrimitiveStatement for Statement {
+impl PublicStatement for Statement {
     fn kind(&self) -> Kind {
         Kind::Sha256
     }
     fn air(&self) -> PrimitiveAir {
         PrimitiveAir::Sha256(CompressionAir::new(self))
     }
-    fn trace(&self) -> RowMajorMatrix<Val> {
-        CompressionAir::trace(self)
-    }
+
     fn public_values(&self) -> Vec<Val> {
         Statement::public_values(self)
     }
@@ -98,4 +96,10 @@ pub(crate) fn reference_output(block: [u32; 16], mut state: [u32; 8]) -> [u32; 8
     }
     sha2::compress256(&mut state, &[bytes.into()]);
     state
+}
+
+impl PrimitiveStatement for Statement {
+    fn trace(&self) -> RowMajorMatrix<Val> {
+        CompressionAir::trace(self)
+    }
 }

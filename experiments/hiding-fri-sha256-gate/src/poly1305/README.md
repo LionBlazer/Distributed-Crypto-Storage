@@ -1,6 +1,13 @@
 # Public Poly1305 small-fixture AIR
 
-Status: release build, strict Clippy, seven security-only analyses, five observed
+Current shared arithmetic/witness helpers are validated with the fixed
+[whole-pair candidate](../opening/README.md): release build, strict Clippy, eight
+fresh analyses and all 47 serial tests pass, including this module's 14 cases.
+The [current validation record](../../PAIR-OPENING-VALIDATION.md) preserves the
+initial selector regression and every failed attempt. The older record below
+retains its separate historical meaning.
+
+Historical status: release build, strict Clippy, seven security-only analyses, five observed
 public-fixture proof/verify processes and all 33 serial tests passed for the
 recorded revision. Fourteen tests exercise this module. Exact provenance and
 observation limits are in [POLY1305-VALIDATION.md](../../POLY1305-VALIDATION.md).
@@ -16,12 +23,13 @@ belong to their recorded source, not this extension.
 | File | Owned responsibility |
 | --- | --- |
 | `statement.rs` | Checked raw/padded layout, fixed public inputs, statement identity, pinned independent oracle |
+| `arithmetic.rs` | Shared canonical state, bounded cyclic product/tag constraints and canonical witness writer |
 | `air.rs` | Boolean radix constraints, bounded witness generator, exact public schedule, canonical state and final tag |
 | `tests.rs` | Public oracle examples, genuine proofs and rebuilt malicious-proof rejection tests |
 | `mod.rs` | Explicit experiment policy, radix and standard clamp constants |
 
-The only direct project consumers are sibling private `primitive.rs` dispatch and
-`backend.rs` profile calculation. This module reuses that one backend's OS-seeded
+Direct consumers are sibling private `primitive.rs` dispatch, `backend.rs` profile
+calculation and the fixed `opening/` relation using the same arithmetic. This module reuses that one backend's OS-seeded
 RNGs, hiding PCS/MMCS, shape checks and both numerical security floors; no backend
 or validator is copied. Oracle dependencies are exact `poly1305=0.8.0` with its
 `zeroize` feature and `universal-hash=0.5.1`, already available in local source.

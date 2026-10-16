@@ -1,6 +1,14 @@
-# Hiding-FRI public source-primitive gates
+# Hiding-FRI source-opening research gates
 
-Status: the public Poly1305 raw and separately padded-segment modes passed their
+Current experimental status: the [whole-pair private AEAD byte-opening
+candidate](src/opening/README.md) passed release build, strict Clippy, eight fresh
+security analyses, all 47 serial tests and one genuine whole-pair proof/verification.
+Its [validation record](PAIR-OPENING-VALIDATION.md) retains every earlier failure,
+exact scope and observation limits. One composed witness opens both fixed public
+packets; it does not add an Owner-key API, logical SQL proof or live accepting path.
+The shared primitive wrappers are included in the current 47-test run.
+
+Historical public-primitive status: the Poly1305 raw and separately padded-segment modes passed their
 isolated lock audit, release build, strict Clippy, seven actual security analyses,
 five observed genuine public-fixture proof/verify processes and all 33 serial
 tests. Their small-fixture policy is at most three blocks, 48 original bytes and
@@ -23,10 +31,12 @@ The earlier SHA-only revision was experimentally validated. Its unchanged
 process observation; its measurements/security reports are **not** results for
 this refactored backend or its new AIRs.
 
-These are nonaccepting primitive experiments. Every input, including the RFC/draft
-test keys, is explicitly PUBLIC NONSECRET fixture data. These genuine proofs do not
-empirically establish witness secrecy, ZK composition, AEAD, private CSTORE opening,
-BFV formation, SQL completeness, live locks or finality. No owner key export/import,
+These are nonaccepting experiments. All exercised fixture keys/plaintexts are
+explicitly PUBLIC NONSECRET; the new candidate puts those known values in private
+witness columns rather than public inputs. The bounded byte-opening is exercised
+under experimental assumptions; it does not certify witness secrecy/ZK, production
+AEAD/key custody, logical index validity, BFV formation, SQL completeness, live locks
+or finality. No owner key export/import,
 network API, proof-byte codec, acceptance marker or root Cargo change is added.
 
 ## Ownership and dependencies
@@ -39,23 +49,22 @@ network API, proof-byte codec, acceptance marker or root Cargo change is added.
 | `air.rs`, `statement.rs` | Published P3 SHA compression wrapper and public fixture binding |
 | `chacha/air.rs` | Bit/carry constraints, complete schedule, transitions and boundaries |
 | `chacha/statement.rs` | Public fixtures, little-endian identity, independent RustCrypto oracle |
+| `opening/` | Fixed private whole-pair byte-opening, immutable banks, linked MAC/XOR/sponge schedule and actual adversarial validation |
 | `poly1305/` | Checked small-message layout, canonical radix AIR, public oracle and validated adversarial tests |
 
-The standalone workspace depends on pinned P3 0.8.0, Rand 0.10.3, RustCrypto
+The standalone workspace depends on pinned P3 0.8.0, Rand 0.10.3 and RustCrypto
 SHA-256 0.10.9, ChaCha20 0.9.1, Poly1305 0.8.0 and UniversalHash 0.5.1.
-Only the standalone manifest/lock add the latter two exact oracle pins, following
-a separately reviewed offline resolution phase. P3's VCS pin is
-`a21e3ed42905040ad49c519e402f018381c12d0c`. ChaCha20's source pin is
-`b5d39c45c45df97335f4b6effb853cde97810de1`, the exact version used by CSTORE's
-XChaCha20Poly1305 0.10.1. Its `zeroize` feature is requested; fixture buffers and
-SDK matrices still do not provide a production private-witness custody contract.
-No project library depends on this experiment.
+P3's VCS pin is `a21e3ed42905040ad49c519e402f018381c12d0c`; ChaCha20's is
+`b5d39c45c45df97335f4b6effb853cde97810de1`. The current manifest also uses local
+compact-store for its complete canonical checker, XChaCha20Poly1305 0.10.1 for the
+known fixture oracle and native P3 Poseidon2 helpers. There is no reverse library
+edge. Fixture buffers/SDK matrices do not gain a production key-custody contract.
 
-The current standalone lock contains 76 packages. All 71 previous registry records
-remain exact; four root-pinned packages (`opaque-debug 0.3.1`, `poly1305 0.8.0`,
-`subtle 2.6.1`, `universal-hash 0.5.1`) were added. Poly1305's enabled `zeroize`
-edge uses the already pinned `zeroize 1.9.1`. Rand still uses `chacha20 0.10.2`. The root workspace's separate lock is not an experimental
-dependency; this workspace has no project path dependencies.
+The isolated lock has 82 packages: 75 prior registry records remain exact; five
+pinned registry records and local compact-store were added by an audited offline
+resolution. Its only changed old active edge is crypto-common to rand_core 0.6.4;
+all 19 P3 records remain pinned. Earlier 76-package/33-test lock and validation
+records below retain their own historical meaning. No root dependency changed.
 
 Related contracts: [private source proofs](../../docs/private-lock-source-proof.md),
 [production arithmetic](../../crates/bfv-query-proof/README.md), and
@@ -119,8 +128,8 @@ calculator must use `max_combo=2` and both full-width openings. Hiding requires
 `512 >= 2*(192+5*2)=404`, with five random codewords. No preprocessing is used.
 Analysis starts with the original 512-row domain and reports post-ZK degree bits
 10, including actual constraints/quotient/masking/opening counts. Each private
-Backend is bound to one complete typed public statement (at most 97 field values
-in the current modes), so cached analysis cannot cross empty/nonempty shapes.
+Backend is bound to one complete typed public statement (691 fields for the
+fixed pair; at most 97 in the public primitive modes), so cached analysis cannot cross empty/nonempty shapes.
 Prove and verify compare those exact values before trace/verification work and
 reuse the compared vector in the SDK call. A different statement uses a fresh
 Backend. Negative replay tests also use that fresh path, preserving actual SDK
@@ -179,8 +188,8 @@ prover rather than only replay or generator rejection.
 
 The CLI selectors `poly1305-raw` and `poly1305-padded` use the same private backend,
 randomness, hiding and verification gates, with a distinct primitive profile and
-typed statement. There is no separate Poly1305 prover, proof codec, production
-acceptance or AEAD composition. Actual reports show 1,361 constraints, eight
+typed statement. There is no separate Poly1305 prover, proof codec or production
+acceptance. These two public modes do not themselves accept an AEAD opening. Actual reports show 1,361 constraints, eight
 quotient chunks and 1,726 batched functions: inferred degree is three for nonempty
 fixtures and two for empty shapes, with a declared bound of three. Both decoding
 bounds reached 128 under the pinned SDK/model. The [module README](src/poly1305/README.md)

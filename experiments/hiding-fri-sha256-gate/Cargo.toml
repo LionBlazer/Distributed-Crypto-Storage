@@ -9,6 +9,9 @@ publish = false
 [workspace]
 
 [dependencies]
+compact-store = { path = "../../crates/compact-store" }
+chacha20poly1305 = "=0.10.1"
+p3-poseidon2 = "=0.8.0"
 chacha20 = { version = "=0.9.1", features = ["zeroize"] }
 p3-air = "=0.8.0"
 p3-challenger = "=0.8.0"

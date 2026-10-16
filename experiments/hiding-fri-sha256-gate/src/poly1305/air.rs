@@ -90,17 +90,10 @@ pub(crate) fn write_bits(destination: &mut [Val], value: u64) {
 
 /// The H+5 comparator is populated on EVERY row, including inactive padding.
 pub(crate) fn write_state(row: &mut [Val], state: [u64; LIMBS]) {
-    let mut carry = 5;
-    for (limb, value) in state.into_iter().enumerate() {
-        write_bits(&mut row[limb * LIMB_BITS..(limb + 1) * LIMB_BITS], value);
-        let sum = value + carry;
-        write_bits(
-            &mut row[CANONICAL + limb * LIMB_BITS..CANONICAL + (limb + 1) * LIMB_BITS],
-            sum & MASK,
-        );
-        carry = sum >> LIMB_BITS;
-        row[CANONICAL_CARRY + limb] = Val::from_u64(carry);
-    }
+    let (state_cells, rest) = row.split_at_mut(STATE);
+    let canonical = &mut rest[CANONICAL - STATE..];
+    let (values, carries) = canonical.split_at_mut(STATE);
+    super::arithmetic::write_canonical(state_cells, values, &mut carries[..LIMBS], state);
 }
 
 pub(crate) fn clamped_r(key: [u8; 32]) -> [u64; LIMBS] {
@@ -134,7 +127,7 @@ pub(crate) fn folded_product(h: [u64; LIMBS], n: [u64; LIMBS], r: [u64; LIMBS]) 
 /// Normalize only five bounded u64 coefficients, folding B^5 to 5. The first
 /// pass leaves at most 215B in limb0, the second can fold at most one, and a
 /// third finishes. One extra bounded pass asserts stabilization independently.
-pub(super) fn reduce(product: [u64; LIMBS]) -> ([u64; LIMBS], [u64; LIMBS]) {
+pub(crate) fn reduce(product: [u64; LIMBS]) -> ([u64; LIMBS], [u64; LIMBS]) {
     let mut h = product;
     let mut quotient = 0;
     for _ in 0..4 {
@@ -299,20 +292,6 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for Poly1305Air {
                 expected,
             );
         }
-        let h: [AB::Expr; LIMBS] = core::array::from_fn(|limb| {
-            pack_bits_le::<AB::Expr, _, _>(
-                row[limb * LIMB_BITS..(limb + 1) * LIMB_BITS]
-                    .iter()
-                    .copied(),
-            )
-        });
-        let updated: [AB::Expr; LIMBS] = core::array::from_fn(|limb| {
-            pack_bits_le::<AB::Expr, _, _>(
-                next[limb * LIMB_BITS..(limb + 1) * LIMB_BITS]
-                    .iter()
-                    .copied(),
-            )
-        });
         let n: [AB::Expr; LIMBS] = core::array::from_fn(|limb| {
             let mut value = AB::Expr::ZERO;
             for bit in 0..LIMB_BITS {
@@ -329,93 +308,28 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for Poly1305Air {
             }
             value
         });
-        let r: [AB::Expr; LIMBS] = core::array::from_fn(|limb| {
-            let bits = (0..LIMB_BITS).map(|bit| {
-                let position = limb * LIMB_BITS + bit;
-                if position < 128 && (CLAMP[position / 8] >> (position % 8)) & 1 != 0 {
-                    row[KEY + position].into()
-                } else {
-                    AB::Expr::ZERO
-                }
-            });
-            pack_bits_le::<AB::Expr, _, _>(bits)
-        });
-        let carry: [AB::Expr; LIMBS] = core::array::from_fn(|limb| {
-            pack_bits_le::<AB::Expr, _, _>(
-                row[PRODUCT_CARRY + limb * 32..PRODUCT_CARRY + (limb + 1) * 32]
-                    .iter()
-                    .copied(),
-            )
-        });
-        for limb in 0..LIMBS {
-            let mut product = AB::Expr::ZERO;
-            for (i, (h, n)) in h.iter().zip(&n).enumerate() {
-                for (j, r) in r.iter().enumerate() {
-                    if (i + j) % LIMBS == limb {
-                        product += (h.clone() + n.clone())
-                            * r.clone()
-                            * Val::from_u64(if i + j >= LIMBS { 5 } else { 1 });
-                    }
-                }
-            }
-            let incoming = if limb == 0 {
-                carry[LIMBS - 1].clone() * Val::from_u8(5)
-            } else {
-                carry[limb - 1].clone()
-            };
-            // Boolean limbs/carries give D<42*B^2; each integer side<2^58<Goldilocks.
-            // Selectors are active only at rows0..2, never at the cyclic last row.
-            builder.assert_zero(
-                active.clone()
-                    * (product + incoming
-                        - updated[limb].clone()
-                        - carry[limb].clone() * Val::from_u64(RADIX)),
-            );
-            for cell in &row[PRODUCT_CARRY + limb * 32..PRODUCT_CARRY + (limb + 1) * 32] {
-                builder.assert_zero((AB::Expr::ONE - active.clone()) * *cell);
-            }
-            let z = pack_bits_le::<AB::Expr, _, _>(
-                row[CANONICAL + limb * LIMB_BITS..CANONICAL + (limb + 1) * LIMB_BITS]
-                    .iter()
-                    .copied(),
-            );
-            let incoming: AB::Expr = if limb == 0 {
-                Val::from_u8(5).into()
-            } else {
-                row[CANONICAL_CARRY + limb - 1].into()
-            };
-            builder.assert_eq(
-                h[limb].clone() + incoming,
-                z + row[CANONICAL_CARRY + limb] * Val::from_u64(RADIX),
-            );
-        }
-        builder.assert_zero(row[CANONICAL_CARRY + LIMBS - 1]);
+        let cells = super::arithmetic::Cells {
+            state: &row[..STATE],
+            carry: &row[PRODUCT_CARRY..CANONICAL],
+            canonical: &row[CANONICAL..CANONICAL_CARRY],
+            canonical_carry: &row[CANONICAL_CARRY..TAG_CARRY],
+            tag: &row[TAG_CARRY..],
+        };
+        let step = super::arithmetic::Step {
+            updated: super::arithmetic::limbs(&next[..STATE]),
+            key: core::array::from_fn(|bit| row[KEY + bit].into()),
+            message: n,
+            active: active.clone(),
+            finalize: builder.is_last_row(),
+            inactive_tag: builder.is_transition(),
+            tag: core::array::from_fn(|word| public[TAG_PUBLIC + word].into()),
+        };
+        super::arithmetic::evaluate(builder, cells, step);
         for bit in 0..STATE {
             builder.when_first_row().assert_zero(row[bit]);
             builder
                 .when_transition()
                 .assert_zero((AB::Expr::ONE - active.clone()) * (next[bit] - row[bit]));
-        }
-        for word in 0..4 {
-            let h_word =
-                pack_bits_le::<AB::Expr, _, _>(row[word * 32..(word + 1) * 32].iter().copied());
-            let s_word = pack_bits_le::<AB::Expr, _, _>(
-                row[KEY + 128 + word * 32..KEY + 128 + (word + 1) * 32]
-                    .iter()
-                    .copied(),
-            );
-            let incoming: AB::Expr = if word == 0 {
-                AB::Expr::ZERO
-            } else {
-                row[TAG_CARRY + word - 1].into()
-            };
-            builder.when_transition().assert_zero(row[TAG_CARRY + word]);
-            // Only the last carry is discarded: finalization is mod2^128.
-            let tag: AB::Expr = public[TAG_PUBLIC + word].into();
-            builder.when_last_row().assert_eq(
-                h_word + s_word + incoming,
-                tag + row[TAG_CARRY + word] * Val::from_u64(1 << 32),
-            );
         }
     }
 }

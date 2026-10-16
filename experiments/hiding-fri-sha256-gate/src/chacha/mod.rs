@@ -1,5 +1,6 @@
 //! Full public HChaCha20/ChaCha20 primitive relations, not AEAD or source proofs.
 pub(crate) mod air;
+pub(crate) mod arithmetic;
 pub(crate) mod statement;
 #[cfg(test)]
 mod tests;
