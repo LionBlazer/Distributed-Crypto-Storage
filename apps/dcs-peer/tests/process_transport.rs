@@ -902,3 +902,163 @@ fn static_read_image_uses_real_data_prefix_proofs_and_rejects_unrequested_disk_c
     assert!(!remote.status().unwrap().objects[0].available);
     assert!(remote.call(Request::Store(bundle)).is_err());
 }
+
+// Public, non-secret ciphertext custody fixtures; they do not stand in for SQL proofs.
+fn delta_fixture() -> (Bundle, Bundle, peer_runtime::StoreDeltaRequest) {
+    use compact_store::{Layout, Owner};
+    use peer_runtime::{PageAddress, PageImage, StoreDeltaRequest};
+    let limits = Limits::default();
+    let owner = Owner::generate([81; 16]).unwrap();
+    let layout = Layout {
+        schema: [82; 16],
+        row_width: 1,
+        rows_per_page: 512,
+        row_count: 300 * 512 - 3,
+    };
+    let mut data = owner
+        .seal(layout, &vec![7; layout.row_count as usize], limits)
+        .unwrap();
+    let mut index = owner
+        .seal(
+            Layout {
+                schema: [83; 16],
+                ..layout
+            },
+            &vec![8; layout.row_count as usize],
+            limits,
+        )
+        .unwrap();
+    let old_data = data.commitment().clone();
+    let old_index = index.commitment().clone();
+    let base = Bundle {
+        data_head: old_data.encode().to_vec(),
+        index_head: old_index.encode().to_vec(),
+        data: data.encode(),
+        index: index.encode(),
+    };
+    owner
+        .replace_page(&mut data, &old_data, 2, &[9; 512], limits)
+        .unwrap();
+    owner
+        .replace_page(&mut index, &old_index, 299, &[10; 509], limits)
+        .unwrap();
+    let next = Bundle {
+        data_head: data.commitment().encode().to_vec(),
+        index_head: index.commitment().encode().to_vec(),
+        data: data.encode(),
+        index: index.encode(),
+    };
+    let delta = StoreDeltaRequest::new(
+        base.id(),
+        &old_data,
+        &old_index,
+        &next,
+        &[
+            (
+                PageAddress {
+                    image: PageImage::Data,
+                    index: 2,
+                },
+                data.lookup(2, limits).unwrap(),
+            ),
+            (
+                PageAddress {
+                    image: PageImage::Index,
+                    index: 299,
+                },
+                index.lookup(299, limits).unwrap(),
+            ),
+        ],
+    )
+    .unwrap();
+    (base, next, delta)
+}
+
+#[test]
+fn padded_delta_rpc_requires_owner_and_recovers_exact_durable_ciphertext_after_lost_ack_and_restart()
+ {
+    use std::sync::{Arc, Mutex};
+    let authority = Authority::new();
+    let owner = authority.identity();
+    let connector = Connector::new(&owner, &authority.der).unwrap();
+    let mut process = Process::start(&authority, owner.fingerprint(), 1, None);
+    let peer = process.remote(&connector);
+    peer.call(Request::Quota(16 * 1024 * 1024)).unwrap();
+    let (base, next, delta) = delta_fixture();
+    peer.call(Request::Store(base.clone())).unwrap();
+    let original = fs::read(bundle_path(&process, &base.id())).unwrap();
+    let member = Connector::new(&authority.identity(), &authority.der).unwrap();
+
+    assert!(
+        process
+            .remote(&member)
+            .call(Request::StoreDelta(delta.clone()))
+            .is_err()
+    );
+    assert_eq!(peer.status().unwrap().objects.len(), 1);
+    assert!(!bundle_path(&process, &next.id()).exists());
+
+    let traces = Arc::new(Mutex::new(Vec::new()));
+    let sink = traces.clone();
+    let control = peer_transport::RequestControl::default();
+    let scope = control.begin().unwrap();
+    let cancel = scope.cancellation();
+    let cancelled = peer
+        .clone()
+        .with_control(control)
+        .with_activity(Arc::new(move |event| {
+            if event.operation == "store-delta"
+                && event.phase == peer_runtime::ActivityPhase::ReplyReceived
+            {
+                cancel.cancel();
+            }
+        }))
+        .with_trace(Arc::new(move |trace| sink.lock().unwrap().push(trace)));
+
+    let error = cancelled
+        .call(Request::StoreDelta(delta.clone()))
+        .err()
+        .expect("Cancellation must report a lost acknowledgement");
+
+    assert_eq!(error.kind(), std::io::ErrorKind::Interrupted);
+    assert_eq!(peer.status().unwrap().objects.len(), 2);
+    assert_eq!(
+        fs::read(bundle_path(&process, &base.id())).unwrap(),
+        original
+    );
+    let recorded = traces.lock().unwrap();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].operation, "store-delta");
+    assert_eq!(recorded[0].request_bytes, delta.request_bytes() as u64);
+    assert!(recorded[0].response_bytes > 0);
+    drop(recorded);
+    assert!(
+        matches!(peer.call(Request::StoreDelta(delta.clone())).unwrap(), Response::Stored(info) if info.id == next.id())
+    );
+    assert!(
+        matches!(peer.call(Request::Fetch { object: next.id() }).unwrap(), Response::Bundle(actual) if actual == next)
+    );
+    process.kill();
+    let restarted = Process::start(
+        &authority,
+        owner.fingerprint(),
+        1,
+        Some(process.directory.clone()),
+    );
+    let peer = restarted.remote(&connector);
+
+    assert!(
+        matches!(peer.call(Request::StoreDelta(delta.clone())).unwrap(), Response::Stored(info) if info.id == next.id())
+    );
+    assert_eq!(peer.status().unwrap().objects.len(), 2);
+    let target = bundle_path(&restarted, &next.id());
+    let mut damaged = fs::read(&target).unwrap();
+    // Last index page is replaced, but this byte is still fully audited on replay.
+    *damaged.last_mut().unwrap() ^= 1;
+    fs::write(&target, damaged).unwrap();
+    assert!(peer.call(Request::StoreDelta(delta)).is_err());
+    assert_eq!(
+        fs::read(bundle_path(&restarted, &base.id())).unwrap(),
+        original
+    );
+}

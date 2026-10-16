@@ -1,13 +1,14 @@
 //! Complete proved per-shard UPDATE preparation, without network publication.
 use super::*;
 use crate::query_rpc::{ProofJob, Requests};
-use peer_runtime::ProofReply;
+use peer_runtime::{PageAddress, PageImage, ProofReply};
 use sql_plan::Predicate;
 
 pub(super) struct StagedShardUpdate {
     pub slot: usize,
     pub table: Option<Table>,
     pub affected_rows: usize,
+    pub replacements: Vec<PageAddress>,
     pub job: MutationJob,
     pub proof: ProofReply,
 }
@@ -72,6 +73,23 @@ impl Session {
             ));
         }
         let affected_rows = stage.matched_rows();
+        let replacements = stage
+            .replaced_data_pages()
+            .iter()
+            .map(|&index| PageAddress {
+                image: PageImage::Data,
+                index,
+            })
+            .chain(
+                stage
+                    .replaced_index_pages()
+                    .iter()
+                    .map(|&index| PageAddress {
+                        image: PageImage::Index,
+                        index,
+                    }),
+            )
+            .collect();
         let next = stage
             .into_table()
             .ok_or_else(|| protocol("Missing proved update"))?;
@@ -79,6 +97,7 @@ impl Session {
             slot,
             table: (next.commitment() != table.commitment()).then_some(next),
             affected_rows,
+            replacements,
             job: MutationJob {
                 shard: shard.info.id,
                 request,

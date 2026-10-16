@@ -165,6 +165,21 @@ the authenticated selection's current heads and exact checked input/output bindi
 Authorization, complete manifest coverage, old/new head rules, work and freshness
 remain outside the arithmetic cache and are always checked. Actual holders
 acknowledge storage.
+The private `session::writeback` freezes recipient roles from the current
+`Shard.peers` placement before proof jobs. Same-geometry UPDATE uses a fixed,
+public-geometry padded Delta for known holders only when it is smaller than Full
+Store. Other participants are preplanned new replicas and receive Full Store.
+A failed known-holder Delta never changes that recipient's mode. Different participant IDs sharing a TLS identity or socket
+address, and conflicting endpoint bindings for one ID, reject before proof work;
+routing aliases cannot become new replicas or count as separate copies. INSERT stays
+Full Store. Every actual full frame, delta geometry/page budget and immutable
+transition budget passes locally after all proofs and before any write/signature.
+The runtime still audits the entire physical base and reconstructed target and
+charges full-object quota. Existing final `FetchVersion` and holder `Fetch`
+custody checks, freshness and exact pending-transition recovery remain in place.
+See [padded UPDATE writeback](../../docs/padded-update-delta.md) for resource and
+privacy boundaries; this transport change alone establishes no latency bound.
+
 The owner signs the exact old/new roots and complete encrypted job manifest.
 Peers verify authorization/jobs/work, fsync the transition and confirmation blocks,
 and synchronize. Publication requires a matching durable block acknowledgement.

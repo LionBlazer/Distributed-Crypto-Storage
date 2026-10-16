@@ -1,5 +1,5 @@
 //! Bounded, exact-head ciphertext page custody. Membership is not SQL acceptance.
-use crate::store::custody_limits;
+use crate::{bytes::deserialize_frame, store::custody_limits};
 use compact_store::{Commitment, EncryptedSnapshot, LookupResponse, VerifiedPage};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::{collections::BTreeSet, fmt};
@@ -311,43 +311,6 @@ fn take<'a>(bytes: &'a [u8], offset: &mut usize, length: usize) -> Result<&'a [u
     Ok(slice)
 }
 
-// A sequence visitor sees bincode's announced length BEFORE allocation. Using
-// deserialize_bytes here would let bincode allocate an unchecked byte vector first.
-pub(crate) fn deserialize_frame<'de, D: Deserializer<'de>>(
-    deserializer: D,
-    maximum: usize,
-) -> std::result::Result<Vec<u8>, D::Error> {
-    struct Frame(usize);
-    impl<'de> de::Visitor<'de> for Frame {
-        type Value = Vec<u8>;
-        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-            formatter.write_str("a bounded page RPC byte sequence")
-        }
-        fn visit_seq<A: de::SeqAccess<'de>>(
-            self,
-            mut sequence: A,
-        ) -> std::result::Result<Self::Value, A::Error> {
-            let length = sequence
-                .size_hint()
-                .ok_or_else(|| de::Error::custom("Missing page frame length"))?;
-            if length > self.0 {
-                return Err(de::Error::custom("Page frame exceeds limit"));
-            }
-            let mut bytes = Vec::with_capacity(length);
-            while let Some(byte) = sequence.next_element::<u8>()? {
-                if bytes.len() == length {
-                    return Err(de::Error::custom("Page frame length mismatch"));
-                }
-                bytes.push(byte);
-            }
-            if bytes.len() != length {
-                return Err(de::Error::custom("Truncated page frame"));
-            }
-            Ok(bytes)
-        }
-    }
-    deserializer.deserialize_seq(Frame(maximum))
-}
 impl Serialize for PageBatchRequest {
     fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
         serializer.serialize_bytes(&self.encode())

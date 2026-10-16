@@ -1,9 +1,5 @@
 //! Static public-geometry custody: one full data image and an index prefix.
-use crate::{
-    PageError,
-    pages::{deserialize_frame, lookup_bytes},
-    store::custody_limits,
-};
+use crate::{PageError, bytes::deserialize_frame, pages::lookup_bytes, store::custody_limits};
 use compact_store::{Commitment, EncryptedSnapshot, Limits, LookupResponse, VerifiedPage};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 

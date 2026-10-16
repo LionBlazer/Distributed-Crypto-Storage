@@ -25,6 +25,8 @@ pub struct VerifiedUpdate {
     table: Option<Table>,
     matched_rows: usize,
     changed_rows: usize,
+    data_pages: Vec<u64>,
+    index_pages: Vec<u64>,
     evidence: bfv_query_proof::CheckedOperation,
 }
 impl VerifiedUpdate {
@@ -38,6 +40,15 @@ impl VerifiedUpdate {
     /// An overflowing stage is still rejected as a whole by its caller.
     pub fn matched_rows(&self) -> usize {
         self.matched_rows
+    }
+    /// Exact encrypted data pages reissued by this checked stage. Addresses
+    /// alone provide no authorization, membership, or computation evidence.
+    pub fn replaced_data_pages(&self) -> &[u64] {
+        &self.data_pages
+    }
+    /// Exact encrypted index pages reissued by this checked stage.
+    pub fn replaced_index_pages(&self) -> &[u64] {
+        &self.index_pages
     }
     pub fn into_table(self) -> Option<Table> {
         self.table
@@ -275,6 +286,8 @@ impl Owner {
                     table: None,
                     matched_rows,
                     changed_rows: 0,
+                    data_pages: Vec::new(),
+                    index_pages: Vec::new(),
                     evidence,
                 });
             }
@@ -299,6 +312,8 @@ impl Owner {
                 }),
                 matched_rows,
                 changed_rows,
+                data_pages: Vec::new(),
+                index_pages: Vec::new(),
                 evidence,
             });
         }
@@ -314,6 +329,7 @@ impl Owner {
             page[address.byte_offset + 1..address.byte_offset + 3]
                 .copy_from_slice(&row.amount.to_le_bytes());
         }
+        let data_pages = selection.pages.keys().copied().collect();
         let staged = storage::replace_amount_pages(
             &self.store,
             table,
@@ -327,6 +343,8 @@ impl Owner {
             table: Some(staged),
             matched_rows,
             changed_rows,
+            data_pages,
+            index_pages: vec![0],
             evidence,
         })
     }

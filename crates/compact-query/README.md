@@ -153,6 +153,12 @@ No peer response is accepted because failover is enabled.
 
 `stage_proved_update` follows the same proof-first sequence and writes decoded FHE
 amounts into new authenticated compact pages, without recomputing expected sums.
+`VerifiedUpdate::replaced_data_pages` and `replaced_index_pages` retain the bounded
+addresses actually passed to compact-page replacement; they are empty on overflow
+or an unchanged result. These read-only addresses allow ciphertext transport to
+avoid a full-image diff. They grant no authorization or proof by themselves.
+`Table::lookup_index_page` derives membership using the private index format's
+byte geometry, including its identity tail; callers do not copy private limits.
 `VerifiedUpdate::matched_rows` exposes the complete authenticated selection size;
 `changed_rows` separately counts physical value changes. An unchanged selection
 still consumes the genuine checked arithmetic result and retains the same images.

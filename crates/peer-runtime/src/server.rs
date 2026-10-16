@@ -262,6 +262,7 @@ fn serve(socket: TcpStream, acceptor: Acceptor, shared: Arc<Shared>) -> io::Resu
     let response_limit = match &wire.request {
         Request::FetchPages(_) => crate::MAX_PAGE_BATCH_RESPONSE_BYTES,
         Request::FetchReadImage(_) => crate::MAX_READ_IMAGE_RESPONSE_BYTES,
+        Request::StoreDelta(_) => crate::MAX_STORE_DELTA_RESPONSE_BYTES,
         _ => MAX_FRAME_BYTES,
     };
     let operation = wire.request.name().to_owned();
@@ -309,6 +310,7 @@ fn dispatch(
     let privileged = matches!(
         &request,
         Request::Store(_)
+            | Request::StoreDelta(_)
             | Request::InstallSetup(_)
             | Request::Neighbors(_)
             | Request::Quota(_)
@@ -381,6 +383,7 @@ fn dispatch(
             recent: state.recent.iter().cloned().collect(),
         })),
         Request::Store(bundle) => state.store.put(bundle).map(Response::Stored),
+        Request::StoreDelta(delta) => state.store.put_delta(delta).map(Response::Stored),
         Request::Fetch { object } => state.store.get(&object).map(Response::Bundle),
         Request::FetchPages(request) => state.store.get_pages(request).map(Response::Pages),
         Request::FetchReadImage(request) => {

@@ -1,7 +1,9 @@
 //! Authenticated, process-independent ciphertext custody and public-only FHE service.
 //! No owner FHE/AEAD secret, GUI, simulation clock or plaintext row type lives here.
 #![forbid(unsafe_code)]
+mod bytes;
 mod client;
+mod delta;
 pub mod evidence;
 mod pages;
 mod read_image;
@@ -9,6 +11,10 @@ mod server;
 mod store;
 mod wire;
 pub use client::{ActivityPhase, RemotePeer, RpcActivity, Trace};
+pub use delta::{
+    MAX_STORE_DELTA_PAGES, MAX_STORE_DELTA_REQUEST_BYTES, MAX_STORE_DELTA_RESPONSE_BYTES,
+    StoreDeltaPlan, StoreDeltaRequest,
+};
 pub use evidence::{
     JobVerifier, MAX_EVIDENCE_BYTES, MAX_JOB_BYTES, MAX_JOBS, MutationEvidence, MutationJob,
     MutationManifest,

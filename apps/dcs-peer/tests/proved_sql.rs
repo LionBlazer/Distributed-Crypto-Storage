@@ -1517,3 +1517,297 @@ fn million_row_private_index_crosses_real_custody_frames_and_agreed_update_resto
         vec![vec![42, 2]]
     );
 }
+
+#[test]
+fn proved_update_keeps_frozen_delta_roles_on_quota_failure_and_preplans_full_for_new_replicas() {
+    use std::sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    };
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let processes: Vec<_> = (1..=3)
+        .map(|id| Process::start(owner.fingerprint(), id, None))
+        .collect();
+    let controls: Vec<_> = processes
+        .iter()
+        .enumerate()
+        .map(|(slot, process)| process.participant(slot as u64 + 1, &connector))
+        .collect();
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let armed = Arc::new(AtomicBool::new(false));
+    let restore = Arc::new(AtomicBool::new(false));
+    let participants: Vec<_> = controls
+        .iter()
+        .map(|participant| {
+            let id = participant.id;
+            let mut participant = participant.clone();
+            let sink = events.clone();
+            let armed = armed.clone();
+            participant.remote = participant.remote.with_trace(Arc::new(move |trace| {
+                if armed.load(Ordering::SeqCst)
+                    && matches!(trace.operation.as_str(), "store" | "store-delta")
+                {
+                    sink.lock().unwrap().push((id, trace));
+                }
+            }));
+            if id == 3 {
+                let restore = restore.clone();
+                let peers = controls[..2].to_vec();
+                participant.remote = participant.remote.with_activity(Arc::new(move |event| {
+                    if event.operation == "store"
+                        && event.phase == peer_runtime::ActivityPhase::ReplyReceived
+                        && restore.swap(false, Ordering::SeqCst)
+                    {
+                        // A deterministic actual-I/O gate: only after the preplanned
+                        // new replica has replied can journal publication use quota again.
+                        for peer in &peers {
+                            peer.remote.call(Request::Quota(256 * 1024 * 1024)).unwrap();
+                        }
+                    }
+                }));
+            }
+            participant
+        })
+        .collect();
+    let mut input = vec![PlainRow { age: 7, amount: 3 }; 100_000];
+    input[0] = PlainRow {
+        age: 42,
+        amount: 100,
+    };
+    let mut session = Session::create(
+        "delta-placement".into(),
+        &input,
+        participants[..2].to_vec(),
+        test_contract(),
+    )
+    .unwrap();
+    let original = session.shards();
+    let initial = session.version();
+    let plan =
+        peer_runtime::StoreDeltaPlan::for_heads(&original[0].data_head, &original[0].index_head)
+            .unwrap();
+    let delta_bytes = plan
+        .padded_request_bytes()
+        .expect("Fixture must use geometry-padded delta");
+    let initial_objects: Vec<_> = controls[..2]
+        .iter()
+        .map(|p| p.remote.status().unwrap().objects)
+        .collect();
+    for peer in &controls[..2] {
+        let status = peer.remote.status().unwrap();
+        let used =
+            status.objects.iter().map(|o| o.stored_bytes).sum::<u64>() + status.journal_bytes;
+        peer.remote.call(Request::Quota(used)).unwrap();
+    }
+    armed.store(true, Ordering::SeqCst);
+
+    assert!(
+        session
+            .execute("UPDATE records SET amount=amount+1 WHERE age=42")
+            .is_err()
+    );
+
+    assert_eq!(session.version(), initial);
+    assert!(session.resume_pending().unwrap().is_none());
+    assert_eq!(session.shards()[0].object, original[0].object);
+    for (peer, before) in controls[..2].iter().zip(initial_objects) {
+        assert_eq!(
+            peer.remote
+                .status()
+                .unwrap()
+                .objects
+                .iter()
+                .map(|o| o.id)
+                .collect::<Vec<_>>(),
+            before.iter().map(|o| o.id).collect::<Vec<_>>()
+        );
+    }
+    let failed = std::mem::take(&mut *events.lock().unwrap());
+    assert_eq!(failed.len(), 2);
+    assert!(failed.iter().all(|(id, e)| *id <= 2
+        && e.operation == "store-delta"
+        && e.request_bytes == delta_bytes as u64
+        && !e.succeeded));
+
+    // The third peer holds another shard, making it a known participant but a
+    // genuinely new replica of the changed shard. Its Full role is fixed in advance.
+    armed.store(false, Ordering::SeqCst);
+    session
+        .copy_shard(original[1].id, participants[2].clone())
+        .unwrap();
+    armed.store(true, Ordering::SeqCst);
+    restore.store(true, Ordering::SeqCst);
+    let VerifiedResult::Updated {
+        affected_rows,
+        version,
+    } = session
+        .execute("UPDATE records SET amount=amount+1 WHERE age=42")
+        .unwrap()
+    else {
+        panic!("Expected proved UPDATE");
+    };
+    assert_eq!(affected_rows, 1);
+    assert!(version.height > initial.height);
+    let first = std::mem::take(&mut *events.lock().unwrap());
+    assert_eq!(first.len(), 3);
+    for (id, event) in &first {
+        assert_eq!(
+            event.operation,
+            if *id == 3 { "store" } else { "store-delta" }
+        );
+        assert_eq!(
+            event.request_bytes,
+            if *id == 3 {
+                plan.full_request_bytes() as u64
+            } else {
+                delta_bytes as u64
+            }
+        );
+        assert_eq!(event.succeeded, *id == 3);
+    }
+    assert_eq!(
+        rows(
+            session
+                .execute("SELECT amount FROM records WHERE age=42")
+                .unwrap()
+        ),
+        vec![vec![101]]
+    );
+    events.lock().unwrap().clear();
+
+    // The previously new replica is now committed placement: its next upload
+    // uses exactly the same padded delta, followed by a preplanned new Full copy.
+    let VerifiedResult::Updated { affected_rows, .. } = session
+        .execute("UPDATE records SET amount=amount+1 WHERE age=42")
+        .unwrap()
+    else {
+        panic!("Expected proved UPDATE");
+    };
+    assert_eq!(affected_rows, 1);
+    let second = events.lock().unwrap();
+    assert_eq!(second.len(), 2);
+    assert_eq!(second[0].0, 3);
+    assert_eq!(second[0].1.operation, "store-delta");
+    assert_eq!(second[0].1.request_bytes, delta_bytes as u64);
+    assert!(second[0].1.succeeded);
+    assert_eq!(second[1].0, 1);
+    assert_eq!(second[1].1.operation, "store");
+    assert!(second[1].1.succeeded);
+    drop(second);
+    assert_eq!(
+        rows(
+            session
+                .execute("SELECT amount FROM records WHERE age=42")
+                .unwrap()
+        ),
+        vec![vec![102]]
+    );
+}
+
+#[test]
+fn a_known_holder_endpoint_alias_is_rejected_before_proof_or_full_store() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let processes: Vec<_> = (1..=2)
+        .map(|id| Process::start(owner.fingerprint(), id, None))
+        .collect();
+    let armed = Arc::new(AtomicBool::new(false));
+    let work = Arc::new(AtomicUsize::new(0));
+    let participants: Vec<_> = processes
+        .iter()
+        .enumerate()
+        .map(|(slot, process)| {
+            let mut participant = process.participant(slot as u64 + 1, &connector);
+            let armed = armed.clone();
+            let work = work.clone();
+            participant.remote = participant.remote.with_trace(Arc::new(move |event| {
+                if armed.load(Ordering::SeqCst)
+                    && matches!(
+                        event.operation.as_str(),
+                        "fhe-proof" | "store" | "store-delta"
+                    )
+                {
+                    work.fetch_add(1, Ordering::SeqCst);
+                }
+            }));
+            participant
+        })
+        .collect();
+    let mut source = vec![PlainRow { age: 7, amount: 1 }; 100_000];
+    source[0].age = 42;
+    let mut session = Session::create(
+        "delta-alias".into(),
+        &source,
+        participants.clone(),
+        test_contract(),
+    )
+    .unwrap();
+    let old = session.shards();
+    assert!(
+        peer_runtime::StoreDeltaPlan::for_heads(&old[0].data_head, &old[0].index_head)
+            .unwrap()
+            .padded_request_bytes()
+            .is_some()
+    );
+    // Register a new routing ID on another shard while reusing the known first
+    // holder's actual authenticated process. It must never receive new-Full.
+    session
+        .copy_shard(
+            old[1].id,
+            Participant {
+                id: 3,
+                remote: participants[0].remote.clone(),
+            },
+        )
+        .unwrap();
+    let version = session.version();
+    let objects: Vec<_> = participants
+        .iter()
+        .map(|p| {
+            p.remote
+                .status()
+                .unwrap()
+                .objects
+                .iter()
+                .map(|o| o.id)
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    armed.store(true, Ordering::SeqCst);
+
+    assert!(matches!(
+        session.execute("UPDATE records SET amount=amount+1 WHERE age=42"),
+        Err(storage_client::Error::InvalidInput(_))
+    ));
+
+    assert_eq!(work.load(Ordering::SeqCst), 0);
+    assert_eq!(session.version(), version);
+    assert!(session.resume_pending().unwrap().is_none());
+    assert_eq!(
+        session
+            .shards()
+            .iter()
+            .map(|s| s.object)
+            .collect::<Vec<_>>(),
+        old.iter().map(|s| s.object).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        participants
+            .iter()
+            .map(|p| p
+                .remote
+                .status()
+                .unwrap()
+                .objects
+                .iter()
+                .map(|o| o.id)
+                .collect::<Vec<_>>())
+            .collect::<Vec<_>>(),
+        objects
+    );
+}

@@ -128,6 +128,45 @@ prefix from public layout for every predicate, projection, LIMIT and empty resul
 it must not select ranges by query content or fall back by cache/failure outcome.
 This runtime does not choose an SQL privacy policy or claim sparse disk I/O.
 
+## Padded ciphertext replacement
+
+`StoreDeltaPlan::for_heads` computes an immutable advisory upload plan from public
+data/index geometry alone. `padded_request_bytes` is present only when a fixed
+worst-case delta is smaller than `full_request_bytes`. The delta reserves the
+largest possible 257 page-membership responses across **both** images, including
+their last-page lengths and Merkle heights. It does not inspect changed pages.
+The complete encoded `WireRequest` is capped at 32 MiB; the unchanged global
+64-MiB frame cap also covers Full Store. Transport prefix and TLS bytes are extra.
+
+`StoreDeltaRequest::new` binds the exact old object and both old/new heads, the
+complete new `Bundle` hash, and 1–257 canonically ordered page replacements.
+Each image either keeps its exact head with no replacements or preserves geometry
+and advances its revision once. Both unchanged is rejected. The explicit
+`DCSDLTA1`/version-1 body has exact public-geometry length and zero padding.
+Bounded serde first caps the frame allocation; header-derived exact length,
+entry counts, address-specific proof sizes and all padding are then checked.
+`Request::StoreDelta` appends tag 19 after the actual ReadImage request; its reply
+reuses `Response::Stored` tag 2. Existing tags and all cryptographic/application
+profiles remain unchanged. Unsupported peers fail rather than changing modes.
+
+Only the configured TLS owner may upload a delta. On first write, the store
+audits the **whole physical base**, including unrequested pages and its complete
+immutable hash, verifies replacement membership against the new heads, applies
+the checked pages to both audited snapshots and requires their complete new roots
+and canonical bundle hash. Ordinary full candidate validation, full-object quota,
+file sync and atomic rename still apply. The original base stays intact until
+normal journal GC. Lost-ACK replay fully audits an already stored exact target,
+even after normal base collection; a corrupt target never receives a cached ACK.
+No metadata-only custody proof, sidecar, FHE bypass or sparse disk-I/O claim is added.
+
+The runtime does not choose recipient or privacy policy. A consumer must freeze
+known holders and other candidates before query computation; mode may depend only
+on public geometry and that committed placement class. A known holder's failed
+Delta must never trigger Full Store to that same recipient. New replicas may have
+a preplanned Full class. Delta addresses remain visible to the receiving holder;
+fixed byte size does not hide timing, access patterns or differences between the
+old/new ciphertexts it already stores. See the owning [writeback contract](../../docs/padded-update-delta.md).
+
 ## Computation and proof boundary
 
 `InstallSetup` restores minimal `PublicUpdateEvaluator` parameters. Large legacy

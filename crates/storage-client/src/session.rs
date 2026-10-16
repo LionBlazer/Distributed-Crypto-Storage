@@ -17,6 +17,7 @@ mod insert;
 mod pending;
 mod select;
 mod update;
+mod writeback;
 use pending::{MutationOutcome, PendingMutation, StoredMutation};
 
 /// Successful results carry the independently checked confirmed version.

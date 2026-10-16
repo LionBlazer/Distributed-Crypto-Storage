@@ -260,6 +260,36 @@ impl Store {
             })
             .collect()
     }
+    pub(crate) fn put_delta(
+        &mut self,
+        request: crate::StoreDeltaRequest,
+    ) -> Result<ObjectInfo, RemoteError> {
+        let verified = request.verify_pages().map_err(|_| RemoteError::Integrity)?;
+        let object = *request.object();
+        if let Some(existing) = self.objects.get(&object).cloned() {
+            // An acknowledgement lost after durable storage may be retried even
+            // after the old base is collected. Metadata is never enough: audit
+            // every physical byte of the already stored target before replying.
+            let bundle = self.get(&object)?;
+            let (data, index) = request.new_heads();
+            if bundle.data_head != data.encode() || bundle.index_head != index.encode() {
+                return Err(RemoteError::Integrity);
+            }
+            return Ok(existing);
+        }
+        let (_, data, index) = self.read_verified(request.base_object())?;
+        let (old_data, old_index) = request.old_heads();
+        if data.commitment() != old_data || index.commitment() != old_index {
+            return Err(RemoteError::Integrity);
+        }
+        let bundle = request
+            .reconstruct(data, index, verified)
+            .map_err(|_| RemoteError::Integrity)?;
+        // The ordinary complete candidate audit, object identity, quota, FSYNC,
+        // atomic rename and exact-object idempotence remain the admission path.
+        self.put(bundle)
+    }
+
     pub(crate) fn put(&mut self, bundle: Bundle) -> Result<ObjectInfo, RemoteError> {
         let bytes = encode(&bundle).map_err(error)?;
         let info = validate(&bundle, bytes.len() as u64)?;
@@ -637,5 +667,204 @@ mod tests {
             custody_limits().max_page_plaintext_bytes,
             Limits::default().max_page_plaintext_bytes
         );
+    }
+
+    fn delta_fixture() -> (Bundle, Bundle, crate::StoreDeltaRequest) {
+        let owner = compact_store::Owner::generate([81; 16]).unwrap();
+        let layout = compact_store::Layout {
+            schema: [1; 16],
+            row_width: 1,
+            rows_per_page: 4096,
+            row_count: 300 * 4096,
+        };
+        let original_data = owner
+            .seal(
+                layout,
+                &vec![1; layout.row_count as usize],
+                custody_limits(),
+            )
+            .unwrap();
+        let original_index = owner
+            .seal(
+                compact_store::Layout {
+                    schema: [2; 16],
+                    ..layout
+                },
+                &vec![2; layout.row_count as usize],
+                custody_limits(),
+            )
+            .unwrap();
+        let as_bundle = |data: &EncryptedSnapshot, index: &EncryptedSnapshot| Bundle {
+            data_head: data.commitment().encode().to_vec(),
+            index_head: index.commitment().encode().to_vec(),
+            data: data.encode(),
+            index: index.encode(),
+        };
+        let base = as_bundle(&original_data, &original_index);
+        let mut data = original_data.clone();
+        let mut index = original_index.clone();
+        owner
+            .replace_page(
+                &mut data,
+                original_data.commitment(),
+                0,
+                &[3; 4096],
+                custody_limits(),
+            )
+            .unwrap();
+        owner
+            .replace_page(
+                &mut index,
+                original_index.commitment(),
+                0,
+                &[4; 4096],
+                custody_limits(),
+            )
+            .unwrap();
+        let target = as_bundle(&data, &index);
+        let pages = [
+            (
+                crate::PageAddress {
+                    image: crate::PageImage::Data,
+                    index: 0,
+                },
+                data.lookup(0, custody_limits()).unwrap(),
+            ),
+            (
+                crate::PageAddress {
+                    image: crate::PageImage::Index,
+                    index: 0,
+                },
+                index.lookup(0, custody_limits()).unwrap(),
+            ),
+        ];
+        let delta = crate::StoreDeltaRequest::new(
+            base.id(),
+            original_data.commitment(),
+            original_index.commitment(),
+            &target,
+            &pages,
+        )
+        .unwrap();
+        (base, target, delta)
+    }
+    #[test]
+    fn padded_delta_stores_the_exact_full_target_and_replays_after_restart_and_base_collection() {
+        let directory = Directory::new();
+        let (base, target, delta) = delta_fixture();
+        let mut store = Store::open(&directory.0, 8 * 1024 * 1024).unwrap();
+        assert!(matches!(
+            store.put_delta(delta.clone()),
+            Err(RemoteError::NotFound)
+        ));
+        assert!(store.objects.is_empty());
+        assert!(!directory.0.join(filename(&target.id())).exists());
+        store.put(base.clone()).unwrap();
+
+        let stored = store.put_delta(delta.clone()).unwrap();
+
+        assert_eq!(stored.id, target.id());
+        assert_eq!(store.get(&stored.id).unwrap(), target);
+        assert_eq!(store.get(&base.id()).unwrap(), base);
+        assert_eq!(store.objects.len(), 2);
+        drop(store);
+        let mut store = Store::open(&directory.0, 8 * 1024 * 1024).unwrap();
+        assert_eq!(store.put_delta(delta.clone()).unwrap().id, stored.id);
+        store
+            .prune_journal_objects(
+                &BTreeSet::from([head_pair_id(&base.data_head, &base.index_head)]),
+                &BTreeSet::from([head_pair_id(&target.data_head, &target.index_head)]),
+            )
+            .unwrap();
+        assert_eq!(store.objects.len(), 1);
+        assert_eq!(store.put_delta(delta).unwrap().id, stored.id);
+        assert_eq!(store.get(&stored.id).unwrap(), target);
+        assert!(!directory.0.join("write.pending").exists());
+    }
+    #[test]
+    fn unrequested_base_corruption_or_a_valid_overwrite_cannot_create_a_delta_target() {
+        for corruption in 0..3 {
+            let directory = Directory::new();
+            let (base, target, delta) = delta_fixture();
+            let mut store = Store::open(&directory.0, 8 * 1024 * 1024).unwrap();
+            store.put(base.clone()).unwrap();
+            let mut altered = base.clone();
+            match corruption {
+                0 => *altered.data.last_mut().unwrap() ^= 1,
+                1 => *altered.index.last_mut().unwrap() ^= 1,
+                _ => altered = delta_fixture().0,
+            }
+            let corrupt_bytes = encode(&altered).unwrap();
+            let base_path = directory.0.join(filename(&base.id()));
+            fs::write(&base_path, &corrupt_bytes).unwrap();
+
+            assert!(matches!(
+                store.put_delta(delta),
+                Err(RemoteError::Integrity)
+            ));
+
+            assert_eq!(fs::read(base_path).unwrap(), corrupt_bytes);
+            assert_eq!(store.objects.len(), 1);
+            assert!(!directory.0.join(filename(&target.id())).exists());
+            assert!(!directory.0.join("write.pending").exists());
+        }
+    }
+    #[test]
+    fn quota_failure_and_a_wrong_old_head_leave_the_existing_full_base_unchanged() {
+        let directory = Directory::new();
+        let (base, target, delta) = delta_fixture();
+        let quota = encode(&base).unwrap().len() as u64;
+        let mut store = Store::open(&directory.0, quota).unwrap();
+        store.put(base.clone()).unwrap();
+        assert!(matches!(
+            store.put_delta(delta.clone()),
+            Err(RemoteError::ResourceLimit)
+        ));
+        assert_eq!(store.get(&base.id()).unwrap(), base);
+        store.configure(8 * 1024 * 1024).unwrap();
+        let mut wire = encode(&crate::wire::WireRequest {
+            version: 1,
+            id: 1,
+            request: Request::StoreDelta(delta),
+        })
+        .unwrap();
+        // Whole WireRequest envelope22 + body old data head74 + root80.
+        wire[22 + 74 + 80] ^= 1;
+        let request: crate::wire::WireRequest = decode(&wire).unwrap();
+        let Request::StoreDelta(wrong) = request.request else {
+            panic!("delta")
+        };
+        assert!(matches!(
+            store.put_delta(wrong),
+            Err(RemoteError::Integrity)
+        ));
+        assert_eq!(store.get(&base.id()).unwrap(), base);
+        assert_eq!(store.objects.len(), 1);
+        assert!(!directory.0.join(filename(&target.id())).exists());
+        assert!(!directory.0.join("write.pending").exists());
+    }
+    #[test]
+    fn duplicate_delta_acknowledgement_audits_every_byte_of_the_already_stored_target() {
+        let directory = Directory::new();
+        let (base, target, delta) = delta_fixture();
+        let mut store = Store::open(&directory.0, 8 * 1024 * 1024).unwrap();
+        store.put(base.clone()).unwrap();
+        store.put_delta(delta.clone()).unwrap();
+        let mut altered = target.clone();
+        *altered.index.last_mut().unwrap() ^= 1;
+        fs::write(
+            directory.0.join(filename(&target.id())),
+            encode(&altered).unwrap(),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            store.put_delta(delta),
+            Err(RemoteError::Integrity)
+        ));
+
+        assert_eq!(store.get(&base.id()).unwrap(), base);
+        assert_eq!(store.objects.len(), 2);
+        assert!(!directory.0.join("write.pending").exists());
     }
 }

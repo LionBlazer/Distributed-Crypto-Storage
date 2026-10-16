@@ -257,6 +257,8 @@ fn proved_update_writes_decoded_carries_but_global_overflow_publishes_neither_im
     assert!(!staged.overflowed());
     assert_eq!(staged.matched_rows(), 2);
     assert_eq!(staged.changed_rows(), 2);
+    assert_eq!(staged.replaced_data_pages(), &[0, 2]);
+    assert_eq!(staged.replaced_index_pages(), &[0]);
     let staged = staged.into_table().unwrap();
     let updated_ids = owner.row_references(&staged, &[0, 1, 2]).unwrap();
     assert_eq!(updated_ids.table_id(), original_ids.table_id());
@@ -290,6 +292,41 @@ fn proved_update_writes_decoded_carries_but_global_overflow_publishes_neither_im
             expected
         );
     }
+    let prepared = owner
+        .prepare_provable_update(&staged, Some(AgeRange::equal(42)), 0, 256, limits)
+        .unwrap();
+    let generated = prove_update(&public, &prepared);
+    let unchanged = owner
+        .stage_proved_update(
+            &staged,
+            prepared,
+            generated.output(),
+            generated.proof(),
+            limits,
+        )
+        .unwrap();
+    assert_eq!(unchanged.matched_rows(), 2);
+    assert_eq!(unchanged.changed_rows(), 0);
+    assert!(unchanged.replaced_data_pages().is_empty());
+    assert!(unchanged.replaced_index_pages().is_empty());
+    assert_eq!(
+        encrypted_images(&unchanged.into_table().unwrap()),
+        encrypted_images(&staged)
+    );
+    // Index page proofs use the private format's byte limits, not the data-row cap.
+    let page = staged
+        .lookup_index_page(0)
+        .unwrap()
+        .verify(
+            staged.index_commitment(),
+            0,
+            compact_store::Limits {
+                max_rows: compact_store::Limits::default().max_image_bytes as u64,
+                ..limits
+            },
+        )
+        .unwrap();
+    assert_eq!(page.page_index(), 0);
     let staged_before = encrypted_images(&staged);
     let prepared = owner
         .prepare_provable_update(&staged, range_all(), 1, 256, limits)
@@ -309,6 +346,8 @@ fn proved_update_writes_decoded_carries_but_global_overflow_publishes_neither_im
     assert!(overflow.overflowed());
     assert_eq!(overflow.matched_rows(), 3);
     assert_eq!(overflow.changed_rows(), 0);
+    assert!(overflow.replaced_data_pages().is_empty());
+    assert!(overflow.replaced_index_pages().is_empty());
     assert!(overflow.into_table().is_none());
     assert_eq!(encrypted_images(&staged), staged_before);
     assert_eq!(encrypted_images(&table), before);

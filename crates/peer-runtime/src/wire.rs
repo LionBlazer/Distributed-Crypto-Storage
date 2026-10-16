@@ -98,6 +98,8 @@ pub enum Request {
     /// Exact-address encrypted page custody, with its own fail-closed v1 payload.
     FetchPages(crate::PageBatchRequest),
     FetchReadImage(crate::ReadImageRequest),
+    /// Owner-only fixed-geometry padded ciphertext upload; existing tags remain stable.
+    StoreDelta(crate::StoreDeltaRequest),
 }
 impl Request {
     pub fn name(&self) -> &'static str {
@@ -121,6 +123,7 @@ impl Request {
             Self::Shutdown => "shutdown",
             Self::FetchPages(_) => "fetch-pages",
             Self::FetchReadImage(_) => "read-image",
+            Self::StoreDelta(_) => "store-delta",
         }
     }
 }
@@ -244,6 +247,7 @@ pub(crate) fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> io::Result
 
 /// Reject a substituted RPC variant before its unrelated vector decoder can
 /// allocate. Page replies and errors have a separate narrow frame budget.
+#[cfg(test)]
 pub(crate) fn decode_page_response(bytes: &[u8]) -> io::Result<WireResponse> {
     decode_custody_response(bytes, crate::MAX_PAGE_BATCH_RESPONSE_BYTES, 12)
 }

@@ -183,6 +183,11 @@ impl Table {
     pub fn encrypted_index(&self) -> &EncryptedSnapshot {
         &self.index
     }
+    /// Membership proof for one encrypted private-index page, using this format's byte limits.
+    /// Membership alone grants no query, write, authorization or freshness authority.
+    pub fn lookup_index_page(&self, page: u64) -> Result<compact_store::LookupResponse> {
+        Ok(self.index.lookup(page, index::index_limits())?)
+    }
     pub fn commitment(&self) -> &Commitment {
         self.data.commitment()
     }
