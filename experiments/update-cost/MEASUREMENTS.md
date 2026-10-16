@@ -228,6 +228,57 @@ the combined record. This diagnostic retains one descendant confirmation and
 the deliberately easy test work contract; it establishes no production attack,
 recovery, throughput or tail-latency bound.
 
+## Matched collection change on one million rows
+
+A subsequent quiet comparison held the owner/test executable constant and replaced
+only its real peer binary. Baseline peer source is exactly `5fbe736cca4a2cfc8edb75136643f1a3e847bb62`;
+the changed peer adds the collection eligibility refactor and its owning tests in
+this change. The fixed private index remains v3, application commitment v2, and
+full FHE/STARK profile v3 is unchanged. Both variants used the same packaged SIMD
+kernels and selected AVX-512. Owner and peer each had eight Rayon threads.
+Other development builds/proof tests were held; no profiling or memory/PID hook
+ran during the six ordinary samples. Each sample was a fresh complete million-row
+scenario with the same exact output, genuine proofs, durable publication, confirmed
+freshness and later SELECT assertions. Startup/table creation is outside each SQL
+timer. Collection remains synchronous inside the accepted UPDATE.
+
+| Complete operation | Before samples ms | Before median ms | After samples ms | After median ms |
+| --- | --- | ---: | --- | ---: |
+| UPDATE the one age-42 row | 1371.287, 1347.866, 1314.006 | 1347.866 | 1202.006, 1178.117, 1172.873 | 1178.117 |
+| SELECT that updated row | 501.638, 486.707, 481.324 | 486.707 | 493.806, 496.811, 500.032 | 496.811 |
+
+The UPDATE median decreased by 169.749 ms (12.6%) in this selected comparison;
+it still exceeds 500 ms. The unchanged SELECT path did not improve and one after
+sample also exceeded 500 ms. Three sequential samples per variant establish no
+tail bound, throughput or failure/recovery SLA.
+
+Separate one-shot profiled executions passed for both variants: 14 RPCs, 42 valid
+events, zero failed calls and no truncation each. The collection RPC changed from
+199.992 ms to 0.695 ms with identical 46 request / 18 response application bytes.
+The entire instrumented UPDATE was 1360.867 / 1178.101 ms. These profiles support
+the source explanation; they are not additional uninstrumented latency samples.
+The validated head-pair index now chooses deletion eligibility without rereading
+retained/unrelated images. Full physical validation before Fetch, FetchVersion and
+Prove, exact retained-state selection, quota, proof admission and FSYNC behavior
+are unchanged. A successful collection is not a custody or SQL correctness proof.
+
+Ignored samples, eight full logs, both analyses and the preserved changed peer are
+under `.local/gc-matched-runs/20261016-044335-510/`. Baseline source/build metadata,
+read-only peer and identical kernels are under `.local/gc-comparison-baseline/`.
+SHA256 identities:
+
+| Artifact | SHA256 |
+| --- | --- |
+| Constant owner `proved_sql-43b267abd6ab93e6.exe` | `F9F26776D7DCC6BE737084C887E970B1549873C05CDF176A203594B5385382FB` |
+| Baseline peer | `F22C2CBBB33FF52CA10D626DDB5069C6F2E828F2DB0EE12C6D3EC982862AD9C1` |
+| Changed peer | `9A638B0973F20004B8F2A553956B2403021E8E381192B0506880B00D640CC061` |
+
+Both unchanged kernel hashes remain those in the [combined record](../combined-sql/README.md).
+Seventeen runtime tests and 30 actual-daemon transport/fault/SQL tests passed,
+including new collection damage/unlink/reopen cases, genuine proof rejection,
+quota, later-shard overflow and exact pending-write recovery. Strict Clippy and
+formatting passed; the independent source review found no actionable defect.
+
 ## Reproduction
 
 Build the owned process fixture outside the timing window, following the

@@ -192,25 +192,36 @@ impl Store {
     }
     /// Removes only objects that were committed in this journal's validated
     /// history and are absent from all currently retained network states.
+    /// The head index establishes deletion eligibility, never physical custody.
     pub(crate) fn prune_journal_objects(
         &mut self,
         history: &BTreeSet<[u8; 32]>,
         retained: &BTreeSet<[u8; 32]>,
     ) -> Result<(), RemoteError> {
-        let ids: Vec<_> = self.objects.keys().copied().collect();
-        for id in ids {
-            let bundle = self.get(&id)?;
-            let pair = head_pair_id(&bundle.data_head, &bundle.index_head);
-            if history.contains(&pair) && !retained.contains(&pair) {
-                fs::remove_file(self.directory.join(filename(&id))).map_err(error)?;
-                self.objects.remove(&id);
-                self.invalid.remove(&id);
-                if let Some(objects) = self.heads.get_mut(&pair) {
-                    objects.remove(&id);
-                }
-                if self.heads.get(&pair).is_some_and(BTreeSet::is_empty) {
-                    self.heads.remove(&pair);
-                }
+        // put/open populate this index only after validating the complete images
+        // and canonical object hash. Collection needs those immutable identities,
+        // not a second audit of retained or unrelated ciphertext. Actual reads
+        // and proving still call get and validate every physical byte.
+        let protected: BTreeSet<_> = retained
+            .iter()
+            .filter_map(|pair| self.heads.get(pair))
+            .flat_map(|objects| objects.iter().copied())
+            .collect();
+        let candidates: Vec<_> = history
+            .difference(retained)
+            .filter_map(|pair| self.heads.get(pair).map(|objects| (pair, objects)))
+            .flat_map(|(pair, objects)| objects.iter().map(move |id| (*pair, *id)))
+            .filter(|(_, id)| !protected.contains(id))
+            .collect();
+        for (pair, id) in candidates {
+            fs::remove_file(self.directory.join(filename(&id))).map_err(error)?;
+            self.objects.remove(&id);
+            self.invalid.remove(&id);
+            if let Some(objects) = self.heads.get_mut(&pair) {
+                objects.remove(&id);
+            }
+            if self.heads.get(&pair).is_some_and(BTreeSet::is_empty) {
+                self.heads.remove(&pair);
             }
         }
         Ok(())
@@ -444,6 +455,99 @@ mod tests {
                 .get_version(&staged.data_head, &staged.index_head)
                 .is_err()
         );
+    }
+    #[test]
+    fn collection_preserves_corrupt_retained_and_staged_images_but_removes_stale_membership() {
+        let directory = Directory::new();
+        let stale = bundle();
+        let retained = bundle();
+        let other_network = bundle();
+        let staged = bundle();
+        let mut store = Store::open(&directory.0, 1024 * 1024).unwrap();
+        for image in [&stale, &retained, &other_network, &staged] {
+            store.put(image.clone()).unwrap();
+        }
+        drop(store);
+        // Restart must rebuild deletion membership from fully verified disk images.
+        let mut store = Store::open(&directory.0, 1024 * 1024).unwrap();
+        let mut preserved = Vec::new();
+        for image in [&stale, &retained, &other_network, &staged] {
+            let path = store.directory.join(filename(&image.id()));
+            let mut damaged = fs::read(&path).unwrap();
+            *damaged.last_mut().unwrap() ^= 1;
+            fs::write(&path, &damaged).unwrap();
+            if image.id() != stale.id() {
+                assert!(matches!(
+                    store.get(&image.id()),
+                    Err(RemoteError::Integrity)
+                ));
+                preserved.push((image.id(), path, damaged));
+            }
+        }
+        let pair = |image: &Bundle| head_pair_id(&image.data_head, &image.index_head);
+        let history = BTreeSet::from([pair(&stale), pair(&retained), pair(&other_network)]);
+        let keep = BTreeSet::from([pair(&retained), pair(&other_network)]);
+
+        store.prune_journal_objects(&history, &keep).unwrap();
+
+        assert!(!store.directory.join(filename(&stale.id())).exists());
+        assert_eq!(store.objects.len(), 3);
+        assert_eq!(store.heads.len(), 3);
+        for (id, path, damaged) in preserved {
+            assert_eq!(fs::read(path).unwrap(), damaged);
+            assert!(store.invalid.contains(&id));
+            assert!(
+                !store
+                    .objects()
+                    .into_iter()
+                    .find(|info| info.id == id)
+                    .unwrap()
+                    .available
+            );
+            assert!(matches!(store.get(&id), Err(RemoteError::Integrity)));
+        }
+        // Collection cannot bless corrupted bytes for the next process startup.
+        drop(store);
+        assert!(Store::open(&directory.0, 1024 * 1024).is_err());
+    }
+
+    #[test]
+    fn failed_collection_unlink_retains_membership_for_a_later_retry() {
+        let directory = Directory::new();
+        let mut store = Store::open(&directory.0, 1024 * 1024).unwrap();
+        let stale = bundle();
+        let retained = bundle();
+        for image in [&stale, &retained] {
+            store.put(image.clone()).unwrap();
+        }
+        let path = store.directory.join(filename(&stale.id()));
+        let original = fs::read(&path).unwrap();
+        let retained_path = store.directory.join(filename(&retained.id()));
+        let retained_bytes = fs::read(&retained_path).unwrap();
+        let pair = head_pair_id(&stale.data_head, &stale.index_head);
+        let history = BTreeSet::from([pair]);
+        // A directory at the canonical filename makes unlink fail on every host.
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+
+        assert!(
+            store
+                .prune_journal_objects(&history, &BTreeSet::new())
+                .is_err()
+        );
+
+        assert_eq!(store.objects.len(), 2);
+        assert!(store.heads[&pair].contains(&stale.id()));
+        assert_eq!(fs::read(&retained_path).unwrap(), retained_bytes);
+        fs::remove_dir(&path).unwrap();
+        fs::write(&path, original).unwrap();
+        store
+            .prune_journal_objects(&history, &BTreeSet::new())
+            .unwrap();
+        assert!(!path.exists());
+        assert!(!store.heads.contains_key(&pair));
+        assert_eq!(store.objects.len(), 1);
+        assert_eq!(store.get(&retained.id()).unwrap(), retained);
     }
     #[test]
     fn custody_rejects_a_corrupt_index_or_an_index_from_another_committed_object() {

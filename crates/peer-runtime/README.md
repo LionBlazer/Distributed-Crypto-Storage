@@ -165,6 +165,16 @@ version retention; aborted staging garbage, journal pruning/checkpoints and auto
 crash-tail repair remain unimplemented. Arbitrary historical snapshots or deep-reorg
 data can become unavailable and must fail or recover from another real holder.
 
+Collection selects obsolete object IDs from the head-pair index built by fully
+validated Store and restart discovery. It excludes every ID referenced by any
+retained pair and unlinks only canonical object filenames. Membership is removed
+after successful unlink; an I/O failure retains that entry for retry. Collection
+does not read retained/staged payloads or attest their integrity. Existing invalid
+custody markers remain; Fetch, FetchVersion and Prove still audit complete physical
+images before returning data or computation. A corrupt retained image cannot become
+acceptable because collection succeeded. The same synchronous collection and
+durability/retention rules apply; no cleanup work moves outside the query timer.
+
 Public-key setup material stays in RAM. Independent failure-domain repair, durable
 owner-key recovery, automatic overlay discovery and production PoW security parameters
 remain open work. No fixed roster, external chain or token is introduced here.
