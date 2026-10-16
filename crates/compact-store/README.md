@@ -51,6 +51,17 @@ address-based retrieval, not an FHE evaluator or SQL query proof.
   tree without another root pass. This still audits every byte and retains the
   bounded tree. Materialization temporarily holds canonical bytes and copied
   packets; no process-memory or full-operation latency improvement is established.
+- OwnedVerifiedSnapshotBytes::apply_verified_replacements consumes the audited
+  canonical allocation and verified target members with the same transition and
+  page validation as EncryptedSnapshot. It preflights every exact packet range,
+  updates the private consumed tree with the existing reducer, and requires the
+  complete target root before copying any packet or manifest byte. Success keeps
+  the original Vec allocation; unchanged packets are not materialized or encoded.
+  No partial capability, raw mutation accessor or unchecked target is returned.
+  An error drops the consumed in-memory audit; an external/durable base is not
+  changed, and retry must reacquire and fully audit it. Both forms accept unique
+  pages in any order; wire-level ordering and smaller page budgets belong to their
+  consumer. This generic method does not publish, authorize or establish freshness.
 - EncryptedSnapshot::apply_verified_replacements consumes an authenticated base
   and verified target pages, preserves database/domain/layout, requires the next
   global revision, and returns only an image whose complete reconstructed root

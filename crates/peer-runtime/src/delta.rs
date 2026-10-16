@@ -2,7 +2,7 @@
 use crate::{
     PageAddress, PageError, PageImage, TargetVersion, pages::lookup_bytes, store::custody_limits,
 };
-use compact_store::{Commitment, EncryptedSnapshot, LookupResponse, VerifiedPage};
+use compact_store::{Commitment, LookupResponse, OwnedVerifiedSnapshotBytes, VerifiedPage};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 pub const MAX_STORE_DELTA_PAGES: usize = 257;
@@ -117,11 +117,17 @@ pub(crate) struct VerifiedReplacementPages {
 /// verified replacements. It grants custody admission, not SQL authorization.
 pub(crate) struct ReconstructedDelta {
     expected: TargetVersion,
-    data: EncryptedSnapshot,
-    index: EncryptedSnapshot,
+    data: OwnedVerifiedSnapshotBytes,
+    index: OwnedVerifiedSnapshotBytes,
 }
 impl ReconstructedDelta {
-    pub(crate) fn into_images(self) -> (TargetVersion, EncryptedSnapshot, EncryptedSnapshot) {
+    pub(crate) fn into_verified_images(
+        self,
+    ) -> (
+        TargetVersion,
+        OwnedVerifiedSnapshotBytes,
+        OwnedVerifiedSnapshotBytes,
+    ) {
         (self.expected, self.data, self.index)
     }
 }
@@ -241,13 +247,13 @@ impl StoreDeltaRequest {
         if version.object() != &self.binding.base.object {
             return Err(PageError::BindingMismatch);
         }
-        let data = data.into_snapshot().apply_verified_replacements(
+        let data = data.apply_verified_replacements(
             &self.binding.base.data,
             &self.binding.next.data,
             verified.data,
             custody_limits(),
         )?;
-        let index = index.into_snapshot().apply_verified_replacements(
+        let index = index.apply_verified_replacements(
             &self.binding.base.index,
             &self.binding.next.index,
             verified.index,

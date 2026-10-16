@@ -2,7 +2,7 @@ use super::*;
 use crate::RawBundle;
 use crate::store::{Store, test_support::Directory};
 use crate::wire::{self, Request, WireRequest};
-use compact_store::{Layout, Limits, Owner};
+use compact_store::{EncryptedSnapshot, Layout, Limits, Owner};
 
 fn bundle(data: &EncryptedSnapshot, index: &EncryptedSnapshot) -> RawBundle {
     RawBundle {
@@ -111,6 +111,69 @@ fn fixture(
     .unwrap();
     (original_data, original_index, next, delta)
 }
+#[test]
+fn genuine_delta_reconstruction_moves_both_original_canonical_allocations() {
+    for count in [1, 2, 64, 256, 257] {
+        let (data, index, next, delta) = fixture(count);
+        let mut base = bundle(&data, &index);
+        base.data.reserve_exact(71);
+        base.index.reserve_exact(73);
+        let pointers = [base.data.as_ptr(), base.index.as_ptr()];
+        let capacities = [base.data.capacity(), base.index.capacity()];
+        let checked = crate::CheckedObject::audit(base).unwrap();
+        let pages = delta.verify_pages().unwrap();
+
+        let rebuilt = delta.reconstruct(checked, pages).unwrap();
+        let (version, data, index) = rebuilt.into_verified_images();
+        let actual = [data.into_bytes(), index.into_bytes()];
+
+        assert!(version == next.target_version().unwrap());
+        for (slot, bytes) in actual.iter().enumerate() {
+            assert_eq!(bytes.as_ptr(), pointers[slot]);
+            assert_eq!(bytes.capacity(), capacities[slot]);
+        }
+        assert_eq!(actual[0], next.data);
+        assert_eq!(actual[1], next.index);
+    }
+}
+
+#[test]
+fn a_later_index_reconstruction_failure_leaves_only_the_exact_durable_base() {
+    let (data, index, _, mut delta) = fixture(2);
+    let base = bundle(&data, &index);
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0, 128 * 1024 * 1024).unwrap();
+    store.put(base.clone()).unwrap();
+    let inventory = || {
+        let mut paths = std::fs::read_dir(&directory.0)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        paths.sort();
+        paths
+    };
+    let before_files = inventory();
+    let base_path = before_files
+        .iter()
+        .find(|path| path.extension().is_some_and(|ext| ext == "object2"))
+        .unwrap();
+    let before_bytes = std::fs::read(base_path).unwrap();
+    // The genuine data replacement completes first. Omitting the changed index
+    // page must still drop both in-memory targets before candidate persistence.
+    delta.pages.pop();
+    let missing_index = StoreDeltaRequest::decode(&delta.encode()).unwrap();
+
+    assert!(store.put_delta(missing_index).is_err());
+
+    assert_eq!(inventory(), before_files);
+    assert_eq!(std::fs::read(base_path).unwrap(), before_bytes);
+    let objects = store.objects();
+    assert_eq!(objects.len(), 1);
+    assert_eq!(objects[0].id, *base.target_version().unwrap().object());
+    assert!(objects[0].available);
+    assert_eq!(store.get(&objects[0].id).unwrap(), base);
+}
+
 #[test]
 fn one_two_64_256_and_257_replacements_have_identical_complete_wire_lengths() {
     let mut expected = None;

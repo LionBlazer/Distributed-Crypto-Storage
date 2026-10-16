@@ -40,18 +40,24 @@ impl Candidate {
     pub(super) fn from_reconstructed(
         reconstructed: ReconstructedDelta,
     ) -> Result<Self, RemoteError> {
-        let (version, data, index) = reconstructed.into_images();
+        let (version, data, index) = reconstructed.into_verified_images();
         let object = *version.object();
         let expected_data = version.data_head().clone();
         let expected_index = version.index_head().clone();
         if data.commitment() != &expected_data || index.commitment() != &expected_index {
             return Err(RemoteError::Integrity);
         }
-        // Every unchanged packet comes from the fully audited physical base;
-        // every replaced packet and the complete resulting roots are checked.
-        // Canonical encoding preserves that entire authenticated image.
-        let bundle = RawBundle::from_images(version.nonce(), &data, &index)?;
-        drop((data, index));
+        // The consumed canonical buffers already contain the exact target
+        // manifests, unchanged audited packets and verified replacements. Moving
+        // them preserves that lineage without packet materialization or encoding.
+        let bundle = RawBundle {
+            version: 2,
+            nonce: version.nonce(),
+            data_head: expected_data.encode().to_vec(),
+            index_head: expected_index.encode().to_vec(),
+            data: data.into_bytes(),
+            index: index.into_bytes(),
+        };
         if bundle.target_version()?.object() != &object {
             return Err(RemoteError::Integrity);
         }

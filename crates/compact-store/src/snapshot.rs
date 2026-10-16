@@ -108,37 +108,9 @@ impl EncryptedSnapshot {
         replacements: Vec<VerifiedPage>,
         limits: Limits,
     ) -> Result<Self> {
-        if self.commitment() != expected {
-            return Err(Error::WrongVersion);
-        }
-        expected.layout.validate(limits)?;
-        next.layout.validate(limits)?;
-        if expected == next && replacements.is_empty() {
+        validate_verified_replacements(self.commitment(), expected, next, &replacements, limits)?;
+        if expected == next {
             return Ok(self);
-        }
-        if expected.database != next.database
-            || expected.domain != next.domain
-            || expected.layout != next.layout
-            || expected.revision.checked_add(1) != Some(next.revision)
-        {
-            return Err(Error::WrongVersion);
-        }
-        if replacements.is_empty() || replacements.len() > self.pages.len() {
-            return Err(Error::InvalidPage);
-        }
-        let mut seen = std::collections::BTreeSet::new();
-        for page in &replacements {
-            if page.commitment() != next {
-                return Err(Error::WrongVersion);
-            }
-            if !seen.insert(page.index)
-                || page.packet.len() != next.layout.page_plaintext_len(page.index)? + PAGE_OVERHEAD
-            {
-                return Err(Error::InvalidPage);
-            }
-            if page.page_revision() > next.revision {
-                return Err(Error::WrongVersion);
-            }
         }
         for page in replacements {
             self.replace_from_owner(next.clone(), page.index as usize, page.packet);
@@ -156,15 +128,7 @@ impl EncryptedSnapshot {
         packet: Vec<u8>,
     ) {
         self.pages[index] = Packet::new(packet);
-        self.levels[0][index] = leaf(index, self.pages[index].bytes());
-        let mut position = index;
-        for level in 1..self.levels.len() {
-            position /= 2;
-            let children = &self.levels[level - 1];
-            let left = &children[position * 2];
-            let right = &children[(position * 2 + 1).min(children.len() - 1)];
-            self.levels[level][position] = parent(left, right);
-        }
+        replace_leaf(&mut self.levels, index, self.pages[index].bytes());
         next.root = next.with_tree_root(tree_root(&self.levels));
         self.commitment = next;
     }
@@ -291,6 +255,63 @@ impl OwnedVerifiedSnapshotBytes {
     pub fn lookup(&self, index: u64, limits: Limits) -> Result<LookupResponse> {
         lookup_bytes(&self.bytes, &self.commitment, &self.levels, index, limits)
     }
+    /// Consumes an audited base and verified target pages without materializing
+    /// packets. Exact geometry and the next global revision are required; an
+    /// unchanged image accepts no replacements. All input ranges are checked
+    /// before the private tree changes. The complete target root must match
+    /// before any packet or manifest byte is copied and before a value escapes.
+    /// An error drops this consumed audit, not any external/durable base. A retry
+    /// must obtain and fully audit that base again. No authorization or freshness
+    /// is supplied, and no mutable bytes or unchecked target is exposed.
+    pub fn apply_verified_replacements(
+        mut self,
+        expected: &Commitment,
+        next: &Commitment,
+        replacements: Vec<VerifiedPage>,
+        limits: Limits,
+    ) -> Result<Self> {
+        validate_verified_replacements(self.commitment(), expected, next, &replacements, limits)?;
+        if expected == next {
+            return Ok(self);
+        }
+        let layout = expected.layout;
+        let capacity =
+            usize::try_from(u64::from(layout.row_width) * u64::from(layout.rows_per_page))
+                .map_err(|_| Error::ResourceLimit)?
+                .checked_add(PAGE_OVERHEAD)
+                .ok_or(Error::ResourceLimit)?;
+        let ranges = replacements
+            .iter()
+            .map(|page| {
+                let index = usize::try_from(page.index).map_err(|_| Error::InvalidPage)?;
+                let start = index
+                    .checked_mul(capacity)
+                    .and_then(|offset| MANIFEST_BYTES.checked_add(offset))
+                    .ok_or(Error::ResourceLimit)?;
+                let end = start
+                    .checked_add(page.packet.len())
+                    .ok_or(Error::ResourceLimit)?;
+                if end > self.bytes.len() {
+                    return Err(Error::InvalidPage);
+                }
+                Ok(start..end)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        for page in &replacements {
+            replace_leaf(&mut self.levels, page.index as usize, &page.packet);
+        }
+        if next.with_tree_root(tree_root(&self.levels)) != next.root {
+            return Err(Error::InvalidProof);
+        }
+        // This consumed value has no aliases or callbacks. No fallible operation
+        // remains after the exact complete root and every byte range are checked.
+        for (range, page) in ranges.into_iter().zip(replacements) {
+            self.bytes[range].copy_from_slice(&page.packet);
+        }
+        self.bytes[..MANIFEST_BYTES].copy_from_slice(&next.encode());
+        self.commitment = next.clone();
+        Ok(self)
+    }
     /// Returns the exact original canonical Vec without copying or re-encoding.
     pub fn into_bytes(self) -> Vec<u8> {
         self.bytes
@@ -327,6 +348,62 @@ fn materialize(
         commitment,
         pages,
         levels,
+    }
+}
+
+fn validate_verified_replacements(
+    current: &Commitment,
+    expected: &Commitment,
+    next: &Commitment,
+    replacements: &[VerifiedPage],
+    limits: Limits,
+) -> Result<()> {
+    if current != expected {
+        return Err(Error::WrongVersion);
+    }
+    expected.layout.validate(limits)?;
+    next.layout.validate(limits)?;
+    if expected == next && replacements.is_empty() {
+        return Ok(());
+    }
+    if expected.database != next.database
+        || expected.domain != next.domain
+        || expected.layout != next.layout
+        || expected.revision.checked_add(1) != Some(next.revision)
+    {
+        return Err(Error::WrongVersion);
+    }
+    if replacements.is_empty() || replacements.len() > expected.layout.page_count()? {
+        return Err(Error::InvalidPage);
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for page in replacements {
+        if page.commitment() != next {
+            return Err(Error::WrongVersion);
+        }
+        if !seen.insert(page.index)
+            || page.packet.len() != next.layout.page_plaintext_len(page.index)? + PAGE_OVERHEAD
+        {
+            return Err(Error::InvalidPage);
+        }
+        if page.page_revision() > next.revision {
+            return Err(Error::WrongVersion);
+        }
+    }
+    Ok(())
+}
+
+// All callers have checked the exact address and packet geometry. This is the
+// same path reducer for snapshot slots and consumed canonical owned bytes.
+fn replace_leaf(levels: &mut [Vec<[u8; 32]>], index: usize, packet: &[u8]) {
+    levels[0][index] = leaf(index, packet);
+    let mut position = index;
+    for level in 1..levels.len() {
+        position /= 2;
+        let children = &levels[level - 1];
+        let left = &children[position * 2];
+        let right = &children[(position * 2 + 1).min(children.len() - 1)];
+        levels[level][position] = parent(left, right);
     }
 }
 

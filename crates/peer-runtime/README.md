@@ -201,13 +201,18 @@ single canonical parser checks all packet revisions and both complete roots;
 raw Fetch, Copy, startup and full candidate admission can move the exact buffers
 without creating packet copies. PageBatch looks up both images directly;
 ReadImage materializes its complete data image and looks up only the requested
-index prefix. Delta materializes both authenticated images before reconstruction.
+index prefix. Delta keeps both canonical owned images throughout reconstruction.
 No checked object is cached across physical reads or RPCs, and omitted/unrequested
 bytes remain part of every complete audit. Checked trees still occupy memory,
 and image materialization temporarily overlaps canonical bytes with packet copies.
 These ownership boundaries do not establish a memory or latency improvement.
 Delta reconstruction consumes it and verified new pages into sealed
-`ReconstructedDelta` after both complete new roots match.
+`ReconstructedDelta` after both complete new roots match. The shared core
+transition/page validator checks every replacement. The owned-image adapter
+preflights every exact byte range before updating the consumed private trees. Only matching complete target roots permit
+copying replacement packets and manifests into those original allocations. No
+partial capability escapes on error. The consumed in-memory base is lost, while
+its durable file is unchanged; retry must reread and fully audit that file.
 Private `Candidate` consumes that result, rechecks both exact heads and hashes
 the exact target nonce and both heads. It privately retains the immutable checked
 RawBundle and exact whole-file length/ObjectInfo, completing codec preflight before
@@ -219,11 +224,12 @@ serves the test-only owned encoder and streams the unchanged serializer into the
 pending file through a bounded 16-KiB buffer. Flush finishes before file sync and atomic rename;
 only then are maps registered. Write/flush/sync/rename failure retains the existing
 pending cleanup and never acknowledges storage. It does not reparse images already
-fully authenticated by that construction. This removes the second full disk Vec;
-reconstruction still encodes both snapshots into RawBundle, every required physical
-read still audits both full images, and no latency or process-memory gain is
-established. No validation flag, mutable prevalidated Bundle or persistent custody
-cache is added. The existing custody profile 2, RPC v2 and application v4 namespaces
+fully authenticated by that construction. The candidate moves both canonical
+image Vecs into RawBundle without packet materialization or snapshot encoding;
+streaming also avoids a second complete disk Vec. Every required physical read
+still audits both full images, every durable target write remains complete, and
+no latency or process-memory gain is established. No validation flag, mutable
+prevalidated Bundle or persistent custody cache is added. The existing custody profile 2, RPC v2 and application v4 namespaces
 remain unchanged by this refactor. Existing-target replay still verifies requested
 new pages and fully reads/authenticates the physical target.
 
