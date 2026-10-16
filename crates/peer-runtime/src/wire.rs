@@ -95,6 +95,8 @@ pub enum Request {
     Neighbors(Vec<Endpoint>),
     Quota(u64),
     Shutdown,
+    /// Exact-address encrypted page custody, with its own fail-closed v1 payload.
+    FetchPages(crate::PageBatchRequest),
 }
 impl Request {
     pub fn name(&self) -> &'static str {
@@ -116,6 +118,7 @@ impl Request {
             Self::Neighbors(_) => "neighbors",
             Self::Quota(_) => "quota",
             Self::Shutdown => "shutdown",
+            Self::FetchPages(_) => "fetch-pages",
         }
     }
 }
@@ -176,6 +179,8 @@ pub enum Response {
     JournalAccepted([u8; 32]),
     Mined(JournalBlock),
     Done,
+    /// Untrusted ciphertext membership response; the client verifies exact heads.
+    Pages(crate::PageBatch),
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProofReply {
@@ -229,6 +234,34 @@ pub(crate) fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> io::Result
     bincode::DefaultOptions::new()
         .with_fixint_encoding()
         .with_limit(MAX_FRAME_BYTES as u64)
+        .reject_trailing_bytes()
+        .deserialize(bytes)
+        .map_err(io::Error::other)
+}
+
+/// Reject a substituted RPC variant before its unrelated vector decoder can
+/// allocate. Page replies and errors have a separate narrow frame budget.
+pub(crate) fn decode_page_response(bytes: &[u8]) -> io::Result<WireResponse> {
+    let invalid = || io::Error::new(io::ErrorKind::InvalidData, "Invalid page response envelope");
+    if bytes.len() > crate::MAX_PAGE_BATCH_RESPONSE_BYTES || bytes.len() < 18 {
+        return Err(invalid());
+    }
+    let result_tag = u32::from_le_bytes(bytes[10..14].try_into().unwrap());
+    let response_tag = u32::from_le_bytes(bytes[14..18].try_into().unwrap());
+    match result_tag {
+        0 if response_tag == 12 => {}
+        1 if response_tag <= 6 && bytes.len() == 18 => {}
+        1 if matches!(response_tag, 7 | 8) && bytes.len() >= 26 => {
+            let length = u64::from_le_bytes(bytes[18..26].try_into().unwrap());
+            if length != (bytes.len() - 26) as u64 {
+                return Err(invalid());
+            }
+        }
+        _ => return Err(invalid()),
+    }
+    bincode::DefaultOptions::new()
+        .with_fixint_encoding()
+        .with_limit(crate::MAX_PAGE_BATCH_RESPONSE_BYTES as u64)
         .reject_trailing_bytes()
         .deserialize(bytes)
         .map_err(io::Error::other)

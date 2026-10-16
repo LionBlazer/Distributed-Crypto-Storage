@@ -37,15 +37,19 @@ pub(crate) fn custody_limits() -> Limits {
         ..limits
     }
 }
-fn validate(bundle: &Bundle, stored: u64) -> Result<ObjectInfo, RemoteError> {
+fn decode_images(bundle: &Bundle) -> Result<(EncryptedSnapshot, EncryptedSnapshot), RemoteError> {
     let limits = custody_limits();
     let data = Commitment::decode(&bundle.data_head, limits).map_err(|_| RemoteError::Integrity)?;
     let index =
         Commitment::decode(&bundle.index_head, limits).map_err(|_| RemoteError::Integrity)?;
-    EncryptedSnapshot::decode_for_head(&bundle.data, &data, limits)
+    let data = EncryptedSnapshot::decode_for_head(&bundle.data, &data, limits)
         .map_err(|_| RemoteError::Integrity)?;
-    EncryptedSnapshot::decode_for_head(&bundle.index, &index, limits)
+    let index = EncryptedSnapshot::decode_for_head(&bundle.index, &index, limits)
         .map_err(|_| RemoteError::Integrity)?;
+    Ok((data, index))
+}
+fn validate(bundle: &Bundle, stored: u64) -> Result<ObjectInfo, RemoteError> {
+    let (data, _) = decode_images(bundle)?;
     Ok(ObjectInfo {
         available: true,
         id: bundle.id(),
@@ -53,10 +57,11 @@ fn validate(bundle: &Bundle, stored: u64) -> Result<ObjectInfo, RemoteError> {
         data_bytes: bundle.data.len() as u64,
         index_bytes: bundle.index.len() as u64,
         logical_bytes: data
+            .commitment()
             .layout()
             .logical_bytes()
             .map_err(|_| RemoteError::Integrity)? as u64,
-        rows: data.layout().row_count,
+        rows: data.commitment().layout().row_count,
     })
 }
 impl Store {
@@ -318,6 +323,21 @@ impl Store {
         Err(RemoteError::NotFound)
     }
     pub(crate) fn get(&mut self, id: &[u8; 32]) -> Result<Bundle, RemoteError> {
+        self.read_verified(id).map(|(bundle, _, _)| bundle)
+    }
+    pub(crate) fn get_pages(
+        &mut self,
+        request: crate::PageBatchRequest,
+    ) -> Result<crate::PageBatch, RemoteError> {
+        let (_, data, index) = self.read_verified(request.object())?;
+        crate::PageBatch::from_snapshots(request, &data, &index).map_err(|_| RemoteError::Integrity)
+    }
+    // Every route audits the complete physical bundle, including unrequested
+    // bytes in both images. Cached names/status never establish custody.
+    fn read_verified(
+        &mut self,
+        id: &[u8; 32],
+    ) -> Result<(Bundle, EncryptedSnapshot, EncryptedSnapshot), RemoteError> {
         if !self.objects.contains_key(id) {
             return Err(RemoteError::NotFound);
         }
@@ -327,8 +347,8 @@ impl Store {
             if &bundle.id() != id {
                 return Err(RemoteError::Integrity);
             }
-            validate(&bundle, bytes.len() as u64)?;
-            Ok(bundle)
+            let (data, index) = decode_images(&bundle)?;
+            Ok((bundle, data, index))
         })();
         if result.is_err() {
             self.invalid.insert(*id);

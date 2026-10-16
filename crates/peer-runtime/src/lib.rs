@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 mod client;
 pub mod evidence;
+mod pages;
 mod server;
 mod store;
 mod wire;
@@ -10,6 +11,10 @@ pub use client::{ActivityPhase, RemotePeer, RpcActivity, Trace};
 pub use evidence::{
     JobVerifier, MAX_EVIDENCE_BYTES, MAX_JOB_BYTES, MAX_JOBS, MutationEvidence, MutationJob,
     MutationManifest,
+};
+pub use pages::{
+    MAX_PAGE_BATCH_ADDRESSES, MAX_PAGE_BATCH_RESPONSE_BYTES, PageAddress, PageBatch,
+    PageBatchRequest, PageError, PageImage,
 };
 pub use peer_transport::{Connector, Endpoint, Identity, RequestControl, RequestScope};
 pub use server::{PeerServer, RunningServer};

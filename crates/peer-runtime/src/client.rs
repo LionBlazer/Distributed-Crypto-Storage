@@ -82,6 +82,10 @@ impl RemotePeer {
             .next
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
             .map_err(|_| io::Error::other("Request identity space exhausted"))?;
+        let response_limit = match &request {
+            Request::FetchPages(_) => crate::MAX_PAGE_BATCH_RESPONSE_BYTES,
+            _ => MAX_FRAME_BYTES,
+        };
         let name = request.name().to_string();
         let started = Instant::now();
         let bytes = encode(&WireRequest {
@@ -106,7 +110,7 @@ impl RemotePeer {
                     bytes: sent,
                 });
             }
-            let payload = read_frame(&mut stream, MAX_FRAME_BYTES)?;
+            let payload = read_frame(&mut stream, response_limit)?;
             received = payload.len() as u64;
             if let Some(activity) = &self.activity {
                 activity(RpcActivity {
@@ -117,7 +121,11 @@ impl RemotePeer {
                     bytes: received,
                 });
             }
-            let response: WireResponse = decode(&payload)?;
+            let response: WireResponse = if response_limit == crate::MAX_PAGE_BATCH_RESPONSE_BYTES {
+                decode_page_response(&payload)?
+            } else {
+                decode(&payload)?
+            };
             if response.version != 1 || response.id != id {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -149,6 +157,23 @@ impl RemotePeer {
             });
         }
         result
+    }
+    /// Reads exactly the requested encrypted pages and verifies Merkle membership
+    /// against the caller's trusted heads. The caller still owns AEAD, complete
+    /// selection, computation proofs and required journal freshness.
+    pub fn fetch_pages(
+        &self,
+        request: &crate::PageBatchRequest,
+    ) -> io::Result<Vec<(crate::PageAddress, compact_store::VerifiedPage)>> {
+        match self.call(Request::FetchPages(request.clone()))? {
+            Response::Pages(batch) => batch
+                .verify(request)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error)),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Unexpected page response",
+            )),
+        }
     }
     pub fn status(&self) -> io::Result<Status> {
         match self.call(Request::Status)? {
