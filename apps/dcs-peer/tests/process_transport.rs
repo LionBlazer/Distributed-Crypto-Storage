@@ -559,3 +559,259 @@ fn real_disk_tampering_and_quota_failures_never_return_cached_owner_data() {
         "An existing corrupt immutable file must never receive a false store acknowledgement"
     );
 }
+
+// Public non-secret byte fixtures exercise custody independently of SQL/FHE.
+fn page_fixture() -> (compact_store::Owner, Bundle) {
+    let owner = compact_store::Owner::generate([63; 16]).unwrap();
+    let layout = compact_store::Layout {
+        schema: [64; 16],
+        row_width: 1,
+        rows_per_page: 8,
+        row_count: 24,
+    };
+    let data = owner
+        .seal(layout, &(0..24).collect::<Vec<_>>(), Limits::default())
+        .unwrap();
+    let index = owner
+        .seal(
+            compact_store::Layout {
+                schema: [65; 16],
+                ..layout
+            },
+            &[93; 24],
+            Limits::default(),
+        )
+        .unwrap();
+    let bundle = Bundle {
+        data_head: data.commitment().encode().to_vec(),
+        index_head: index.commitment().encode().to_vec(),
+        data: data.encode(),
+        index: index.encode(),
+    };
+    (owner, bundle)
+}
+fn page_request(bundle: &Bundle) -> peer_runtime::PageBatchRequest {
+    use peer_runtime::{PageAddress, PageBatchRequest, PageImage};
+    PageBatchRequest::new(
+        bundle.id(),
+        &compact_store::Commitment::decode(&bundle.data_head, Limits::default()).unwrap(),
+        &compact_store::Commitment::decode(&bundle.index_head, Limits::default()).unwrap(),
+        &[
+            PageAddress {
+                image: PageImage::Index,
+                index: 0,
+            },
+            PageAddress {
+                image: PageImage::Data,
+                index: 2,
+            },
+        ],
+    )
+    .unwrap()
+}
+fn bundle_path(process: &Process, object: &[u8; 32]) -> PathBuf {
+    process.directory.join(
+        object
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+            + ".bundle",
+    )
+}
+#[test]
+fn exact_page_rpc_reads_actual_ciphertext_survives_restart_and_fails_over_to_a_real_replica() {
+    use std::sync::{Arc, Mutex};
+    let authority = Authority::new();
+    let owner_tls = authority.identity();
+    let connector = Connector::new(&owner_tls, &authority.der).unwrap();
+    let mut first = Process::start(&authority, owner_tls.fingerprint(), 1, None);
+    let second = Process::start(&authority, owner_tls.fingerprint(), 2, None);
+    let (owner, bundle) = page_fixture();
+    let request = page_request(&bundle);
+    let traces = Arc::new(Mutex::new(Vec::new()));
+    let sink = traces.clone();
+    let a = first
+        .remote(&connector)
+        .with_trace(Arc::new(move |trace| sink.lock().unwrap().push(trace)));
+    a.call(Request::Store(bundle.clone())).unwrap();
+    second
+        .remote(&connector)
+        .call(Request::Copy {
+            source: first.endpoint.clone(),
+            object: bundle.id(),
+        })
+        .unwrap();
+    traces.lock().unwrap().clear();
+
+    let pages = a.fetch_pages(&request).unwrap();
+
+    assert_eq!(
+        pages
+            .iter()
+            .map(|(address, _)| *address)
+            .collect::<Vec<_>>(),
+        request.addresses()
+    );
+    assert_eq!(owner.decrypt(&pages[0].1).unwrap().as_bytes(), &[93; 8]);
+    assert_eq!(
+        owner.decrypt(&pages[1].1).unwrap().as_bytes(),
+        &[16, 17, 18, 19, 20, 21, 22, 23]
+    );
+    let recorded = traces.lock().unwrap();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].operation, "fetch-pages");
+    assert!(recorded[0].succeeded);
+    assert!(
+        recorded[0].response_bytes > 0
+            && recorded[0].response_bytes <= peer_runtime::MAX_PAGE_BATCH_RESPONSE_BYTES as u64
+    );
+    drop(recorded);
+    first.kill();
+    assert!(a.fetch_pages(&request).is_err());
+    let surviving = second.remote(&connector).fetch_pages(&request).unwrap();
+    assert_eq!(
+        owner.decrypt(&surviving[1].1).unwrap().as_bytes(),
+        &[16, 17, 18, 19, 20, 21, 22, 23]
+    );
+    let restarted = Process::start(
+        &authority,
+        owner_tls.fingerprint(),
+        1,
+        Some(first.directory.clone()),
+    );
+    let restored = restarted.remote(&connector).fetch_pages(&request).unwrap();
+    assert_eq!(owner.decrypt(&restored[0].1).unwrap().as_bytes(), &[93; 8]);
+}
+#[test]
+fn page_rpc_preserves_authentication_write_authority_quota_and_exact_object_heads() {
+    let authority = Authority::new();
+    let owner = authority.identity();
+    let connector = Connector::new(&owner, &authority.der).unwrap();
+    let process = Process::start(&authority, owner.fingerprint(), 1, None);
+    let peer = process.remote(&connector);
+    let (_, bundle) = page_fixture();
+    let request = page_request(&bundle);
+    peer.call(Request::Store(bundle.clone())).unwrap();
+    let before = peer.status().unwrap();
+    assert!(peer.call(Request::Quota(1)).is_err());
+    assert_eq!(peer.status().unwrap().quota_bytes, before.quota_bytes);
+    assert_eq!(
+        peer.status().unwrap().objects[0].stored_bytes,
+        before.objects[0].stored_bytes
+    );
+    assert!(peer.fetch_pages(&request).is_ok());
+    let oversized_owner = compact_store::Owner::generate([66; 16]).unwrap();
+    let image = oversized_owner
+        .seal(
+            compact_store::Layout {
+                schema: [67; 16],
+                row_width: 1,
+                rows_per_page: 65536,
+                row_count: 600_000,
+            },
+            &vec![7; 600_000],
+            Limits::default(),
+        )
+        .unwrap();
+    let oversized = Bundle {
+        data_head: image.commitment().encode().to_vec(),
+        index_head: image.commitment().encode().to_vec(),
+        data: image.encode(),
+        index: image.encode(),
+    };
+    let absent = peer_runtime::PageBatchRequest::new(
+        oversized.id(),
+        image.commitment(),
+        image.commitment(),
+        &[peer_runtime::PageAddress {
+            image: peer_runtime::PageImage::Data,
+            index: 0,
+        }],
+    )
+    .unwrap();
+    assert!(peer.call(Request::Store(oversized)).is_err());
+    assert!(peer.fetch_pages(&absent).is_err());
+    assert_eq!(peer.status().unwrap().objects.len(), 1);
+    let member = Connector::new(&authority.identity(), &authority.der).unwrap();
+    // Authenticated nonowners retain the existing opaque ciphertext-read policy.
+    assert!(process.remote(&member).fetch_pages(&request).is_ok());
+    assert!(
+        process
+            .remote(&member)
+            .call(Request::Store(bundle.clone()))
+            .is_err()
+    );
+    let foreign = Authority::new();
+    let foreign_connector = Connector::new(&foreign.identity(), &foreign.der).unwrap();
+    assert!(
+        process
+            .remote(&foreign_connector)
+            .fetch_pages(&request)
+            .is_err()
+    );
+    let mut wrong_pin = process.endpoint.clone();
+    wrong_pin.identity[0] ^= 1;
+    assert!(
+        RemotePeer::new(wrong_pin, connector)
+            .fetch_pages(&request)
+            .is_err()
+    );
+    let missing = peer_runtime::PageBatchRequest::new(
+        [0; 32],
+        request.data_head(),
+        request.index_head(),
+        request.addresses(),
+    )
+    .unwrap();
+    assert!(peer.fetch_pages(&missing).is_err());
+    let (_, other) = page_fixture();
+    let wrong_head =
+        compact_store::Commitment::decode(&other.index_head, Limits::default()).unwrap();
+    let mismatched = peer_runtime::PageBatchRequest::new(
+        bundle.id(),
+        request.data_head(),
+        &wrong_head,
+        request.addresses(),
+    )
+    .unwrap();
+    assert!(peer.fetch_pages(&mismatched).is_err());
+    // Reading a retained old object is an explicit snapshot read, never 'latest'.
+    peer.call(Request::Store(other)).unwrap();
+    assert!(peer.fetch_pages(&request).is_ok());
+}
+#[test]
+fn page_rpc_audits_unrequested_bytes_after_store_and_reopen_and_rejects_truncation() {
+    let authority = Authority::new();
+    let owner = authority.identity();
+    let connector = Connector::new(&owner, &authority.der).unwrap();
+    let mut process = Process::start(&authority, owner.fingerprint(), 1, None);
+    let peer = process.remote(&connector);
+    let (_, bundle) = page_fixture();
+    let request = page_request(&bundle);
+    peer.call(Request::Store(bundle.clone())).unwrap();
+    assert!(peer.fetch_pages(&request).is_ok());
+    process.kill();
+    let restarted = Process::start(
+        &authority,
+        owner.fingerprint(),
+        1,
+        Some(process.directory.clone()),
+    );
+    let peer = restarted.remote(&connector);
+    assert!(peer.fetch_pages(&request).is_ok());
+    let path = bundle_path(&restarted, &bundle.id());
+    let original = fs::read(&path).unwrap();
+    let mut damaged = original.clone();
+    // Last byte is index page 2, absent from the requested index page 0/data page 2.
+    *damaged.last_mut().unwrap() ^= 1;
+    fs::write(&path, &damaged).unwrap();
+
+    assert!(peer.fetch_pages(&request).is_err());
+
+    assert!(!peer.status().unwrap().objects[0].available);
+    assert!(peer.call(Request::Store(bundle)).is_err());
+    fs::write(&path, &original).unwrap();
+    assert!(peer.fetch_pages(&request).is_ok());
+    fs::write(&path, &original[..original.len() - 1]).unwrap();
+    assert!(peer.fetch_pages(&request).is_err());
+}

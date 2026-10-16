@@ -259,6 +259,10 @@ fn serve(socket: TcpStream, acceptor: Acceptor, shared: Arc<Shared>) -> io::Resu
     if wire.version != 1 {
         return Err(io::Error::other("Unsupported RPC version"));
     }
+    let response_limit = match &wire.request {
+        Request::FetchPages(_) => crate::MAX_PAGE_BATCH_RESPONSE_BYTES,
+        _ => MAX_FRAME_BYTES,
+    };
     let operation = wire.request.name().to_owned();
     let result = dispatch(&shared, remote, wire.request);
     let succeeded = result.is_ok();
@@ -267,7 +271,7 @@ fn serve(socket: TcpStream, acceptor: Acceptor, shared: Arc<Shared>) -> io::Resu
         id: wire.id,
         result,
     })?;
-    let delivery = write_frame(&mut stream, &payload, MAX_FRAME_BYTES);
+    let delivery = write_frame(&mut stream, &payload, response_limit);
     if let Ok(mut state) = shared.state.lock() {
         state.received = state.received.saturating_add(bytes.len() as u64);
         state.sent = state.sent.saturating_add(if delivery.is_ok() {
@@ -377,6 +381,7 @@ fn dispatch(
         })),
         Request::Store(bundle) => state.store.put(bundle).map(Response::Stored),
         Request::Fetch { object } => state.store.get(&object).map(Response::Bundle),
+        Request::FetchPages(request) => state.store.get_pages(request).map(Response::Pages),
         Request::FetchVersion {
             data_head,
             index_head,

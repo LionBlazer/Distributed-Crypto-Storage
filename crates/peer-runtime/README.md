@@ -58,6 +58,46 @@ Objects are immutable, addressed by the complete bundle hash. `FetchVersion` use
 an exact data/index-head pair cache and still reads/authenticates the physical
 bundle. Missing or modified data is rejected; cached names do not prove custody.
 `Copy` transfers actual encrypted bytes directly between authenticated processes.
+
+`PageBatchRequest::new` binds an immutable object ID, both independently trusted
+compact-store heads, and 1–64 unique `PageAddress { image: PageImage, index }`
+values. `RemotePeer::fetch_pages` returns Merkle-verified ciphertext pages in the
+same requested order. The complete encoded runtime response is at most 1 MiB
+(excluding the transport frame prefix and TLS), and its announced frame length is
+checked before allocation. Both request and response payloads have distinct magic
+values and an explicit version 1. Their manual codecs and bounded sequence
+visitors check byte lengths, counts, head geometry and address-dependent proof
+sizes before allocating pages. Unknown versions/kinds, duplicate, omitted, extra,
+reordered or substituted pages fail closed. The client also rejects unrelated RPC
+response variants before decoding their vectors.
+
+The `FetchPages`/`Pages` enum tags are appended to the existing runtime boundary;
+unsupported peers reject the new RPC rather than falling back to a whole-object
+answer. The existing envelope version and every old tag stay unchanged. This
+optional custody capability changes neither the FHE wire, application commitment,
+proof profile nor cryptographic-kernel ABI. Authenticated nonowners keep the same
+opaque ciphertext-read rights as `Fetch`; owner-only writes and configuration
+remain owner-only.
+
+For every page batch, `Store` reads and validates the **complete physical bundle**,
+its immutable object hash and both encrypted snapshots, then derives real
+`LookupResponse` membership proofs from those validated snapshots. Corruption in
+an unrequested page or the other image rejects the batch, including after restart.
+There is no stat/mtime/ObjectInfo admission shortcut, metadata custody cache or
+persistent sidecar. This first stage still scans the whole bundle on disk; smaller
+network replies do not establish sparse disk I/O or an SQL latency improvement.
+Explicitly retained historical objects can be addressed as snapshots, never as an
+assertion of the latest agreed version.
+
+`PageBatch::verify` checks the exact original object/head/address binding and
+returns compact-store `VerifiedPage` values. This proves ciphertext membership
+only. The caller must independently obtain authorized agreed heads, authenticate
+AEAD at the owner, establish complete selection, obtain the genuine computation
+proof and enforce its required journal freshness. No SQL result or new state is
+accepted by this RPC. Missing custody fails; application-owned replica choice may
+retry another actual holder. The existing 64 MiB global frame, eight connections,
+heavy-proof permit and disk quotas are unchanged.
+
 Custody does not assume a SQL row shape: byte-addressed typed images can exceed
 one million encoded bytes. The geometry count is bounded by the unchanged 64 MiB
 image cap, while page, transport-frame and participant disk-quota limits still
@@ -174,6 +214,13 @@ Verification:
 ```sh
 cargo test --release --locked --offline -p peer-runtime -p version-journal -- --test-threads=1
 cargo clippy --release --locked --offline -p peer-runtime -p version-journal --all-targets -- -D warnings
+```
+
+Focused custody verification also runs actual TLS daemon I/O, replica failure,
+restart, authorization, quota and unrequested-page disk corruption:
+
+```sh
+cargo test --release --locked --offline -p dcs-peer --test process_transport page_rpc -- --test-threads=1
 ```
 
 Owning process tests live in `dcs-peer`; they must exercise the complete client,
