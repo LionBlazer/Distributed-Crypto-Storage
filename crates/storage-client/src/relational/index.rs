@@ -1,14 +1,16 @@
 use super::*;
-use relational_types::{CompareOp, Expr, ImportedTable, SelectPlan, compare_values};
+use relational_types::{
+    CompareOp, DataType, Expr, ImportedTable, SelectPlan, compare_typed_values,
+};
 use std::{cmp::Ordering, collections::BTreeSet};
 
 type Set = BTreeSet<usize>;
-fn ordered(a: &Value, b: &Value) -> Ordering {
+fn ordered(data_type: &DataType, a: &Value, b: &Value) -> Ordering {
     match (a, b) {
         (Value::Null, Value::Null) => Ordering::Equal,
         (Value::Null, _) => Ordering::Less,
         (_, Value::Null) => Ordering::Greater,
-        _ => compare_values(a, b).expect("same validated column type"),
+        _ => compare_typed_values(data_type, a, b).expect("same validated column type"),
     }
 }
 
@@ -43,17 +45,20 @@ impl PrivateIndex {
         }
         let columns = maps
             .into_iter()
-            .map(|map| {
+            .enumerate()
+            .map(|(column, map)| {
                 let mut postings: Vec<_> = map
                     .into_values()
                     .map(|(value, rows)| Posting { value, rows })
                     .collect();
-                postings.sort_by(|a, b| ordered(&a.value, &b.value));
+                postings.sort_by(|a, b| {
+                    ordered(&table.schema.columns[column].data_type, &a.value, &b.value)
+                });
                 postings
             })
             .collect();
         let index = Self {
-            format: 1,
+            format: 2,
             schema: table.schema,
             cells,
             columns,
@@ -65,7 +70,7 @@ impl PrivateIndex {
     }
 
     pub(super) fn validate(&self, schema: &TableSchema, bytes: usize) -> Result<()> {
-        if self.format != 1
+        if self.format != 2
             || &self.schema != schema
             || self.data_bytes != bytes
             || self.columns.len() != schema.columns.len()
@@ -91,7 +96,7 @@ impl PrivateIndex {
         if offset != bytes {
             return Err(crypto("Incomplete indexed byte coverage"));
         }
-        for postings in &self.columns {
+        for (column, postings) in self.columns.iter().enumerate() {
             let mut seen = Set::new();
             let mut values = BTreeSet::new();
             for posting in postings {
@@ -104,10 +109,13 @@ impl PrivateIndex {
                     }
                 }
             }
-            if postings
-                .windows(2)
-                .any(|pair| ordered(&pair[0].value, &pair[1].value) == Ordering::Greater)
-            {
+            if postings.windows(2).any(|pair| {
+                ordered(
+                    &schema.columns[column].data_type,
+                    &pair[0].value,
+                    &pair[1].value,
+                ) == Ordering::Greater
+            }) {
                 return Err(crypto("Unsorted private index"));
             }
             if seen.len() != self.cells.len() {
@@ -124,12 +132,13 @@ impl PrivateIndex {
                     return Ok(Set::new());
                 }
                 let postings = &self.columns[*column];
+                let data_type = &self.schema.columns[*column].data_type;
                 let first = postings.partition_point(|p| matches!(p.value, Value::Null));
                 let postings = &postings[first..];
-                let lower =
-                    postings.partition_point(|p| ordered(&p.value, value) == Ordering::Less);
-                let upper =
-                    postings.partition_point(|p| ordered(&p.value, value) != Ordering::Greater);
+                let lower = postings
+                    .partition_point(|p| ordered(data_type, &p.value, value) == Ordering::Less);
+                let upper = postings
+                    .partition_point(|p| ordered(data_type, &p.value, value) != Ordering::Greater);
                 let op = if negate {
                     match op {
                         CompareOp::Eq => CompareOp::Ne,
@@ -209,8 +218,12 @@ impl PrivateIndex {
                         (_, Value::Null) if order.nulls_first => Ordering::Greater,
                         (_, Value::Null) => Ordering::Less,
                         _ => {
-                            let cmp =
-                                compare_values(a, b).expect("validated same-typed complete index");
+                            let cmp = compare_typed_values(
+                                &self.schema.columns[order.column].data_type,
+                                a,
+                                b,
+                            )
+                            .expect("validated same-typed complete index");
                             if order.descending { cmp.reverse() } else { cmp }
                         }
                     };
@@ -252,12 +265,46 @@ mod tests {
         }
     }
     #[test]
+    fn variable_text_spaces_remain_significant_while_fixed_char_padding_does_not() {
+        let table = relational_types::import_database_dump(
+            "CREATE TABLE labels (id INT NOT NULL, variable VARCHAR(10), fixed CHAR(10)); INSERT INTO labels VALUES (1,'a ','a '),(2,'a','a'),(3,'a  ','a  '),(4,NULL,NULL),(5,'a\t','a\t');",
+            relational_types::ImportLimits::default(),
+        )
+        .unwrap()
+        .tables
+        .remove(0);
+        let (bytes, index) = PrivateIndex::build(table).unwrap();
+        index.validate(&index.schema, bytes.len()).unwrap();
+        for (tail, expected) in [
+            ("WHERE variable = 'a'", vec![1]),
+            ("WHERE variable = 'a '", vec![0]),
+            ("WHERE variable > 'a' ORDER BY variable", vec![4, 0, 2]),
+            (
+                "WHERE variable <> 'a' ORDER BY variable DESC LIMIT 1",
+                vec![2],
+            ),
+            ("WHERE fixed = 'a' ORDER BY id", vec![0, 1, 2]),
+            ("WHERE fixed > 'a'", vec![4]),
+            ("ORDER BY fixed, id", vec![0, 1, 2, 4, 3]),
+            ("ORDER BY variable", vec![1, 4, 0, 2, 3]),
+        ] {
+            let sql = format!("SELECT id FROM labels {tail}");
+            let plan =
+                relational_types::plan_select_schemas(std::slice::from_ref(&index.schema), &sql)
+                    .unwrap();
+            assert_eq!(index.select(&plan).unwrap(), expected, "{sql}");
+        }
+    }
+    #[test]
     fn missing_duplicate_or_overlapping_index_entries_are_rejected() {
         let (bytes, mut index) = PrivateIndex::build(relation()).unwrap();
         index.columns[0][0].rows.push(1);
         assert!(index.validate(&index.schema, bytes.len()).is_err());
         let (bytes, mut index) = PrivateIndex::build(relation()).unwrap();
         index.cells[0][0].length += 1;
+        assert!(index.validate(&index.schema, bytes.len()).is_err());
+        let (bytes, mut index) = PrivateIndex::build(relation()).unwrap();
+        index.format = 1;
         assert!(index.validate(&index.schema, bytes.len()).is_err());
     }
 

@@ -407,6 +407,58 @@ fn typed_tables_stream_more_than_128_rows_with_real_proofs_and_complete_private_
 }
 
 #[test]
+fn proved_text_projection_preserves_spaces_and_uses_the_column_padding_rules() {
+    let network = Network::new();
+    let database = import_database_dump(
+        "CREATE TABLE labels (id INT NOT NULL, variable NVARCHAR(10), fixed NCHAR(10)); INSERT INTO labels VALUES (1,N'a ',N'a '),(2,N'a',N'a'),(3,N'a  ',N'a  '),(4,NULL,NULL);",
+        ImportLimits::default(),
+    ).unwrap();
+    let mut session =
+        RelationalSession::import(database, network.participants.clone(), test_profile()).unwrap();
+    for (tail, expected) in [
+        ("WHERE variable = 'a'", vec![2]),
+        ("WHERE variable = 'a '", vec![1]),
+        ("WHERE fixed = 'a' ORDER BY variable", vec![2, 1, 3]),
+        (
+            "WHERE NOT (variable = 'a') ORDER BY variable DESC LIMIT 1",
+            vec![3],
+        ),
+    ] {
+        let sql = format!("SELECT id, variable, fixed FROM labels {tail}");
+        network.activity.lock().unwrap().clear();
+        let selected = session.select(&sql).unwrap();
+        let expected: Vec<_> = expected
+            .into_iter()
+            .map(|id| {
+                let text = match id {
+                    1 => "a ",
+                    2 => "a",
+                    3 => "a  ",
+                    _ => unreachable!(),
+                };
+                vec![
+                    Value::Integer(id),
+                    Value::Text(text.into()),
+                    Value::Text(format!("{text:10}")),
+                ]
+            })
+            .collect();
+        assert_eq!(selected.rows, expected, "{sql}");
+        assert_eq!(selected.proof_blocks, 1);
+        assert_eq!(
+            network
+                .activity
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|op| *op == "fhe-proof")
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
 fn proved_projection_uses_postgresql_null_order_before_applying_limit() {
     let network = Network::new();
     let database = import_database_dump(

@@ -325,12 +325,26 @@ pub fn compare_values(left: &Value, right: &Value) -> Result<Ordering, Error> {
             .partial_cmp(&f64::from_bits(*b))
             .ok_or_else(mismatch),
         (Value::Boolean(a), Value::Boolean(b)) => Ok(a.cmp(b)),
-        (Value::Text(a), Value::Text(b)) => {
-            Ok(a.trim_end_matches(' ').cmp(b.trim_end_matches(' ')))
-        }
+        (Value::Text(a), Value::Text(b)) => Ok(a.cmp(b)),
         (Value::Binary(a), Value::Binary(b)) => Ok(a.cmp(b)),
         (Value::DateTime(a), Value::DateTime(b)) => Ok(a.cmp(b)),
         _ => Err(mismatch()),
+    }
+}
+
+/// Compare validated values using the column's text-padding semantics.
+/// Variable text preserves spaces; only fixed CHAR/NCHAR ignores trailing U+0020.
+/// Text order is ordinal, with no implicit locale or server-default collation.
+pub fn compare_typed_values(
+    data_type: &DataType,
+    left: &Value,
+    right: &Value,
+) -> Result<Ordering, Error> {
+    match (data_type, left, right) {
+        (DataType::Text { fixed: true, .. }, Value::Text(a), Value::Text(b)) => {
+            Ok(a.trim_end_matches(' ').cmp(b.trim_end_matches(' ')))
+        }
+        _ => compare_values(left, right),
     }
 }
 

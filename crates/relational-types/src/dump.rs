@@ -1,6 +1,6 @@
 use crate::{
     Column, DataType, Error, ForeignKey, Identity, ImportedDatabase, ImportedTable, Index, Row,
-    SchemaObject, TableSchema, Value, compare_values, encode_value,
+    SchemaObject, TableSchema, Value, encode_value,
     lexer::{Parser, Token, TokenKind, lex, split_commas, token_text},
     literal_for_type,
 };
@@ -38,7 +38,7 @@ pub fn import_database_dump(sql: &str, limits: ImportLimits) -> Result<ImportedD
         return Err(Error::new("SQL dump exceeds configured byte limit"));
     }
     let tokens = lex(sql)?;
-    let mut database=ImportedDatabase{name:"database".into(),tables:Vec::new(),objects:Vec::new(),notices:vec!["Text comparison uses case-sensitive Unicode ordinal ordering, ignoring trailing spaces; no SQL Server server-default collation is assumed.".into()]};
+    let mut database=ImportedDatabase{name:"database".into(),tables:Vec::new(),objects:Vec::new(),notices:vec!["Text comparison uses case-sensitive Unicode ordinal ordering; variable text preserves trailing spaces and fixed CHAR/NCHAR ignores trailing U+0020. No server-default collation is assumed.".into()]};
     let mut row_count = 0;
     let mut decoded_bytes = 0;
     let mut start = 0;
@@ -677,14 +677,16 @@ fn insert_rows(
     Ok(())
 }
 
-fn key(row: &Row, columns: &[usize]) -> Result<Vec<u8>, Error> {
+fn key(schema: &TableSchema, row: &Row, columns: &[usize]) -> Result<Vec<u8>, Error> {
     let mut bytes = Vec::new();
     for &column in columns {
-        let normalized = match &row[column] {
-            Value::Text(text) => Value::Text(text.trim_end_matches(' ').to_owned()),
-            Value::Real32(bits) if f32::from_bits(*bits) == 0.0 => Value::Real32(0),
-            Value::Real64(bits) if f64::from_bits(*bits) == 0.0 => Value::Real64(0),
-            other => other.clone(),
+        let normalized = match (&schema.columns[column].data_type, &row[column]) {
+            (DataType::Text { fixed: true, .. }, Value::Text(text)) => {
+                Value::Text(text.trim_end_matches(' ').to_owned())
+            }
+            (_, Value::Real32(bits)) if f32::from_bits(*bits) == 0.0 => Value::Real32(0),
+            (_, Value::Real64(bits)) if f64::from_bits(*bits) == 0.0 => Value::Real64(0),
+            (_, other) => other.clone(),
         };
         let encoded = encode_value(&normalized)?;
         bytes.extend(
@@ -733,7 +735,7 @@ pub fn validate_database(database: &ImportedDatabase) -> Result<(), Error> {
         for columns in definitions {
             let mut keys = HashSet::new();
             for row in &table.rows {
-                if !keys.insert(key(row, &columns)?) {
+                if !keys.insert(key(&table.schema, row, &columns)?) {
                     return Err(Error::new(format!(
                         "duplicate key in table {:?}",
                         table.schema.name
@@ -775,7 +777,7 @@ pub fn validate_database(database: &ImportedDatabase) -> Result<(), Error> {
                 {
                     continue;
                 }
-                if !keys.contains(&key(row, &foreign.columns)?) {
+                if !keys.contains(&key(&table.schema, row, &foreign.columns)?) {
                     return Err(Error::new(format!(
                         "foreign key violation in table {:?} referencing {:?}",
                         table.schema.name, foreign.referenced_table
@@ -807,7 +809,7 @@ fn validate_check(schema: &TableSchema, rows: &[Row], expression: &str) -> Resul
         .predicate
         .ok_or_else(|| Error::new("missing CHECK expression"))?;
     for row in rows {
-        if check_truth(&predicate, row)? == Truth::False {
+        if check_truth(schema, &predicate, row)? == Truth::False {
             return Err(Error::new(format!(
                 "CHECK violation in table {:?}: {expression}",
                 schema.name
@@ -816,7 +818,7 @@ fn validate_check(schema: &TableSchema, rows: &[Row], expression: &str) -> Resul
     }
     Ok(())
 }
-fn check_truth(expr: &crate::Expr, row: &Row) -> Result<Truth, Error> {
+fn check_truth(schema: &TableSchema, expr: &crate::Expr, row: &Row) -> Result<Truth, Error> {
     use crate::{CompareOp, Expr};
     use std::cmp::Ordering;
     Ok(match expr {
@@ -825,7 +827,8 @@ fn check_truth(expr: &crate::Expr, row: &Row) -> Result<Truth, Error> {
             if matches!(field, Value::Null) || matches!(value, Value::Null) {
                 Truth::Unknown
             } else {
-                let ordering = compare_values(field, value)?;
+                let ordering =
+                    crate::compare_typed_values(&schema.columns[*column].data_type, field, value)?;
                 let matched = match op {
                     CompareOp::Eq => ordering == Ordering::Equal,
                     CompareOp::Ne => ordering != Ordering::Equal,
@@ -844,17 +847,17 @@ fn check_truth(expr: &crate::Expr, row: &Row) -> Result<Truth, Error> {
                 Truth::False
             }
         }
-        Expr::Not(expr) => match check_truth(expr, row)? {
+        Expr::Not(expr) => match check_truth(schema, expr, row)? {
             Truth::True => Truth::False,
             Truth::False => Truth::True,
             Truth::Unknown => Truth::Unknown,
         },
-        Expr::And(a, b) => match (check_truth(a, row)?, check_truth(b, row)?) {
+        Expr::And(a, b) => match (check_truth(schema, a, row)?, check_truth(schema, b, row)?) {
             (Truth::False, _) | (_, Truth::False) => Truth::False,
             (Truth::True, Truth::True) => Truth::True,
             _ => Truth::Unknown,
         },
-        Expr::Or(a, b) => match (check_truth(a, row)?, check_truth(b, row)?) {
+        Expr::Or(a, b) => match (check_truth(schema, a, row)?, check_truth(schema, b, row)?) {
             (Truth::True, _) | (_, Truth::True) => Truth::True,
             (Truth::False, Truth::False) => Truth::False,
             _ => Truth::Unknown,
@@ -908,6 +911,27 @@ fn utc_now() -> Result<String, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn text_constraints_use_column_padding_instead_of_trimming_all_strings() {
+        for sql_type in ["VARCHAR(10)", "NVARCHAR(10)", "CHAR(10)", "NCHAR(10)"] {
+            let fixed = sql_type.starts_with("CHAR") || sql_type.starts_with("NCHAR");
+            let unique = format!(
+                "CREATE TABLE labels (label {sql_type} NOT NULL PRIMARY KEY); INSERT INTO labels VALUES ('a'),('a ');"
+            );
+            let checked = format!(
+                "CREATE TABLE labels (label {sql_type} NOT NULL, CHECK(label <> 'a')); INSERT INTO labels VALUES ('a ');"
+            );
+            for sql in [unique, checked] {
+                let result = import_database_dump(&sql, Default::default());
+                assert_eq!(result.is_ok(), !fixed, "{sql}: {result:?}");
+            }
+            let foreign = format!(
+                "CREATE TABLE parent (label {sql_type} NOT NULL PRIMARY KEY); CREATE TABLE child (label {sql_type}, FOREIGN KEY(label) REFERENCES parent(label)); INSERT INTO parent VALUES ('a'); INSERT INTO child VALUES ('a ');"
+            );
+            let result = import_database_dump(&foreign, Default::default());
+            assert_eq!(result.is_ok(), fixed, "{foreign}: {result:?}");
+        }
+    }
     #[test]
     fn import_preserves_typed_unicode_null_binary_and_exact_money() {
         let database=import_database_dump("SET DATEFORMAT mdy\nGO\nCREATE TABLE [Products] ([ProductID] int NOT NULL, [Name] nvarchar(20) NOT NULL, [Price] money NULL, [Born] datetime NULL, [Blob] image NULL, CONSTRAINT PK PRIMARY KEY(ProductID)); INSERT INTO Products VALUES(1,N'Crème d''été',12.3400,'7/4/1996',0x00a1ff),(2,N'海',NULL,NULL,NULL);",Default::default()).unwrap();
@@ -1056,7 +1080,7 @@ mod tests {
         });
         assert!(validate_database(&database).is_err());
         assert!(
-            compare_values(
+            crate::compare_values(
                 &Value::Decimal {
                     unscaled: 1,
                     scale: 255

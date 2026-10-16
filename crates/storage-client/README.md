@@ -175,6 +175,13 @@ same exact endpoint when multiple workers fail over onto one surviving process;
 verification runs after releasing the permit. This queue neither creates database
 locks nor changes the peer's independent heavy-operation/resource admission limit.
 
+Typed complete indices use version 2 of their encrypted schema and comparator
+format. All predicate searches and result ordering compare text using its declared
+column type: variable text preserves trailing spaces; fixed CHAR/NCHAR ignores
+trailing U+0020. NULL placement remains independent of sort direction. Original
+encoded field bytes are projected unchanged by the genuine proof path. Older
+index formats reject; there is no migration or implicit locale collation.
+
 ## Security and lifecycle limits
 
 This is the owner-online exact-index model. The owner authenticates private complete

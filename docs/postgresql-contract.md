@@ -29,13 +29,19 @@ Typed SELECT ordering follows PostgreSQL's ASC NULLS LAST / DESC NULLS FIRST
 defaults and explicit NULLS FIRST/LAST per key, before applying LIMIT. See
 [sorting rows](https://www.postgresql.org/docs/18/queries-order.html).
 
+Typed comparison preserves trailing spaces for variable VARCHAR/NVARCHAR/text and
+ignores only trailing U+0020 for fixed CHAR/NCHAR. Predicates, ordering before LIMIT,
+and imported unique/foreign/CHECK validation use the column's comparison rules.
+Projection preserves the imported encoded field bytes, including existing fixed
+padding. This change does not implement type casts or locale collations. See
+[character types](https://www.postgresql.org/docs/18/datatype-character.html).
+The typed encrypted private-index format/schema is version 2; an older comparator
+ordering is rejected instead of being searched with incompatible partition rules.
+
 Other inherited SQL Server adapter semantics still differ from PostgreSQL. Typed
 imported queries currently lose quoted-identifier case and bind identifiers without
 case sensitivity; PostgreSQL preserves quoted names and folds unquoted names to
-lowercase. Variable VARCHAR/NVARCHAR comparisons currently trim trailing spaces,
-whereas PostgreSQL varchar/text comparisons preserve them; fixed CHAR has different
-padding rules. See [identifier rules](https://www.postgresql.org/docs/18/sql-syntax-lexical.html)
-and [character types](https://www.postgresql.org/docs/18/datatype-character.html).
+lowercase. See [identifier rules](https://www.postgresql.org/docs/18/sql-syntax-lexical.html).
 The fixed UPDATE outcome reports physically changed rows: `amount = amount + 0`
 reports zero. PostgreSQL's UPDATE command tag counts matched rows, including values
 that remain unchanged; reconciling this outcome with locking remains open. See

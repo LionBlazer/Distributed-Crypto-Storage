@@ -28,8 +28,13 @@ ORDER BY resolves PostgreSQL's default NULL placement (ASC NULLS LAST and DESC
 NULLS FIRST) and explicit NULLS FIRST/LAST separately for every ordering column.
 They produce an AST, never an answer. Joins, aggregates, stored programs, row locks
 and mutation plans are rejected here until their separate execution/proof paths
-exist. Text comparisons use case-sensitive Unicode ordinal ordering and ignore
-trailing spaces; they do not assume SQL Server's unspecified server collation.
+exist. `compare_values` uses case-sensitive Unicode ordinal text ordering, preserving
+spaces. `compare_typed_values` applies the declared column type: variable
+VARCHAR/NVARCHAR/text preserves trailing spaces, while fixed CHAR/NCHAR ignores
+trailing U+0020. Complete-index sorting, predicates and import key/CHECK validation
+use that same distinction. There is no implicit server-default collation or locale.
+These are comparison rules; imported variable spaces and existing fixed-field
+padding remain in the encoded values.
 
 `encode_row_with_ranges` returns canonical bytes and the original byte range of
 each field, so a consumer can construct homomorphic projection masks without

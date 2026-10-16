@@ -43,7 +43,7 @@ fn json(value: &impl Serialize) -> Result<Vec<u8>> {
 fn schema_id(schema: &TableSchema, index: bool) -> Result<[u8; 16]> {
     let mut bytes = json(schema)?;
     bytes.extend_from_slice(if index {
-        b"typed-index-v1"
+        b"typed-index-v2"
     } else {
         b"typed-data-v1"
     });
