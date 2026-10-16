@@ -81,6 +81,7 @@ reject rather than truncate. Owner secret keys stay outside peer role objects.
 | [dcs-proof-kernel](apps/proof-kernel/README.md) | Fixed-profile SIMD build of the same arithmetic proof engine |
 | [dcs-launch](tools/launcher/README.md) | Single build/package/launch command for portable hosts and SIMD kernels |
 | [version-journal](crates/version-journal/README.md) | Signed state transitions, cumulative work, confirmed ancestry and durable metadata |
+| [transaction-state](crates/transaction-state/README.md) | Public transaction/row-lock control protocol and metadata-only journal witnesses; live SQL integration remains open |
 | [compact-store](crates/compact-store/README.md) | Owner-only symmetric keys, opaque authenticated pages, independently trusted version roots and constant-size replacements |
 | [replica-store](crates/replica-store/README.md) | Bounded ciphertext replicas, fault-domain placement and atomic local repair batches |
 | [peer-protocol](crates/peer-protocol/README.md) | Bounded transport-independent handshake/message state machine |

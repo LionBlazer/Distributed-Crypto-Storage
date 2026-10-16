@@ -24,16 +24,25 @@ required peer-side encrypted computation and proof of correct, complete results.
 
 ## Transaction and lock protocol work
 
-The following are proposed implementation boundaries, pending their actual
-validation and integration:
+[transaction-state](../crates/transaction-state/README.md) now implements the bounded
+public control state: four lock modes, atomic acquisition, WAIT/NOWAIT outcomes,
+SKIP LOCKED selection with LIMIT/OFFSET, savepoint upgrades/rollback/release,
+non-reused transaction IDs and revision/sequence replay guards. Its metadata-only
+journal adapter verifies real controller signatures and exact old-state witnesses,
+while the journal verifies owner authorization, work and ancestry. Twenty-three
+owning tests exercise these rules, actual journal publication, durable reopen,
+forged control/data transitions and reorganization. Live SQL locking remains
+unimplemented; metadata outcomes are not encrypted SQL results or final lock grants.
+
+The remaining integration boundaries are:
 
 1. Give rows stable opaque identities independent of shard, physical ordinal,
    primary-key edits and page compaction. Define transaction/statement identities,
    authorization, isolation, sequence, read/write sets and resource bounds.
 2. Commit transaction and lock registries to agreed state. A separately typed
-   metadata shard and composite application verifier can use generic journal
-   transitions; metadata heads must not masquerade as encrypted table commitments.
-   Define a canonical bounded codec and authenticated state witnesses first.
+   metadata shard and its canonical witnesses are implemented independently;
+   the live data application still needs a composite verifier and synchronization.
+   Metadata heads must not masquerade as encrypted table commitments.
 3. Validate ordered proof jobs and intermediate encrypted heads before one atomic
    multi-shard COMMIT. Preserve read-your-writes, rollback, savepoints and durable
    owner recovery of ambiguous publication without applying a mutation twice.
