@@ -14,3 +14,4 @@ compact-store = { path = "../compact-store" }
 serde.workspace = true
 bincode = "1.3"
 sha2 = "=0.10.9"
+mio = { version = "=1.2.4", default-features = false, features = ["net", "os-poll"] }

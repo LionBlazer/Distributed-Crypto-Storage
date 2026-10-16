@@ -147,6 +147,47 @@ impl Drop for Process {
     }
 }
 #[test]
+fn authenticated_shutdown_wakes_the_listener_and_releases_the_process_directory() {
+    let authority = Authority::new();
+    let owner = authority.identity();
+    let connector = Connector::new(&owner, &authority.der).unwrap();
+    let mut process = Process::start(&authority, owner.fingerprint(), 1, None);
+    let remote = process.remote(&connector);
+    let outsider = Connector::new(&authority.identity(), &authority.der).unwrap();
+    assert!(process.remote(&outsider).call(Request::Shutdown).is_err());
+    assert_eq!(remote.status().unwrap().pid, process.child.id());
+
+    assert!(matches!(
+        remote.call(Request::Shutdown).unwrap(),
+        Response::Done
+    ));
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(status) = process.child.try_wait().unwrap() {
+            assert!(status.success());
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Shutdown did not wake the listener"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(remote.status().is_err());
+    let reopened = Process::start(
+        &authority,
+        owner.fingerprint(),
+        1,
+        Some(process.directory.clone()),
+    );
+    assert_eq!(
+        reopened.remote(&connector).status().unwrap().pid,
+        reopened.child.id()
+    );
+}
+
+#[test]
 fn supervised_peer_exits_on_owner_pipe_eof_and_releases_its_directory() {
     // Arrange: a real daemon remains reachable while its owner holds the pipe.
     let authority = Authority::new();

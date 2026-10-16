@@ -1,5 +1,6 @@
 use crate::{RemotePeer, store::Store, wire::*};
 use bfv_query_core::{PeerEvaluator, PublicSetup};
+use mio::{Events, Interest, Poll, Token, Waker};
 use peer_transport::{Acceptor, Connector, Endpoint, MAX_FRAME_BYTES, read_frame, write_frame};
 use sha2::{Digest, Sha256};
 use std::{
@@ -15,6 +16,10 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 mod network;
+
+const LISTENER: Token = Token(0);
+const STOP: Token = Token(1);
+const MAX_CONNECTIONS: usize = 8;
 
 struct Setup {
     public: PublicSetup,
@@ -38,12 +43,21 @@ struct Shared {
     node_id: u64,
     connector: Connector,
     stop: AtomicBool,
+    listener_waker: Waker,
     active: AtomicUsize,
     proof_busy: AtomicBool,
 }
+impl Shared {
+    fn request_stop(&self) {
+        self.stop.store(true, Ordering::Release);
+        // If the listener has already exited, the stop flag remains sufficient.
+        let _ = self.listener_waker.wake();
+    }
+}
 /// Owns a bound socket and the peer's ciphertext directory lock, never owner keys.
 pub struct PeerServer {
-    listener: TcpListener,
+    listener: mio::net::TcpListener,
+    poll: Poll,
     endpoint: Endpoint,
     acceptor: Acceptor,
     shared: Arc<Shared>,
@@ -55,7 +69,7 @@ pub struct RunningServer {
 }
 impl RunningServer {
     pub fn stop(&mut self) {
-        self.shared.stop.store(true, Ordering::Release);
+        self.shared.request_stop();
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
@@ -95,9 +109,15 @@ impl PeerServer {
             address: listener.local_addr()?,
             identity: config.identity.fingerprint(),
         };
+        let mut listener = mio::net::TcpListener::from_std(listener);
+        let poll = Poll::new()?;
+        poll.registry()
+            .register(&mut listener, LISTENER, Interest::READABLE)?;
+        let listener_waker = Waker::new(poll.registry(), STOP)?;
         let store = Store::open(directory, config.quota_bytes)?;
         Ok(Self {
             listener,
+            poll,
             endpoint,
             acceptor,
             shared: Arc::new(Shared {
@@ -115,6 +135,7 @@ impl PeerServer {
                 node_id: config.node_id,
                 connector,
                 stop: AtomicBool::new(false),
+                listener_waker,
                 active: AtomicUsize::new(0),
                 proof_busy: AtomicBool::new(false),
             }),
@@ -135,73 +156,99 @@ impl PeerServer {
             thread: Some(thread),
         })
     }
-    pub fn run(self) -> io::Result<()> {
+    pub fn run(mut self) -> io::Result<()> {
         let heartbeat = self.shared.clone();
         let heartbeat_thread = thread::Builder::new()
             .name("dcs-peer-heartbeat".into())
             .spawn(move || heartbeat_loop(heartbeat))?;
         let mut workers: Vec<JoinHandle<()>> = Vec::new();
-        while !self.shared.stop.load(Ordering::Acquire) {
-            let mut remaining = Vec::new();
-            for worker in workers.drain(..) {
-                if worker.is_finished() {
-                    let _ = worker.join();
-                } else {
-                    remaining.push(worker);
-                }
-            }
-            workers = remaining;
-            match self.listener.accept() {
-                Ok((socket, _)) => {
-                    // Reserve before TLS or frame allocation. Never an unbounded thread pool.
-                    if self
-                        .shared
-                        .active
-                        .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                            (n < 8).then_some(n + 1)
-                        })
-                        .is_err()
-                    {
-                        drop(socket);
-                        continue;
-                    }
-                    let shared = self.shared.clone();
-                    let acceptor = self.acceptor.clone();
-                    match thread::Builder::new()
-                        .name("dcs-peer-connection".into())
-                        .spawn(move || {
-                            struct Permit(Arc<Shared>);
-                            impl Drop for Permit {
-                                fn drop(&mut self) {
-                                    self.0.active.fetch_sub(1, Ordering::Release);
-                                }
-                            }
-                            let _permit = Permit(shared.clone());
-                            if let Err(error) = serve(socket, acceptor, shared) {
-                                eprintln!("peer connection rejected: {error}");
-                            }
-                        }) {
-                        Ok(worker) => workers.push(worker),
-                        Err(error) => {
-                            self.shared.active.fetch_sub(1, Ordering::Release);
-                            self.shared.stop.store(true, Ordering::Release);
-                            return Err(error);
-                        }
-                    }
-                }
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                    thread::sleep(Duration::from_millis(10))
-                }
-                Err(error) => {
-                    self.shared.stop.store(true, Ordering::Release);
-                    return Err(error);
-                }
-            }
-        }
+        let result = self.accept_connections(&mut workers);
+        self.shared.request_stop();
         for worker in workers {
             let _ = worker.join();
         }
         let _ = heartbeat_thread.join();
+        result
+    }
+
+    fn accept_connections(&mut self, workers: &mut Vec<JoinHandle<()>>) -> io::Result<()> {
+        let mut events = Events::with_capacity(2);
+        while !self.shared.stop.load(Ordering::Acquire) {
+            for worker in workers.extract_if(.., |worker| worker.is_finished()) {
+                let _ = worker.join();
+            }
+            match self.poll.poll(&mut events, None) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) => return Err(error),
+            }
+            for event in &events {
+                if event.token() != LISTENER {
+                    continue;
+                }
+                // Drain readiness to WouldBlock, as required for edge-triggered
+                // pollers. Check stop even under a continuous connection flood.
+                while !self.shared.stop.load(Ordering::Acquire) {
+                    match self.listener.accept() {
+                        Ok((socket, _)) => self.start_connection(socket.into(), workers)?,
+                        Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                        Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                        Err(error) => return Err(error),
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn start_connection(
+        &self,
+        socket: TcpStream,
+        workers: &mut Vec<JoinHandle<()>>,
+    ) -> io::Result<()> {
+        // A continuously readable listener must also reap completed workers:
+        // readiness draining cannot retain a handle for every past connection.
+        for worker in workers.extract_if(.., |worker| worker.is_finished()) {
+            let _ = worker.join();
+        }
+        // The active permit can drop before thread-local destructors finish.
+        // Bound retained OS threads as well as connections currently serving I/O.
+        if workers.len() >= MAX_CONNECTIONS {
+            return Ok(());
+        }
+        // Reserve before TLS or frame allocation. Never an unbounded thread pool.
+        if self
+            .shared
+            .active
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                (n < MAX_CONNECTIONS).then_some(n + 1)
+            })
+            .is_err()
+        {
+            return Ok(());
+        }
+        let shared = self.shared.clone();
+        let acceptor = self.acceptor.clone();
+        match thread::Builder::new()
+            .name("dcs-peer-connection".into())
+            .spawn(move || {
+                struct Permit(Arc<Shared>);
+                impl Drop for Permit {
+                    fn drop(&mut self) {
+                        self.0.active.fetch_sub(1, Ordering::Release);
+                    }
+                }
+                let _permit = Permit(shared.clone());
+                if let Err(error) = serve(socket, acceptor, shared) {
+                    eprintln!("peer connection rejected: {error}");
+                }
+            }) {
+            Ok(worker) => workers.push(worker),
+            Err(error) => {
+                self.shared.active.fetch_sub(1, Ordering::Release);
+                return Err(error);
+            }
+        }
         Ok(())
     }
 }
@@ -363,7 +410,7 @@ fn dispatch(
             Ok(Response::Done)
         }
         Request::Shutdown => {
-            shared.stop.store(true, Ordering::Release);
+            shared.request_stop();
             Ok(Response::Done)
         }
         Request::Copy { .. } => unreachable!("copy handled without the local store lock"),

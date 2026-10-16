@@ -161,6 +161,66 @@ fn controlled_peers(
 }
 
 #[test]
+fn stalled_handshakes_cannot_exceed_connection_admission_or_poison_later_rpcs() {
+    let network = Network::new();
+    let peer = &network.participants[0];
+    let mut stalled = Vec::new();
+    for _ in 0..8 {
+        stalled.push(
+            std::net::TcpStream::connect_timeout(
+                &peer.remote.endpoint().address,
+                std::time::Duration::from_secs(2),
+            )
+            .unwrap(),
+        );
+    }
+    assert!(
+        peer.remote.status().is_err(),
+        "The ninth connection must reject before allocating another TLS worker"
+    );
+    drop(stalled);
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        if peer.remote.status().is_ok() {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "Connection slots did not recover"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn locally_stopping_an_idle_listener_requires_no_further_client_connection() {
+    let mut network = Network::new();
+    for peer in &network.participants {
+        assert!(matches!(
+            peer.remote.call(peer_runtime::Request::Probe).unwrap(),
+            peer_runtime::Response::Alive { .. }
+        ));
+    }
+    for mut server in network.servers.drain(..) {
+        let address = server.endpoint.address;
+        let (completed, stopped) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            server.stop();
+            completed.send(()).unwrap();
+        });
+        stopped
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("An idle listener must wake for local stop without a client RPC");
+        worker.join().unwrap();
+        assert!(
+            std::net::TcpStream::connect_timeout(&address, std::time::Duration::from_millis(100))
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn cancelling_a_proved_read_interrupts_its_rpc_without_poisoning_the_next_query() {
     let network = Network::new();
     let control = peer_runtime::RequestControl::default();

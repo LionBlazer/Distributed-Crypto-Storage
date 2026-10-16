@@ -24,6 +24,14 @@ not evidence that decoding, authorization or cryptographic verification succeede
 Callbacks run synchronously and must return promptly. The separate `with_trace`
 callback retains completed-RPC diagnostics and outcomes.
 
+The listener uses Mio socket readiness and a dedicated local stop waker instead
+of periodically sleeping before accept. Local stop and authorized Shutdown wake
+an idle listener without opening a dummy connection. Admission still reserves one
+of eight connection slots before TLS/frame allocation; completed worker handles
+are reaped even during a continuously readable burst. Shutdown and listener errors
+join admitted workers and the heartbeat before releasing the directory lock.
+Mio is a direct transport-scheduling dependency, not an async application runtime.
+
 `RemotePeer::with_control` attaches the transport's `RequestControl` to cloned
 owner RPC handles. An active scope interrupts local sockets, rejects further RPCs
 and normalizes cancelled I/O to `Interrupted`; calls outside a scope are ordinary
