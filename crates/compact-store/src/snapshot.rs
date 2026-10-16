@@ -4,6 +4,9 @@ use crate::{
 };
 use std::sync::Arc;
 
+mod audit;
+pub use audit::AuditWorkers;
+
 /// Peer-owned opaque ciphertext pages plus a rebuildable in-memory Merkle index.
 /// Clones share immutable ciphertext allocations, with independent slots and trees.
 /// Does not contain plaintext or secret keys. Addresses and lengths are public.
@@ -168,6 +171,14 @@ impl<'a> VerifiedSnapshotBytes<'a> {
     }
     // One canonical parser for borrowed validation and owned snapshot imports.
     fn parse(bytes: &'a [u8], expected: Option<&Commitment>, limits: Limits) -> Result<Self> {
+        Self::parse_with_workers(bytes, expected, limits, AuditWorkers::One)
+    }
+    fn parse_with_workers(
+        bytes: &'a [u8],
+        expected: Option<&Commitment>,
+        limits: Limits,
+        workers: AuditWorkers,
+    ) -> Result<Self> {
         if bytes.len() > limits.max_image_bytes {
             return Err(Error::ResourceLimit);
         }
@@ -179,14 +190,14 @@ impl<'a> VerifiedSnapshotBytes<'a> {
         if bytes.len() != commitment.layout.encoded_len()? {
             return Err(Error::InvalidFormat);
         }
-        let mut leaves = Vec::with_capacity(commitment.layout.page_count()?);
-        for (index, packet) in packets(bytes, commitment.layout).enumerate() {
+        // Leaf hashing is infallible. Validate every revision serially before any
+        // optional helper, preserving revision errors ahead of root failures.
+        for packet in packets(bytes, commitment.layout) {
             if u64::from_le_bytes(packet[..8].try_into().unwrap()) > commitment.revision {
                 return Err(Error::InvalidFormat);
             }
-            leaves.push(leaf(index, packet));
         }
-        let levels = build_levels(leaves);
+        let levels = build_levels(audit::leaf_hashes(bytes, commitment.layout, workers));
         if commitment.with_tree_root(tree_root(&levels)) != commitment.root {
             return Err(Error::InvalidProof);
         }
@@ -239,9 +250,25 @@ pub struct OwnedVerifiedSnapshotBytes {
 }
 impl OwnedVerifiedSnapshotBytes {
     pub fn decode_for_head(bytes: Vec<u8>, expected: &Commitment, limits: Limits) -> Result<Self> {
+        Self::decode_for_head_with_workers(bytes, expected, limits, AuditWorkers::One)
+    }
+    /// Opts into a bounded audit policy without changing admission or image bytes.
+    /// The serial header/geometry/head/length/revision preflight is identical;
+    /// `Two` can hash disjoint leaf ranges using one scoped 512-KiB-stack helper
+    /// only for images at least 4 MiB. A shared permit limits this linked library
+    /// image to one extra helper across concurrent audits. Contention or a failed
+    /// spawn falls back to complete serial hashing. All workers finish before
+    /// root validation; a helper/caller panic unwinds after scope cleanup, never
+    /// returning a partial capability. No executor or cross-RPC cache is retained.
+    pub fn decode_for_head_with_workers(
+        bytes: Vec<u8>,
+        expected: &Commitment,
+        limits: Limits,
+        workers: AuditWorkers,
+    ) -> Result<Self> {
         let VerifiedSnapshotBytes {
             commitment, levels, ..
-        } = VerifiedSnapshotBytes::decode_for_head(&bytes, expected, limits)?;
+        } = VerifiedSnapshotBytes::parse_with_workers(&bytes, Some(expected), limits, workers)?;
         Ok(Self {
             bytes,
             commitment,

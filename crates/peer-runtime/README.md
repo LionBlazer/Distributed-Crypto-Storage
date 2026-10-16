@@ -11,6 +11,7 @@ client acceptance.
 | [compact-store](../compact-store/README.md) | Exact-head encrypted page integrity |
 | [bfv-query-core](../bfv-query-core/README.md) | Canonical public-only FHE operation adapters |
 | [bfv-query-proof](../bfv-query-proof/README.md) | Actual STARK generation/verification for every BFV residue |
+| [proof-acceleration](../proof-acceleration/README.md) | Pure bounded CPU-worker policy, without enabling its loader |
 | [version-journal](../version-journal/README.md) | Pinned work/profile validation, ancestry, authorization and durable ordering |
 
 `PeerServer::bind` owns its TCP endpoint and a caller-provided directory lock;
@@ -206,6 +207,22 @@ No checked object is cached across physical reads or RPCs, and omitted/unrequest
 bytes remain part of every complete audit. Checked trees still occupy memory,
 and image materialization temporarily overlaps canonical bytes with packet copies.
 These ownership boundaries do not establish a memory or latency improvement.
+
+Complete custody audits resolve their CPU policy once from available parallelism
+and `RAYON_NUM_THREADS`, using the same pure bounded worker policy as proof
+acceleration. An effective budget of one keeps audits serial; any larger budget
+opts into at most caller-plus-one leaf-hashing workers. Invalid/zero requests use
+that existing bounded default. Compact-store's single shared nonblocking helper
+permit covers concurrent Copy audits before the store mutex as well as ordinary
+physical reads. Its public-geometry 4-MiB threshold and full serial fallback do not
+skip packets, revisions, either root or the data-before-index check order.
+A helper requests a 512-KiB stack and is joined before releasing the permit;
+panics propagate after cleanup rather than accepting partially checked bytes.
+This does not reuse the proof DLL's private Rayon pool or create a host-global
+pool. The separate eight-connection admission and one-heavy-proof permit remain
+unchanged; a proof and an audit can overlap, so this is not a total process CPU or
+RAM bound. No full-operation speed or memory improvement is established.
+
 Delta reconstruction consumes it and verified new pages into sealed
 `ReconstructedDelta` after both complete new roots match. The shared core
 transition/page validator checks every replacement. The owned-image adapter

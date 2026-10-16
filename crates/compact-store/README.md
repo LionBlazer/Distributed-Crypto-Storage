@@ -51,6 +51,25 @@ address-based retrieval, not an FHE evaluator or SQL query proof.
   tree without another root pass. This still audits every byte and retains the
   bounded tree. Materialization temporarily holds canonical bytes and copied
   packets; no process-memory or full-operation latency improvement is established.
+- OwnedVerifiedSnapshotBytes::decode_for_head_with_workers explicitly accepts
+  AuditWorkers::One (the default serial policy) or Two. Existing decode methods
+  remain serial; Limits still describes hard decoding/response caps only. Both
+  policies enter the same canonical parser: image cap, manifest/layout, exact
+  expected head, exact length, all packet revisions, all leaf hashes, complete
+  Merkle reduction/root. Revision checks stay serial and precede root failures.
+  Only images at least 4 MiB with two or more pages may split leaf hashing into
+  two contiguous ranges. Eligibility depends on public geometry, never content.
+  The caller participates and one scoped helper requests a 512-KiB stack; OS stack
+  rounding/guards and thread metadata are additional process costs. One shared
+  nonblocking permit per linked library image spans helper cleanup/join, bounding
+  helpers across simultaneous callers. Contention or spawn failure hashes every
+  leaf serially. Helper panic is joined and propagated; caller unwind also joins
+  before releasing the permit. No partial capability escapes either panic.
+  The existing SHA-256 leaf domains and serial odd-node/root reducer are unchanged.
+  One leaf vector is split into disjoint output ranges, without packet copies,
+  per-packet tasks, a retained executor or cross-operation validation cache.
+  Multiple independently linked copies have separate permits. This is neither a
+  total hosting-process thread limit nor a measured latency/RAM guarantee.
 - OwnedVerifiedSnapshotBytes::apply_verified_replacements consumes the audited
   canonical allocation and verified target members with the same transition and
   page validation as EncryptedSnapshot. It preflights every exact packet range,

@@ -1,6 +1,6 @@
 //! Randomized object binding and complete custody admission; no SQL policy.
 use crate::{RemoteError, store::custody_limits};
-use compact_store::{Commitment, EncryptedSnapshot, OwnedVerifiedSnapshotBytes};
+use compact_store::{AuditWorkers, Commitment, EncryptedSnapshot, OwnedVerifiedSnapshotBytes};
 use peer_transport::MAX_FRAME_BYTES;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -166,6 +166,24 @@ struct ObjectEnvelope {
     data_head: Vec<u8>,
     index_head: Vec<u8>,
 }
+// Product CPU policy stays outside compact-store's hard decode caps. The shared
+// core permit also covers concurrent Copy audits before the local store mutex.
+fn audit_workers() -> AuditWorkers {
+    static WORKERS: std::sync::OnceLock<AuditWorkers> = std::sync::OnceLock::new();
+    *WORKERS.get_or_init(|| {
+        let available = std::thread::available_parallelism().map_or(1, usize::from);
+        let requested = std::env::var("RAYON_NUM_THREADS").ok();
+        resolve_audit_workers(available, requested.as_deref())
+    })
+}
+fn resolve_audit_workers(available: usize, requested: Option<&str>) -> AuditWorkers {
+    if proof_acceleration::worker_budget(available, requested) == 1 {
+        AuditWorkers::One
+    } else {
+        AuditWorkers::Two
+    }
+}
+
 impl CheckedObject {
     pub fn audit(raw: RawBundle) -> Result<Self, RemoteError> {
         raw.check_frame()?;
@@ -178,16 +196,19 @@ impl CheckedObject {
             data,
             index,
         } = raw;
-        let data = OwnedVerifiedSnapshotBytes::decode_for_head(
+        let workers = audit_workers();
+        let data = OwnedVerifiedSnapshotBytes::decode_for_head_with_workers(
             data,
             version.data_head(),
             custody_limits(),
+            workers,
         )
         .map_err(|_| RemoteError::Integrity)?;
-        let index = OwnedVerifiedSnapshotBytes::decode_for_head(
+        let index = OwnedVerifiedSnapshotBytes::decode_for_head_with_workers(
             index,
             version.index_head(),
             custody_limits(),
+            workers,
         )
         .map_err(|_| RemoteError::Integrity)?;
         Ok(Self {
@@ -347,6 +368,24 @@ mod tests {
             assert_eq!(bytes.capacity(), capacity);
         }
     }
+    #[test]
+    fn audit_policy_uses_the_existing_bounded_worker_request_without_environment_races() {
+        for (available, requested, expected) in [
+            (0, None, AuditWorkers::One),
+            (1, Some("8"), AuditWorkers::One),
+            (64, Some("1"), AuditWorkers::One),
+            (64, Some(" 1 "), AuditWorkers::One),
+            (64, Some("2"), AuditWorkers::Two),
+            (2, Some("999"), AuditWorkers::Two),
+            (64, None, AuditWorkers::Two),
+            (64, Some("0"), AuditWorkers::Two),
+            (64, Some("invalid"), AuditWorkers::Two),
+            (1, Some("invalid"), AuditWorkers::One),
+        ] {
+            assert_eq!(resolve_audit_workers(available, requested), expected);
+        }
+    }
+
     #[test]
     fn fresh_owner_staging_randomizes_ids_and_entropy_failure_returns_no_object() {
         let (data, index) = images();
