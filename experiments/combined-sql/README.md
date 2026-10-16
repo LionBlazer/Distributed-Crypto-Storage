@@ -31,6 +31,8 @@ The [bounded bulk decoding comparison](BULK-DECODING-MEASUREMENTS.md) measures t
 subsequent slice decoder while retaining complete custody and SQL acceptance checks.
 The [owned-image comparison](OWNED-IMAGE-MEASUREMENTS.md) measures deferred peer
 packet materialization while retaining every complete physical image audit.
+The [streamed persistence comparison](STREAMED-PERSISTENCE-MEASUREMENTS.md) records
+removal of the full temporary disk buffer; its overlapping timings establish no speedup.
 
 ## Full accepted operations
 
