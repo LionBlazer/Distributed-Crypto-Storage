@@ -148,8 +148,8 @@ cryptographic-kernel ABI remain unchanged. Authenticated nonowners retain opaque
 ciphertext-read rights; uploads and configuration remain owner-only.
 
 For every page batch, `Store` reads and validates the **complete physical bundle**,
-its immutable object hash and both encrypted snapshots, then derives real
-`LookupResponse` membership proofs from those validated snapshots. Corruption in
+its randomized object binding and both encrypted image roots, then derives real
+`LookupResponse` membership proofs from those validated images. Corruption in
 an unrequested page or the other image rejects the batch, including after restart.
 There is no stat/mtime/ObjectInfo admission shortcut, metadata custody cache or
 persistent sidecar. This first stage still scans the whole bundle on disk; smaller
@@ -188,8 +188,31 @@ magic and version 2. The response adds one fixed 32-byte nonce and verifies its
 object/head binding before image use. Existing tags, the global 64 MiB frame,
 eight connections, heavy-work permit and FHE/proof/ABI profiles are unchanged.
 Every image reply uses **one complete physical custody audit**, including bytes
-outside the returned prefix, then reuses those exact validated snapshots. No
+outside the returned prefix, then reuses those exact validated images. No
 stat/mtime/status shortcut or extra disk cache is introduced.
+
+PageBatch and ReadImage construct their replies from private
+`BorrowedCheckedImages` in the bounded immutable disk buffer. The same four-field
+parser finishes all lengths/trailing checks before metadata validation; the same
+canonical compact-store auditor checks the complete data image, then the complete
+index image. Only after both succeed does Store compare the exact requested
+object ID. PageBatch copies only its requested membership responses; ReadImage
+materializes its complete data snapshot and copies the fixed index prefix. Both
+replies own their bytes before the disk buffer drops. No partial snapshot, public
+core API or alternate wire format is introduced.
+
+The existing private read helper distinguishes physical custody from reply
+construction through a nested Result. A failed physical read/audit/ID check marks
+a known object unavailable. Successful physical repair clears that marker even
+when a well-formed request supplies different heads and reply binding fails.
+Malformed, duplicate or out-of-range wire requests reject before dispatch and
+perform no audit or availability repair. Ordinary successful requests retain
+their exact address order. This request-local path removes the four RawBundle
+payload copies: 37,604,496 bytes for the documented million-row geometry. The
+whole disk buffer, complete Merkle trees, owned reply payloads and encoding buffers
+remain; this structural count is not measured RSS or a complete-operation speed
+claim. Compute admission still drops each audit before starting the next image;
+it does not retain both trees merely to return metadata.
 
 This generic RPC has no SQL schema dependency. Its public prefix length is visible.
 A privacy-preserving fixed-footprint consumer must derive the same complete
@@ -229,15 +252,15 @@ normal journal GC. Lost-ACK replay fully audits an already stored exact target,
 even after normal base collection; a corrupt target never receives a cached ACK.
 No metadata-only custody proof, sidecar, FHE bypass or sparse disk-I/O claim is added.
 
-The private store admission boundary uses three request-local, non-cloneable
+The private store admission boundary uses request-local, non-cloneable
 capabilities. Only a complete physical read plus object-hash and both-root checks
 constructs `CheckedObject`. It retains the original envelope version, nonce and
 head buffers together with two `OwnedVerifiedSnapshotBytes` capabilities. Their
 single canonical parser checks all packet revisions and both complete roots;
 raw Fetch, Copy, startup and full candidate admission can move the exact buffers
-without creating packet copies. PageBatch looks up both images directly;
-ReadImage materializes its complete data image and looks up only the requested
-index prefix. Delta keeps both canonical owned images throughout reconstruction.
+without creating packet copies. The separate borrowed reply path above serves
+PageBatch/ReadImage. Delta keeps both canonical owned images throughout
+reconstruction.
 No checked object is cached across physical reads or RPCs, and omitted/unrequested
 bytes remain part of every complete audit. Checked trees still occupy memory,
 and image materialization temporarily overlaps canonical bytes with packet copies.

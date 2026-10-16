@@ -1,6 +1,8 @@
 //! Randomized object binding and complete custody admission; no SQL policy.
 use crate::{RemoteError, store::custody_limits};
-use compact_store::{AuditWorkers, Commitment, EncryptedSnapshot, OwnedVerifiedSnapshotBytes};
+use compact_store::{
+    AuditWorkers, Commitment, EncryptedSnapshot, OwnedVerifiedSnapshotBytes, VerifiedSnapshotBytes,
+};
 use peer_transport::MAX_FRAME_BYTES;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -168,6 +170,27 @@ pub struct CheckedObject {
     data: OwnedVerifiedSnapshotBytes,
     index: OwnedVerifiedSnapshotBytes,
 }
+// A complete audit of one immutable disk buffer, retained only while building
+// an owned custody reply. Neither image can outlive or mutate that buffer.
+pub(crate) struct BorrowedCheckedImages<'a> {
+    version: TargetVersion,
+    data: VerifiedSnapshotBytes<'a>,
+    index: VerifiedSnapshotBytes<'a>,
+}
+impl<'a> BorrowedCheckedImages<'a> {
+    pub(crate) fn version(&self) -> &TargetVersion {
+        &self.version
+    }
+    pub(crate) fn into_images(
+        self,
+    ) -> (
+        TargetVersion,
+        VerifiedSnapshotBytes<'a>,
+        VerifiedSnapshotBytes<'a>,
+    ) {
+        (self.version, self.data, self.index)
+    }
+}
 // Original wire metadata moves with the fully audited canonical image buffers.
 // It is never reconstructed from an independently supplied target or new nonce.
 struct ObjectEnvelope {
@@ -303,6 +326,11 @@ pub(crate) fn audit_disk_version(bytes: &[u8]) -> Result<TargetVersion, RemoteEr
     check_disk_header(bytes).map_err(crate::store::error)?;
     crate::wire::check_frame_size(bytes).map_err(crate::store::error)?;
     slice::audit_version(&bytes[DISK_HEADER_BYTES..])
+}
+pub(crate) fn audit_disk_images(bytes: &[u8]) -> Result<BorrowedCheckedImages<'_>, RemoteError> {
+    check_disk_header(bytes).map_err(crate::store::error)?;
+    crate::wire::check_frame_size(bytes).map_err(crate::store::error)?;
+    slice::audit_images(&bytes[DISK_HEADER_BYTES..])
 }
 pub(crate) fn check_disk_header(bytes: &[u8]) -> std::io::Result<()> {
     if bytes.get(..8) != Some(DISK_MAGIC.as_slice())

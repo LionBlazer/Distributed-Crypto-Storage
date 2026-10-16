@@ -1,8 +1,8 @@
 //! Static public-geometry custody: one full data image and an index prefix.
 use crate::{PageError, bytes::deserialize_frame, pages::lookup_bytes, store::custody_limits};
 use compact_store::{
-    Commitment, EncryptedSnapshot, Limits, LookupResponse, OwnedVerifiedSnapshotBytes,
-    VerifiedPage, VerifiedPagePath,
+    Commitment, EncryptedSnapshot, Limits, LookupResponse, VerifiedPage, VerifiedPagePath,
+    VerifiedSnapshotBytes,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
@@ -112,8 +112,8 @@ impl ReadImage {
     pub(crate) fn from_images(
         request: ReadImageRequest,
         nonce: [u8; 32],
-        data: OwnedVerifiedSnapshotBytes,
-        index: &OwnedVerifiedSnapshotBytes,
+        data: VerifiedSnapshotBytes<'_>,
+        index: &VerifiedSnapshotBytes<'_>,
     ) -> Result<Self> {
         check_object(&request, nonce)?;
         if data.commitment() != request.data_head() || index.commitment() != request.index_head() {
@@ -323,15 +323,82 @@ mod tests {
         index: &EncryptedSnapshot,
         request: &ReadImageRequest,
     ) -> ReadImage {
-        ReadImage::from_images(request.clone(), [31; 32], audited(data), &audited(index)).unwrap()
-    }
-    fn audited(image: &EncryptedSnapshot) -> OwnedVerifiedSnapshotBytes {
-        OwnedVerifiedSnapshotBytes::decode_for_head(
-            image.encode(),
-            image.commitment(),
-            custody_limits(),
+        let data_bytes = data.encode();
+        let index_bytes = index.encode();
+        ReadImage::from_images(
+            request.clone(),
+            [31; 32],
+            audited(&data_bytes, data),
+            &audited(&index_bytes, index),
         )
         .unwrap()
+    }
+    fn audited<'a>(bytes: &'a [u8], image: &EncryptedSnapshot) -> VerifiedSnapshotBytes<'a> {
+        VerifiedSnapshotBytes::decode_for_head(bytes, image.commitment(), custody_limits()).unwrap()
+    }
+    #[test]
+    fn borrowed_read_images_match_owned_images_for_empty_odd_and_partial_geometry() {
+        let owner = Owner::generate([56; 16]).unwrap();
+        for rows in [0, 1, 7, 8, 9, 17, 24, 25] {
+            let seal = |schema| {
+                owner
+                    .seal(
+                        Layout {
+                            schema: [schema; 16],
+                            row_width: 1,
+                            rows_per_page: 8,
+                            row_count: rows,
+                        },
+                        &vec![schema; rows as usize],
+                        custody_limits(),
+                    )
+                    .unwrap()
+            };
+            let data = seal(57);
+            let index = seal(58);
+            let pages = index.commitment().layout().page_count().unwrap() as u32;
+            for prefix in [0, pages.min(2), pages] {
+                let version = crate::TargetVersion::new(
+                    [31; 32],
+                    data.commitment().clone(),
+                    index.commitment().clone(),
+                )
+                .unwrap();
+                let request = ReadImageRequest::new(
+                    *version.object(),
+                    data.commitment(),
+                    index.commitment(),
+                    prefix,
+                )
+                .unwrap();
+                let expected = ReadImage {
+                    request: request.clone(),
+                    nonce: [31; 32],
+                    data: data.clone(),
+                    index: (0..u64::from(prefix))
+                        .map(|page| index.lookup(page, custody_limits()).unwrap())
+                        .collect(),
+                };
+
+                let actual = image(&data, &index, &request);
+
+                // The borrowed canonical inputs have gone out of scope; the
+                // complete data snapshot and prefix responses now own their bytes.
+                assert_eq!(actual.encode(), expected.encode());
+                actual.verify(&request).unwrap();
+                assert_eq!(actual.data().encode(), data.encode());
+                for page in 0..u64::from(prefix) {
+                    assert!(
+                        owner
+                            .decrypt(&actual.index_page(page, custody_limits()).unwrap())
+                            .unwrap()
+                            .as_bytes()
+                            .iter()
+                            .all(|byte| *byte == 58)
+                    );
+                }
+            }
+        }
     }
     #[test]
     fn immutable_read_image_authenticates_complete_data_and_the_exact_index_prefix() {
@@ -504,8 +571,13 @@ mod tests {
             ReadImageRequest::new([9; 32], request.index_head(), request.data_head(), 2).unwrap();
         assert!(actual.verify(&wrong_heads).is_err());
         assert!(
-            ReadImage::from_images(wrong_heads, [31; 32], audited(&data), &audited(&index))
-                .is_err()
+            ReadImage::from_images(
+                wrong_heads,
+                [31; 32],
+                audited(&data.encode(), &data),
+                &audited(&index.encode(), &index)
+            )
+            .is_err()
         );
         let data_only = ReadImageRequest::new(
             *request.object(),

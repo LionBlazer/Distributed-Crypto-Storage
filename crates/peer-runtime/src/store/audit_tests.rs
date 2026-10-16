@@ -42,6 +42,7 @@ fn borrowed_disk_audit_matches_owned_errors_and_checks_both_complete_images() {
     let bytes = objects::encode_disk(&original).unwrap();
     let version = objects::audit_disk_version(&bytes).unwrap();
     assert!(version == original.target_version().unwrap());
+    assert!(objects::audit_disk_images(&bytes).unwrap().version() == &version);
     assert_eq!(owned_audit(&bytes).unwrap().into_raw(), original);
 
     for fault in 0..14 {
@@ -98,6 +99,11 @@ fn borrowed_disk_audit_matches_owned_errors_and_checks_both_complete_images() {
             expected,
             "fault {fault}"
         );
+        assert_eq!(
+            class(objects::audit_disk_images(&hostile)),
+            expected,
+            "fault {fault}"
+        );
     }
 }
 
@@ -106,6 +112,7 @@ fn compute_admission_preserves_the_whole_file_cap_and_namespace_preflight() {
     let mut bytes = objects::encode_disk(&fixture()).unwrap();
     bytes.resize(peer_transport::MAX_FRAME_BYTES + 1, 0);
     assert_eq!(class(objects::audit_disk_version(&bytes)), "io");
+    assert_eq!(class(objects::audit_disk_images(&bytes)), "io");
     assert_eq!(class(owned_audit(&bytes)), "io");
     bytes[0] ^= 1;
     let borrowed = objects::audit_disk_version(&bytes)
@@ -114,6 +121,13 @@ fn compute_admission_preserves_the_whole_file_cap_and_namespace_preflight() {
         .to_string();
     let owned = owned_audit(&bytes).err().unwrap().to_string();
     assert_eq!(borrowed, owned);
+    assert_eq!(
+        objects::audit_disk_images(&bytes)
+            .err()
+            .unwrap()
+            .to_string(),
+        owned
+    );
     assert!(borrowed.contains("Unsupported object namespace"));
 }
 

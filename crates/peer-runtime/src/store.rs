@@ -382,16 +382,35 @@ impl Store {
         &mut self,
         request: crate::PageBatchRequest,
     ) -> Result<crate::PageBatch, RemoteError> {
-        let (_, data, index) = self.read_verified(request.object())?.into_verified_images();
-        crate::PageBatch::from_images(request, &data, &index).map_err(|_| RemoteError::Integrity)
+        let id = *request.object();
+        self.read_audited(&id, |bytes| {
+            let checked = objects::audit_disk_images(&bytes)?;
+            if checked.version().object() != &id {
+                return Err(RemoteError::Integrity);
+            }
+            let (_, data, index) = checked.into_images();
+            // Outer success records physical custody even if the independently
+            // supplied request heads fail while constructing the owned reply.
+            Ok(crate::PageBatch::from_images(request, &data, &index)
+                .map_err(|_| RemoteError::Integrity))
+        })?
     }
     pub(crate) fn get_read_image(
         &mut self,
         request: crate::ReadImageRequest,
     ) -> Result<crate::ReadImage, RemoteError> {
-        let (version, data, index) = self.read_verified(request.object())?.into_verified_images();
-        crate::ReadImage::from_images(request, version.nonce(), data, &index)
-            .map_err(|_| RemoteError::Integrity)
+        let id = *request.object();
+        self.read_audited(&id, |bytes| {
+            let checked = objects::audit_disk_images(&bytes)?;
+            if checked.version().object() != &id {
+                return Err(RemoteError::Integrity);
+            }
+            let (version, data, index) = checked.into_images();
+            Ok(
+                crate::ReadImage::from_images(request, version.nonce(), data, &index)
+                    .map_err(|_| RemoteError::Integrity),
+            )
+        })?
     }
     // Every route audits the complete physical bundle, including unrequested
     // bytes in both images. Cached names/status never establish custody.
@@ -416,8 +435,10 @@ impl Store {
             Ok(version)
         })
     }
-    // Both private callers complete both image audits and check the object ID.
-    // Unknown names stay NotFound; every failed known read marks it unavailable.
+    // Callers complete both image audits and check the object ID. Their outer
+    // Result describes physical custody only: reply-binding/lookup errors stay
+    // inside an Ok so successful physical repair clears an old invalid marker.
+    // Unknown names stay NotFound; failed known physical reads mark unavailable.
     fn read_audited<T>(
         &mut self,
         id: &[u8; 32],
@@ -1057,3 +1078,6 @@ mod profile_tests;
 
 #[cfg(test)]
 mod audit_tests;
+
+#[cfg(test)]
+mod reply_tests;

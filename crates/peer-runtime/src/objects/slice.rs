@@ -1,5 +1,5 @@
 //! Private bounded-slice parsing and request-local full-image audits.
-use super::{RawBundle, TargetVersion};
+use super::{BorrowedCheckedImages, RawBundle, TargetVersion};
 use crate::{RemoteError, wire};
 use compact_store::VerifiedSnapshotBytes;
 use serde::Deserialize;
@@ -84,6 +84,15 @@ impl<'a> RawBundleSlice<'a> {
             index: self.index.to_vec(),
         }
     }
+    fn checked_version(&self) -> Result<TargetVersion, RemoteError> {
+        super::check_size([
+            self.data_head.len(),
+            self.index_head.len(),
+            self.data.len(),
+            self.index.len(),
+        ])?;
+        super::target_version(self.version, self.nonce, self.data_head, self.index_head)
+    }
 }
 pub(crate) fn decode(bytes: &[u8]) -> io::Result<RawBundle> {
     Ok(RawBundleSlice::parse(bytes)?.into_owned())
@@ -93,13 +102,7 @@ pub(crate) fn decode(bytes: &[u8]) -> io::Result<RawBundle> {
 // Lend the same fully parsed fields directly to the canonical snapshot auditor.
 pub(super) fn audit_version(bytes: &[u8]) -> Result<TargetVersion, RemoteError> {
     let raw = RawBundleSlice::parse(bytes).map_err(crate::store::error)?;
-    super::check_size([
-        raw.data_head.len(),
-        raw.index_head.len(),
-        raw.data.len(),
-        raw.index.len(),
-    ])?;
-    let version = super::target_version(raw.version, raw.nonce, raw.data_head, raw.index_head)?;
+    let version = raw.checked_version()?;
     let workers = super::audit_workers();
     for (bytes, head) in [
         (raw.data, version.data_head()),
@@ -114,6 +117,33 @@ pub(super) fn audit_version(bytes: &[u8]) -> Result<TargetVersion, RemoteError> 
         .map_err(|_| RemoteError::Integrity)?;
     }
     Ok(version)
+}
+
+// Both complete images are audited before a caller may compare the object ID
+// or construct a reply. This retains their checked trees, not payload Vecs.
+pub(super) fn audit_images(bytes: &[u8]) -> Result<BorrowedCheckedImages<'_>, RemoteError> {
+    let raw = RawBundleSlice::parse(bytes).map_err(crate::store::error)?;
+    let version = raw.checked_version()?;
+    let workers = super::audit_workers();
+    let data = VerifiedSnapshotBytes::decode_for_head_with_workers(
+        raw.data,
+        version.data_head(),
+        super::custody_limits(),
+        workers,
+    )
+    .map_err(|_| RemoteError::Integrity)?;
+    let index = VerifiedSnapshotBytes::decode_for_head_with_workers(
+        raw.index,
+        version.index_head(),
+        super::custody_limits(),
+        workers,
+    )
+    .map_err(|_| RemoteError::Integrity)?;
+    Ok(BorrowedCheckedImages {
+        version,
+        data,
+        index,
+    })
 }
 
 pub(crate) fn receive_version(

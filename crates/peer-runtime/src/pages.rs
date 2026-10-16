@@ -1,6 +1,6 @@
 //! Bounded, exact-head ciphertext page custody. Membership is not SQL acceptance.
 use crate::{bytes::deserialize_frame, store::custody_limits};
-use compact_store::{Commitment, LookupResponse, OwnedVerifiedSnapshotBytes, VerifiedPage};
+use compact_store::{Commitment, LookupResponse, VerifiedPage, VerifiedSnapshotBytes};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::{collections::BTreeSet, fmt};
 
@@ -143,8 +143,8 @@ pub struct PageBatch {
 impl PageBatch {
     pub(crate) fn from_images(
         request: PageBatchRequest,
-        data: &OwnedVerifiedSnapshotBytes,
-        index: &OwnedVerifiedSnapshotBytes,
+        data: &VerifiedSnapshotBytes<'_>,
+        index: &VerifiedSnapshotBytes<'_>,
     ) -> Result<Self> {
         if data.commitment() != request.data_head() || index.commitment() != request.index_head() {
             return Err(PageError::BindingMismatch);
@@ -387,15 +387,92 @@ mod tests {
         index: &EncryptedSnapshot,
         request: &PageBatchRequest,
     ) -> PageBatch {
-        PageBatch::from_images(request.clone(), &audited(data), &audited(index)).unwrap()
-    }
-    fn audited(image: &EncryptedSnapshot) -> OwnedVerifiedSnapshotBytes {
-        OwnedVerifiedSnapshotBytes::decode_for_head(
-            image.encode(),
-            image.commitment(),
-            custody_limits(),
+        let data_bytes = data.encode();
+        let index_bytes = index.encode();
+        PageBatch::from_images(
+            request.clone(),
+            &audited(&data_bytes, data),
+            &audited(&index_bytes, index),
         )
         .unwrap()
+    }
+    fn audited<'a>(bytes: &'a [u8], image: &EncryptedSnapshot) -> VerifiedSnapshotBytes<'a> {
+        VerifiedSnapshotBytes::decode_for_head(bytes, image.commitment(), custody_limits()).unwrap()
+    }
+    #[test]
+    fn borrowed_page_replies_match_owned_images_after_source_buffers_drop() {
+        let owner = Owner::generate([52; 16]).unwrap();
+        for (data_rows, index_rows) in [(0, 1), (1, 0), (7, 9), (8, 8), (9, 17), (17, 7)] {
+            let seal = |schema, rows| {
+                owner
+                    .seal(
+                        Layout {
+                            schema: [schema; 16],
+                            row_width: 1,
+                            rows_per_page: 8,
+                            row_count: rows,
+                        },
+                        &vec![schema; rows as usize],
+                        custody_limits(),
+                    )
+                    .unwrap()
+            };
+            let data = seal(53, data_rows);
+            let index = seal(54, index_rows);
+            let mut addresses = Vec::new();
+            // Preserve interleaved image/address order, including the short last page.
+            for page in (0..3).rev() {
+                for (image, snapshot) in [(PageImage::Index, &index), (PageImage::Data, &data)] {
+                    if page < snapshot.commitment().layout().page_count().unwrap() as u64 {
+                        addresses.push(PageAddress { image, index: page });
+                    }
+                }
+            }
+            let request =
+                PageBatchRequest::new([55; 32], data.commitment(), index.commitment(), &addresses)
+                    .unwrap();
+            let expected = PageBatch {
+                request: request.clone(),
+                pages: addresses
+                    .iter()
+                    .map(|address| {
+                        match address.image {
+                            PageImage::Data => &data,
+                            PageImage::Index => &index,
+                        }
+                        .lookup(address.index, custody_limits())
+                        .unwrap()
+                    })
+                    .collect(),
+            };
+
+            let actual = response(&data, &index, &request);
+
+            // response() has already dropped both encoded input Vecs.
+            assert_eq!(actual.encode(), expected.encode());
+            let verified = actual.verify(&request).unwrap();
+            assert_eq!(
+                verified
+                    .iter()
+                    .map(|(address, _)| *address)
+                    .collect::<Vec<_>>(),
+                addresses
+            );
+            for (address, page) in verified {
+                let expected = match address.image {
+                    PageImage::Data => 53,
+                    PageImage::Index => 54,
+                };
+                assert!(
+                    owner
+                        .decrypt(&page)
+                        .unwrap()
+                        .as_bytes()
+                        .iter()
+                        .all(|byte| *byte == expected)
+                );
+            }
+        }
     }
     #[test]
     fn exact_ordered_pages_round_trip_and_decrypt_only_at_the_owner() {
@@ -646,7 +723,14 @@ mod tests {
         let mut unknown_kind = encoded.clone();
         unknown_kind[HEADER_BYTES] = 2;
         assert!(PageBatch::decode(&unknown_kind).is_err());
-        assert!(PageBatch::from_images(request, &audited(&index), &audited(&data)).is_err());
+        assert!(
+            PageBatch::from_images(
+                request,
+                &audited(&index.encode(), &index),
+                &audited(&data.encode(), &data)
+            )
+            .is_err()
+        );
     }
     #[test]
     fn valid_framing_cannot_hide_tampered_ciphertext_membership_or_embedded_address() {
