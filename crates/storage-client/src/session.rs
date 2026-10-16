@@ -14,6 +14,8 @@ mod agreement;
 mod execution;
 mod pending;
 mod select;
+mod shards;
+mod update;
 use pending::{MutationOutcome, PendingMutation, StoredMutation};
 
 /// Successful results carry the independently checked confirmed version.

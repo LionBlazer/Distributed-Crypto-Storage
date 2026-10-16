@@ -264,8 +264,19 @@ fn later_shard_overflow_never_publishes_any_earlier_staged_update() {
     let connector = Connector::permissionless(&owner).unwrap();
     let a = Process::start(owner.fingerprint(), 1, None);
     let b = Process::start(owner.fingerprint(), 2, None);
-    let pa = a.participant(1, &connector);
-    let pb = b.participant(2, &connector);
+    let completed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let observed = completed.clone();
+    let activity = std::sync::Arc::new(move |event: peer_runtime::RpcActivity| {
+        if event.operation == "fhe-proof"
+            && event.phase == peer_runtime::ActivityPhase::ReplyReceived
+        {
+            observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    });
+    let mut pa = a.participant(1, &connector);
+    let mut pb = b.participant(2, &connector);
+    pa.remote = pa.remote.with_activity(activity.clone());
+    pb.remote = pb.remote.with_activity(activity);
     let mut database = Session::create(
         "overflow".into(),
         &[
@@ -290,6 +301,11 @@ fn later_shard_overflow_never_publishes_any_earlier_staged_update() {
         .execute("UPDATE records SET amount=amount+1")
         .unwrap_err();
     assert!(error.to_string().contains("overflow"), "{error}");
+    assert_eq!(
+        completed.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "Both admitted workers must finish their proof RPC before returning overflow"
+    );
     assert_eq!(database.version().state_root, initial.state_root);
     for (old, new) in heads.iter().zip(database.shards()) {
         assert_eq!(old.data_head, new.data_head);
@@ -558,5 +574,184 @@ fn cancelling_both_select_workers_preserves_the_next_query() {
     assert_eq!(
         rows(session.execute("SELECT * FROM records").unwrap()),
         vec![vec![18, 20], vec![42, 30]]
+    );
+}
+
+#[test]
+fn update_proves_both_shards_concurrently_before_storing_any_new_copy() {
+    use peer_runtime::{ActivityPhase, RpcActivity};
+    use std::{
+        collections::BTreeSet,
+        sync::{
+            Arc, Condvar, Mutex,
+            atomic::{AtomicBool, Ordering},
+        },
+    };
+
+    #[derive(Default)]
+    struct Observed {
+        sent: BTreeSet<[u8; 32]>,
+        received: usize,
+        timed_out: bool,
+        early_store: bool,
+    }
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let a = Process::start(owner.fingerprint(), 1, None);
+    let b = Process::start(owner.fingerprint(), 2, None);
+    let observed = Arc::new((Mutex::new(Observed::default()), Condvar::new()));
+    let armed = Arc::new(AtomicBool::new(false));
+    let gate = observed.clone();
+    let active = armed.clone();
+    let activity: Arc<dyn Fn(RpcActivity) + Send + Sync> = Arc::new(move |event| {
+        if !active.load(Ordering::SeqCst) {
+            return;
+        }
+        let (state, ready) = &*gate;
+        let mut state = state.lock().unwrap();
+        match (event.operation.as_str(), event.phase) {
+            ("fhe-proof", ActivityPhase::RequestSent) => {
+                state.sent.insert(event.peer);
+                ready.notify_all();
+                let (mut state, timeout) = ready
+                    .wait_timeout_while(state, Duration::from_secs(5), |state| state.sent.len() < 2)
+                    .unwrap();
+                state.timed_out |= timeout.timed_out() && state.sent.len() < 2;
+            }
+            ("fhe-proof", ActivityPhase::ReplyReceived) => state.received += 1,
+            ("store", ActivityPhase::RequestSent) => state.early_store |= state.received < 2,
+            _ => {}
+        }
+    });
+    let mut pa = a.participant(1, &connector);
+    let mut pb = b.participant(2, &connector);
+    pa.remote = pa.remote.with_activity(activity.clone());
+    pb.remote = pb.remote.with_activity(activity);
+    let mut session = Session::create(
+        "concurrent-update".into(),
+        &[
+            PlainRow {
+                age: 18,
+                amount: 20,
+            },
+            PlainRow {
+                age: 42,
+                amount: 30,
+            },
+        ],
+        vec![pa, pb],
+        test_contract(),
+    )
+    .unwrap();
+    let before = session.version();
+
+    armed.store(true, Ordering::SeqCst);
+    let result = session
+        .execute("UPDATE records SET amount=amount+1")
+        .unwrap();
+    armed.store(false, Ordering::SeqCst);
+
+    assert!(matches!(
+        result,
+        VerifiedResult::Updated {
+            changed_rows: 2,
+            ..
+        }
+    ));
+    assert_ne!(before.state_root, session.version().state_root);
+    let state = observed.0.lock().unwrap();
+    assert_eq!(state.sent.len(), 2);
+    assert_eq!(state.received, 2);
+    assert!(!state.timed_out, "UPDATE proof requests ran sequentially");
+    assert!(
+        !state.early_store,
+        "A copy was stored before both proof replies completed"
+    );
+    drop(state);
+    assert_eq!(
+        rows(session.execute("SELECT * FROM records").unwrap()),
+        vec![vec![18, 21], vec![42, 31]]
+    );
+}
+
+#[test]
+fn concurrent_update_workers_queue_proofs_on_the_same_surviving_peer() {
+    use peer_runtime::{ActivityPhase, RpcActivity};
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Default)]
+    struct Observed {
+        active: usize,
+        maximum: usize,
+        completed: usize,
+    }
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let mut a = Process::start(owner.fingerprint(), 1, None);
+    let b = Process::start(owner.fingerprint(), 2, None);
+    let observed = Arc::new(Mutex::new(Observed::default()));
+    let state = observed.clone();
+    let activity: Arc<dyn Fn(RpcActivity) + Send + Sync> = Arc::new(move |event| {
+        if event.operation != "fhe-proof" {
+            return;
+        }
+        let mut state = state.lock().unwrap();
+        match event.phase {
+            ActivityPhase::RequestSent => {
+                state.active += 1;
+                state.maximum = state.maximum.max(state.active);
+            }
+            ActivityPhase::ReplyReceived => {
+                state.active -= 1;
+                state.completed += 1;
+            }
+        }
+    });
+    let pa = a.participant(1, &connector);
+    let mut pb = b.participant(2, &connector);
+    pb.remote = pb.remote.with_activity(activity);
+    let mut session = Session::create(
+        "update-replica-failover".into(),
+        &[
+            PlainRow {
+                age: 18,
+                amount: 20,
+            },
+            PlainRow {
+                age: 42,
+                amount: 30,
+            },
+        ],
+        vec![pa, pb],
+        test_contract(),
+    )
+    .unwrap();
+    a.kill();
+
+    let result = session
+        .execute("UPDATE records SET amount=amount+1")
+        .unwrap();
+
+    assert!(matches!(
+        result,
+        VerifiedResult::Updated {
+            changed_rows: 2,
+            ..
+        }
+    ));
+    let state = observed.lock().unwrap();
+    assert_eq!(state.active, 0);
+    assert_eq!(
+        state.completed, 2,
+        "Both logical shards need genuine proofs"
+    );
+    assert_eq!(
+        state.maximum, 1,
+        "Our RPCs must preserve the surviving peer's heavy-work admission"
+    );
+    drop(state);
+    assert_eq!(
+        rows(session.execute("SELECT * FROM records").unwrap()),
+        vec![vec![18, 21], vec![42, 31]]
     );
 }

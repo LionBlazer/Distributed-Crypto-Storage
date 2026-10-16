@@ -45,121 +45,72 @@ impl Session {
                 heads: heads(&s.info),
             })
             .collect();
-        let indices: Vec<_> = if matches!(plan, QueryPlan::Insert { .. }) {
-            vec![
-                self.data
+        let mut stages = Vec::new();
+        let mut jobs = Vec::new();
+        let mut proofs = Vec::new();
+        let mut changed_rows = 0;
+        match plan {
+            QueryPlan::AddAmount { predicate, delta } => {
+                for staged in self.prepare_update_shards(predicate, delta, &requests)? {
+                    changed_rows += staged.changed_rows;
+                    if let Some(table) = staged.table {
+                        stages.push((staged.slot, table));
+                    }
+                    jobs.push(staged.job);
+                    proofs.push(staged.proof);
+                }
+            }
+            QueryPlan::Insert { row } => {
+                let slot = self
+                    .data
                     .shards
                     .iter()
                     .enumerate()
                     .min_by_key(|(_, s)| (s.info.rows, s.info.id))
                     .unwrap()
-                    .0,
-            ]
-        } else {
-            (0..self.data.shards.len()).collect()
-        };
-        let mut stages = Vec::new();
-        let mut jobs = Vec::new();
-        let mut proofs = Vec::new();
-        let mut changed_rows = 0;
-        for slot in indices {
-            let shard = &self.data.shards[slot];
-            let (remote, table) = self.fetch_online(shard)?;
-            match plan {
-                QueryPlan::AddAmount { predicate, delta } => {
-                    let prepared = self.data.owner.prepare_provable_update(
-                        &table,
-                        predicate.age_range().map(|r| AgeRange {
-                            lower: r.lower,
-                            upper: r.upper,
-                        }),
-                        delta,
-                        256,
-                        Limits::default(),
-                    )?;
-                    let request = prepared.request().to_vec();
-                    let (reply, checked) = requests.request(
-                        &remote,
-                        &shard.peers,
-                        ProofJob {
-                            object: shard.info.object,
-                            setup: self.data.setup_id,
-                            operation: Operation::Update,
-                            ciphertext: &request,
-                        },
-                        |reply| {
-                            self.verifier
-                                .check_job(Operation::Update, &request, reply)
-                                .map_err(protocol)
-                        },
-                    )?;
-                    let stage = self.data.owner.stage_checked_update(
-                        &table,
-                        prepared,
-                        &reply.output,
-                        checked,
-                        Limits::default(),
-                    )?;
-                    if stage.overflowed() {
-                        return Err(Error::InvalidInput(
-                            "UPDATE overflowed; no shard was published".into(),
-                        ));
-                    }
-                    changed_rows += stage.changed_rows();
-                    let next = stage
-                        .into_table()
-                        .ok_or_else(|| protocol("Missing proved update"))?;
-                    if next.commitment() != table.commitment() {
-                        stages.push((slot, next));
-                    }
-                    jobs.push(MutationJob {
-                        shard: shard.info.id,
-                        request,
-                    });
-                    proofs.push(reply);
-                }
-                QueryPlan::Insert { row } => {
-                    let prepared = self.data.owner.prepare_insert_for_experiment(
-                        &table,
-                        PlainRow {
-                            age: row.age,
-                            amount: row.amount,
-                        },
-                        256,
-                        Limits::default(),
-                    )?;
-                    let request = prepared.request().to_vec();
-                    let (reply, checked) = requests.request(
-                        &remote,
-                        &shard.peers,
-                        ProofJob {
-                            object: shard.info.object,
-                            setup: self.data.setup_id,
-                            operation: Operation::Insert,
-                            ciphertext: &request,
-                        },
-                        |reply| {
-                            self.verifier
-                                .check_job(Operation::Insert, &request, reply)
-                                .map_err(protocol)
-                        },
-                    )?;
-                    let next = self.data.owner.stage_checked_insert(
-                        &table,
-                        prepared,
-                        &reply.output,
-                        checked,
-                        Limits::default(),
-                    )?;
-                    stages.push((slot, next));
-                    jobs.push(MutationJob {
-                        shard: shard.info.id,
-                        request,
-                    });
-                    proofs.push(reply);
-                }
-                _ => unreachable!("unsupported proof operations rejected before execution"),
+                    .0;
+                let shard = &self.data.shards[slot];
+                let (remote, table) = self.fetch_online(shard)?;
+                let prepared = self.data.owner.prepare_insert_for_experiment(
+                    &table,
+                    PlainRow {
+                        age: row.age,
+                        amount: row.amount,
+                    },
+                    256,
+                    Limits::default(),
+                )?;
+                let request = prepared.request().to_vec();
+                let (reply, checked) = requests.request(
+                    &remote,
+                    &shard.peers,
+                    ProofJob {
+                        object: shard.info.object,
+                        setup: self.data.setup_id,
+                        operation: Operation::Insert,
+                        ciphertext: &request,
+                    },
+                    |reply| {
+                        self.verifier
+                            .check_job(Operation::Insert, &request, reply)
+                            .map_err(protocol)
+                    },
+                )?;
+                let next = self.data.owner.stage_checked_insert(
+                    &table,
+                    prepared,
+                    &reply.output,
+                    checked,
+                    Limits::default(),
+                )?;
+                stages.push((slot, next));
+                jobs.push(MutationJob {
+                    shard: shard.info.id,
+                    request,
+                });
+                proofs.push(reply);
             }
+            _ => unreachable!("unsupported proof operations rejected before execution"),
         }
         if stages.is_empty() {
             return Ok(VerifiedResult::Updated {

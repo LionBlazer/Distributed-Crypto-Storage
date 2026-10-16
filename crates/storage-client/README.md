@@ -136,12 +136,17 @@ be reconstructed from drafts. Invalid/unavailable holders are skipped, missing
 proofs reject, and temporary peer `Busy` responses have bounded retry/failover.
 `replace_participant` initializes the new journal before replacing handles.
 
-Fixed-schema SELECT authenticates, proves and completes at most two shards
+Fixed-schema SELECT and UPDATE authenticate, prove and complete at most two shards
 concurrently. The owner shares its immutable keys with scoped workers; no secret
-key or plaintext is sent to a peer. All workers finish before an error returns;
-all shard proofs and the final confirmed-version check precede result ordering
-and LIMIT. Unavailable later shards still reject a query returning only one row.
-Writes remain sequential until their complete all-shard validation succeeds.
+key or plaintext is sent to a peer. All workers finish before an error returns.
+For SELECT, all shard proofs and the final confirmed-version check precede result
+ordering and LIMIT. Unavailable later shards still reject a query returning only
+one row.
+UPDATE workers only stage encrypted images in owner memory. Every worker finishes
+before an error returns, including overflow; no physical copy is stored and no
+transition is signed before every shard completes. The existing freshness check,
+all-shard manifest, durable publication and pending-write recovery follow this
+preparation unchanged. INSERT still prepares its single selected shard directly.
 
 Both SQL paths use the same private proof-request scheduler for genuine proof
 verification and replica failover. A query-local permit serializes RPCs to the
@@ -174,6 +179,18 @@ Full-query latency still exceeds the 50–100 ms target.
 The earlier `Database::execute` remains an unverified diagnostic path: it rejects
 with `MissingComputationProof`, and `AcceptedResult` is uninhabited. The live GUI
 uses the corresponding typed or two-column Session. No unverified diagnostic result can convert to accepted evidence.
+
+Three Windows development runs on 2026-10-16 used the existing four-row/two-peer
+`proved_sql` scenario, native owner compilation, profile-v2 AVX-512 kernels and
+eight Rayon threads in each process. Full UPDATE of three rows across both shards,
+including proof checks, freshness and durable confirmation, took 641.4–663.5 ms
+(median 661.2 ms). The previous sequential preparation observed 691–821 ms
+(median 782 ms) under the same stated configuration. These small samples do not
+establish a larger-workload bound or the requested 500-ms latency. INSERT timing
+also varied despite its unchanged execution. Default-two-thread process tests,
+concurrent UPDATE, overflow rejection and one-survivor failover passed separately.
+Reproduction and the surrounding limitations belong to
+[the network measurements](../../docs/proved-sql-network.md).
 
 ## Verification
 
