@@ -2,6 +2,8 @@
 //! The explicitly easy work target is a public test contract, never a production default.
 #[path = "support/rpc_observation.rs"]
 mod rpc_observation;
+#[path = "support/typed_sql.rs"]
+mod typed_sql;
 
 use compact_query::PlainRow;
 use peer_runtime::{Bootstrap, Connector, Endpoint, Identity, RemotePeer, Request, Response};

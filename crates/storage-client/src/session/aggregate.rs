@@ -1,6 +1,6 @@
 //! Genuine encrypted partial aggregates followed by checked client-side completion.
 use super::*;
-use crate::proof::{ProofJob, ProofRequests};
+use crate::query_rpc::{ProofJob, Requests};
 
 impl Session {
     pub(super) fn execute_aggregate(
@@ -11,8 +11,8 @@ impl Session {
     ) -> Result<VerifiedResult> {
         let mut count = 0u64;
         let mut sum = 0u64;
-        let requests = ProofRequests::default();
-        let answers = shards::run(self.data.shards.len(), |slot| {
+        let requests = Requests::default();
+        let answers = crate::jobs::run(self.data.shards.len(), |slot| {
             let shard = &self.data.shards[slot];
             let (remote, table) = self.fetch_online(shard)?;
             let prepared = self.data.owner.prepare_provable_aggregate(

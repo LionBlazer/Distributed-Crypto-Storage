@@ -84,3 +84,18 @@ sync time. Gaps without a client RPC include local proof verification, staging a
 request construction. Concurrent RPC intervals must be merged before attributing
 wall time; summed RPC elapsed time can exceed the critical path. This observation
 adds no daemon or library instrumentation and no timing-based pass/fail threshold.
+
+`proved_sql::typed_sql` adds real-daemon coverage for a 300-row typed projection
+crossing multiple byte blocks: exact output ordering/types, two-holder progress,
+one unreachable-endpoint attempt across a whole query, and cancellation of a
+later block without fallback to an uncancelled peer. The ordinary typed fixture
+prints `accepted_typed_sql_ms`, with full proof/freshness inside its timer; the
+parallel-progress test uses a bounded callback gate for lifecycle assertions and
+is not a latency sample. No test sets a latency pass/fail target.
+
+For a separate resource observation, `DCS_TEST_TYPED_PIDS=1` emits only the new
+typed fixture's owner PID and its two directly owned daemon PIDs before importing
+the public source. A monitor can retain those exact handles before proof work
+without blocking CIM discovery. Disable this opt-in flag for all latency samples;
+report actual sample gaps and independent OS peaks separately from simultaneous
+working-set samples. It is test metadata, not production telemetry or a RAM bound.

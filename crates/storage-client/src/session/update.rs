@@ -1,6 +1,6 @@
 //! Complete proved per-shard UPDATE preparation, without network publication.
 use super::*;
-use crate::proof::{ProofJob, ProofRequests};
+use crate::query_rpc::{ProofJob, Requests};
 use peer_runtime::ProofReply;
 use sql_plan::Predicate;
 
@@ -17,9 +17,9 @@ impl Session {
         &self,
         predicate: Predicate,
         delta: u16,
-        requests: &ProofRequests,
+        requests: &Requests,
     ) -> Result<Vec<StagedShardUpdate>> {
-        shards::run(self.data.shards.len(), |slot| {
+        crate::jobs::run(self.data.shards.len(), |slot| {
             self.prepare_update_shard(slot, predicate, delta, requests)
         })
     }
@@ -29,7 +29,7 @@ impl Session {
         slot: usize,
         predicate: Predicate,
         delta: u16,
-        requests: &ProofRequests,
+        requests: &Requests,
     ) -> Result<StagedShardUpdate> {
         let shard = &self.data.shards[slot];
         let (remote, table) = self.fetch_online(shard)?;

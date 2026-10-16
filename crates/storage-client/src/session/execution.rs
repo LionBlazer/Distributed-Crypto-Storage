@@ -1,5 +1,5 @@
 use super::*;
-use crate::proof::ProofRequests;
+use crate::query_rpc::Requests;
 use sql_plan::QueryPlan;
 
 impl Session {
@@ -39,7 +39,7 @@ impl Session {
         {
             return self.execute_select(initial, *predicate, *projection, *limit);
         }
-        let requests = ProofRequests::default();
+        let requests = Requests::default();
         let before: Vec<_> = self
             .data
             .shards

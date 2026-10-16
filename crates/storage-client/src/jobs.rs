@@ -1,21 +1,21 @@
-//! Bounded owner-side shard preparation shared by reads and updates.
-use super::*;
+//! Bounded owner-side preparation shared by shard operations and typed byte blocks.
+use crate::{Error, Result};
 
-const SHARD_WORKERS: usize = 2;
+const WORKERS: usize = 2;
 
-pub(super) fn run<T: Send>(
+pub(crate) fn run<T: Send>(
     count: usize,
     job: impl Fn(usize) -> Result<T> + Sync,
 ) -> Result<Vec<T>> {
     let mut completed = Vec::with_capacity(count);
-    for first in (0..count).step_by(SHARD_WORKERS) {
+    for first in (0..count).step_by(WORKERS) {
         let batch = std::thread::scope(|scope| {
             let mut workers = Vec::new();
             let mut spawn_error = None;
             let job = &job;
-            for slot in first..(first + SHARD_WORKERS).min(count) {
+            for slot in first..(first + WORKERS).min(count) {
                 match std::thread::Builder::new()
-                    .name("dcs-owner-shard".into())
+                    .name("dcs-owner-job".into())
                     .spawn_scoped(scope, move || job(slot))
                 {
                     Ok(worker) => workers.push(worker),
@@ -33,7 +33,9 @@ pub(super) fn run<T: Send>(
             }
             results
                 .into_iter()
-                .map(|result| result.map_err(|_| protocol("Shard worker failed"))?)
+                .map(|result| {
+                    result.map_err(|_| Error::Cryptography("Owner worker failed".into()))?
+                })
                 .collect::<Result<Vec<_>>>()
         })?;
         completed.extend(batch);
