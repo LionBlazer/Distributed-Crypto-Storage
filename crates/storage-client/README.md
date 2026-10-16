@@ -244,12 +244,13 @@ The earlier `Database::execute` remains an unverified diagnostic path: it reject
 with `MissingComputationProof`, and `AcceptedResult` is uninhabited. The live GUI
 uses the corresponding typed or two-column Session. No unverified diagnostic result can convert to accepted evidence.
 
-The current [complete-operation record](../../experiments/update-cost/MEASUREMENTS.md)
-includes three genuine native Windows scenarios with two independent peers,
+The current [complete-operation record](../../experiments/combined-sql/README.md)
+includes three runs per genuine native Windows scenario with one or two independent peers,
 eight threads per process and profile-v3 AVX-512 kernels. After atomic INSERT
-integration, single-row INSERT took 253.950–270.928 ms and three-row/two-shard
-UPDATE took 410.977–421.218 ms, including authorization, proof/freshness checks and
-durable confirmation. The separate 512-row COUNT/SUM took 190.186–200.803 ms.
+and private identity integration, single-row INSERT took 277.135–287.988 ms and
+three-row/two-shard UPDATE took 414.090–466.094 ms, including authorization,
+proof/freshness checks and durable confirmation. The separate 512-row COUNT/SUM
+took 197.215–198.752 ms; a million-row point UPDATE still took 1.363–1.394 s.
 These small local fixtures do not establish a general latency, RAM or consensus
 guarantee. The record preserves full workloads, failed-peer observations, exact
 artifacts and reproduction; earlier measurements remain in the linked history.
