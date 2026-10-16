@@ -17,6 +17,90 @@ fn app() -> (Playground, Receiver<Command>, Sender<Event>) {
 }
 
 #[test]
+fn data_import_and_long_paths_keep_the_splitter_stable_across_idle_frames() {
+    let (worker, _commands, _events) = Worker::test_channel();
+    let mut app = Playground::with_worker(worker);
+    app.tab = Tab::Data;
+    app.network = Some(network(0, 1));
+    app.active_client = Some(1);
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    render(&ctx, &mut app, vec![]);
+    let width = egui::containers::panel::PanelState::load(&ctx, egui::Id::new("client-workspace"))
+        .unwrap()
+        .size()
+        .x;
+    click(&ctx, &mut app, "Local .sql file path");
+    render(
+        &ctx,
+        &mut app,
+        vec![egui::Event::Text(format!(
+            "E:/{}northwind.sql",
+            "long-directory/".repeat(40)
+        ))],
+    );
+    click(&ctx, &mut app, "Public sample databases");
+    for _ in 0..60 {
+        let text = render(&ctx, &mut app, vec![]);
+        let current =
+            egui::containers::panel::PanelState::load(&ctx, egui::Id::new("client-workspace"))
+                .unwrap()
+                .size()
+                .x;
+        assert!(
+            (current - width).abs() < 1.0,
+            "idle content must not move the splitter: {width} -> {current}"
+        );
+        assert!(
+            text.iter()
+                .find(|text| text.text == "Network")
+                .unwrap()
+                .rect
+                .left()
+                < 1000.0
+        );
+    }
+}
+
+#[test]
+fn stop_cancels_only_the_active_sql_and_waits_for_its_real_completion() {
+    let (mut app, commands, events) = app();
+    let ctx = egui::Context::default();
+    set_theme(&ctx);
+    assert!(!app.can_stop_query());
+    click(&ctx, &mut app, "Run");
+    assert!(matches!(commands.try_recv(), Ok(Command::Query { .. })));
+    assert!(app.can_stop_query());
+    click(&ctx, &mut app, "Stop");
+    assert!(app.worker.query_cancelled());
+    assert_eq!(app.status, "Stopping SQL…");
+    assert!(app.pending.is_some());
+    assert!(!app.can_query());
+    assert!(!app.can_stop_query());
+    assert!(
+        matches!(commands.try_recv(), Err(TryRecvError::Empty)),
+        "stop must not queue behind the SQL it interrupts"
+    );
+    events
+        .send(Event::Finished {
+            snapshot: None,
+            outcome: Err(fhe_playground::LabError::InvalidInput("SQL stopped".into())),
+            elapsed_ms: 1.0,
+            client_id: Some(1),
+        })
+        .unwrap();
+    app.poll();
+    assert!(app.pending.is_none());
+    assert!(app.can_query());
+    click(&ctx, &mut app, "Run");
+    assert!(matches!(commands.try_recv(), Ok(Command::Query { .. })));
+    assert!(
+        !app.worker.query_cancelled(),
+        "new SQL has an independent cancellation scope"
+    );
+}
+
+#[test]
 fn a_new_workspace_has_no_canned_rows_or_automatic_database_command() {
     let (worker, commands, _events) = Worker::test_channel();
     let mut app = Playground::with_worker(worker);
@@ -242,12 +326,24 @@ fn click_point(
 }
 fn click(ctx: &egui::Context, app: &mut Playground, label: &str) {
     let texts = render(ctx, app, vec![]);
-    let point = texts
-        .iter()
-        .find(|t| t.text == label)
-        .unwrap_or_else(|| panic!("control missing:{label}"))
-        .rect
-        .center();
+    let point = if matches!(label, "Run" | "Stop") {
+        ctx.data(|data| {
+            data.get_temp::<egui::Rect>(egui::Id::new(if label == "Run" {
+                "sql-run-rect"
+            } else {
+                "sql-stop-rect"
+            }))
+        })
+        .expect("SQL icon button is present")
+        .center()
+    } else {
+        texts
+            .iter()
+            .find(|t| t.text == label)
+            .unwrap_or_else(|| panic!("control missing:{label}"))
+            .rect
+            .center()
+    };
     click_point(ctx, app, point, egui::PointerButton::Primary);
 }
 fn ctrl_enter() -> Vec<egui::Event> {
@@ -665,9 +761,11 @@ fn network_remains_beside_both_sql_and_data_without_old_sidebars() {
     let ctx = egui::Context::default();
     set_theme(&ctx);
     let texts = render(&ctx, &mut app, vec![]);
-    let console = texts.iter().find(|t| t.text == "Run").unwrap();
+    let console = ctx
+        .data(|data| data.get_temp::<egui::Rect>(egui::Id::new("sql-run-rect")))
+        .unwrap();
     let network = texts.iter().find(|t| t.text == "Network").unwrap();
-    assert!(console.rect.right() < network.rect.left());
+    assert!(console.right() < network.rect.left());
     for obsolete in [
         "Filter objects...",
         "Local database",
@@ -1486,7 +1584,13 @@ fn sql_toolbar_has_one_run_action_and_explains_missing_clients_and_busy_state() 
     let ctx = egui::Context::default();
     set_theme(&ctx);
     let texts = render(&ctx, &mut app, vec![]);
-    assert_eq!(texts.iter().filter(|text| text.text == "Run").count(), 1);
+    assert!(!texts.iter().any(|text| text.text == "Run"));
+    for id in ["sql-run-rect", "sql-stop-rect"] {
+        let rect = ctx
+            .data(|data| data.get_temp::<egui::Rect>(egui::Id::new(id)))
+            .unwrap();
+        assert_eq!(rect.size(), egui::vec2(32.0, 32.0));
+    }
     assert!(!texts.iter().any(|text| text.text == "Console.sql"));
     events.send(Event::Network(network(3, 0))).unwrap();
     app.poll();
@@ -1521,7 +1625,7 @@ fn narrow_window_wraps_whole_toolbar_buttons_without_vertical_labels_or_overflow
         },
         |ui| app.draw(ui),
     );
-    let labels = ["Run", "Presets", "Network", "Auto", "Map", "Matrix"];
+    let labels = ["Presets", "Network", "Auto", "Map", "Matrix"];
     let mut observed = Vec::new();
     fn check(shape: &egui::Shape, labels: &[&str], screen: egui::Rect, observed: &mut Vec<String>) {
         match shape {

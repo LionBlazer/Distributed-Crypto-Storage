@@ -8,7 +8,7 @@ impl Playground {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(EDITOR).inner_margin(12))
             .show(ui, |ui| {
-                egui::ScrollArea::vertical()
+                egui::ScrollArea::both()
                     .id_salt("data-workspace")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {

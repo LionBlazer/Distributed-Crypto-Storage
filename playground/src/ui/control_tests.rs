@@ -2,6 +2,8 @@ use super::*;
 
 #[derive(Clone, Copy)]
 enum Control {
+    SqlRun,
+    SqlStop,
     Primary,
     Neutral,
     SelectedTab,
@@ -33,6 +35,8 @@ fn draw(ctx: &egui::Context, control: Control, enabled: bool, events: Vec<egui::
         |ui| {
             response = Some(
                 ui.add_enabled_ui(enabled, |ui| match control {
+                    Control::SqlRun => run_button(ui, true),
+                    Control::SqlStop => stop_button(ui, true),
                     Control::Primary => primary_button(ui, "Run", true),
                     Control::Neutral => action_button(ui, "Apply", true),
                     Control::SelectedTab => view_tab(ui, "SQL", true, false).response,
@@ -51,6 +55,7 @@ fn draw(ctx: &egui::Context, control: Control, enabled: bool, events: Vec<egui::
         .filter_map(|shape| match &shape.shape {
             egui::Shape::Rect(rect)
                 if rect.rect.contains(response.rect.center())
+                    && rect.rect.width() >= response.rect.width() - 4.0
                     && rect.rect.width() <= response.rect.width() + 4.0
                     && rect.fill != Color32::TRANSPARENT =>
             {
@@ -86,6 +91,8 @@ fn pointer_button(position: egui::Pos2, pressed: bool) -> egui::Event {
 #[test]
 fn buttons_and_tabs_show_distinct_hover_and_held_colors() {
     for control in [
+        Control::SqlRun,
+        Control::SqlStop,
         Control::Primary,
         Control::Neutral,
         Control::SelectedTab,

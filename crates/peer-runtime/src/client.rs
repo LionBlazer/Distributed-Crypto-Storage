@@ -40,6 +40,7 @@ pub struct RemotePeer {
     next: Arc<AtomicU64>,
     trace: Option<Arc<dyn Fn(Trace) + Send + Sync>>,
     activity: Option<Arc<dyn Fn(RpcActivity) + Send + Sync>>,
+    control: Option<peer_transport::RequestControl>,
 }
 impl RemotePeer {
     pub fn new(endpoint: Endpoint, connector: Connector) -> Self {
@@ -49,6 +50,7 @@ impl RemotePeer {
             next: Arc::new(AtomicU64::new(1)),
             trace: None,
             activity: None,
+            control: None,
         }
     }
     pub fn with_trace(mut self, trace: Arc<dyn Fn(Trace) + Send + Sync>) -> Self {
@@ -65,7 +67,17 @@ impl RemotePeer {
     pub fn endpoint(&self) -> &Endpoint {
         &self.endpoint
     }
+    /// An operation scope affects these owner RPCs only. Cancellation closes
+    /// local sockets; it neither stops peers nor rolls back durable mutations.
+    pub fn with_control(mut self, control: peer_transport::RequestControl) -> Self {
+        self.control = Some(control);
+        self
+    }
     pub fn call(&self, request: Request) -> io::Result<Response> {
+        let cancellation = self.control.as_ref().and_then(|control| control.current());
+        if let Some(token) = &cancellation {
+            token.check()?;
+        }
         let id = self
             .next
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
@@ -80,7 +92,9 @@ impl RemotePeer {
         let mut received = 0;
         let mut sent = 0;
         let result = (|| {
-            let mut stream = self.connector.connect(&self.endpoint)?;
+            let mut stream = self
+                .connector
+                .connect_cancellable(&self.endpoint, cancellation.as_ref())?;
             write_frame(&mut stream, &bytes, MAX_FRAME_BYTES)?;
             sent = bytes.len() as u64;
             if let Some(activity) = &self.activity {
@@ -112,6 +126,17 @@ impl RemotePeer {
             }
             response.result.map_err(io::Error::other)
         })();
+        let result = if cancellation
+            .as_ref()
+            .is_some_and(|token| token.is_cancelled())
+        {
+            Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "RPC operation cancelled",
+            ))
+        } else {
+            result
+        };
         if let Some(trace) = &self.trace {
             trace(Trace {
                 peer: self.endpoint.identity,

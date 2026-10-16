@@ -128,6 +128,110 @@ impl Drop for Network {
     }
 }
 
+fn controlled_peers(
+    network: &Network,
+    control: &peer_runtime::RequestControl,
+    operation: &'static str,
+) -> Vec<Participant> {
+    let armed = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    network
+        .participants
+        .iter()
+        .map(|peer| {
+            let requests = control.clone();
+            let armed = armed.clone();
+            Participant {
+                id: peer.id,
+                remote: peer
+                    .remote
+                    .clone()
+                    .with_control(control.clone())
+                    .with_activity(Arc::new(move |event| {
+                        if event.operation == operation
+                            && event.phase == peer_runtime::ActivityPhase::RequestSent
+                            && requests.current().is_some()
+                            && armed.swap(false, std::sync::atomic::Ordering::AcqRel)
+                        {
+                            requests.cancel();
+                        }
+                    })),
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn cancelling_a_proved_read_interrupts_its_rpc_without_poisoning_the_next_query() {
+    let network = Network::new();
+    let control = peer_runtime::RequestControl::default();
+    let database=import_database_dump("CREATE TABLE notes (id INT NOT NULL, body NVARCHAR(30) NOT NULL); INSERT INTO notes VALUES (1,'public fixture');",ImportLimits::default()).unwrap();
+    let mut session = RelationalSession::import(
+        database,
+        controlled_peers(&network, &control, "fhe-proof"),
+        test_profile(),
+    )
+    .unwrap();
+    let scope = control.begin().unwrap();
+
+    let stopped = session.select("SELECT body FROM notes;");
+
+    assert!(
+        matches!(stopped,Err(storage_client::Error::Transport(ref error)) if error.kind()==std::io::ErrorKind::Interrupted)
+    );
+    assert!(scope.cancellation().is_cancelled());
+    drop(scope);
+    let answer = session.select("SELECT body FROM notes;").unwrap();
+    assert_eq!(
+        answer.rows,
+        vec![vec![Value::Text("public fixture".into())]]
+    );
+    assert_eq!(answer.proof_blocks, 1);
+}
+
+#[test]
+fn stopping_write_publication_retains_the_exact_mutation_for_single_application_recovery() {
+    let network = Network::new();
+    let control = peer_runtime::RequestControl::default();
+    let mut session = storage_client::Session::create(
+        "cancel-write".into(),
+        &[compact_query::PlainRow {
+            age: 18,
+            amount: 20,
+        }],
+        controlled_peers(&network, &control, "journal-publish"),
+        test_profile(),
+    )
+    .unwrap();
+    let scope = control.begin().unwrap();
+
+    let stopped = session.execute("UPDATE records SET amount = amount + 5;");
+
+    assert!(
+        matches!(stopped, Err(storage_client::Error::PendingMutation { .. })),
+        "publication cancellation must preserve an ambiguous authorized write"
+    );
+    assert!(scope.cancellation().is_cancelled());
+    drop(scope);
+    assert!(matches!(
+        session.resume_pending().unwrap(),
+        Some(storage_client::VerifiedResult::Updated {
+            changed_rows: 1,
+            ..
+        })
+    ));
+    let storage_client::VerifiedResult::Selected { rows, .. } =
+        session.execute("SELECT amount FROM records;").unwrap()
+    else {
+        panic!("verified rows")
+    };
+    assert_eq!(
+        rows,
+        vec![vec![25]],
+        "resuming must not repeat the addition"
+    );
+    assert!(session.resume_pending().unwrap().is_none());
+}
+
 fn large_public_dump() -> String {
     let mut sql = String::from(
         "CREATE TABLE accounts (id INT NOT NULL, label NVARCHAR(120) NOT NULL, region NVARCHAR(16) NULL, balance DECIMAL(10,2) NOT NULL, payload VARBINARY(4) NOT NULL);\n",

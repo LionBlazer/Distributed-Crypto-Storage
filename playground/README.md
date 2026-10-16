@@ -130,6 +130,16 @@ complete owner/key recovery remains a separate unresolved requirement.
   remain labeled unverified. TLS and decryption do not substitute for query proofs.
 - Results start at half the window height, resize from their upper edge and scroll
   at the pane's right edge. Output records real elapsed operations and failures.
+- SQL uses square icon buttons: green play and red stop, with tooltips, keyboard
+  accessibility and distinct hover/pressed/disabled states. Stop interrupts the
+  actual owner's RPC scope without queuing behind SQL or stopping peer processes.
+  Further steps stop; a peer can finish its currently admitted proof. The worker
+  remains busy until the operation settles, then releases the scope before status
+  refresh. Confirmed writes remain committed; ambiguous publication retains its
+  exact pending mutation, so recovery cannot apply an UPDATE twice.
+- Data import fits the actual Open SQL button before allocating the path field.
+  Its scroll viewport contains wide content instead of changing the SQL/network
+  splitter; the splitter still resizes when explicitly dragged.
 - Startup opens **SQL** with `CREATE TABLE IF NOT EXISTS records (...)` followed
   by `SELECT * FROM records`. No sample rows or database are created until Run.
   Run works before a table exists; missing tables and unsupported SQL report in

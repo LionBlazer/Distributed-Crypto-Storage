@@ -213,6 +213,19 @@ impl Playground {
                 })
             })
     }
+    fn can_stop_query(&self) -> bool {
+        self.pending
+            .as_ref()
+            .is_some_and(|pending| pending.job == Job::Query)
+            && !self.completion_waiting
+            && !self.source_stopped
+            && !self.worker.query_cancelled()
+    }
+    fn stop_query(&mut self) {
+        if self.can_stop_query() && self.worker.cancel_query() {
+            self.status = "Stopping SQL…".into();
+        }
+    }
     fn submit(&mut self, command: Command, job: Job, label: String) {
         if !self.available() {
             return;
@@ -753,6 +766,13 @@ impl Playground {
                         .clicked()
                     {
                         self.run_query();
+                    }
+                    if stop_button(ui, self.can_stop_query())
+                        .on_hover_text("Stop SQL. Already confirmed changes stay committed.")
+                        .on_disabled_hover_text("No running SQL to stop")
+                        .clicked()
+                    {
+                        self.stop_query();
                     }
                     self.client_selector(ui);
                     ui.menu_button("Presets", |ui| {

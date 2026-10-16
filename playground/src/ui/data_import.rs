@@ -100,16 +100,8 @@ impl DataImport {
             .id_salt("sql-import")
             .default_open(can_import)
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
+                ui.allocate_ui_with_layout(egui::vec2(ui.available_width(),30.0),egui::Layout::right_to_left(egui::Align::Center),|ui| {
                     let loading = self.downloading.is_some();
-                    let width = (ui.available_width() - 76.0).max(80.0);
-                    ui.add_enabled(
-                        !loading,
-                        egui::TextEdit::singleline(&mut self.local_path)
-                            .hint_text("Local .sql file path")
-                            .desired_width(width),
-                    )
-                    .on_hover_text("A UTF-8 SQL dump with typed CREATE TABLE and literal INSERT statements. Import encrypts every validated table on real peer processes. Existing databases are preserved.");
                     if action_button(
                         ui,
                         "Open SQL",
@@ -122,6 +114,15 @@ impl DataImport {
                             ui.ctx().clone(),
                         );
                     }
+                    // Allocate the real button first, then fit the text field
+                    // into the remaining row including its explicit frame margin.
+                    let width=(ui.available_width()-12.0).max(0.0);
+                    ui.add_enabled(!loading,egui::TextEdit::singleline(&mut self.local_path)
+                        .hint_text("Local .sql file path")
+                        .margin(egui::Margin::symmetric(6,4))
+                        .min_size(egui::Vec2::ZERO)
+                        .desired_width(width))
+                        .on_hover_text("A UTF-8 SQL dump with typed CREATE TABLE and literal INSERT statements. Import encrypts every validated table on real peer processes. Existing databases are preserved.");
                 });
                 if self.downloading.is_some() {
                     ui.horizontal(|ui| {

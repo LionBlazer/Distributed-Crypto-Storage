@@ -181,14 +181,94 @@ pub(super) fn tab_button(ui: &mut egui::Ui, label: &str, selected: bool) -> egui
 }
 
 pub(super) fn run_button(ui: &mut egui::Ui, enabled: bool) -> egui::Response {
-    ui.add_enabled(
+    sql_action(ui, enabled, false)
+}
+pub(super) fn stop_button(ui: &mut egui::Ui, enabled: bool) -> egui::Response {
+    sql_action(ui, enabled, true)
+}
+fn sql_action(ui: &mut egui::Ui, enabled: bool, stop: bool) -> egui::Response {
+    let background = ui.painter().add(egui::Shape::Noop);
+    let response = ui.add_enabled(
         enabled,
-        ActionButton {
-            label: "Run",
-            kind: ControlKind::Primary,
-            play_icon: true,
-        },
-    )
+        egui::Button::new("")
+            .min_size(egui::vec2(32.0, 32.0))
+            .fill(Color32::TRANSPARENT)
+            .stroke(Stroke::NONE),
+    );
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::Button,
+            enabled,
+            if stop { "Stop SQL" } else { "Run SQL" },
+        )
+    });
+    let color = match (
+        stop,
+        response.enabled(),
+        response.is_pointer_button_down_on(),
+        response.hovered(),
+    ) {
+        (false, false, _, _) => Color32::from_rgb(28, 62, 47),
+        (true, false, _, _) => Color32::from_rgb(70, 38, 46),
+        (false, true, true, _) => Color32::from_rgb(33, 132, 82),
+        (false, true, false, true) => Color32::from_rgb(77, 203, 136),
+        (false, true, false, false) => Color32::from_rgb(47, 174, 110),
+        (true, true, true, _) => Color32::from_rgb(171, 49, 65),
+        (true, true, false, true) => Color32::from_rgb(244, 99, 110),
+        (true, true, false, false) => Color32::from_rgb(217, 69, 84),
+    };
+    ui.painter().set(
+        background,
+        egui::epaint::RectShape::new(
+            response.rect,
+            5,
+            color,
+            Stroke::new(
+                if response.has_focus() { 2.0 } else { 1.0 },
+                if response.has_focus() { TEXT } else { color },
+            ),
+            egui::StrokeKind::Inside,
+        ),
+    );
+    let center = response.rect.center();
+    let ink = if response.enabled() {
+        Color32::WHITE
+    } else {
+        MUTED.gamma_multiply(0.6)
+    };
+    if stop {
+        ui.painter().rect_filled(
+            egui::Rect::from_center_size(center, egui::vec2(10.0, 10.0)),
+            1,
+            ink,
+        );
+    } else {
+        ui.painter().add(egui::Shape::convex_polygon(
+            vec![
+                center + egui::vec2(-4.0, -6.0),
+                center + egui::vec2(6.0, 0.0),
+                center + egui::vec2(-4.0, 6.0),
+            ],
+            ink,
+            Stroke::NONE,
+        ));
+    }
+    #[cfg(test)]
+    ui.ctx().data_mut(|data| {
+        data.insert_temp(
+            egui::Id::new(if stop {
+                "sql-stop-rect"
+            } else {
+                "sql-run-rect"
+            }),
+            response.rect,
+        )
+    });
+    if response.enabled() {
+        response.on_hover_cursor(egui::CursorIcon::PointingHand)
+    } else {
+        response
+    }
 }
 
 pub(super) struct ViewTabResponse {

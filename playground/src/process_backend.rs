@@ -191,6 +191,7 @@ type TopologyObserver = Arc<dyn Fn(Vec<PeerProfile>, NetworkSnapshot) + Send + S
 pub(super) struct ProcessBackend {
     owner: Identity,
     connector: Connector,
+    pub(super) request_control: peer_runtime::RequestControl,
     root: PathBuf,
     peers: BTreeMap<usize, Peer>,
     clients: BTreeMap<NodeId, String>,
@@ -234,6 +235,7 @@ impl ProcessBackend {
         Ok(Self {
             owner,
             connector,
+            request_control: peer_runtime::RequestControl::default(),
             root,
             peers: BTreeMap::new(),
             clients: BTreeMap::from([(1, "Client 01".into())]),
@@ -265,6 +267,7 @@ impl ProcessBackend {
         let wake = self.wake_traffic.clone();
         let observe = self.observe_traffic.clone();
         RemotePeer::new(endpoint, self.connector.clone())
+            .with_control(self.request_control.clone())
             .with_activity(Arc::new(move |activity| {
                 let source = session.load(Ordering::Acquire);
                 let reply = activity.phase == peer_runtime::ActivityPhase::ReplyReceived;

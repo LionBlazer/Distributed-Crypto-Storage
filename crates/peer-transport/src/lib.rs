@@ -2,7 +2,9 @@
 //! Identity admission is caller policy; this transport does not establish consensus.
 #![forbid(unsafe_code)]
 
+mod cancellation;
 mod permissionless;
+pub use cancellation::{Cancellation, RequestControl, RequestScope};
 
 use rustls::{
     ClientConfig, ClientConnection, RootCertStore, ServerConfig, ServerConnection, StreamOwned,
@@ -65,6 +67,24 @@ enum ConnectorMode {
 pub struct Acceptor {
     config: Arc<ServerConfig>,
 }
+/// A TLS stream whose local socket is interrupted when its operation is cancelled.
+pub struct CancellableConnection {
+    stream: StreamOwned<ClientConnection, TcpStream>,
+    _registration: Option<cancellation::Registration>,
+}
+impl Read for CancellableConnection {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        self.stream.read(bytes)
+    }
+}
+impl Write for CancellableConnection {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.stream.write(bytes)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.stream.flush()
+    }
+}
 fn roots(authority: &[u8]) -> io::Result<RootCertStore> {
     let mut roots = RootCertStore::empty();
     roots
@@ -95,7 +115,28 @@ impl Connector {
         &self,
         endpoint: &Endpoint,
     ) -> io::Result<StreamOwned<ClientConnection, TcpStream>> {
+        self.connect_inner(endpoint, None)
+            .map(|connection| connection.stream)
+    }
+    pub fn connect_cancellable(
+        &self,
+        endpoint: &Endpoint,
+        cancellation: Option<&Cancellation>,
+    ) -> io::Result<CancellableConnection> {
+        self.connect_inner(endpoint, cancellation)
+    }
+    fn connect_inner(
+        &self,
+        endpoint: &Endpoint,
+        cancellation: Option<&Cancellation>,
+    ) -> io::Result<CancellableConnection> {
+        if let Some(cancellation) = cancellation {
+            cancellation.check()?;
+        }
         let mut socket = TcpStream::connect_timeout(&endpoint.address, Duration::from_secs(2))?;
+        let registration = cancellation
+            .map(|token| token.register(&socket))
+            .transpose()?;
         socket.set_read_timeout(Some(IO_TIMEOUT))?;
         socket.set_write_timeout(Some(IO_TIMEOUT))?;
         socket.set_nodelay(true)?;
@@ -117,7 +158,10 @@ impl Connector {
                 "Peer certificate does not match the configured endpoint",
             ));
         }
-        Ok(StreamOwned::new(connection, socket))
+        Ok(CancellableConnection {
+            stream: StreamOwned::new(connection, socket),
+            _registration: registration,
+        })
     }
 }
 impl Acceptor {

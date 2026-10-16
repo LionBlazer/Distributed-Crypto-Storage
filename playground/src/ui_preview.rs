@@ -27,6 +27,7 @@ fn export_ui_previews() {
         ("typed-sql", Tab::Sql, 3, [1500, 900]),
         ("empty-workspace", Tab::Data, 3, [1500, 900]),
         ("empty-sql", Tab::Sql, 3, [1500, 900]),
+        ("sql-running", Tab::Sql, 3, [1500, 900]),
         ("network", Tab::Sql, 8, [1500, 900]),
         ("network-small", Tab::Sql, 16, [1180, 720]),
         ("network-map", Tab::Sql, 16, [1500, 900]),
@@ -49,6 +50,10 @@ fn export_ui_previews() {
             app.network = Some(network(0, 1));
             app.draft_rows.clear();
             app.draft_name = "database".into();
+        }
+        if name == "sql-running" {
+            app.run_query();
+            app.status = "Public pending-operation renderer fixture / no backend execution".into();
         }
         if name.starts_with("typed-") {
             // Public owner schema metadata fixture only. No peer response or

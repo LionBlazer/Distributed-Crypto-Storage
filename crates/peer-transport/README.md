@@ -48,6 +48,15 @@ timeout and 15-second read/write timeouts. These are transport bounds, not a
 proof of a whole-process RAM or latency target. Windows accepted sockets are
 explicitly returned to blocking mode before the TLS handshake.
 
+`RequestControl::begin` creates a caller-owned `RequestScope`; cancellation closes
+only that scope's registered local sockets and makes further scoped RPCs fail with
+`Interrupted`. `Connector::connect_cancellable` registers before the TLS handshake,
+so blocked handshake/frame I/O can be interrupted without waiting for its timeout.
+The initial TCP connect remains bounded by two seconds. Dropping the scope removes
+it from future calls; an old cancellation handle cannot affect a new operation.
+Socket registrations are removed on connection drop. No peer process is killed,
+and cancellation grants no protocol rollback or mutation authorization.
+
 There are no direct project dependencies, GUI, process supervision or database
 operations. The [peer runtime](../peer-runtime/README.md) consumes this contract.
 Real loopback TLS tests cover independently self-signed participants, wrong endpoint

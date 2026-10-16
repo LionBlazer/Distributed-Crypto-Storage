@@ -24,6 +24,14 @@ not evidence that decoding, authorization or cryptographic verification succeede
 Callbacks run synchronously and must return promptly. The separate `with_trace`
 callback retains completed-RPC diagnostics and outcomes.
 
+`RemotePeer::with_control` attaches the transport's `RequestControl` to cloned
+owner RPC handles. An active scope interrupts local sockets, rejects further RPCs
+and normalizes cancelled I/O to `Interrupted`; calls outside a scope are ordinary
+authenticated RPCs. The application owns scope lifetime. Cancellation is not a
+remote shutdown or rollback: an already submitted mutation can remain pending and
+must use its existing exact-transition recovery contract. A peer may finish one
+already admitted bounded proof job after the requester disconnects.
+
 ## Transport and custody
 
 An empty `Bootstrap.authority` explicitly selects permissionless self-authentication:

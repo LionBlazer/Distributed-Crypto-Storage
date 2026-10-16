@@ -249,12 +249,15 @@ pub struct Worker {
     receiver: Receiver<Event>,
     bus: EventBus,
     stop: Arc<AtomicBool>,
+    requests: peer_runtime::RequestControl,
+    query_scope: Arc<Mutex<Option<peer_runtime::RequestScope>>>,
     thread: Option<JoinHandle<()>>,
     _events: Option<mpsc::Sender<Event>>,
 }
 impl Drop for Worker {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
+        self.requests.cancel();
         self.sender.take();
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
@@ -272,6 +275,8 @@ impl Worker {
                 receiver,
                 bus: EventBus::default(),
                 stop: Arc::default(),
+                requests: peer_runtime::RequestControl::default(),
+                query_scope: Arc::default(),
                 thread: None,
                 _events: None,
             },
@@ -286,29 +291,84 @@ impl Worker {
         let views = bus.clone();
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = stop.clone();
+        let requests = peer_runtime::RequestControl::default();
+        let query_scope = Arc::new(Mutex::new(None));
+        let active_requests = requests.clone();
+        let active_query = query_scope.clone();
         let thread = std::thread::Builder::new()
             .name("dcs-process-manager".into())
-            .spawn(move || run(commands, views, context, stopping))?;
+            .spawn(move || {
+                run(
+                    commands,
+                    views,
+                    context,
+                    stopping,
+                    active_requests,
+                    active_query,
+                )
+            })?;
         Ok(Self {
             sender: Some(sender),
             receiver,
             bus,
             stop,
+            requests,
+            query_scope,
             thread: Some(thread),
             _events: Some(events),
         })
     }
     pub fn send(&self, command: Command) -> Result<(), String> {
-        self.sender
+        let query = matches!(command, Command::Query { .. });
+        if query {
+            let mut active = self
+                .query_scope
+                .lock()
+                .map_err(|_| "Query control poisoned")?;
+            *active = Some(self.requests.begin().map_err(|e| e.to_string())?);
+        }
+        let result = self
+            .sender
             .as_ref()
-            .ok_or_else(|| "Peer manager is stopping".to_string())?
-            .try_send(command)
-            .map_err(|e| format!("Cannot submit operation: {e}"))
+            .ok_or_else(|| "Peer manager is stopping".to_string())
+            .and_then(|sender| {
+                sender
+                    .try_send(command)
+                    .map_err(|e| format!("Cannot submit operation: {e}"))
+            });
+        if query && result.is_err() {
+            self.query_scope.lock().unwrap().take();
+        }
+        result
+    }
+    pub fn cancel_query(&self) -> bool {
+        self.requests.cancel()
+    }
+    pub fn query_cancelled(&self) -> bool {
+        self.requests
+            .current()
+            .is_some_and(|token| token.is_cancelled())
     }
     pub fn poll(&self) -> Result<Option<Event>, String> {
         // Bare events are retained only for the explicit public test channel.
         match self.receiver.try_recv() {
-            Ok(event) => return Ok(Some(event)),
+            Ok(event) => {
+                // This channel is the explicit headless test consumer. The live
+                // thread retires its scope before emitting the ordered result.
+                #[cfg(test)]
+                if self.thread.is_none()
+                    && matches!(
+                        event,
+                        Event::Finished {
+                            client_id: Some(_),
+                            ..
+                        }
+                    )
+                {
+                    self.query_scope.lock().unwrap().take();
+                }
+                return Ok(Some(event));
+            }
             Err(TryRecvError::Disconnected) => {
                 return Err("Peer manager stopped; child processes were closed".into());
             }
@@ -332,6 +392,8 @@ fn run(
     events: EventBus,
     context: egui::Context,
     stop: Arc<AtomicBool>,
+    requests: peer_runtime::RequestControl,
+    query_scope: Arc<Mutex<Option<peer_runtime::RequestScope>>>,
 ) {
     let mut backend = match ProcessBackend::new() {
         Ok(backend) => backend,
@@ -345,6 +407,7 @@ fn run(
             return;
         }
     };
+    backend.request_control = requests.clone();
     let repaint = context.clone();
     let observations = events.clone();
     backend.observe_traffic = Some(Arc::new(move |observation| {
@@ -413,6 +476,27 @@ fn run(
                         .repair()
                         .map(|(current, stale)| Outcome::ReplicasRepaired { current, stale }),
                 };
+                let outcome = if query.is_some() {
+                    let cancelled = requests.current().is_some_and(|token| token.is_cancelled());
+                    let result = if cancelled {
+                        match outcome {
+                            Ok(outcome) if outcome.changed() => Ok(outcome),
+                            Ok(_) => Err(LabError::InvalidInput(
+                                "SQL stopped. Any already confirmed changes remain committed."
+                                    .into(),
+                            )),
+                            Err(error) => Err(LabError::InvalidInput(format!(
+                                "SQL stop requested. {error}. Any already confirmed changes remain committed."
+                            ))),
+                        }
+                    } else {
+                        outcome
+                    };
+                    query_scope.lock().unwrap().take();
+                    result
+                } else {
+                    outcome
+                };
                 backend.refresh();
                 events.send(Event::Peers(backend.peer_profiles()));
                 events.send(Event::Catalog(backend.catalog()));
@@ -444,6 +528,72 @@ fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "starts owned peer daemons; build dcs-peer and set DCS_PEER_BIN"]
+    fn stop_interrupts_a_real_process_query_and_the_same_worker_accepts_the_next_query() {
+        fn next(worker: &Worker, deadline: Instant) -> Event {
+            loop {
+                assert!(Instant::now() < deadline, "real worker event deadline");
+                if let Some(event) = worker.poll().unwrap() {
+                    return if let Event::Stamped { event, .. } = event {
+                        *event
+                    } else {
+                        event
+                    };
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+        fn finish(worker: &Worker) -> Result<Outcome, LabError> {
+            let deadline = Instant::now() + Duration::from_secs(60);
+            loop {
+                if let Event::Finished { outcome, .. } = next(worker, deadline) {
+                    return outcome;
+                }
+            }
+        }
+        let worker = Worker::start(egui::Context::default()).unwrap();
+        worker.send(Command::Query {client_id:1,sql:"CREATE TABLE records (age TINYINT UNSIGNED NOT NULL, amount SMALLINT UNSIGNED NOT NULL); SELECT * FROM records;".into()}).unwrap();
+        assert!(finish(&worker).is_ok());
+        worker
+            .send(Command::Query {
+                client_id: 1,
+                sql: "SELECT * FROM records;".into(),
+            })
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            match next(&worker, deadline) {
+                Event::Traffic(observation)
+                    if observation.operation == "fhe-proof"
+                        && observation.packet.kind == fhe_playground::PacketKind::Request =>
+                {
+                    assert!(worker.cancel_query());
+                    break;
+                }
+                Event::Finished { .. } => {
+                    panic!("query completed before its actual proof RPC was observed")
+                }
+                _ => {}
+            }
+        }
+        assert!(
+            finish(&worker)
+                .unwrap_err()
+                .to_string()
+                .contains("stop requested")
+        );
+        assert!(worker.requests.current().is_none());
+        worker
+            .send(Command::Query {
+                client_id: 1,
+                sql: "SELECT * FROM records;".into(),
+            })
+            .unwrap();
+        assert!(
+            matches!(finish(&worker).unwrap(),Outcome::VerifiedQuery {outcome:QueryOutcome::Selected {rows,..},..} if rows.is_empty())
+        );
+    }
     #[test]
     fn bounded_observation_backlog_retains_the_command_result_and_reports_a_gap() {
         let events = EventBus::default();
@@ -582,6 +732,8 @@ mod tests {
             receiver,
             bus: EventBus::default(),
             stop: Arc::default(),
+            requests: peer_runtime::RequestControl::default(),
+            query_scope: Arc::default(),
             thread: Some(thread),
             _events: None,
         };
