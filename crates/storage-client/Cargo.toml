@@ -11,6 +11,7 @@ compact-query = { path = "../compact-query", default-features = false, features 
 compact-store = { path = "../compact-store" }
 sql-plan = { path = "../sql-plan" }
 bfv-query-core = { path = "../bfv-query-core" }
+bfv-query-proof = { path = "../bfv-query-proof" }
 version-journal = { path = "../version-journal" }
 ed25519-dalek = "=2.2.0"
 getrandom = "0.2"

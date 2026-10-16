@@ -372,7 +372,7 @@ impl RelationalSession {
     pub fn select(&mut self, sql: &str) -> Result<Selected> {
         let started = Instant::now();
         let plan = relational_types::plan_select_schemas(&self.schemas(), sql).map_err(invalid)?;
-        let requests = Requests::typed_query();
+        let requests = Requests::read_query();
         let version = self.synchronize(&requests)?;
         let relation = &self.relations[plan.table];
         let (data, encrypted_index) = self.fetch(relation, &requests)?;

@@ -23,7 +23,11 @@ fn check_binding(
     index: &EncryptedSnapshot,
     head: &Commitment,
 ) -> Result<IndexHeader> {
-    super::check_binding(owner, index, head, &table_id())
+    super::check_binding(
+        owner,
+        index,
+        &crate::ReadHeads::new(table_id(), head, index.commitment(), Limits::default())?,
+    )
 }
 fn rebound(
     owner: &compact_store::Owner,
@@ -105,7 +109,7 @@ fn plaintext(owner: &compact_store::Owner, index: &EncryptedSnapshot) -> Vec<u8>
     let mut bytes = Vec::new();
     for page in 0..index.commitment().layout().page_count().unwrap() {
         bytes.extend_from_slice(
-            page_bytes_counted(owner, index, page as u64, &mut 0)
+            page_bytes_counted(owner, index, index.commitment(), page as u64, &mut 0)
                 .unwrap()
                 .as_bytes(),
         );
@@ -125,8 +129,7 @@ fn select(
     super::select(
         owner,
         index,
-        head,
-        table_id,
+        &crate::ReadHeads::new(*table_id, head, index.commitment(), Limits::default())?,
         range,
         MaterializationBudget::rows(budget),
         transferred,
@@ -464,12 +467,13 @@ fn canonical_varint_encodings_cover_every_u32_byte_width() {
         write_varint(value, &mut encoded);
         assert_eq!(encoded, expected);
         let index = raw_index(&owner, data.commitment(), &[(42, 1, &expected)]);
-        let first_page = page_bytes_counted(&owner, &index, 0, &mut 0).unwrap();
+        let first_page = page_bytes_counted(&owner, &index, index.commitment(), 0, &mut 0).unwrap();
 
         let mut transferred = 0;
         let mut reader = PostingReader {
             owner: &owner,
             snapshot: &index,
+            head: index.commitment(),
             position: INDEX_HEADER_BYTES,
             page_index: 0,
             page: first_page,
@@ -801,10 +805,16 @@ fn sparse_identity_lookup_checks_header_before_selected_id_pages_and_rejects_cor
     let mut invalid = table.fork_for_experiment();
     let offset = identity_offset(256).unwrap() + 255 * ID_BYTES;
     let page_index = (offset / INDEX_PAGE_BYTES) as u64;
-    let mut page = page_bytes_counted(&owner, &invalid.index, page_index, &mut 0)
-        .unwrap()
-        .as_bytes()
-        .to_vec();
+    let mut page = page_bytes_counted(
+        &owner,
+        &invalid.index,
+        invalid.index.commitment(),
+        page_index,
+        &mut 0,
+    )
+    .unwrap()
+    .as_bytes()
+    .to_vec();
     page[offset % INDEX_PAGE_BYTES..offset % INDEX_PAGE_BYTES + ID_BYTES].fill(0);
     let head = invalid.index_commitment().clone();
     owner
@@ -895,8 +905,13 @@ fn aggregate_capacity_is_separate_and_preflight_rejects_before_posting_traversal
             let result = super::select(
                 &owner,
                 &index,
-                data.commitment(),
-                &table_id(),
+                &crate::ReadHeads::new(
+                    table_id(),
+                    data.commitment(),
+                    index.commitment(),
+                    Limits::default(),
+                )
+                .unwrap(),
                 AgeRange::equal(42),
                 budget,
                 &mut transferred,

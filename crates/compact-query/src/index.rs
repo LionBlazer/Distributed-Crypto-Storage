@@ -3,14 +3,12 @@ use crate::{
     AgeRange, Error, INDEX_HEADER_BYTES, INDEX_SCHEMA, MAX_TABLE_ROWS, PlainRow, Result, RowId,
     RowIds, RowReference, RowReferences, Table, TableId,
 };
-use compact_store::{
-    Commitment, EncryptedSnapshot, Layout, Limits, LookupResponse, MANIFEST_BYTES,
-};
+use compact_store::{Commitment, EncryptedSnapshot, Layout, Limits, MANIFEST_BYTES};
 use std::collections::BTreeMap;
 use zeroize::Zeroizing;
 
 const AGE_BUCKETS: usize = 256;
-const INDEX_PAGE_BYTES: usize = 4096;
+pub(crate) const INDEX_PAGE_BYTES: usize = 4096;
 const TABLE_ID_START: usize = MANIFEST_BYTES;
 const COUNTS_START: usize = TABLE_ID_START + ID_BYTES;
 const OFFSETS_START: usize = COUNTS_START + AGE_BUCKETS * 4;
@@ -29,7 +27,7 @@ pub(crate) fn index_limits() -> Limits {
     }
 }
 
-fn identity_offset(rows: u64) -> Result<usize> {
+pub(crate) fn identity_offset(rows: u64) -> Result<usize> {
     Ok((INDEX_HEADER_BYTES + posting_capacity(rows)?).next_multiple_of(ID_BYTES))
 }
 fn index_bytes(rows: u64) -> Result<usize> {
@@ -44,7 +42,7 @@ pub(crate) fn decode_head(bytes: &[u8], data_rows: u64) -> Result<Commitment> {
     check_geometry(&head, data_rows)?;
     Ok(head)
 }
-fn check_geometry(head: &Commitment, rows: u64) -> Result<()> {
+pub(crate) fn check_geometry(head: &Commitment, rows: u64) -> Result<()> {
     let layout = head.layout();
     if layout.schema != INDEX_SCHEMA
         || layout.row_width != 1
@@ -199,37 +197,40 @@ fn write_varint(mut value: u32, output: &mut Vec<u8>) {
 
 fn page_bytes_counted(
     owner: &compact_store::Owner,
-    snapshot: &EncryptedSnapshot,
+    source: &dyn crate::PageSource,
+    expected: &Commitment,
     page: u64,
     transferred: &mut usize,
 ) -> Result<compact_store::PlainPage> {
-    let limits = index_limits();
-    let wire = snapshot.lookup(page, limits)?.encode();
-    *transferred += wire.len();
-    let verified =
-        LookupResponse::decode(&wire, limits)?.verify(snapshot.commitment(), page, limits)?;
+    let verified = crate::read::checked_page(source, expected, page, index_limits())?;
+    let height = expected
+        .layout()
+        .page_count()?
+        .next_power_of_two()
+        .trailing_zeros() as usize;
+    *transferred += 16 + compact_store::PAGE_OVERHEAD + verified.ciphertext().len() + height * 32;
     Ok(owner.decrypt(&verified)?)
 }
 
 pub(crate) fn check_binding(
     owner: &compact_store::Owner,
-    index: &EncryptedSnapshot,
-    head: &Commitment,
-    table_id: &TableId,
+    index: &dyn crate::PageSource,
+    heads: &crate::ReadHeads,
 ) -> Result<IndexHeader> {
-    check_binding_counted(owner, index, head, table_id, &mut 0)
+    check_binding_counted(owner, index, heads, &mut 0)
 }
 
 pub(crate) fn check_binding_counted(
     owner: &compact_store::Owner,
-    index: &EncryptedSnapshot,
-    head: &Commitment,
-    table_id: &TableId,
+    index: &dyn crate::PageSource,
+    heads: &crate::ReadHeads,
     transferred: &mut usize,
 ) -> Result<IndexHeader> {
+    let head = heads.data();
+    let table_id = heads.table_id();
     let rows = head.layout().row_count;
-    check_geometry(index.commitment(), rows)?;
-    let first_page = page_bytes_counted(owner, index, 0, transferred)?;
+    check_geometry(heads.index(), rows)?;
+    let first_page = page_bytes_counted(owner, index, heads.index(), 0, transferred)?;
     let first = first_page.as_bytes();
     if first.len() < INDEX_HEADER_BYTES {
         return Err(Error::InvalidIndex);
@@ -281,7 +282,8 @@ pub(crate) fn check_binding_counted(
 /// A varint can cross a page boundary but cannot cross its bucket's byte boundary.
 struct PostingReader<'a> {
     owner: &'a compact_store::Owner,
-    snapshot: &'a EncryptedSnapshot,
+    snapshot: &'a dyn crate::PageSource,
+    head: &'a Commitment,
     position: usize,
     page_index: u64,
     page: compact_store::PlainPage,
@@ -294,8 +296,13 @@ impl PostingReader<'_> {
         }
         let page_index = (self.position / INDEX_PAGE_BYTES) as u64;
         if self.page_index != page_index {
-            self.page =
-                page_bytes_counted(self.owner, self.snapshot, page_index, self.transferred)?;
+            self.page = page_bytes_counted(
+                self.owner,
+                self.snapshot,
+                self.head,
+                page_index,
+                self.transferred,
+            )?;
             self.page_index = page_index;
         }
         let byte = *self
@@ -342,15 +349,15 @@ impl MaterializationBudget {
 
 pub(crate) fn select(
     owner: &compact_store::Owner,
-    index: &EncryptedSnapshot,
-    head: &Commitment,
-    table_id: &TableId,
+    index: &dyn crate::PageSource,
+    heads: &crate::ReadHeads,
     range: AgeRange,
     budget: MaterializationBudget,
     transferred: &mut usize,
 ) -> Result<Vec<u64>> {
     range.validate()?;
-    let header = check_binding_counted(owner, index, head, table_id, transferred)?;
+    let head = heads.data();
+    let header = check_binding_counted(owner, index, heads, transferred)?;
     let selected = header.counts[range.lower as usize..=range.upper as usize]
         .iter()
         .try_fold(0_usize, |sum, count| {
@@ -364,6 +371,7 @@ pub(crate) fn select(
     let mut reader = PostingReader {
         owner,
         snapshot: index,
+        head: heads.index(),
         position: INDEX_HEADER_BYTES + header.offsets[range.lower as usize] as usize,
         page_index: 0,
         page: header.first_page,
@@ -422,13 +430,7 @@ pub(crate) fn references(
     if ordinals.iter().any(|ordinal| *ordinal >= count) {
         return Err(Error::InvalidIndex);
     }
-    let header = check_binding_counted(
-        owner,
-        &table.index,
-        table.commitment(),
-        table.table_id(),
-        transferred,
-    )?;
+    let header = check_binding_counted(owner, &table.index, &table.read_heads(), transferred)?;
     let mut pages = BTreeMap::from([(0, header.first_page)]);
     let mut rows = Zeroizing::new(Vec::with_capacity(ordinals.len()));
     for ordinal in ordinals {
@@ -438,6 +440,7 @@ pub(crate) fn references(
             entry.insert(page_bytes_counted(
                 owner,
                 &table.index,
+                table.index_commitment(),
                 page_index,
                 transferred,
             )?);
@@ -475,7 +478,8 @@ pub(crate) fn rebound(
     new: &Commitment,
     table_id: &TableId,
 ) -> Result<EncryptedSnapshot> {
-    let header = check_binding(owner, index, old, table_id)?;
+    let heads = crate::ReadHeads::new(*table_id, old, index.commitment(), Limits::default())?;
+    let header = check_binding(owner, index, &heads)?;
     if old.layout() != new.layout()
         || old.database() != new.database()
         || old.key_domain() != new.key_domain()

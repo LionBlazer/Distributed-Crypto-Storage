@@ -92,8 +92,7 @@ impl Owner {
                 index::select(
                     &self.store,
                     &table.index,
-                    table.commitment(),
-                    table.table_id(),
+                    &table.read_heads(),
                     range,
                     index::MaterializationBudget::rows(budget),
                     &mut index_response_bytes,
@@ -103,8 +102,7 @@ impl Owner {
                 index::check_binding_counted(
                     &self.store,
                     &table.index,
-                    table.commitment(),
-                    table.table_id(),
+                    &table.read_heads(),
                     &mut index_response_bytes,
                 )?;
                 let count = table.commitment().layout().row_count as usize;

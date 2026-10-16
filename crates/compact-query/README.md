@@ -105,6 +105,45 @@ wrong owner and independently changed data/index heads.
 The default TFHE library suite passes 24 tests after adding index-only-head freshness
 rejection for both aggregate completion and UPDATE.
 
+## Immutable selective read sources
+
+`PageSource` exposes an immutable commitment and genuine `VerifiedPage` membership,
+without transport or owner keys. `ReadHeads` pins an independently supplied logical
+TableId and both exact data/index heads. With `bfv-experiment`, `ReadView` borrows
+two real sources; it never represents a prefix as a complete Table or constructs
+a partial snapshot.
+Before AEAD, the canonical parser rechecks the provider head and the returned
+page's exact head and address. The full `Table::read_view` adapter uses this same
+header/postings/data parser as an encrypted prefix provider.
+
+`ReadHeads::read_requirements` derives only public format geometry: the entire
+canonical data image and every index page through the aligned end of padded
+posting capacity. It never consults private counts, predicates, projection or
+LIMIT. At the actual default one-million-row bound the fixed 3-byte data layout
+with 256 rows/page needs 3,187,648 encoded bytes and 493 index prefix pages; the
+complete index has 8,306 pages. All admitted default-limit data geometries fit
+6,145,840 encoded data bytes and at most 493 prefix pages. Executable tests run
+the actual Layout and ReadHeads validators at these limits, including rejection
+outside the page-count/page-capacity bounds. These are format byte bounds, not a
+process RAM guarantee or proof of sparse physical I/O.
+
+`bfv::Owner::prepare_provable_select_from_source` authenticates the same complete
+index and selected original fields, then freshly encrypts the original FHE input.
+Source fields and plaintext pages are dropped/zeroized after encryption; retained
+SELECT state contains exact ReadHeads, bounded ordinals and encrypted pending state.
+Borrowed proof checking and consuming completion both take current ReadHeads;
+completion rechecks TableId and each head before restoration/decryption. The network
+caller must independently revalidate agreed freshness before invoking completion.
+Full-Table SELECT entry points delegate to the same pipeline and remain useful to
+local storage/proof consumers. UPDATE, INSERT and RowReferences still require the
+complete index, including stable private RowIds.
+
+The read-source tests refuse genuine membership redirected from another valid head
+or address. Genuine proof integration compares a real incomplete encrypted posting
+prefix with a full snapshot, and refuses independent TableId/data/index changes
+between preparation and checked completion. A VerifiedPage or parsed ReadHeads
+alone establishes neither SQL completeness, current consensus nor owner authority.
+
 ## Proved BFV completion
 
 `prepare_provable_aggregate` reuses the private complete authenticated selection
