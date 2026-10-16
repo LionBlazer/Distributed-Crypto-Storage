@@ -267,9 +267,14 @@ impl JobVerifier {
         let bytes = parameters.to_bytes().map_err(crypto)?;
         let evaluator =
             Arc::new(PublicUpdateEvaluator::from_parameters(&parameters).map_err(crypto)?);
+        let mut application = Sha256::new();
+        application.update(b"dcs/peer-runtime/proved-job-application/v1");
+        application.update((bytes.len() as u64).to_le_bytes());
+        application.update(&bytes);
+        application.update(bfv_query_proof::PROOF_PROFILE_ID);
         Ok(Self {
             evaluator,
-            application_commitment: version_journal::hash(&bytes),
+            application_commitment: application.finalize().into(),
             verified: Mutex::new(VerifiedProofCache::default()),
         })
     }
@@ -650,7 +655,9 @@ mod tests {
         // Public context fixtures exercise this application's proof boundary.
         // They are not accepted journal blocks, agreed heads or SQL results.
         let (owner, setup) = Owner::generate(Geometry::Rows16).unwrap();
-        let verifier = JobVerifier::new(setup.update_parameters().unwrap()).unwrap();
+        let parameters = setup.update_parameters().unwrap();
+        let legacy_application = version_journal::hash(&parameters.to_bytes().unwrap());
+        let verifier = JobVerifier::new(parameters).unwrap();
         let prepared = owner
             .prepare_indexed_update_for_experiment(
                 QueryContext::new([1; 16], [2; 112], [3; 112]),
@@ -714,7 +721,9 @@ mod tests {
         assert!(
             verifier
                 .verify(TransitionStatement {
-                    application_commitment: [0; 32],
+                    // The old setup-only anchor cannot advertise this new
+                    // accepted arithmetic proof format, even on a cache hit.
+                    application_commitment: legacy_application,
                     ..statement
                 })
                 .is_err()

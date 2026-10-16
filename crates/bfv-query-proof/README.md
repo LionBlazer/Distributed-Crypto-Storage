@@ -36,13 +36,14 @@ Binding head bytes does not establish their agreement or freshness.
 ## Exact arithmetic and field-wrap protection
 
 Addition uses a Boolean carry and `a + b - c - q*k = 0`, with `a,b,c < q < 2^44`.
-Ten independent residues share a row: ten witness and 40 public columns in exactly
-8,192 rows. Every row is used; all 81,920 residues remain constrained.
+Each lane holds one complete 8,192-coefficient NTT polynomial. Its fixed modulus
+is an AIR constant. Ten residues share a row: ten witness and 30 public columns in
+exactly 8,192 rows. Every row is used; all 81,920 residues remain constrained.
 
 Product requires more than `a*b - c - q*k = 0` in the Goldilocks field: an 88-bit
 integer product could wrap its 64-bit characteristic. For `B = 2^22`, the AIR uses
-two-limb canonical public values `a,b,c,q`, a 44-bit public quotient and two signed
-public carries. The fixed auxiliary certificate stores each quotient `k` in six
+two-limb canonical public values `a,b,c`, fixed modulus limbs `q0,q1`, a 44-bit
+public quotient and two signed public carries. The fixed auxiliary certificate stores each quotient `k` in six
 little-endian bytes, followed by shifted carries `s1,s2` in three bytes each. Before
 field conversion the verifier requires `k < 2^44`, `s1 < 2^23`, `s2 < 2^24`.
 Let `k = k0 + B*k1`, `r1 = s1 - B`, and `r2 = s2 - 2B`. Every residue enforces:
@@ -60,13 +61,13 @@ integers. Since the verifier independently requires `0 <= c < q`, this proves th
 unique correct modular product. The genuine quotient is below `q < B^2`; genuine
 carries lie in `(-B,B)` and `(-2B,2B)`, so all valid operations have a witness. This
 uses ten independent residues per row: ten zero-constrained dummy main columns
-and 120 public columns in exactly 8,192 rows. The quotient/carry certificate is exactly 983,040 bytes;
+and 100 public columns in exactly 8,192 rows. The quotient/carry certificate is exactly 983,040 bytes;
 all its values are functions of already public ciphertext operands and disclose no
 additional plaintext. The verifier commits it with the trusted input and claimed
 output; it never calculates these quotients/carries. A third SHA-256 transcript hash
 binds the exact certificate. Range checks alone cannot accept a result: all three
-limb equations still require a valid STARK proof. Frame magics `BFVP3A02` and
-`BFVP3M03` reject the earlier padded traces and witness-only product layout.
+limb equations still require a valid STARK proof. Frame magics `BFVP3A03` and
+`BFVP3M04` reject all earlier trace layouts.
 
 Moving ciphertext-derived auxiliary values into the independently committed public
 certificate avoids 91 Boolean witness columns per residue. This reduces prover
@@ -78,6 +79,18 @@ It halves trace height while increasing width by 25%, reducing the total trace
 cells and public preprocessing work without skipping any arithmetic. The shared
 backend profile identifies the layout; hosts reject a stale installed kernel.
 Rebuild both SIMD kernels with the launcher when updating this proof format.
+
+The canonical order remains component/modulus/coefficient, including the product
+certificate. Only the AIR matrices transpose it: coefficient index is the row and
+component/modulus selects the lane. Constant lane moduli remove 25% of addition
+and 16.7% of product public matrix cells without reducing coverage or the number of
+arithmetic constraints. Direct AIR tests rebuild preprocessing around forged
+coefficients at both ends of every polynomial; their rejection depends on actual
+arithmetic constraints, separately from serialized-proof transcript binding.
+
+`PROOF_PROFILE_ID` identifies the complete accepted arithmetic/proof/security
+profile. Application/genesis commitments must bind it alongside FHE parameters;
+identical encryption parameters alone do not identify compatible proof formats.
 
 Both relations use Goldilocks degree-five extension, standard Poseidon2 width 12,
 FRI blowup eight, 192 queries, binary folding and no grinding. The SDK's security
@@ -143,7 +156,8 @@ cryptographic verification. Reporting only the final SDK call omits most work.
 
 ## Local phase measurements
 
-One full-profile fixture run per build on the current Windows x86-64 computer,
+The following historical observations precede the polynomial-lane layout. One
+full-profile fixture run per build on the current Windows x86-64 computer,
 using two Rayon threads and identical cryptographic parameters. Fresh owner keys
 stay in memory. These are single observations under concurrent development load,
 not tail-latency guarantees or full network-query measurements.

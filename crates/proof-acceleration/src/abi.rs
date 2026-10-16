@@ -9,10 +9,10 @@ pub const MAX_OUTPUT_BYTES: usize = OUTPUT_BYTES;
 pub const MAX_PROOF_BYTES: usize = 2_097_152;
 /// SHA-256 of PROFILE_DESCRIPTION; SIMD selection does not change this statement.
 pub const PROFILE_ID: [u8; 32] = [
-    152, 216, 182, 188, 212, 98, 175, 70, 222, 46, 106, 21, 71, 61, 11, 98, 82, 58, 19, 71, 250,
-    17, 215, 152, 146, 79, 124, 232, 171, 181, 120, 212,
+    211, 249, 182, 167, 98, 174, 126, 153, 192, 193, 147, 147, 202, 193, 44, 99, 191, 191, 106, 17,
+    80, 54, 248, 57, 32, 224, 179, 186, 12, 7, 227, 67,
 ];
-pub const PROFILE_DESCRIPTION: &[u8] = b"dcs-proof-backend-profile/v2\nbfv:N=8192;t=114689;Q=[8796092858369,8796092792833,17592186028033,17592185438209,17592184717313];CBD20-variance10;components=2;level=0;representation=NTT\ncanonical:add=BFVLADQ1/BFVLADR1;product=BFVPMUQ1/BFVPMUR1;coefficients=81920;sha256-original-request-binding\nproof:add=BFVP3A02;product=BFVP3M03;public-auxiliary=81920*(6+3+3);limb-base=4194304;quotient-bits=44;carry-bits=23,24;lanes=10;height=8192\np3=0.8.0;field=Goldilocks;extension=Binomial5;Poseidon2-default-Goldilocks-width12;sponge=12,8,4;compression=2,4,12;MMCS-cap=0;FRI-blowup=8;queries=192;final-poly-log=0;max-arity-log=1;grinding=0,0,0;security-model-min=128\ntranscript=sha256-input,sha256-output,sha256-product-aux;codec=postcard1.1.3;sequence-limit=4096;decode-slots=1048576;proof-cap=2097152\n";
+pub const PROFILE_DESCRIPTION: &[u8] = b"dcs-proof-backend-profile/v3\nbfv:N=8192;t=114689;Q=[8796092858369,8796092792833,17592186028033,17592185438209,17592184717313];CBD20-variance10;components=2;level=0;representation=NTT\ncanonical:add=BFVLADQ1/BFVLADR1;product=BFVPMUQ1/BFVPMUR1;coefficients=81920;sha256-original-request-binding\nproof:add=BFVP3A03;product=BFVP3M04;public-auxiliary=81920*(6+3+3);limb-base=4194304;quotient-bits=44;carry-bits=23,24;lanes=10;height=8192;layout=polynomial-lanes;modulus=lane-fixed;public-columns=30,100\np3=0.8.0;field=Goldilocks;extension=Binomial5;Poseidon2-default-Goldilocks-width12;sponge=12,8,4;compression=2,4,12;MMCS-cap=0;FRI-blowup=8;queries=192;final-poly-log=0;max-arity-log=1;grinding=0,0,0;security-model-min=128\ntranscript=sha256-input,sha256-output,sha256-product-aux;codec=postcard1.1.3;sequence-limit=4096;decode-slots=1048576;proof-cap=2097152\n";
 
 pub const SUCCESS: u32 = 0;
 pub const STATEMENT_SHAPE: u32 = 1;

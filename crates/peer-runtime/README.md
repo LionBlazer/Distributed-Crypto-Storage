@@ -113,7 +113,12 @@ An owner signature is authorization, not a substitute for these checks or STARKs
 
 ## Journal RPCs and storage lifecycle
 
-`InitJournal` pins the supplied genesis and application parameter commitment and
+`JobVerifier` commits its FHE parameter descriptor and the exact
+`bfv_query_proof::PROOF_PROFILE_ID` under a separate application domain. A
+setup-only or older proof-format application commitment is incompatible; it cannot
+reuse a new verifier merely because the encryption parameters match.
+
+`InitJournal` pins the supplied genesis and application parameter/proof commitment and
 creates or reopens its durable log with the actual `JobVerifier`. `PublishBlock`
 validates before `sync_all` and in-memory publication. Its acknowledgement identifies
 the exact durably accepted submitted block, including an idempotent ancestor or a

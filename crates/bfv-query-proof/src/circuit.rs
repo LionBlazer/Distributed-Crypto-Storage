@@ -63,19 +63,18 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for ArithmeticAir {
         match self.operation {
             Operation::Addition => {
                 for lane in 0..self.operation.lanes() {
-                    let (k, a, b, c, q) = {
+                    let (k, a, b, c) = {
                         let main = builder.main();
                         let prep = builder.preprocessed();
                         (
                             main.current(lane).unwrap(),
-                            prep.current(4 * lane).unwrap(),
-                            prep.current(4 * lane + 1).unwrap(),
-                            prep.current(4 * lane + 2).unwrap(),
-                            prep.current(4 * lane + 3).unwrap(),
+                            prep.current(3 * lane).unwrap(),
+                            prep.current(3 * lane + 1).unwrap(),
+                            prep.current(3 * lane + 2).unwrap(),
                         )
                     };
                     builder.assert_bool(k);
-                    builder.assert_zero(a + b - c - q * k);
+                    builder.assert_zero(a + b - c - k * Val::from_u64(modulus(lane)));
                 }
             }
             Operation::PublicPolynomialProduct => {
@@ -83,15 +82,17 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for ArithmeticAir {
                     let main = builder.main();
                     let prep = builder.preprocessed();
                     let zero = main.current(lane).unwrap();
-                    let public: [_; 12] =
-                        core::array::from_fn(|col| prep.current(lane * 12 + col).unwrap());
-                    let [a0, a1, b0, b1, c0, c1, q0, q1, k0, k1, r1, r2] = public;
+                    let public: [_; 10] =
+                        core::array::from_fn(|col| prep.current(lane * 10 + col).unwrap());
+                    let [a0, a1, b0, b1, c0, c1, k0, k1, r1, r2] = public;
+                    let q0 = Val::from_u64(modulus(lane) & MASK);
+                    let q1 = Val::from_u64(modulus(lane) >> LIMB_BITS);
                     builder.assert_zero(zero);
-                    builder.assert_zero(a0 * b0 - c0 - q0 * k0 - r1 * Val::from_u64(BASE));
+                    builder.assert_zero(a0 * b0 - c0 - k0 * q0 - r1 * Val::from_u64(BASE));
                     builder.assert_zero(
-                        a0 * b1 + a1 * b0 - c1 - q0 * k1 - q1 * k0 + r1 - r2 * Val::from_u64(BASE),
+                        a0 * b1 + a1 * b0 - c1 - k1 * q0 - k0 * q1 + r1 - r2 * Val::from_u64(BASE),
                     );
-                    builder.assert_zero(a1 * b1 - q1 * k1 + r2);
+                    builder.assert_zero(a1 * b1 - k1 * q1 + r2);
                 }
             }
         }
@@ -162,38 +163,40 @@ pub(super) fn statement(
         return Err(Error::RequestBinding);
     }
     let mut data = vec![Val::ZERO; operation.height() * operation.public_columns()];
-    for (i, c) in results.into_iter().enumerate() {
-        let (a, b, q) = operands(input, i);
-        if a >= q || b >= q {
-            return Err(Error::NonCanonicalResidue);
-        }
-        match operation {
-            Operation::Addition => data[i * 4..i * 4 + 4].copy_from_slice(&[
-                Val::from_u64(a),
-                Val::from_u64(b),
-                Val::from_u64(c),
-                Val::from_u64(q),
-            ]),
-            Operation::PublicPolynomialProduct => {
-                let (k, s1, s2) = decode_certificate(&certificate[i * 12..(i + 1) * 12])?;
-                let limbs = [
-                    a & MASK,
-                    a >> LIMB_BITS,
-                    b & MASK,
-                    b >> LIMB_BITS,
-                    c & MASK,
-                    c >> LIMB_BITS,
-                    q & MASK,
-                    q >> LIMB_BITS,
-                    k & MASK,
-                    k >> LIMB_BITS,
-                ];
-                let row = &mut data[i * 12..i * 12 + 12];
-                for (target, value) in row.iter_mut().zip(limbs) {
-                    *target = Val::from_u64(value);
+    let columns = operation.public_columns() / operation.lanes();
+    for (row, public) in data
+        .chunks_exact_mut(operation.public_columns())
+        .enumerate()
+    {
+        for (lane, target) in public.chunks_exact_mut(columns).enumerate() {
+            let i = lane * bfv_linear_circuit::DEGREE + row;
+            let c = results[i];
+            let (a, b, q) = operands(input, i);
+            if a >= q || b >= q {
+                return Err(Error::NonCanonicalResidue);
+            }
+            match operation {
+                Operation::Addition => {
+                    target.copy_from_slice(&[Val::from_u64(a), Val::from_u64(b), Val::from_u64(c)])
                 }
-                row[10] = Val::from_u64(s1) - Val::from_u64(BASE);
-                row[11] = Val::from_u64(s2) - Val::from_u64(2 * BASE);
+                Operation::PublicPolynomialProduct => {
+                    let (k, s1, s2) = decode_certificate(&certificate[i * 12..(i + 1) * 12])?;
+                    let limbs = [
+                        a & MASK,
+                        a >> LIMB_BITS,
+                        b & MASK,
+                        b >> LIMB_BITS,
+                        c & MASK,
+                        c >> LIMB_BITS,
+                        k & MASK,
+                        k >> LIMB_BITS,
+                    ];
+                    for (target, value) in target.iter_mut().zip(limbs) {
+                        *target = Val::from_u64(value);
+                    }
+                    target[8] = Val::from_u64(s1) - Val::from_u64(BASE);
+                    target[9] = Val::from_u64(s2) - Val::from_u64(2 * BASE);
+                }
             }
         }
     }
@@ -221,9 +224,13 @@ pub(super) fn statement(
     ))
 }
 
+fn modulus(lane: usize) -> u64 {
+    bfv_linear_circuit::MODULI[lane % bfv_linear_circuit::MODULI.len()]
+}
+
 fn operands(input: &[u8], index: usize) -> (u64, u64, u64) {
     let read = |i| u64::from_le_bytes(input[40 + i * 8..48 + i * 8].try_into().unwrap());
-    let q = bfv_linear_circuit::MODULI[(index / bfv_linear_circuit::DEGREE) % 5];
+    let q = modulus(index / bfv_linear_circuit::DEGREE);
     (
         read(index),
         read(index + bfv_linear_circuit::COEFFICIENTS),
@@ -267,13 +274,11 @@ fn decode_certificate(certificate: &[u8]) -> Result<(u64, u64, u64), Error> {
 pub(super) fn witness(operation: Operation, input: &[u8]) -> Result<RowMajorMatrix<Val>, Error> {
     let mut values = vec![Val::ZERO; operation.height() * operation.witness_columns()];
     if operation == Operation::Addition {
-        for (i, value) in values
-            .iter_mut()
-            .enumerate()
-            .take(bfv_linear_circuit::COEFFICIENTS)
-        {
+        for i in 0..bfv_linear_circuit::COEFFICIENTS {
             let (a, b, q) = operands(input, i);
-            *value = Val::from_bool(a + b >= q);
+            let lane = i / bfv_linear_circuit::DEGREE;
+            let row = i % bfv_linear_circuit::DEGREE;
+            values[row * operation.lanes() + lane] = Val::from_bool(a + b >= q);
         }
     }
     Ok(RowMajorMatrix::new(values, operation.witness_columns()))
@@ -310,6 +315,50 @@ fn product_carries(a: u64, b: u64, q: u64) -> Result<(u64, u64, u64), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arithmetic_constraints_cover_both_ends_of_every_polynomial_lane() {
+        let left: Vec<_> = (0..bfv_linear_circuit::COEFFICIENTS)
+            .map(|index| index as u64 * 17 + 3)
+            .collect();
+        let right: Vec<_> = (0..bfv_linear_circuit::COEFFICIENTS)
+            .map(|index| modulus(index / bfv_linear_circuit::DEGREE) - 1)
+            .collect();
+        for operation in [Operation::Addition, Operation::PublicPolynomialProduct] {
+            let input = match operation {
+                Operation::Addition => {
+                    bfv_linear_circuit::encode_request([7; 32], &left, &right).unwrap()
+                }
+                Operation::PublicPolynomialProduct => {
+                    bfv_product_circuit::encode_request([7; 32], &left, &right).unwrap()
+                }
+            };
+            let output = operation.evaluate(&input).unwrap();
+            let auxiliary = certificate(operation, &input).unwrap();
+            let trace = witness(operation, &input).unwrap();
+            let (air, values) = statement(operation, &input, &output, &auxiliary).unwrap();
+            assert!(p3_air::check_all_constraints(&air, &trace, &values, Some(1)).is_ok());
+            for lane in 0..operation.lanes() {
+                for coefficient in [0, bfv_linear_circuit::DEGREE - 1] {
+                    let index = lane * bfv_linear_circuit::DEGREE + coefficient;
+                    let offset = 40 + index * 8;
+                    let mut changed = output.clone();
+                    let value = u64::from_le_bytes(changed[offset..offset + 8].try_into().unwrap());
+                    changed[offset..offset + 8]
+                        .copy_from_slice(&((value + 1) % modulus(lane)).to_le_bytes());
+                    // Rebuild public preprocessing and hashes around the forged
+                    // result: rejection must come from arithmetic, not reuse of
+                    // a proof with a different SHA-256 transcript.
+                    let (forged, hashes) =
+                        statement(operation, &input, &changed, &auxiliary).unwrap();
+                    assert!(
+                        !p3_air::check_all_constraints(&forged, &trace, &hashes, Some(1)).is_ok(),
+                        "{operation:?}, polynomial {lane}, coefficient {coefficient}"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn quotient_and_shifted_carry_ranges_cover_every_fixed_modulus_boundary() {
@@ -359,18 +408,24 @@ mod tests {
             b >> LIMB_BITS,
             forged_c & MASK,
             forged_c >> LIMB_BITS,
-            q & MASK,
-            q >> LIMB_BITS,
             forged_k & MASK,
             forged_k >> LIMB_BITS,
         ];
         let operation = Operation::PublicPolynomialProduct;
         let mut public = vec![Val::ZERO; operation.public_columns()];
-        for (target, value) in public.iter_mut().zip(limbs) {
+        // This attack uses MODULI[4], hence lane four. Using lane zero with
+        // another constant modulus would reject for the wrong reason.
+        let attack = &mut public[4 * 10..5 * 10];
+        for (target, value) in attack.iter_mut().zip(limbs) {
             *target = Val::from_u64(value);
         }
-        public[10] = Val::from_u64(s1) - Val::from_u64(BASE);
-        public[11] = Val::from_u64(s2) - Val::from_u64(2 * BASE);
+        attack[8] = Val::from_u64(s1) - Val::from_u64(BASE);
+        attack[9] = Val::from_u64(s2) - Val::from_u64(2 * BASE);
+        let mut correct = public.clone();
+        correct[4 * 10 + 4] = Val::from_u64(c & MASK);
+        correct[4 * 10 + 5] = Val::from_u64(c >> LIMB_BITS);
+        correct[4 * 10 + 6] = Val::from_u64(k & MASK);
+        correct[4 * 10 + 7] = Val::from_u64(k >> LIMB_BITS);
         let air = ArithmeticAir {
             operation,
             public: RowMajorMatrix::new(public, operation.public_columns()),
@@ -385,6 +440,14 @@ mod tests {
         assert!(
             !report.is_ok(),
             "integer limb constraints must reject the field-wrap forgery"
+        );
+        let correct_air = ArithmeticAir {
+            operation,
+            public: RowMajorMatrix::new(correct, operation.public_columns()),
+        };
+        assert!(
+            p3_air::check_all_constraints(&correct_air, &trace, &[Val::ZERO; 24], Some(4)).is_ok(),
+            "the same lane and carries must accept the genuine integer product"
         );
     }
 }

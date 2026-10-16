@@ -9,6 +9,17 @@ mod dispatch;
 
 pub use dispatch::{backend_kind, compiled_kind, initialize_backend};
 pub use proof_acceleration::Kind as BackendKind;
+/// Identifies the complete canonical arithmetic, serialized proof and security profile.
+/// Application trust anchors must bind this as well as their FHE parameters.
+pub const PROOF_PROFILE_ID: [u8; 32] = proof_acceleration::abi::PROFILE_ID;
+
+const _: () = {
+    assert!(bfv_linear_circuit::DEGREE.is_power_of_two());
+    assert!(
+        bfv_linear_circuit::COEFFICIENTS
+            == 2 * bfv_linear_circuit::MODULI.len() * bfv_linear_circuit::DEGREE
+    );
+};
 
 use circuit::{Config, certificate, config, statement, witness};
 use p3_uni_stark::{Proof, prove_with_preprocessed, setup_preprocessed, verify_with_preprocessed};
@@ -38,15 +49,12 @@ impl Operation {
         }
     }
     fn lanes(self) -> usize {
-        // All 81,920 residues fit exactly into 8,192 rows with ten lanes.
-        // Eight lanes padded 10,240 useful rows to 16,384, wasting 37.5% of
-        // every trace and its public preprocessing without adding coverage.
-        10
+        // One full NTT polynomial per lane: two components, five fixed moduli.
+        // Its modulus is an AIR constant instead of a repeated public column.
+        2 * bfv_linear_circuit::MODULI.len()
     }
     fn height(self) -> usize {
-        bfv_linear_circuit::COEFFICIENTS
-            .div_ceil(self.lanes())
-            .next_power_of_two()
+        bfv_linear_circuit::DEGREE
     }
     fn log_height(self) -> usize {
         self.height().ilog2() as usize
@@ -56,8 +64,8 @@ impl Operation {
     }
     fn public_columns(self) -> usize {
         match self {
-            Self::Addition => 4 * self.lanes(),
-            Self::PublicPolynomialProduct => 12 * self.lanes(),
+            Self::Addition => 3 * self.lanes(),
+            Self::PublicPolynomialProduct => 10 * self.lanes(),
         }
     }
     fn certificate_bytes(self) -> usize {
@@ -74,8 +82,8 @@ impl Operation {
     }
     fn proof_magic(self) -> &'static [u8; 8] {
         match self {
-            Self::Addition => b"BFVP3A02",
-            Self::PublicPolynomialProduct => b"BFVP3M03",
+            Self::Addition => b"BFVP3A03",
+            Self::PublicPolynomialProduct => b"BFVP3M04",
         }
     }
     fn evaluate(self, input: &[u8]) -> Result<Vec<u8>, Error> {

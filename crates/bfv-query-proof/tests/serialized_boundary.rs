@@ -103,12 +103,21 @@ fn changing_the_final_residue_of_either_operation_invalidates_its_proof() {
 fn changed_residues_across_trace_lanes_and_modulus_boundaries_are_rejected() {
     for operation in operations() {
         let f = fixture(operation);
-        // Both sides of a packed-row boundary and of the first modulus boundary.
-        for index in [0, 9, 10, 8191, 8192] {
+        // First and final coefficient of every polynomial lane, across both
+        // ciphertext components and all five independently fixed moduli.
+        for index in
+            (0..bfv_linear_circuit::COEFFICIENTS / bfv_linear_circuit::DEGREE).flat_map(|lane| {
+                [
+                    lane * bfv_linear_circuit::DEGREE,
+                    (lane + 1) * bfv_linear_circuit::DEGREE - 1,
+                ]
+            })
+        {
             let mut output = f.output.clone();
             let offset = 40 + index * 8;
             let residue = u64::from_le_bytes(output[offset..offset + 8].try_into().unwrap());
-            let modulus = bfv_linear_circuit::MODULI[index / bfv_linear_circuit::DEGREE];
+            let modulus = bfv_linear_circuit::MODULI
+                [(index / bfv_linear_circuit::DEGREE) % bfv_linear_circuit::MODULI.len()];
             output[offset..offset + 8].copy_from_slice(&((residue + 1) % modulus).to_le_bytes());
 
             assert_eq!(
@@ -121,10 +130,12 @@ fn changed_residues_across_trace_lanes_and_modulus_boundaries_are_rejected() {
 }
 
 #[test]
-fn previous_padded_trace_proofs_are_rejected_before_decoding() {
+fn previous_trace_layout_proofs_are_rejected_before_decoding() {
     for (operation, old_magic) in [
         (Operation::Addition, b"BFVP3A01"),
+        (Operation::Addition, b"BFVP3A02"),
         (Operation::PublicPolynomialProduct, b"BFVP3M02"),
+        (Operation::PublicPolynomialProduct, b"BFVP3M03"),
     ] {
         let f = fixture(operation);
         let mut proof = f.proof.clone();
