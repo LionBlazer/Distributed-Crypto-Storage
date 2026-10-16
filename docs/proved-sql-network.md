@@ -213,6 +213,44 @@ behavior is supplied by the internal RPC queue.
 
 ## Reproduction and module ownership
 
+### Polynomial lanes and bounded UPDATE preparation (2026-10-16)
+
+The v3 arithmetic profile assigns each complete BFV NTT polynomial to one trace
+lane. Its modulus becomes an AIR constant: addition uses 30 instead of 40 public
+columns, product uses 100 instead of 120, with all 81,920 residues constrained.
+Both SIMD kernels were rebuilt; genuine proofs verified between portable, AVX2
+and AVX-512 engines. The application commitment now pins this exact proof profile
+as well as FHE parameters, rejecting incompatible setup-only anchors.
+
+SELECT and UPDATE share a bounded two-worker owner preparation helper. UPDATE
+completes all genuine proofs and overflow checks before storing or authorizing
+any new shard. Same-endpoint failover remains queued under unchanged peer admission.
+Tests verify concurrent requests, no publication after a later overflow, and two
+logical shard proofs on one surviving process.
+
+Three complete runs of the same four-row/two-peer scenario used a native owner,
+v3 AVX-512 peers and eight Rayon threads per process. Compilation/setup remain
+outside individual query timers; proof checks, freshness and durable confirmation
+remain inside them. Observed milliseconds:
+
+| Complete operation | Range | Median |
+| --- | ---: | ---: |
+| SELECT all rows | 222–234 | 223 |
+| SELECT projected/filter/LIMIT | 224–234 | 226 |
+| INSERT | 403–485 | 469 |
+| UPDATE three rows/two shards | 622–690 | 660 |
+| SELECT after writes | 273–353 | 282 |
+| SELECT after process loss including detection | 2,336–2,381 | 2,361 |
+
+These samples included 100-ms working-set polling and 500-ms child discovery.
+Numeric RSS export failed, so they establish no recorded peak-memory result.
+The same UPDATE preparation with v2 kernels previously observed 641–663 ms,
+median 661 ms: these small observations do not demonstrate a material further
+write-latency gain from the narrower trace. The explicit matrix reduction is not
+a full-query speed guarantee. UPDATE still misses 500 ms; larger workloads and
+tail latency remain unestablished. Every measured result, process-loss recovery
+and exact-head read-after-write assertion passed.
+
 ### Reusing the owner's checked mutation proof (2026-10-16)
 
 `JobVerifier::check_job` derives the exact canonical input from the trusted
