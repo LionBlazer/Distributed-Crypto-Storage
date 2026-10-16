@@ -213,6 +213,38 @@ behavior is supplied by the internal RPC queue.
 
 ## Reproduction and module ownership
 
+### Reusing the owner's checked mutation proof (2026-10-16)
+
+`JobVerifier::check_job` derives the exact canonical input from the trusted
+original request, verifies genuine arithmetic evidence, then remembers the complete
+application/input/output/proof byte identity for the owner's later journal import.
+No unchecked marker can populate the cache. Compact completion still checks exact
+pending source heads and statement binding; authorization, manifest coverage,
+public peer verification and confirmed freshness remain independent. New peers
+must perform their own initial proof check. This removes the owner's duplicate
+arithmetic verification without accepting a prover-generated result by itself.
+
+Three successive eight-thread native-owner/AVX-512-peer runs before and after this
+change used the same four-row, two-process `proved_sql` scenario and confirmation
+profile. Compilation and setup were outside query timers. Observed milliseconds:
+
+| Complete operation | Before range / median | After range / median |
+| --- | ---: | ---: |
+| SELECT all rows | 288–311 / 309 | 248–311 / 249 |
+| SELECT projected/filter/LIMIT | 278–291 / 279 | 236–313 / 247 |
+| INSERT including durable confirmation | 466–579 / 488 | 425–489 / 441 |
+| UPDATE three rows/two shards including confirmation | 880–1,086 / 958 | 691–821 / 782 |
+| SELECT after writes | 379–557 / 404 | 287–361 / 318 |
+| SELECT after process loss including detection | 2,371–2,386 / 2,372 | 2,358–2,375 / 2,374 |
+
+These are small development samples without controlled background load, not
+tail-latency guarantees. The write cache does not alter SELECT; its observed
+read variance must not be attributed to mutation caching. UPDATE remains above
+500 ms, and neither these samples nor the earlier runs establish a larger workload
+bound. All original results, exact-head read-after-write, restart and genuine
+proof acceptance assertions passed on every measured run. The owning tamper/cache
+tests and all 55 affected library/journal/process tests also passed separately.
+
 ```powershell
 $env:CARGO_BUILD_JOBS = '2'
 $env:RAYON_NUM_THREADS = '2'
