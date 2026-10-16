@@ -181,6 +181,53 @@ notification hook; no production or fixture behavior was modified for monitoring
 The raw limitations and counters are in ignored
 `.local/update-cost-observation/20261016-031734-773-memory/memory.json`.
 
+## Million-row UPDATE diagnostic
+
+A separate 2026-10-16 diagnostic used application source `771d1a5bac5968c94821ff615171c445ec20b76c`
+plus the opt-in recorder extension in this change. The same million-row real-daemon
+scenario and profile-v3 AVX-512 peer from the [combined record](../combined-sql/README.md)
+passed its exact changed-row, agreed-head, image-size and subsequent SELECT assertions.
+Owner and peer each used eight Rayon threads. PID/memory hooks were disabled.
+Other development builds/tests were active: this is one instrumented execution,
+not a quiet latency sample or a before/after speed claim.
+
+The complete UPDATE envelope was 1483.769 ms with 14 completed RPCs, 42 frame/Trace
+events, zero failed RPCs and no truncation. The analyzer validated every callback's
+phase, ordering, byte count and envelope. The owner sent 41,200,034 application
+bytes and received 77,908,880, including runtime framing and journal evidence.
+
+| Operation | RPCs | RPC elapsed sum ms | Request bytes | Response bytes |
+| --- | ---: | ---: | ---: | ---: |
+| Store | 1 | 356.185 | 37,604,542 | 91 |
+| Journal collect | 1 | 244.298 | 46 | 18 |
+| Fetch version | 1 | 217.537 | 254 | 37,604,546 |
+| Fetch | 1 | 213.458 | 46 | 37,604,546 |
+| FHE proof | 1 | 168.851 | 446,974 | 1,125,626 |
+| Journal mine | 2 | 60.308 | 1,573,575 | 1,573,823 |
+| Journal publish | 2 | 17.758 | 1,573,879 | 100 |
+| Journal sync | 5 | 5.813 | 718 | 130 |
+
+The RPC interval union was 1284.207 ms; 199.562 ms had no owner RPC in flight.
+These local gaps include original-input preparation, proof checks, compact staging
+and request construction. RPC phases combine client codec/TLS and server work;
+they cannot individually measure disk audit, FSYNC, proving or listener waiting.
+The journal collector currently reads and validates complete stored images to
+identify obsolete objects. This observation motivates examining that ownership
+boundary, without skipping integrity validation before Fetch, Prove or page replies.
+Moving work out of the envelope or dropping durable publication would not prove
+the requested improvement.
+
+Ignored raw log, validated trace and analysis are in
+`.local/update-cost-million/20261016-043448-244/`. SHA256 identities:
+
+- Test owner `proved_sql-43b267abd6ab93e6.exe`: `89CEB45E56345198C55B00820421C4CAA9B2CD9BFC82EBADBC71D5D00FC8468C`.
+- Peer `dcs-peer.exe`: `42C318A4E4A61BF7043844B7D7407587992106E6919F0F5A55082CE1068AC7DF`.
+
+The peer binary, full proof profile and both SIMD kernel hashes are unchanged from
+the combined record. This diagnostic retains one descendant confirmation and
+the deliberately easy test work contract; it establishes no production attack,
+recovery, throughput or tail-latency bound.
+
 ## Reproduction
 
 Build the owned process fixture outside the timing window, following the

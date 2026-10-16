@@ -10,6 +10,13 @@ Build the process test first. Run its exact full scenario with
 fixture still checks real STARKs, actual changed rows, fresh heads, process loss
 and journal restart. Profiling is separate from ordinary latency samples.
 
+Select exactly one fixture per log: `proved_select_insert_update_survive_a_process_loss_and_journal_restart`
+records `two_shard_update`; `million_row_private_index_crosses_real_custody_frames_and_agreed_update_restore`
+records `million_row_update`. Both envelopes cover only the complete accepted UPDATE,
+including source fetch, proof, writeback, durable publication and final confirmed
+version. Setup and the later checking SELECT remain outside the envelope. The
+metadata recorder is inactive unless the explicit environment switch is set.
+
 ```sh
 python experiments/update-cost/analyze.py .local/update-cost/run.log
 ```

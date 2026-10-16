@@ -527,7 +527,7 @@ fn proved_select_insert_update_survive_a_process_loss_and_journal_restart() {
     let connector = Connector::permissionless(&owner).unwrap();
     let mut a = Process::start(owner.fingerprint(), 1, None);
     let b = Process::start(owner.fingerprint(), 2, None);
-    let observation = rpc_observation::RpcRecorder::optional();
+    let observation = rpc_observation::RpcRecorder::optional("two_shard_update");
     let mut pa = a.participant(1, &connector);
     let mut pb = b.participant(2, &connector);
     if let Some(observation) = &observation {
@@ -1281,7 +1281,11 @@ fn million_row_private_index_crosses_real_custody_frames_and_agreed_update_resto
             );
         }
     }
-    let participant = process.participant(1, &connector);
+    let observation = rpc_observation::RpcRecorder::optional("million_row_update");
+    let mut participant = process.participant(1, &connector);
+    if let Some(observation) = &observation {
+        participant = observation.attach(participant);
+    }
     let remote = participant.remote.clone();
     let mut source = vec![PlainRow { age: 7, amount: 1 }; compact_query::MAX_TABLE_ROWS];
     source[999_999].age = 42;
@@ -1306,10 +1310,16 @@ fn million_row_private_index_crosses_real_custody_frames_and_agreed_update_resto
     assert_eq!(object.data_bytes, 3_187_648);
     assert!(object.stored_bytes < peer_transport::MAX_FRAME_BYTES as u64);
 
+    if let Some(observation) = &observation {
+        observation.start();
+    }
     let result = execute(
         &mut database,
         "UPDATE records SET amount = amount + 1 WHERE age = 42",
     );
+    if let Some(observation) = &observation {
+        observation.finish();
+    }
 
     assert!(matches!(
         result,
