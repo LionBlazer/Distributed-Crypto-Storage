@@ -11,6 +11,8 @@ The [Q2 combined recheck](#q2-page-custody-and-collection-recheck),
 [matched static-read comparison](#matched-static-select-read-images) and
 [padded UPDATE comparison](#padded-update-writeback-comparison) below pin their
 source and artifact identities separately from this original record.
+The later [complete LIMIT measurement](LIMIT-MEASUREMENTS.md) covers a million
+matching rows with a bounded proved prefix on the combined PostgreSQL/Delta source.
 
 ## Full accepted operations
 
