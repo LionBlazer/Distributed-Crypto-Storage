@@ -325,15 +325,45 @@ impl JobVerifier {
             .insert(key);
         Ok(())
     }
-    fn verify_arithmetic(&self, input: &[u8], reply: &ProofReply) -> version_journal::Result<()> {
-        let key = self.arithmetic_key(input, reply);
-        if self
+    fn is_verified(&self, key: [u8; 32]) -> version_journal::Result<bool> {
+        Ok(self
             .verified
             .lock()
             .map_err(|_| version_journal::Error::RejectedComputationProof)?
             .entries
-            .contains(&key)
-        {
+            .contains(&key))
+    }
+    fn verify_pair(&self, jobs: &[(Vec<u8>, &ProofReply)]) -> version_journal::Result<()> {
+        std::thread::scope(|scope| {
+            let mut workers = Vec::with_capacity(2);
+            let mut spawn_failed = false;
+            for (input, proof) in jobs {
+                match std::thread::Builder::new()
+                    .name("dcs-journal-proof".into())
+                    .spawn_scoped(scope, || self.verify_arithmetic(input, proof))
+                {
+                    Ok(worker) => workers.push(worker),
+                    Err(_) => {
+                        spawn_failed = true;
+                        break;
+                    }
+                }
+            }
+            // Join every admitted worker before returning any proof, spawn or
+            // panic error. The caller's single heavy-operation permit stays held.
+            let results: Vec<_> = workers.into_iter().map(|worker| worker.join()).collect();
+            if spawn_failed {
+                return Err(version_journal::Error::RejectedComputationProof);
+            }
+            for result in results {
+                result.map_err(|_| version_journal::Error::RejectedComputationProof)??;
+            }
+            Ok(())
+        })
+    }
+    fn verify_arithmetic(&self, input: &[u8], reply: &ProofReply) -> version_journal::Result<()> {
+        let key = self.arithmetic_key(input, reply);
+        if self.is_verified(key)? {
             return Ok(());
         }
         bfv_query_proof::verify(input, &reply.output, &reply.proof)
@@ -393,23 +423,36 @@ impl TransitionVerifier for JobVerifier {
         {
             return Err(bad);
         }
-        for (job, proof) in manifest.jobs.iter().zip(&evidence.jobs) {
-            let old = manifest
-                .previous_shards
-                .iter()
-                .find(|s| s.id == job.shard)
-                .ok_or_else(|| bad.clone())?;
-            let context = self
-                .evaluator
-                .request_context(&job.request)
-                .map_err(|_| bad.clone())?;
-            if context.data_head() != old.heads.data || context.index_head() != old.heads.index {
-                return Err(bad);
+        // Derive at most two canonical inputs at once; every context is checked
+        // even when the exact arithmetic proof has already been cached.
+        for (jobs, proofs) in manifest.jobs.chunks(2).zip(evidence.jobs.chunks(2)) {
+            let mut unchecked = Vec::with_capacity(2);
+            for (job, proof) in jobs.iter().zip(proofs) {
+                let old = manifest
+                    .previous_shards
+                    .iter()
+                    .find(|s| s.id == job.shard)
+                    .ok_or_else(|| bad.clone())?;
+                let context = self
+                    .evaluator
+                    .request_context(&job.request)
+                    .map_err(|_| bad.clone())?;
+                if context.data_head() != old.heads.data || context.index_head() != old.heads.index
+                {
+                    return Err(bad);
+                }
+                let input = self
+                    .circuit_request(manifest.operation, &job.request)
+                    .map_err(|_| bad.clone())?;
+                if !self.is_verified(self.arithmetic_key(&input, proof))? {
+                    unchecked.push((input, proof));
+                }
             }
-            let input = self
-                .circuit_request(manifest.operation, &job.request)
-                .map_err(|_| bad.clone())?;
-            self.verify_arithmetic(&input, proof)?;
+            match unchecked.as_slice() {
+                [] => {}
+                [(input, proof)] => self.verify_arithmetic(input, proof)?,
+                _ => self.verify_pair(&unchecked)?,
+            }
         }
         Ok(())
     }

@@ -105,6 +105,45 @@ authorization, complete manifest, all original contexts,
 old/new head rules, ancestry and requested freshness are still checked separately.
 No root or SQL answer becomes acceptable merely because an arithmetic cache hits.
 
+Manifest verification holds at most two canonical job inputs at once. Two cold
+independent proofs use bounded scoped workers and the existing process-wide
+cryptographic worker pool; a single cold job and cache hits need no new thread.
+All admitted workers join before any error returns. The outer heavy-operation
+permit remains held throughout verification; this adds no concurrent RPC permit,
+changes no proof parameters and does not establish the whole-process RAM target.
+
+A 2026-10-16 matched native profile-v3 process experiment used the existing
+`proved_select_insert_update_survive_a_process_loss_and_journal_restart` scenario:
+four initial public fixture rows, two shards, two peers, and eight Rayon threads
+for the owner and each peer. Three unmonitored full accepted SQL runs from base
+`abcbed15` and the bounded-worker change produced these observations:
+
+| Operation | Sequential checks min / median / max (ms) | Bounded checks min / median / max (ms) |
+| --- | --- | --- |
+| Additive UPDATE, three matching rows across two shards | 618 / 630 / 1032 | 558 / 644 / 876 |
+| Single INSERT | 414 / 424 / 459 | 463 / 498 / 622 |
+
+This evaluated experiment does not demonstrate a median speedup or a 500 ms SQL
+bound. Both builds used the same v3 AVX512 peer kernels, native owner build,
+security settings and one outer proof permit. Run the exact process scenario
+with `RAYON_NUM_THREADS=8`, `DCS_TEST_PEER_THREADS=8` and the native build flag
+`RUSTFLAGS=-C target-cpu=native`:
+
+```sh
+cargo test --release --locked -p dcs-peer --test proved_sql proved_select_insert_update_survive_a_process_loss_and_journal_restart -- --exact --nocapture --test-threads=1
+```
+
+Build before measuring and avoid concurrent builds/monitors.
+The regular test default remains two peer threads.
+
+A separate successful run reported OS peak working sets of 199.2 MiB for the
+owner/test process and 173.6, 174.1 and 172.9 MiB for its three owned peer process
+lifetimes (including restart). Sampling their simultaneous live working sets at
+100 ms intervals observed a maximum sum of 347.9 MiB. Individual OS peaks are not
+summed. `DCS_TEST_REPORT_PIDS=1` emits only owned child PIDs for external process
+measurement. These tiny-fixture observations include the whole measured processes;
+they establish no general resource or latency guarantee.
+
 This is public verification of exact FHE jobs and owner-finalized roots. It does not
 publicly prove the private AEAD-root to FHE-input relation. The designated owner/client
 must independently verify authenticated complete selection, exact saved FHE inputs,

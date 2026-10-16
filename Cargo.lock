@@ -3066,6 +3066,7 @@ dependencies = [
  "bfv-query-proof",
  "bincode",
  "compact-store",
+ "ed25519-dalek",
  "peer-transport",
  "serde",
  "sha2",
