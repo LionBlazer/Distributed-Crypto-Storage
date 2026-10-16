@@ -23,6 +23,8 @@ The [object-profile comparison](CUSTODY-PROFILE-MEASUREMENTS.md) separates corre
 clean timings from the first instrumented window. The subsequent
 [static UPDATE comparison](STATIC-UPDATE-MEASUREMENTS.md) records full mutation
 latency while retaining complete final custody verification.
+The [borrowed-validation comparison](BORROWED-VALIDATION-MEASUREMENTS.md) retains
+the following refactor's non-improving timings and its narrower allocation claim.
 
 ## Full accepted operations
 

@@ -32,8 +32,10 @@ order before the final LIMIT. LIMIT0 still validates the complete matching sourc
 and requires genuine proof and final freshness. Without LIMIT the complete matching
 set must fit 256 rows; mutations retain their 256-row boundary. Full source validation
 remains O(matches), with the unchanged static ReadImage footprint.
-Excess rejects without a partial result. Q2/R2 requires application domain v3 and
-rejects old journals/wires without migration; the arithmetic profile is unchanged.
+Excess rejects without a partial result. Q2/R2 introduced application domain v3;
+the current [custody profile](salted-custody-objects.md) requires RPC v2 and
+application v4, including ObjectProfileID, and rejects old journals/wires without
+migration. The arithmetic profile is unchanged.
 The [Q2 process record](proved-aggregate-bands.md) reports 5119/5120-row full-query
 samples; general typed aggregation remains open. Typed imported catalogs provide
 immutable single-table SELECT with authenticated owner-private indices and proved
@@ -110,8 +112,10 @@ The remaining integration boundaries are:
    compact-query private index v3, preserved by genuine amount UPDATE, atomic
    INSERT staging, restore and exact pending retry. Owner-issued references bind
    both exact heads and physical ordinal, with at most 256 sparse ID lookups.
-   Mutation and RowReferences preparation still fetch the full encrypted image;
-   row SELECT uses the static footprint below. These private
+   RowReferences and INSERT preparation still fetch the full encrypted image.
+   UPDATE uses the fixed footprint below only when every preplanned recipient is
+   a known Delta holder; any preplanned Full recipient requires complete images.
+   These private
    references provide no public row-existence/completeness or lock proof. Typed
    imported tables, checked movement/compaction and a cross-data/lock proof
    relation remain open. Define transaction/statement identities, authorization,
@@ -163,16 +167,28 @@ protocol and establishes no live lock grant or latency bound.
 
 ## Selective retrieval and the unresolved access policy
 
-Fixed row SELECT now uses `FetchReadImage`: the entire data image and every index
-page through the end of its public padded posting capacity. All predicates,
-projections, LIMITs and empty results on the same geometry request the same prefix
-and response length. It omits the private stable-identity tail without disclosing
-which pages the owner subsequently examines. The complete physical object is still
-audited once, including omitted bytes. Source plaintext is erased after fresh FHE
-preparation; every proof and final agreed-state check precedes result decryption.
-This preserves the previous fixed-query address/volume boundary; it establishes
-neither sparse disk I/O nor PIR. Typed SELECT, aggregate and mutation image reads
-remain separate unchanged paths.
+Fixed row SELECT and COUNT/SUM use `FetchReadImage`: the entire data image and
+every index page through the end of its public padded posting capacity. Supported
+predicates, projections, limits and empty results on the same geometry request
+the same prefix and response length. It omits the private stable-identity tail
+without disclosing which pages the owner subsequently examines. Every custody
+read still physically audits the complete object, including omitted bytes.
+Source plaintext is erased after fresh FHE preparation; every proof and final
+agreed-state check precedes read-result decryption.
+
+UPDATE freezes its source class from public geometry and committed recipient
+placement before proofs. Delta-only placement uses the same fixed ReadImage;
+any Full candidate requires complete images. A source or Delta error never
+changes that class or permits an unplanned Full fallback. The static proposal
+reissues the authenticated index header without fabricating a complete Table.
+All shard proofs and overflow/frame/journal checks pass before Store or new
+authorization. Final write confirmation and pending-holder recovery still fetch
+and fully validate both complete images. See the measured
+[aggregate](../experiments/combined-sql/AGGREGATE-MEASUREMENTS.md) and
+[UPDATE](../experiments/combined-sql/STATIC-UPDATE-MEASUREMENTS.md) records.
+These paths preserve the fixed-query address/volume boundary; they establish
+neither sparse disk I/O nor PIR. Typed SELECT, INSERT and RowReferences keep
+their full-image paths.
 
 The bounded raw `FetchPages` custody RPC does not approve a query-dependent address
 policy for SQL. An adaptive adapter would disclose page addresses and access
