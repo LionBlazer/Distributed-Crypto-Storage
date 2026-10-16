@@ -164,7 +164,9 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for ChaChaAir {
             | Kind::Poly1305Raw
             | Kind::Poly1305Padded
             | Kind::PairOpening
-            | Kind::CanonicalIndexOpening => {
+            | Kind::CanonicalIndexOpening
+            | Kind::SelectionOpening
+            | Kind::PackedCanonicalIndexOpening => {
                 unreachable!("separate typed SHA AIR")
             }
         }

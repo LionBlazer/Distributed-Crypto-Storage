@@ -279,7 +279,9 @@ fn claimed_output(statement: &Statement, trace: &RowMajorMatrix<Val>) -> [u32; W
         | Kind::Poly1305Raw
         | Kind::Poly1305Padded
         | Kind::PairOpening
-        | Kind::CanonicalIndexOpening => {
+        | Kind::CanonicalIndexOpening
+        | Kind::SelectionOpening
+        | Kind::PackedCanonicalIndexOpening => {
             unreachable!()
         }
     }

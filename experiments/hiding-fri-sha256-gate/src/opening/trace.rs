@@ -34,40 +34,51 @@ impl Witness {
     pub(crate) fn trace(&self, statement: &Statement) -> Result<RowMajorMatrix<Val>, Error> {
         let air = OpeningAir::new(statement);
         let width = statement.relation.width();
+        let cols = air.columns();
+        let schedule = air.schedule();
         let mut template = Val::zero_vec(width);
-        write_bytes(&mut template[MASTER..SUBKEY], &self.key);
+        write_bank(
+            &mut template[cols.master..cols.subkey],
+            &self.key,
+            cols.packed,
+        );
         for page in 0..2 {
             let input = words(air.input::<Val, _>(&template, Job::H(page)));
             let output = complete(input, true);
-            write_words(
-                &mut template[SUBKEY + page * 256..SUBKEY + (page + 1) * 256],
+            write_bank_words(
+                &mut template[cols.subkey + page * cols.key_stride()
+                    ..cols.subkey + (page + 1) * cols.key_stride()],
                 &output[..8],
+                cols.packed,
             );
             let input = words(air.input::<Val, _>(&template, Job::Cha { page, counter: 0 }));
             let output = complete(input, false);
-            write_words(
-                &mut template[POLYKEY + page * 256..POLYKEY + (page + 1) * 256],
+            write_bank_words(
+                &mut template[cols.polykey + page * cols.key_stride()
+                    ..cols.polykey + (page + 1) * cols.key_stride()],
                 &output[..8],
+                cols.packed,
             );
         }
-        template[SALTS..SALTS + 4].copy_from_slice(&self.key_salt);
-        template[SALTS + 4..WIDTH].copy_from_slice(&self.open_salt);
-        if statement.relation == super::Relation::CanonicalIndex {
-            super::canonical::write_template(&mut template, self.ages);
+        template[cols.salts..cols.salts + 4].copy_from_slice(&self.key_salt);
+        template[cols.salts + 4..cols.width].copy_from_slice(&self.open_salt);
+        if statement.relation.is_canonical() {
+            super::canonical::write_template(&mut template, self.ages, cols.packed);
         }
         let mut states: [[u32; 16]; 7] =
             core::array::from_fn(|lane| words(air.input::<Val, _>(&template, schedule::job(lane))));
         let mut buffers = [[0_u32; 16]; 7];
+        let mut plaintext = [[0_u32; 16]; 7];
         let mut h = [0_u64; LIMBS];
         let mut checkpoint = [Val::ZERO; 12];
         let mut carries = [Val::ZERO; 2];
         let mut table_half = Val::ZERO;
         let mut values = Val::zero_vec(TRACE_HEIGHT * width);
         for (index, row) in values.chunks_exact_mut(width).enumerate() {
-            row[BANKS..POLY].copy_from_slice(&template[BANKS..POLY]);
-            row[SALTS..].copy_from_slice(&template[SALTS..]);
-            let group = index / 81;
-            let step = index % 81;
+            row[cols.banks..cols.poly].copy_from_slice(&template[cols.banks..cols.poly]);
+            row[cols.salts..].copy_from_slice(&template[cols.salts..]);
+            let group = index / schedule.job_rows();
+            let step = index % schedule.job_rows();
             for lane in 0..7 {
                 let local = &mut row[lane * ca::WIDTH..(lane + 1) * ca::WIDTH];
                 write_words(&mut local[..512], &states[lane]);
@@ -96,18 +107,44 @@ impl Witness {
                             }
                         }
                     }
+                    if cols.packed {
+                        // NEXT row holds range-constrained feedforward/extracted bits.
+                        states[lane] = buffers[lane];
+                    } else if group < 5 {
+                        states[lane] = words(
+                            air.input::<Val, _>(&template, schedule::job((group + 1) * 7 + lane)),
+                        );
+                    }
+                }
+                if cols.packed && group < 6 && step == 81 {
+                    plaintext[lane] =
+                        plain_words(statement, schedule::job(group * 7 + lane), buffers[lane]);
                     if group < 5 {
                         states[lane] = words(
                             air.input::<Val, _>(&template, schedule::job((group + 1) * 7 + lane)),
                         );
                     }
                 }
-                write_words(
-                    &mut row[BUFFERS + lane * 512..BUFFERS + (lane + 1) * 512],
-                    &buffers[lane],
+                let start = cols.buffers + lane * cols.buffer_stride();
+                write_bank_words(
+                    &mut row[start..start + cols.buffer_stride()],
+                    if cols.packed {
+                        &plaintext[lane]
+                    } else {
+                        &buffers[lane]
+                    },
+                    cols.packed,
                 );
             }
-            let local = &mut row[POLY..POSEIDON];
+            if cols.packed {
+                let page = usize::from((10..165).contains(&index));
+                let key = read_key(
+                    &template[cols.polykey + page * 8..cols.polykey + (page + 1) * 8],
+                    true,
+                );
+                write_bytes(&mut row[cols.polykey_bits..cols.poly], &key);
+            }
+            let local = &mut row[cols.poly..cols.poseidon];
             let (state, rest) = local.split_at_mut(pa::STATE);
             let (_, rest) = rest.split_at_mut(160);
             let (canonical, rest) = rest.split_at_mut(pa::STATE);
@@ -115,37 +152,45 @@ impl Witness {
             pa::write_canonical(state, canonical, canonical_carry, h);
             match schedule::mac(index) {
                 Mac::Block { page, block } => {
-                    let key = read_key(&template[POLYKEY + page * 256..POLYKEY + (page + 1) * 256]);
+                    let key = read_key(
+                        &template[cols.polykey + page * cols.key_stride()
+                            ..cols.polykey + (page + 1) * cols.key_stride()],
+                        cols.packed,
+                    );
                     let n = poly::message_limbs(statement.mac_block(page, block), 128);
                     let product = poly::folded_product(h, n, poly::clamped_r(key));
                     let (next, carry) = poly::reduce(product);
                     for (limb, value) in carry.into_iter().enumerate() {
                         poly::write_bits(
-                            &mut row
-                                [POLY + pa::CARRY + limb * 32..POLY + pa::CARRY + (limb + 1) * 32],
+                            &mut row[cols.poly + pa::CARRY + limb * 32
+                                ..cols.poly + pa::CARRY + (limb + 1) * 32],
                             value,
                         );
                     }
                     h = next;
                 }
                 Mac::Final(page) => {
-                    let key = read_key(&template[POLYKEY + page * 256..POLYKEY + (page + 1) * 256]);
+                    let key = read_key(
+                        &template[cols.polykey + page * cols.key_stride()
+                            ..cols.polykey + (page + 1) * cols.key_stride()],
+                        cols.packed,
+                    );
                     for (word, carry) in poly::tag_words(h, key).1.into_iter().enumerate() {
-                        row[POLY + pa::TAG + word] = Val::from_bool(carry);
+                        row[cols.poly + pa::TAG + word] = Val::from_bool(carry);
                     }
                     h = [0; LIMBS];
                 }
                 Mac::Idle => {}
             }
-            if let Some(group) = schedule::capture(index) {
+            if let Some(group) = schedule.capture(index) {
                 for (position, carry) in carries.iter_mut().enumerate() {
                     *carry = air.plain_word(row, [33, 145, 257, 369, 481][group] + position);
                 }
             }
-            row[CARRY..SALTS].copy_from_slice(&carries);
-            row[CHECKPOINT..CARRY].copy_from_slice(&checkpoint);
+            row[cols.carry..cols.salts].copy_from_slice(&carries);
+            row[cols.checkpoint..cols.carry].copy_from_slice(&checkpoint);
             let mut input = [Val::ZERO; 12];
-            if let Some((key, block)) = schedule::absorb(index) {
+            if let Some((key, block)) = schedule.absorb(index) {
                 for (word, cell) in input[..8].iter_mut().enumerate() {
                     *cell = air.stream_field(row, key, block * 8 + word, index);
                 }
@@ -153,11 +198,11 @@ impl Witness {
                     input[8..].copy_from_slice(&checkpoint[8..]);
                 }
             }
-            let output = poseidon::write(&mut row[POSEIDON..CHECKPOINT], input);
-            if schedule::absorb(index).is_some() {
+            let output = poseidon::write(&mut row[cols.poseidon..cols.checkpoint], input);
+            if schedule.absorb(index).is_some() {
                 checkpoint = output;
             }
-            if statement.relation == super::Relation::CanonicalIndex {
+            if statement.relation.is_canonical() {
                 super::canonical::write_row(&air, row, index, &mut table_half);
             }
         }
@@ -195,10 +240,54 @@ fn write_words(out: &mut [Val], words: &[u32]) {
         *cell = Val::from_u32((words[i / 32] >> (i % 32)) & 1);
     }
 }
-fn read_key(bits: &[Val]) -> [u8; 32] {
+fn read_key(bits: &[Val], packed: bool) -> [u8; 32] {
+    if packed {
+        let mut key = [0; 32];
+        for (word, bytes) in bits.iter().zip(key.as_chunks_mut::<4>().0) {
+            bytes.copy_from_slice(&(word.as_canonical_u64() as u32).to_le_bytes());
+        }
+        return key;
+    }
     core::array::from_fn(|i| {
         (0..8).fold(0, |byte, j| {
             byte | ((bits[i * 8 + j].as_canonical_u64() as u8) << j)
         })
+    })
+}
+
+fn write_bank(out: &mut [Val], bytes: &[u8], packed: bool) {
+    if packed {
+        for (cell, word) in out.iter_mut().zip(bytes.as_chunks::<4>().0) {
+            *cell = Val::from_u32(u32::from_le_bytes(*word));
+        }
+    } else {
+        write_bytes(out, bytes);
+    }
+}
+fn write_bank_words(out: &mut [Val], words: &[u32], packed: bool) {
+    if packed {
+        assert_eq!(out.len(), words.len());
+        for (cell, word) in out.iter_mut().zip(words) {
+            *cell = Val::from_u32(*word);
+        }
+    } else {
+        write_words(out, words);
+    }
+}
+fn plain_words(statement: &Statement, job: Job, stream: [u32; 16]) -> [u32; 16] {
+    let Job::Cha { page, counter } = job else {
+        return [0; 16];
+    };
+    if counter == 0 {
+        return [0; 16];
+    }
+    let cipher = statement.ciphertext(page);
+    core::array::from_fn(|word| {
+        let start = (counter as usize - 1) * 64 + word * 4;
+        if start >= cipher.len() {
+            0
+        } else {
+            stream[word] ^ u32::from_le_bytes(cipher[start..start + 4].try_into().unwrap())
+        }
     })
 }

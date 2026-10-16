@@ -42,7 +42,7 @@ pub(super) fn opening_fields(statement: &Statement, salt: [Val; 4], plain: &[u8]
     out
 }
 pub(super) fn digest(fields: &[Val]) -> [Val; 4] {
-    assert!(matches!(fields.len(), 32 | 680));
+    assert!(matches!(fields.len(), 32 | 88 | 112 | 680));
     let perm = default_goldilocks_poseidon2_12();
     let mut state = [Val::ZERO; 12];
     for block in fields.as_chunks::<8>().0 {

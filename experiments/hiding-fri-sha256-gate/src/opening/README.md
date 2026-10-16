@@ -23,13 +23,14 @@ it is not evidence of production secrecy, erasure, key anchoring or finality.
 | --- | --- |
 | `statement.rs` | Complete canonical core audits, exact independent heads/geometry, immutable public values and canonical commitment decoding |
 | `fixture.rs` | Known nonsecret RustCrypto-encrypted source fixtures and fixture-only canonical writer |
-| `schedule.rs` | One public height512 schedule, 42 jobs, 163 MAC blocks and exact absorb/capture rows |
+| `schedule.rs`, `layout.rs` | Two fixed public height512 schedules/layouts, 42 jobs, 163 MAC blocks and exact absorb/capture rows |
 | `air.rs` | All cross-primitive, immutable-bank, output-buffer, header and salted-sponge constraints |
 | `trace.rs` | Separate nonserializable/non-Clone private witness and genuine shared-arithmetic trace generator |
 | `poseidon.rs` | Internal native-equivalent pinned width12 permutation gadget |
-| `commitment.rs` | Two exact fixed-length, domain-separated encodings and native fixture oracle |
+| `commitment.rs` | Source-key/open encodings and shared fixed-length sponge/native fixture oracle |
 | `tests.rs` | Preserved byte-opening native/oracle, admission, genuine and rebuilt inconsistent-component cases |
-| `canonical.rs`, `canonical_tests.rs` | New complete fixed N4 index invariant, bounded witness auxiliaries and owning source/rebuilt cases |
+| `canonical.rs`, `canonical_tests.rs` | Complete fixed N4 index invariant, bounded witness auxiliaries and preserved original source/rebuilt cases |
+| `packed_tests.rs` | Separate packed-profile geometry, authentic core fixture, genuine proof and rebuilt malformed-witness cases |
 
 The only project-library edge is experiment -> [compact-store](../../../../crates/compact-store/README.md)
 for the existing complete canonical parser/root checker. There is no reverse edge.
@@ -191,3 +192,87 @@ and23,222 batched functions with both model estimates128. Declared degree bound5
 was retained. One genuine proof/verification and all60 serial tests passed; the
 report preserves the initial Clippy failure and limited resource observations.
 These do not establish production privacy, RAM or interactive latency.
+
+## Private bounded selection
+
+The [nested Selection module](selection/README.md) opens this exact OLD canonical
+C_open and proves bounded complete ordinal selection under a committed private
+plan. Genuine source verification remains mandatory first; the packed profile is
+not silently composed. Its proof and15 new cases passed within the combined85;
+the [validation record](../../SELECTION-PACKED-VALIDATION.md) states exact scope.
+It remains nonaccepting. Old byte/canonical relations and profiles are preserved.
+
+## Packed canonical source candidate
+
+`packed-canonical-index-opening` is a distinct experimental Kind/profile with
+W7161, T512, 691 public values and two full-width opening points. Native build,
+strict Clippy, actual numerical analysis, one observed CLI proof and all ten new
+packed cases passed within the complete85. The
+[combined report](../../SELECTION-PACKED-VALIDATION.md) records exact evidence.
+Historical security estimates and timings above retain their original scope. The
+existing byte/canonical profiles retain W11079/W11521, their 81-row schedule,
+profile encodings and owning cases. All three share the Cha/Poly/P2 arithmetic,
+one AIR evaluator and one trace-writing loop. Selection or SQL acceptance does
+not follow from this new source candidate.
+
+The seven Cha lanes still use 788 bit/carry columns each. The packed layout
+replaces 3584 retained output bits with 112 plaintext u32 fields and 1280 key bits
+with 40 immutable words: K8, SK16, PK16. A separate 256-bit selected raw Polykey
+view is tied word-for-word to the proper PK bank on every row, including padding;
+the existing Poly evaluator applies its unchanged clamp and tag arithmetic.
+The master key is range-bound by the first bit-state input. Both subkeys and
+Polykeys are range-bound by their authentic primitive output bit states. Their
+constant banks cannot select different values before and after capture.
+
+Each of six groups now occupies 82 rows. QR transitions use rows0..79 relative
+to the group; row80 contains the final permutation state. Its transition to
+row81 range-binds the feedforward/extracted output in the next 512 Boolean
+state bits. Normal Cha has `state + input = output + 2^32 * carry`, with Boolean
+carry and each integer side below2^33; H extracts its eight words and zeroes the
+remaining words. At CURRENT81, ciphertext XOR those bits defines each retained
+plaintext u32. The next transition resets the bit state to the next job input,
+while the plaintext words remain available. H, counter0 and unused final-block
+words have zero plaintext fields. No unchecked field-to-u32 cast supplies an AIR
+range constraint.
+
+Packed group captures are81/163/245/327/409/491. C_key still absorbs at0..3;
+C_open blocks0..9 at4..13, 10..14 at82..86, 15..28 at164..177,
+29..42 at246..259, 43..56 at328..341, 57..70 at410..423 and71..84 at492..505.
+All 587 authentic plaintext words enter once. The same ten stale words are
+captured at87/178/260/342/424 before a later buffer overwrite, with only the
+predecessor-to-capture copy suppressed. Final commitment checks are3/505.
+The profile digest binds this exact schedule, layout, primitive constants and
+semantic constraints; it does not reuse the old canonical digest.
+
+Canonical ages remain32 persistent bits, authenticated at81. The same header,
+offset, histogram, permutation, posting and padding checks read the shared P2
+slots. TableId halves use four nonnegative authenticated u32 words each,
+captured81/checked163. The total eight-word sum is below2^35<p, so a nonzero
+inverse cannot accept field cancellation. Each final RowId uses the same sum
+bound for nonzero. For each of six ID pairs, eight Boolean zero flags and eight
+inverses establish exact word equality: `d*z=0`, `d*inv=1-z`, `z*inv=0`.
+The count of unequal words is in0..8 and must have a nonzero inverse. Equal and
+oppositely signed differences cannot cancel into a false distinctness result.
+All word-zero auxiliaries are zero outside the final capture. This appends538
+canonical columns (including96 word-zero auxiliaries) to the6623-column base.
+
+Unchanged backend parameters are q192, r5, blowup8, extension degree5, original
+height512/post-hiding degree bits10, MMCS salts4 and independent OS-seeded mask,
+MMCS and private commitment-salt streams. The conservative degree declaration
+remains5. Actual inference found16133 constraints, degree3,16 quotient chunks and
+14502 batched functions, with both model estimates128. The CLI numerical floor
+still precedes trace/proof allocation; this is not production security certification.
+Source array formulas give trace29,331,456B, masked58,703,872B and main
+LDE469,630,976B; the existing periodic payloads remain unchanged. These separate
+array estimates omit trees, symbolic AIR evaluation, quotients and other process
+memory. No peak RAM or latency improvement has been measured.
+
+The ten passed packed cases include the core-owned encrypted vector/native C_open,
+every captured word, old-shape parity, a genuine proof and cross-profile rejection,
+rebuilt range/carry/reset/capture/stale/key/view/identity/header substitutions, and
+real re-encryption of invalid zero/duplicate IDs and zero TableId. They do not
+weaken or replace the old cases. Reproduction uses
+`security packed-canonical-index-opening` followed by the externally guarded
+`prove packed-canonical-index-opening` as described in the report; proofs remain private
+in-process test artifacts. This candidate adds no key authority, identity history,
+BFV formation, private query completeness, freshness, finality or live consumer.

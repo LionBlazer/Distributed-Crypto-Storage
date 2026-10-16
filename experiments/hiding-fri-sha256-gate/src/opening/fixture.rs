@@ -50,13 +50,19 @@ pub(super) fn make(
     )
 }
 pub(crate) fn canonical_fixture() -> Result<(Statement, Witness), Error> {
+    canonical_fixture_relation(Relation::CanonicalIndex)
+}
+pub(crate) fn packed_canonical_fixture() -> Result<(Statement, Witness), Error> {
+    canonical_fixture_relation(Relation::PackedCanonicalIndex)
+}
+fn canonical_fixture_relation(relation: Relation) -> Result<(Statement, Witness), Error> {
     let key = core::array::from_fn(|i| i as u8); // PUBLIC NONSECRET fixture key.
     let mut key_rng = StdRng::try_from_rng(&mut SysRng).map_err(|_| Error::Randomness)?;
     let key_salt = core::array::from_fn(|_| key_rng.random::<Val>());
     let mut open_rng = StdRng::try_from_rng(&mut SysRng).map_err(|_| Error::Randomness)?;
     let open_salt = core::array::from_fn(|_| open_rng.random::<Val>());
     from_suffix(
-        Relation::CanonicalIndex,
+        relation,
         key,
         (key_salt, open_salt),
         [0x83; 32],
@@ -105,7 +111,7 @@ pub(super) fn from_suffix(
         Relation::Bytes => {
             Statement::checked(images, expected, request, encode_digest(ckey), [0; 32])?
         }
-        Relation::CanonicalIndex => Statement::checked_relation(
+        Relation::CanonicalIndex | Relation::PackedCanonicalIndex => Statement::checked_relation(
             relation,
             images,
             expected,

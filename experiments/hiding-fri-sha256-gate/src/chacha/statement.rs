@@ -140,7 +140,9 @@ pub(crate) fn reference_output(statement: &Statement) -> [u32; WORDS] {
         | Kind::Poly1305Raw
         | Kind::Poly1305Padded
         | Kind::PairOpening
-        | Kind::CanonicalIndexOpening => {
+        | Kind::CanonicalIndexOpening
+        | Kind::SelectionOpening
+        | Kind::PackedCanonicalIndexOpening => {
             unreachable!("SHA has a separate typed fixture")
         }
     }

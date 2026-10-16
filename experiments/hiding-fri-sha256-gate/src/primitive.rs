@@ -18,6 +18,8 @@ pub(crate) enum Kind {
     Poly1305Padded,
     PairOpening,
     CanonicalIndexOpening,
+    SelectionOpening,
+    PackedCanonicalIndexOpening,
 }
 
 impl Kind {
@@ -30,6 +32,8 @@ impl Kind {
             Self::Poly1305Padded => "poly1305-padded",
             Self::PairOpening => "pair-opening",
             Self::CanonicalIndexOpening => "canonical-index-opening",
+            Self::SelectionOpening => "selection-opening",
+            Self::PackedCanonicalIndexOpening => "packed-canonical-index-opening",
         }
     }
 }
@@ -52,6 +56,7 @@ pub(crate) enum PrimitiveAir {
     ChaCha(ChaChaAir),
     Poly1305(Box<Poly1305Air>),
     Opening(Box<crate::opening::air::OpeningAir>),
+    Selection(Box<crate::opening::selection::air::SelectionAir>),
 }
 
 impl BaseAir<Val> for PrimitiveAir {
@@ -61,6 +66,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::ChaCha(air) => air.width(),
             Self::Poly1305(air) => air.width(),
             Self::Opening(air) => air.width(),
+            Self::Selection(air) => air.width(),
         }
     }
 
@@ -70,6 +76,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::ChaCha(air) => air.main_next_row_columns(),
             Self::Poly1305(air) => air.main_next_row_columns(),
             Self::Opening(air) => air.main_next_row_columns(),
+            Self::Selection(air) => air.main_next_row_columns(),
         }
     }
 
@@ -79,6 +86,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::ChaCha(air) => air.num_public_values(),
             Self::Poly1305(air) => air.num_public_values(),
             Self::Opening(air) => air.num_public_values(),
+            Self::Selection(air) => air.num_public_values(),
         }
     }
 
@@ -88,6 +96,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::ChaCha(air) => air.num_periodic_columns(),
             Self::Poly1305(air) => air.num_periodic_columns(),
             Self::Opening(air) => air.num_periodic_columns(),
+            Self::Selection(air) => air.num_periodic_columns(),
         }
     }
 
@@ -97,6 +106,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::ChaCha(air) => air.periodic_columns(),
             Self::Poly1305(air) => air.periodic_columns(),
             Self::Opening(air) => air.periodic_columns(),
+            Self::Selection(air) => air.periodic_columns(),
         }
     }
 
@@ -106,6 +116,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::ChaCha(air) => air.max_constraint_degree(),
             Self::Poly1305(air) => air.max_constraint_degree(),
             Self::Opening(air) => air.max_constraint_degree(),
+            Self::Selection(air) => air.max_constraint_degree(),
         }
     }
 }
@@ -117,6 +128,7 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for PrimitiveAir {
             Self::ChaCha(air) => air.eval(builder),
             Self::Poly1305(air) => air.eval(builder),
             Self::Opening(air) => air.eval(builder),
+            Self::Selection(air) => air.eval(builder),
         }
     }
 }

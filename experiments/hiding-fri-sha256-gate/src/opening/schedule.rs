@@ -29,7 +29,7 @@ pub(crate) fn job(index: usize) -> Job {
         },
     }
 }
-pub(crate) fn boundary(group: usize) -> usize {
+pub(crate) const fn boundary(group: usize) -> usize {
     group * JOB_ROWS + 80
 }
 pub(crate) fn absorb(row: usize) -> Option<(bool, usize)> {
@@ -89,4 +89,57 @@ pub(crate) fn columns() -> Vec<Vec<Val>> {
                 .collect()
         })
         .collect()
+}
+
+/// The original retained-bit profile remains 81 rows per group. The packed
+/// profile uses one additional bit-state row to range-bind feedforward output.
+#[derive(Clone, Copy)]
+pub(super) struct Schedule {
+    packed: bool,
+}
+impl Schedule {
+    pub(super) const fn new(packed: bool) -> Self {
+        Self { packed }
+    }
+    pub(super) const fn job_rows(self) -> usize {
+        if self.packed { 82 } else { JOB_ROWS }
+    }
+    pub(super) const fn boundary(self, group: usize) -> usize {
+        if self.packed {
+            group * self.job_rows() + self.job_rows() - 1
+        } else {
+            boundary(group)
+        }
+    }
+    pub(super) const fn final_absorb(self) -> usize {
+        499 + if self.packed { 6 } else { 0 }
+    }
+    pub(super) fn captures(self) -> [usize; 5] {
+        core::array::from_fn(|i| CAPTURES[i] + if self.packed { i + 1 } else { 0 })
+    }
+    pub(super) fn capture(self, row: usize) -> Option<usize> {
+        if self.packed {
+            self.captures().iter().position(|r| *r == row)
+        } else {
+            capture(row)
+        }
+    }
+    pub(super) fn absorb(self, row: usize) -> Option<(bool, usize)> {
+        if !self.packed {
+            return absorb(row);
+        }
+        match row {
+            0..=3 => Some((true, row)),
+            4..=13 => Some((false, row - 4)),
+            _ => {
+                let group = row / self.job_rows();
+                let step = row % self.job_rows();
+                match group {
+                    1 if step < 5 => Some((false, 10 + step)),
+                    2..=6 if step < 14 => Some((false, 15 + (group - 2) * 14 + step)),
+                    _ => None,
+                }
+            }
+        }
+    }
 }

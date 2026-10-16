@@ -18,6 +18,15 @@ AEAD opening. Its distinct semantic Kind/profile and
 [module contract](src/opening/README.md#canonical-n4-index-relation).
 No typed SQL, identity-history or live acceptance claim follows.
 
+Validated combined candidates: `packed-canonical-index-opening` adds the distinct
+W7161/82-row-group source profile; `selection-opening` proves bounded complete
+private selection using the OLD canonical source proof. Release build, strict
+Clippy, eleven numerical analyses, two observed CLI proofs and all85 serial tests
+passed. The [combined validation record](SELECTION-PACKED-VALIDATION.md) preserves
+failures, exact timer/resource scope and unmet guarantees. See the packed
+[module contract](src/opening/README.md#packed-canonical-source-candidate).
+No composed128-bit, SQL, RAM or causal speedup claim follows.
+
 Historical public-primitive status: the Poly1305 raw and separately padded-segment modes passed their
 isolated lock audit, release build, strict Clippy, seven actual security analyses,
 five observed genuine public-fixture proof/verify processes and all 33 serial
@@ -48,6 +57,12 @@ under experimental assumptions; it does not certify witness secrecy/ZK, producti
 AEAD/key custody, general/cross-version index validity, BFV formation, SQL completeness, live locks
 or finality. No owner key export/import,
 network API, proof-byte codec, acceptance marker or root Cargo change is added.
+
+The [private bounded Selection module](src/opening/selection/README.md) opens the
+same canonical C_open, an independently expected private semantic plan and fixed
+original-row/RowId slots. Its validated composite verifies the genuine OLD
+canonical source proof first; it does not accept the packed profile or add BFV
+formation, SQL acceptance or a cross-request state certificate.
 
 ## Ownership and dependencies
 

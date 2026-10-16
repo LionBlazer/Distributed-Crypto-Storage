@@ -1,5 +1,7 @@
 use super::{
-    DATA_BYTES, commitment, poseidon,
+    DATA_BYTES, commitment,
+    layout::Columns,
+    poseidon,
     schedule::{self, Job, Mac},
     statement::{self, PUBLIC_VALUES, Statement},
 };
@@ -57,7 +59,202 @@ impl OpeningAir {
     ) -> E {
         rows.map(|r| selectors[r].clone()).sum()
     }
+    pub(super) fn columns(&self) -> Columns {
+        if self.source.relation.packed() {
+            Columns::new(true)
+        } else {
+            Columns {
+                packed: false,
+                buffers: BUFFERS,
+                banks: BANKS,
+                master: MASTER,
+                subkey: SUBKEY,
+                polykey: POLYKEY,
+                polykey_bits: POLY,
+                poly: POLY,
+                poseidon: POSEIDON,
+                checkpoint: CHECKPOINT,
+                carry: CARRY,
+                salts: SALTS,
+                width: WIDTH,
+            }
+        }
+    }
+    pub(super) fn schedule(&self) -> schedule::Schedule {
+        schedule::Schedule::new(self.source.relation.packed())
+    }
+    fn key_word<E: Algebra<Val>, T: Copy + Into<E>>(
+        &self,
+        row: &[T],
+        base: usize,
+        word: usize,
+    ) -> E {
+        if self.columns().packed {
+            row[base + word].into()
+        } else {
+            pack_bits_le(
+                row[base + word * 32..base + (word + 1) * 32]
+                    .iter()
+                    .copied(),
+            )
+        }
+    }
+    /// Packed source bits are read only at CURRENT81, while lane4 contains
+    /// the genuinely constrained counter1 output. Retained-bit profiles use
+    /// their ordinary buffer path at CURRENT80.
+    pub(super) fn age_source_bit<E: Algebra<Val>, T: Copy + Into<E>>(
+        &self,
+        row: &[T],
+        byte: usize,
+        bit: usize,
+    ) -> E {
+        if self.columns().packed {
+            self.output_plain_bit(
+                row,
+                4,
+                byte / 4,
+                byte % 4 * 8 + bit,
+                self.source.ciphertext(0)[byte],
+            )
+        } else {
+            self.plain_bit(row, byte, bit)
+        }
+    }
+    fn output_plain_bit<E: Algebra<Val>, T: Copy + Into<E>>(
+        &self,
+        row: &[T],
+        lane: usize,
+        word: usize,
+        bit: usize,
+        cipher_byte: u8,
+    ) -> E {
+        let cipher = E::from_u8((cipher_byte >> (bit % 8)) & 1);
+        let stream: E = row[lane * ca::WIDTH + word * 32 + bit].into();
+        cipher.clone() + stream.clone() - cipher * stream * E::TWO
+    }
+    fn output_plain_word<E: Algebra<Val>, T: Copy + Into<E>>(
+        &self,
+        row: &[T],
+        lane: usize,
+        job: Job,
+        word: usize,
+    ) -> E {
+        let Job::Cha { page, counter } = job else {
+            return E::ZERO;
+        };
+        if counter == 0 {
+            return E::ZERO;
+        }
+        let byte = (counter as usize - 1) * 64 + word * 4;
+        let cipher = self.source.ciphertext(page);
+        if byte >= cipher.len() {
+            return E::ZERO;
+        }
+        (0..32)
+            .map(|bit| {
+                self.output_plain_bit::<E, _>(row, lane, word, bit, cipher[byte + bit / 8])
+                    * E::from_u64(1 << bit)
+            })
+            .sum()
+    }
+    fn packed_lane<AB: AirBuilder<F = Val>>(
+        &self,
+        b: &mut AB,
+        (row, next): (&[AB::Var], &[AB::Var]),
+        (local, updated): (&[AB::Var], &[AB::Expr]),
+        lane: usize,
+        selectors: &[AB::Expr; TRACE_HEIGHT],
+    ) {
+        let c = self.columns();
+        let s = self.schedule();
+        let feed: AB::Expr = (0..6).map(|g| selectors[g * 82 + 80].clone()).sum();
+        let reset: AB::Expr = (0..5).map(|g| selectors[s.boundary(g)].clone()).sum();
+        let next_capture = feed.clone();
+        for bit in 0..512 {
+            b.when_transition().assert_zero(
+                (AB::Expr::ONE - feed.clone() - reset.clone())
+                    * (next[lane * ca::WIDTH + bit] - updated[bit].clone()),
+            );
+        }
+        for word in 0..16 {
+            let buf = c.buffers + lane * 16 + word;
+            b.when_first_row().assert_zero(row[buf]);
+            b.when_transition()
+                .assert_zero((AB::Expr::ONE - next_capture.clone()) * (next[buf] - row[buf]));
+        }
+        let mut normal_feed = AB::Expr::ZERO;
+        for group in 0..6 {
+            let job = schedule::job(7 * group + lane);
+            let selected = selectors[group * 82 + 80].clone();
+            let capture = selectors[s.boundary(group)].clone();
+            let input = self.input::<AB::Expr, _>(row, job);
+            for word in 0..16 {
+                let output: AB::Expr = pack_bits_le(
+                    next[lane * ca::WIDTH + word * 32..lane * ca::WIDTH + (word + 1) * 32]
+                        .iter()
+                        .copied(),
+                );
+                match job {
+                    Job::H(_) => {
+                        let expected: AB::Expr = if word < 8 {
+                            let original = chacha::HCHACHA_OUTPUT[word];
+                            pack_bits_le(local[original * 32..(original + 1) * 32].iter().copied())
+                        } else {
+                            AB::Expr::ZERO
+                        };
+                        b.assert_zero(selected.clone() * (output - expected));
+                    }
+                    Job::Cha { .. } => {
+                        let state: AB::Expr =
+                            pack_bits_le(local[word * 32..(word + 1) * 32].iter().copied());
+                        b.assert_zero(
+                            selected.clone()
+                                * (state + input[word].clone()
+                                    - output
+                                    - local[ca::FEEDFORWARD_CARRY + word] * Val::from_u64(1 << 32)),
+                        );
+                    }
+                }
+                b.assert_zero(
+                    capture.clone()
+                        * (row[c.buffers + lane * 16 + word]
+                            - self.output_plain_word::<AB::Expr, _>(row, lane, job, word)),
+                );
+            }
+            let key_base = match job {
+                Job::H(page) => Some(c.subkey + page * 8),
+                Job::Cha { page, counter: 0 } => Some(c.polykey + page * 8),
+                Job::Cha { .. } => None,
+            };
+            if let Some(base) = key_base {
+                for word in 0..8 {
+                    let output: AB::Expr =
+                        pack_bits_le(local[word * 32..(word + 1) * 32].iter().copied());
+                    b.assert_zero(capture.clone() * (row[base + word] - output));
+                }
+            }
+            if matches!(job, Job::Cha { .. }) {
+                normal_feed += selected;
+            }
+            if group < 5 {
+                let next_input =
+                    self.input::<AB::Expr, _>(row, schedule::job(7 * (group + 1) + lane));
+                for word in 0..16 {
+                    let actual: AB::Expr = pack_bits_le(
+                        next[lane * ca::WIDTH + word * 32..lane * ca::WIDTH + (word + 1) * 32]
+                            .iter()
+                            .copied(),
+                    );
+                    b.assert_zero(capture.clone() * (actual - next_input[word].clone()));
+                }
+            }
+        }
+        for carry in &local[ca::FEEDFORWARD_CARRY..] {
+            b.assert_zero((AB::Expr::ONE - normal_feed.clone()) * *carry);
+        }
+    }
     pub(super) fn input<E: Algebra<Val>, T: Copy + Into<E>>(&self, row: &[T], job: Job) -> [E; 16] {
+        let cols = self.columns();
         let (page, h, counter) = match job {
             Job::H(page) => (page, true, 0),
             Job::Cha { page, counter } => (page, false, counter),
@@ -66,12 +263,12 @@ impl OpeningAir {
         core::array::from_fn(|word| match word {
             0..=3 => E::from_u32(chacha::CONSTANTS[word]),
             4..=11 => {
-                let start = if h { MASTER } else { SUBKEY + page * 256 };
-                pack_bits_le(
-                    row[start + (word - 4) * 32..start + (word - 3) * 32]
-                        .iter()
-                        .copied(),
-                )
+                let start = if h {
+                    cols.master
+                } else {
+                    cols.subkey + page * cols.key_stride()
+                };
+                self.key_word(row, start, word - 4)
             }
             _ if h => E::from_u32(u32::from_le_bytes(
                 nonce[(word - 12) * 4..(word - 11) * 4].try_into().unwrap(),
@@ -90,6 +287,11 @@ impl OpeningAir {
         row: &[T],
         word: usize,
     ) -> E {
+        let cols = self.columns();
+        if cols.packed {
+            let (_, lane, slot) = schedule::plain_location(word);
+            return row[cols.buffers + lane * 16 + slot].into();
+        }
         (0..32).fold(E::ZERO, |sum, bit| {
             sum + self.plain_bit::<E, _>(row, word * 4 + bit / 8, bit % 8) * E::from_u64(1 << bit)
         })
@@ -100,6 +302,7 @@ impl OpeningAir {
         byte: usize,
         bit: usize,
     ) -> E {
+        let cols = self.columns();
         let word = byte / 4;
         let (_, lane, slot) = schedule::plain_location(word);
         let (page, index) = if byte < DATA_BYTES {
@@ -108,7 +311,7 @@ impl OpeningAir {
             (1, byte - DATA_BYTES)
         };
         let c = E::from_u8((self.source.ciphertext(page)[index] >> bit) & 1);
-        let s: E = row[BUFFERS + lane * 512 + slot * 32 + (byte % 4) * 8 + bit].into();
+        let s: E = row[cols.buffers + lane * 512 + slot * 32 + (byte % 4) * 8 + bit].into();
         c.clone() + s.clone() - c * s * E::TWO
     }
     pub(super) fn stream_field<E: Algebra<Val>, T: Copy + Into<E>>(
@@ -118,34 +321,31 @@ impl OpeningAir {
         index: usize,
         physical_row: usize,
     ) -> E {
+        let cols = self.columns();
         if key {
             match index {
                 0..=13 => self.key_prefix[index].into(),
-                14..=21 => pack_bits_le(
-                    row[MASTER + (index - 14) * 32..MASTER + (index - 13) * 32]
-                        .iter()
-                        .copied(),
-                ),
-                22..=25 => row[SALTS + index - 22].into(),
+                14..=21 => self.key_word(row, cols.master, index - 14),
+                22..=25 => row[cols.salts + index - 22].into(),
                 _ => E::ZERO,
             }
         } else if index < 87 {
             if index >= 83 {
-                row[SALTS + 4 + index - 83].into()
+                row[cols.salts + 4 + index - 83].into()
             } else {
                 self.open_prefix[index].into()
             }
         } else if index < 674 {
             let word = index - 87;
             let (group, _, _) = schedule::plain_location(word);
-            let overwritten_at = group * 81 + 161;
+            let overwritten_at = self.schedule().boundary(group + 1);
             if physical_row >= overwritten_at {
                 let stale = [33, 34, 145, 146, 257, 258, 369, 370, 481, 482];
                 let position = stale
                     .iter()
                     .position(|w| *w == word)
                     .expect("Fixed source schedule retains every stale word");
-                return row[CARRY + position % 2].into();
+                return row[cols.carry + position % 2].into();
             }
             self.plain_word(row, word)
         } else {
@@ -176,6 +376,8 @@ impl BaseAir<Val> for OpeningAir {
 }
 impl<AB: AirBuilder<F = Val>> Air<AB> for OpeningAir {
     fn eval(&self, builder: &mut AB) {
+        let cols = self.columns();
+        let schedule = self.schedule();
         let public: [AB::PublicVar; PUBLIC_VALUES] = builder.public_values().try_into().unwrap();
         for (actual, expected) in public.into_iter().zip(self.values) {
             builder.assert_eq(actual, expected);
@@ -185,36 +387,54 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for OpeningAir {
         let main = builder.main();
         let row = main.current_slice();
         let next = main.next_slice();
-        for cell in &row[..POSEIDON] {
-            builder.assert_bool(*cell);
+        if cols.packed {
+            for cell in row[..cols.buffers]
+                .iter()
+                .chain(&row[cols.polykey_bits..cols.poly])
+                .chain(&row[cols.poly..cols.poseidon])
+            {
+                builder.assert_bool(*cell);
+            }
+        } else {
+            // Preserve the original profile's exact Boolean constraint order.
+            for cell in &row[..cols.poseidon] {
+                builder.assert_bool(*cell);
+            }
         }
-        for index in BANKS..POLY {
+        for index in cols.banks..cols.polykey_bits {
             builder.when_transition().assert_eq(next[index], row[index]);
         }
-        for index in SALTS..WIDTH {
+        for index in cols.salts..cols.width {
             builder.when_transition().assert_eq(next[index], row[index]);
         }
         let qr: [AB::Expr; 8] = core::array::from_fn(|step| {
             Self::row_sum(
                 &selectors,
-                (0..486).filter(|r| r % 81 < 80 && r % 81 % 8 == step),
+                (0..6 * schedule.job_rows()).filter(|r| {
+                    r % schedule.job_rows() < 80 && r % schedule.job_rows() % 8 == step
+                }),
             )
         });
-        let next_boundary = Self::row_sum(&selectors, (0..6).map(|g| schedule::boundary(g) - 1));
+        let next_boundary = Self::row_sum(&selectors, (0..6).map(|g| schedule.boundary(g) - 1));
         for lane in 0..LANES {
             let offset = lane * ca::WIDTH;
             let local = &row[offset..offset + ca::WIDTH];
             let updated = chacha::arithmetic::updated_bits(builder, local, &qr);
-            for group in 0..6 {
+            for group in 0..if cols.packed { 1 } else { 6 } {
                 let job = schedule::job(7 * group + lane);
                 let input = self.input::<AB::Expr, _>(row, job);
                 for word in 0..16 {
                     let actual: AB::Expr =
                         pack_bits_le(local[word * 32..word * 32 + 32].iter().copied());
                     builder.assert_zero(
-                        selectors[group * 81].clone() * (actual - input[word].clone()),
+                        selectors[group * schedule.job_rows()].clone()
+                            * (actual - input[word].clone()),
                     );
                 }
+            }
+            if cols.packed {
+                self.packed_lane(builder, (row, next), (local, &updated), lane, &selectors);
+                continue;
             }
             for bit in 0..512 {
                 let mut expected = updated[bit].clone();
@@ -226,8 +446,8 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for OpeningAir {
                     let job = schedule::job(7 * (group + 1) + lane);
                     let input_bit: AB::Expr = if (4..12).contains(&word) {
                         let start = match job {
-                            Job::H(_) => MASTER,
-                            Job::Cha { page, .. } => SUBKEY + page * 256,
+                            Job::H(_) => cols.master,
+                            Job::Cha { page, .. } => cols.subkey + page * cols.key_stride(),
                         };
                         row[start + (word - 4) * 32 + position].into()
                     } else {
@@ -252,12 +472,12 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for OpeningAir {
                         Val::from_u32((value >> position) & 1).into()
                     };
                     expected +=
-                        selectors[schedule::boundary(group)].clone() * (input_bit - local[bit]);
+                        selectors[schedule.boundary(group)].clone() * (input_bit - local[bit]);
                 }
                 builder
                     .when_transition()
                     .assert_eq(next[offset + bit], expected);
-                let buf = BUFFERS + lane * 512 + bit;
+                let buf = cols.buffers + lane * 512 + bit;
                 builder.when_first_row().assert_zero(row[buf]);
                 builder
                     .when_transition()
@@ -265,14 +485,14 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for OpeningAir {
             }
             let mut normal_boundary = AB::Expr::ZERO;
             for group in 0..6 {
-                let selected = selectors[schedule::boundary(group)].clone();
+                let selected = selectors[schedule.boundary(group)].clone();
                 let job = schedule::job(7 * group + lane);
                 match job {
                     Job::H(page) => {
                         for word in 0..16 {
                             let output: AB::Expr = pack_bits_le(
-                                row[BUFFERS + lane * 512 + word * 32
-                                    ..BUFFERS + lane * 512 + (word + 1) * 32]
+                                row[cols.buffers + lane * 512 + word * 32
+                                    ..cols.buffers + lane * 512 + (word + 1) * 32]
                                     .iter()
                                     .copied(),
                             );
@@ -291,8 +511,8 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for OpeningAir {
                         for bit in 0..256 {
                             builder.assert_zero(
                                 selected.clone()
-                                    * (row[SUBKEY + page * 256 + bit]
-                                        - row[BUFFERS + lane * 512 + bit]),
+                                    * (row[cols.subkey + page * cols.key_stride() + bit]
+                                        - row[cols.buffers + lane * 512 + bit]),
                             );
                         }
                     }
@@ -303,8 +523,8 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for OpeningAir {
                             let state: AB::Expr =
                                 pack_bits_le(local[word * 32..(word + 1) * 32].iter().copied());
                             let output: AB::Expr = pack_bits_le(
-                                row[BUFFERS + lane * 512 + word * 32
-                                    ..BUFFERS + lane * 512 + (word + 1) * 32]
+                                row[cols.buffers + lane * 512 + word * 32
+                                    ..cols.buffers + lane * 512 + (word + 1) * 32]
                                     .iter()
                                     .copied(),
                             );
@@ -320,8 +540,8 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for OpeningAir {
                             for bit in 0..256 {
                                 builder.assert_zero(
                                     selected.clone()
-                                        * (row[POLYKEY + page * 256 + bit]
-                                            - row[BUFFERS + lane * 512 + bit]),
+                                        * (row[cols.polykey + page * cols.key_stride() + bit]
+                                            - row[cols.buffers + lane * 512 + bit]),
                                 );
                             }
                         }
@@ -335,12 +555,12 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for OpeningAir {
         // Complete embedded data-head equality, from actual counter1/2 XOR words.
         for word in 0..28 {
             builder.assert_zero(
-                selectors[80].clone()
+                selectors[schedule.boundary(0)].clone()
                     * (self.plain_word::<AB::Expr, _>(row, 3 + word)
                         - self.values[statement::HEADS + word]),
             );
         }
-        let cells = pa::Cells::packed(&row[POLY..POSEIDON]);
+        let cells = pa::Cells::packed(&row[cols.poly..cols.poseidon]);
         let active = Self::row_sum(
             &selectors,
             (0..165).filter(|r| matches!(schedule::mac(*r), Mac::Block { .. })),
@@ -348,8 +568,25 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for OpeningAir {
         let finalizing = selectors[9].clone() + selectors[164].clone();
         let page1 = Self::row_sum(&selectors, 10..165);
         let key = core::array::from_fn(|bit| {
-            row[POLYKEY + bit] + page1.clone() * (row[POLYKEY + 256 + bit] - row[POLYKEY + bit])
+            if cols.packed {
+                row[cols.polykey_bits + bit].into()
+            } else {
+                row[cols.polykey + bit]
+                    + page1.clone() * (row[cols.polykey + 256 + bit] - row[cols.polykey + bit])
+            }
         });
+        if cols.packed {
+            for word in 0..8 {
+                let actual: AB::Expr = pack_bits_le(
+                    row[cols.polykey_bits + word * 32..cols.polykey_bits + (word + 1) * 32]
+                        .iter()
+                        .copied(),
+                );
+                let first: AB::Expr = row[cols.polykey + word].into();
+                let second: AB::Expr = row[cols.polykey + 8 + word].into();
+                builder.assert_eq(actual, first.clone() + page1.clone() * (second - first));
+            }
+        }
         let message: [AB::Expr; LIMBS] = core::array::from_fn(|limb| {
             (0..165)
                 .filter(|r| matches!(schedule::mac(*r), Mac::Block { .. }))
@@ -364,7 +601,7 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for OpeningAir {
             builder,
             cells,
             pa::Step {
-                updated: pa::limbs(&next[POLY..POLY + pa::STATE]),
+                updated: pa::limbs(&next[cols.poly..cols.poly + pa::STATE]),
                 key,
                 message,
                 active: active.clone(),
@@ -374,19 +611,20 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for OpeningAir {
             },
         );
         for bit in 0..pa::STATE {
-            builder.when_first_row().assert_zero(row[POLY + bit]);
+            builder.when_first_row().assert_zero(row[cols.poly + bit]);
             builder.assert_zero(
-                (selectors[10].clone() + Self::row_sum(&selectors, 165..512)) * row[POLY + bit],
+                (selectors[10].clone() + Self::row_sum(&selectors, 165..512))
+                    * row[cols.poly + bit],
             );
             builder.when_transition().assert_zero(
                 (AB::Expr::ONE - active.clone() - finalizing.clone())
-                    * (next[POLY + bit] - row[POLY + bit]),
+                    * (next[cols.poly + bit] - row[cols.poly + bit]),
             );
         }
-        let p2row = &row[POSEIDON..CHECKPOINT];
+        let p2row = &row[cols.poseidon..cols.checkpoint];
         let out = poseidon::evaluate(builder, p2row);
         let absorbs: Vec<_> = (0..512)
-            .filter_map(|r| schedule::absorb(r).map(|(key, block)| (r, key, block)))
+            .filter_map(|r| schedule.absorb(r).map(|(key, block)| (r, key, block)))
             .collect();
         let p2active: AB::Expr = absorbs.iter().map(|(r, _, _)| selectors[*r].clone()).sum();
         for (word, actual) in p2row.iter().take(8).enumerate() {
@@ -403,15 +641,17 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for OpeningAir {
             builder.assert_eq(
                 p2row[word],
                 (p2active.clone() - selectors[0].clone() - selectors[4].clone())
-                    * row[CHECKPOINT + word],
+                    * row[cols.checkpoint + word],
             );
         }
         for word in 0..12 {
-            builder.when_first_row().assert_zero(row[CHECKPOINT + word]);
+            builder
+                .when_first_row()
+                .assert_zero(row[cols.checkpoint + word]);
             builder.when_transition().assert_eq(
-                next[CHECKPOINT + word],
+                next[cols.checkpoint + word],
                 p2active.clone() * out[word].clone()
-                    + (AB::Expr::ONE - p2active.clone()) * row[CHECKPOINT + word],
+                    + (AB::Expr::ONE - p2active.clone()) * row[cols.checkpoint + word],
             );
         }
         for (word, actual) in out.iter().take(4).enumerate() {
@@ -420,29 +660,31 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for OpeningAir {
                     * (actual.clone() - self.values[statement::KEY_COMMITMENT + word]),
             );
             builder.assert_zero(
-                selectors[499].clone()
+                selectors[schedule.final_absorb()].clone()
                     * (actual.clone() - self.values[statement::OPEN_COMMITMENT + word]),
             );
         }
-        let next_capture: AB::Expr = schedule::CAPTURES
+        let next_capture: AB::Expr = schedule
+            .captures()
             .into_iter()
             .map(|r| selectors[r - 1].clone())
             .sum();
         for word in 0..2 {
-            builder.when_first_row().assert_zero(row[CARRY + word]);
-            for (group, r) in schedule::CAPTURES.into_iter().enumerate() {
+            builder.when_first_row().assert_zero(row[cols.carry + word]);
+            for (group, r) in schedule.captures().into_iter().enumerate() {
                 let payload = [33, 145, 257, 369, 481][group] + word;
                 builder.assert_zero(
                     selectors[r].clone()
-                        * (row[CARRY + word] - self.plain_word::<AB::Expr, _>(row, payload)),
+                        * (row[cols.carry + word] - self.plain_word::<AB::Expr, _>(row, payload)),
                 );
             }
             // CURRENT capture is defined above; skip predecessor copy by NEXT capture.
             builder.when_transition().assert_zero(
-                (AB::Expr::ONE - next_capture.clone()) * (next[CARRY + word] - row[CARRY + word]),
+                (AB::Expr::ONE - next_capture.clone())
+                    * (next[cols.carry + word] - row[cols.carry + word]),
             );
         }
-        if self.source.relation == super::Relation::CanonicalIndex {
+        if self.source.relation.is_canonical() {
             super::canonical::evaluate(self, builder, row, next, &selectors);
         }
     }
