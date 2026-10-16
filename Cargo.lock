@@ -4114,6 +4114,7 @@ dependencies = [
  "ed25519-dalek",
  "getrandom 0.2.17",
  "peer-runtime",
+ "proof-acceleration",
  "rcgen",
  "relational-types",
  "serde",

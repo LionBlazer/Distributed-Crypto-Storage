@@ -51,7 +51,8 @@ address-based retrieval, not an FHE evaluator or SQL query proof.
   tree without another root pass. This still audits every byte and retains the
   bounded tree. Materialization temporarily holds canonical bytes and copied
   packets; no process-memory or full-operation latency improvement is established.
-- OwnedVerifiedSnapshotBytes::decode_for_head_with_workers explicitly accepts
+- VerifiedSnapshotBytes::decode_for_head_with_workers and the owned factory
+  OwnedVerifiedSnapshotBytes::decode_for_head_with_workers explicitly accept
   AuditWorkers::One (the default serial policy) or Two. Existing decode methods
   remain serial; Limits still describes hard decoding/response caps only. Both
   policies enter the same canonical parser: image cap, manifest/layout, exact
@@ -62,9 +63,10 @@ address-based retrieval, not an FHE evaluator or SQL query proof.
   The caller participates and one scoped helper requests a 512-KiB stack; OS stack
   rounding/guards and thread metadata are additional process costs. One shared
   nonblocking permit per linked library image spans helper cleanup/join, bounding
-  helpers across simultaneous callers. Contention or spawn failure hashes every
-  leaf serially. Helper panic is joined and propagated; caller unwind also joins
-  before releasing the permit. No partial capability escapes either panic.
+  helpers across simultaneous borrowed and owned callers. Contention or spawn
+  failure hashes every leaf serially. Helper panic is joined and propagated;
+  caller unwind also joins before releasing the permit. No partial capability
+  escapes either panic.
   The existing SHA-256 leaf domains and serial odd-node/root reducer are unchanged.
   One leaf vector is split into disjoint output ranges, without packet copies,
   per-packet tasks, a retained executor or cross-operation validation cache.

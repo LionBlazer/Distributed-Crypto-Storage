@@ -1,6 +1,6 @@
 use compact_store::{
     AuditWorkers, Commitment, EncryptedSnapshot, Error, Layout, Limits, MANIFEST_BYTES,
-    OwnedVerifiedSnapshotBytes, Owner, PAGE_OVERHEAD,
+    OwnedVerifiedSnapshotBytes, Owner, PAGE_OVERHEAD, VerifiedSnapshotBytes,
 };
 
 fn limits() -> Limits {
@@ -33,6 +33,11 @@ fn image(owner: &Owner, pages: usize, width: u32, per_page: u32) -> EncryptedSna
 fn assert_rejected(bytes: &[u8], head: &Commitment, caps: Limits, expected: Error) {
     for workers in [AuditWorkers::One, AuditWorkers::Two] {
         assert_eq!(
+            VerifiedSnapshotBytes::decode_for_head_with_workers(bytes, head, caps, workers).err(),
+            Some(expected),
+            "borrowed {workers:?}"
+        );
+        assert_eq!(
             OwnedVerifiedSnapshotBytes::decode_for_head_with_workers(
                 bytes.to_vec(),
                 head,
@@ -64,6 +69,14 @@ fn serial_and_optional_two_worker_audits_preserve_canonical_bytes_membership_and
         let source = image(&owner, pages, width, per_page);
         let expected = source.encode();
         for workers in [AuditWorkers::One, AuditWorkers::Two] {
+            let borrowed = VerifiedSnapshotBytes::decode_for_head_with_workers(
+                &expected,
+                source.commitment(),
+                limits(),
+                workers,
+            )
+            .unwrap();
+            assert_eq!(borrowed.commitment(), source.commitment());
             let mut bytes = expected.clone();
             bytes.reserve_exact(37);
             let pointer = bytes.as_ptr();
@@ -92,6 +105,10 @@ fn serial_and_optional_two_worker_audits_preserve_canonical_bytes_membership_and
                 for page in [0, pages / 2, pages - 1] {
                     let response = checked.lookup(page as u64, limits()).unwrap();
                     assert_eq!(
+                        borrowed.lookup(page as u64, limits()).unwrap().encode(),
+                        response.encode()
+                    );
+                    assert_eq!(
                         response.encode(),
                         source.lookup(page as u64, limits()).unwrap().encode()
                     );
@@ -112,7 +129,13 @@ fn serial_and_optional_two_worker_audits_preserve_canonical_bytes_membership_and
                 Err(Error::InvalidPage)
             ));
             let materialized = checked.into_snapshot();
+            let borrowed_materialized = borrowed.into_snapshot();
             assert_eq!(materialized.encode(), expected);
+            assert_eq!(borrowed_materialized.encode(), expected);
+            assert_eq!(
+                borrowed_materialized.index_hash_bytes(),
+                source.index_hash_bytes()
+            );
             assert_eq!(materialized.index_hash_bytes(), source.index_hash_bytes());
         }
     }
@@ -245,8 +268,16 @@ fn optional_workers_preserve_header_head_length_revision_and_root_error_preceden
 fn a_two_worker_audit_keeps_current_lookup_caps_and_address_guards() {
     let owner = Owner::generate([167; 16]).unwrap();
     let source = image(&owner, 65, 1, 65_536);
+    let encoded = source.encode();
+    let borrowed = VerifiedSnapshotBytes::decode_for_head_with_workers(
+        &encoded,
+        source.commitment(),
+        limits(),
+        AuditWorkers::Two,
+    )
+    .unwrap();
     let checked = OwnedVerifiedSnapshotBytes::decode_for_head_with_workers(
-        source.encode(),
+        encoded.clone(),
         source.commitment(),
         limits(),
         AuditWorkers::Two,
@@ -262,7 +293,21 @@ fn a_two_worker_audit_keeps_current_lookup_caps_and_address_guards() {
         Err(Error::ResourceLimit)
     ));
     assert!(matches!(
+        borrowed.lookup(0, restricted),
+        Err(Error::ResourceLimit)
+    ));
+    assert!(matches!(
         checked.lookup(
+            999,
+            Limits {
+                max_pages: 64,
+                ..limits()
+            }
+        ),
+        Err(Error::ResourceLimit)
+    ));
+    assert!(matches!(
+        borrowed.lookup(
             999,
             Limits {
                 max_pages: 64,

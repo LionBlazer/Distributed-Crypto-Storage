@@ -60,12 +60,12 @@ impl Owner {
     ) -> Result<Table> {
         crate::storage::restore(
             &self.store,
-            data,
-            index_bytes,
+            (data, index_bytes),
             table_id,
             expected_data,
             expected_index,
             limits,
+            compact_store::AuditWorkers::One,
         )
     }
     pub fn prepare(

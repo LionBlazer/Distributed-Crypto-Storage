@@ -167,7 +167,19 @@ pub struct VerifiedSnapshotBytes<'a> {
 }
 impl<'a> VerifiedSnapshotBytes<'a> {
     pub fn decode_for_head(bytes: &'a [u8], expected: &Commitment, limits: Limits) -> Result<Self> {
-        Self::parse(bytes, Some(expected), limits)
+        Self::decode_for_head_with_workers(bytes, expected, limits, AuditWorkers::One)
+    }
+    /// The same complete borrowed audit with an explicit bounded CPU policy.
+    /// `Two` uses the same shared helper permit and fallback rules as the owned
+    /// factory. The input stays immutably borrowed through lookup/materialization;
+    /// admission, error order, hard caps and trusted-head requirements are unchanged.
+    pub fn decode_for_head_with_workers(
+        bytes: &'a [u8],
+        expected: &Commitment,
+        limits: Limits,
+        workers: AuditWorkers,
+    ) -> Result<Self> {
+        Self::parse_with_workers(bytes, Some(expected), limits, workers)
     }
     // One canonical parser for borrowed validation and owned snapshot imports.
     fn parse(bytes: &'a [u8], expected: Option<&Commitment>, limits: Limits) -> Result<Self> {

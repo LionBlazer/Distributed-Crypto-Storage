@@ -823,12 +823,12 @@ fn logical_ids_distinguish_identical_empty_tables_and_duplicate_values() {
     assert!(matches!(
         crate::storage::restore(
             &owner,
-            &table.data.encode(),
-            &table.index.encode(),
+            (&table.data.encode(), &table.index.encode()),
             first.table_id(),
             table.commitment(),
             table.index_commitment(),
-            Limits::default()
+            Limits::default(),
+            compact_store::AuditWorkers::One,
         ),
         Err(Error::WrongVersion)
     ));
@@ -879,12 +879,12 @@ fn million_row_identity_index_has_exact_bounded_geometry_and_sparse_lookup() {
     );
     let restored = crate::storage::restore(
         &owner,
-        &table.data.encode(),
-        &table.index.encode(),
+        (&table.data.encode(), &table.index.encode()),
         table.table_id(),
         table.commitment(),
         table.index_commitment(),
         Limits::default(),
+        compact_store::AuditWorkers::One,
     )
     .unwrap();
     let mut transferred = 0;
@@ -930,24 +930,24 @@ fn sparse_identity_lookup_checks_header_before_selected_id_pages_and_rejects_cor
     assert!(
         crate::storage::restore(
             &owner,
-            &table.data.encode(),
-            &corrupt,
+            (&table.data.encode(), &corrupt),
             table.table_id(),
             table.commitment(),
             table.index_commitment(),
-            Limits::default()
+            Limits::default(),
+            compact_store::AuditWorkers::One,
         )
         .is_err()
     );
     assert!(
         crate::storage::restore(
             &owner,
-            &table.data.encode(),
-            &encoded[..encoded.len() - 1],
+            (&table.data.encode(), &encoded[..encoded.len() - 1]),
             table.table_id(),
             table.commitment(),
             table.index_commitment(),
-            Limits::default()
+            Limits::default(),
+            compact_store::AuditWorkers::One,
         )
         .is_err()
     );

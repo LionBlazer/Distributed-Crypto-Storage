@@ -11,6 +11,7 @@ evaluator answering SQL and no dependency on the playground or its fixtures.
 | [relational-types](../relational-types/README.md) | Typed schemas, complete dump validation and schema-bound SELECT plans |
 | [compact-query](../compact-query/README.md) | Complete authenticated selection, proof-first BFV completion and compact finalization |
 | [compact-store](../compact-store/README.md) | Exact trusted heads and bounded canonical formats |
+| [proof-acceleration](../proof-acceleration/README.md) | Pure bounded CPU-worker policy, without the loader feature |
 | [peer-runtime](../peer-runtime/README.md) | Remote object transfer, FHE replies, copies and metrics |
 | [bfv-query-core](../bfv-query-core/README.md) | Public parameter descriptor |
 | [bfv-query-proof](../bfv-query-proof/README.md) | Genuine checked statement capability retained until fresh completion |
@@ -407,6 +408,15 @@ both image roots are independently rebuilt. The owner validates its exact heads,
 logical TableId and encrypted header through the shared full-image validator,
 without constructing a temporary Table that this metadata-refresh path discards.
 Other full fetch and holder-credit paths keep their complete custody checks.
+Database creation explicitly configures its BFV owner with the existing bounded
+worker policy, resolved once from available CPUs and `RAYON_NUM_THREADS`.
+A budget of one keeps full-image owner audits serial; larger budgets permit at
+most one scoped helper shared with all other compact-store audits in the linked
+image. Invalid/zero requests retain the existing bounded-default semantics.
+Each image keeps its independently expected head; data still authenticates before
+the complete index, followed by unchanged schema, geometry and owner AEAD header,
+embedded data head, TableId and count checks. No images or shards are newly audited
+concurrently, no executor is added, and `Limits` keeps the same hard decode caps.
 There is no reuse of a server audit or cross-RPC validation cache; wire/profile,
 proof, admission and freshness rules are unchanged. No timing gain is claimed.
 

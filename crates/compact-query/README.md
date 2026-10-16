@@ -276,6 +276,20 @@ is no persistent FHE row cache, plaintext row cache, pad cache or update overlay
 | UnverifiedOutput | Return encrypted results explicitly lacking a computation proof |
 | Owner::*_for_experiment | Decrypt unverified outputs; compare updates with owner-local plaintext expectations and compactly write them back |
 
+BFV `Owner::generate` defaults full-image custody validation to
+`compact_store::AuditWorkers::One`. Its consuming `with_audit_workers` builder
+explicitly permits `Two` without copying or exporting keys. Both
+`restore_table_for_experiment` and `validate_table_images_for_experiment` feed the
+same complete borrowed parser against independently expected heads, auditing data
+before the complete private index, then checking schema, read geometry, owner AEAD
+header binding, embedded data head, TableId and counts.
+The private index keeps its own byte-geometry limits. `Two` shares the existing
+one-helper permit with every owned or borrowed audit in that linked compact-store
+image, with the same public 4-MiB threshold, 512-KiB requested stack and complete
+serial fallback. This crate does not read environment variables or choose a
+product CPU budget; hard `Limits`, wire bytes and validation errors are unchanged.
+TFHE restoration remains serial. No latency or process-memory gain is claimed.
+
 One Owner/Evaluator pair supports many independent Table handles. Evaluator::clone
 shares public evaluation material. Owner has no Clone, printing, serialization or
 secret-key export API. The compact-store temporary plaintext and stream-mask

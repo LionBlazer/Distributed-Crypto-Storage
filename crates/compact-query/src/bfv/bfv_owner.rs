@@ -9,12 +9,24 @@ impl Owner {
         let peer = bfv_core::PeerEvaluator::from_public_setup(&setup)?;
         let linear = bfv_core::PublicUpdateEvaluator::from_parameters(&setup.update_parameters()?)?;
         Ok((
-            Self { store, key, linear },
+            Self {
+                store,
+                key,
+                linear,
+                audit_workers: compact_store::AuditWorkers::One,
+            },
             Evaluator {
                 peer: Arc::new(peer),
                 setup: Arc::new(setup),
             },
         ))
+    }
+    /// Selects bounded full-image audit CPU work; generation defaults to `One`.
+    /// No key, trusted head, proof or owner-decryption authority is changed.
+    /// The caller owns CPU policy; this library does not read process environment.
+    pub fn with_audit_workers(mut self, workers: compact_store::AuditWorkers) -> Self {
+        self.audit_workers = workers;
+        self
     }
     pub fn seal(&self, rows: &[PlainRow], rows_per_page: u32, limits: Limits) -> Result<Table> {
         storage::seal(&self.store, rows, rows_per_page, limits)
@@ -46,12 +58,12 @@ impl Owner {
     ) -> Result<Table> {
         storage::restore(
             &self.store,
-            data,
-            index,
+            (data, index),
             table_id,
             expected_data,
             expected_index,
             limits,
+            self.audit_workers,
         )
     }
     /// Full canonical image/root and owner header checks, without allocating Table packets.
@@ -67,12 +79,12 @@ impl Owner {
     ) -> Result<()> {
         storage::validate(
             &self.store,
-            data,
-            index,
+            (data, index),
             table_id,
             expected_data,
             expected_index,
             limits,
+            self.audit_workers,
         )
     }
     pub fn decrypt_row_for_experiment(

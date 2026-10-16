@@ -9,6 +9,7 @@ publish = false
 peer-runtime = { path = "../peer-runtime" }
 compact-query = { path = "../compact-query", default-features = false, features = ["bfv-experiment"] }
 compact-store = { path = "../compact-store" }
+proof-acceleration = { path = "../proof-acceleration", default-features = false }
 sql-plan = { path = "../sql-plan" }
 bfv-query-core = { path = "../bfv-query-core" }
 bfv-query-proof = { path = "../bfv-query-proof" }

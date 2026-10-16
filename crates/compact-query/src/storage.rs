@@ -3,7 +3,9 @@ use crate::{
     Error, MAX_TABLE_ROWS, PlainRow, ROW_BYTES, Result, RowIds, SCHEMA, Table, TableId,
     check_schema, index,
 };
-use compact_store::{Commitment, EncryptedSnapshot, Layout, Limits, Owner, VerifiedSnapshotBytes};
+use compact_store::{
+    AuditWorkers, Commitment, EncryptedSnapshot, Layout, Limits, Owner, VerifiedSnapshotBytes,
+};
 use std::collections::BTreeMap;
 use zeroize::Zeroizing;
 
@@ -65,21 +67,21 @@ pub(crate) fn seal_partition(
 
 pub(crate) fn restore(
     owner: &Owner,
-    data: &[u8],
-    index_bytes: &[u8],
+    (data, index_bytes): (&[u8], &[u8]),
     table_id: &TableId,
     expected_data: &Commitment,
     expected_index: &Commitment,
     limits: Limits,
+    workers: AuditWorkers,
 ) -> Result<Table> {
     let (data, index) = validated_images(
         owner,
-        data,
-        index_bytes,
+        (data, index_bytes),
         table_id,
         expected_data,
         expected_index,
         limits,
+        workers,
     )?;
     Ok(Table {
         table_id: *table_id,
@@ -92,36 +94,41 @@ pub(crate) fn restore(
 #[cfg(any(feature = "bfv-experiment", test))]
 pub(crate) fn validate(
     owner: &Owner,
-    data: &[u8],
-    index_bytes: &[u8],
+    (data, index_bytes): (&[u8], &[u8]),
     table_id: &TableId,
     expected_data: &Commitment,
     expected_index: &Commitment,
     limits: Limits,
+    workers: AuditWorkers,
 ) -> Result<()> {
     validated_images(
         owner,
-        data,
-        index_bytes,
+        (data, index_bytes),
         table_id,
         expected_data,
         expected_index,
         limits,
+        workers,
     )?;
     Ok(())
 }
 fn validated_images<'a>(
     owner: &Owner,
-    data: &'a [u8],
-    index_bytes: &'a [u8],
+    (data, index_bytes): (&'a [u8], &'a [u8]),
     table_id: &TableId,
     expected_data: &Commitment,
     expected_index: &Commitment,
     limits: Limits,
+    workers: AuditWorkers,
 ) -> Result<(VerifiedSnapshotBytes<'a>, VerifiedSnapshotBytes<'a>)> {
-    let data = VerifiedSnapshotBytes::decode_for_head(data, expected_data, limits)?;
-    let index =
-        VerifiedSnapshotBytes::decode_for_head(index_bytes, expected_index, index::index_limits())?;
+    let data =
+        VerifiedSnapshotBytes::decode_for_head_with_workers(data, expected_data, limits, workers)?;
+    let index = VerifiedSnapshotBytes::decode_for_head_with_workers(
+        index_bytes,
+        expected_index,
+        index::index_limits(),
+        workers,
+    )?;
     check_schema(data.commitment())?;
     let heads = crate::ReadHeads::new(*table_id, data.commitment(), index.commitment(), limits)?;
     index::check_binding(owner, &index, &heads)?;
@@ -245,8 +252,24 @@ mod tests {
                      id: &TableId,
                      dh: &Commitment,
                      ih: &Commitment| {
-            let validation = validate(authority, data, index, id, dh, ih, limits);
-            let restoration = restore(authority, data, index, id, dh, ih, limits);
+            let validation = validate(
+                authority,
+                (data, index),
+                id,
+                dh,
+                ih,
+                limits,
+                AuditWorkers::One,
+            );
+            let restoration = restore(
+                authority,
+                (data, index),
+                id,
+                dh,
+                ih,
+                limits,
+                AuditWorkers::One,
+            );
             assert_eq!(validation.as_ref().err(), restoration.as_ref().err());
             validation
         };
@@ -368,22 +391,22 @@ mod tests {
             // Full restore audits ciphertext/header. Only selected references parse IDs.
             validate(
                 &owner,
-                &data,
-                &index,
+                (&data, &index),
                 table.table_id(),
                 table.commitment(),
                 table.index_commitment(),
                 limits,
+                AuditWorkers::One,
             )
             .unwrap();
             let restored = restore(
                 &owner,
-                &data,
-                &index,
+                (&data, &index),
                 table.table_id(),
                 table.commitment(),
                 table.index_commitment(),
                 limits,
+                AuditWorkers::One,
             )
             .unwrap();
             assert!(matches!(

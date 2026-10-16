@@ -24,6 +24,7 @@ pub struct Owner {
     store: compact_store::Owner,
     key: bfv_core::Owner,
     linear: bfv_core::PublicUpdateEvaluator,
+    audit_workers: compact_store::AuditWorkers,
 }
 /// Cheap clones share only public material. A peer never receives this module's Owner.
 #[derive(Clone)]

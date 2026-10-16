@@ -122,6 +122,7 @@ impl Database {
         let mut domain = [0u8; 16];
         getrandom::getrandom(&mut domain).map_err(|e| Error::Cryptography(e.to_string()))?;
         let (owner, evaluator) = backend::Owner::generate(domain)?;
+        let owner = owner.with_audit_workers(owner_audit_workers());
         let setup = evaluator.encode_public_setup_for_experiment()?;
         // The public evaluator created for parameter generation is never used to execute a query.
         drop(evaluator);
@@ -392,6 +393,26 @@ fn install(peer: &RemotePeer, setup: &[u8]) -> Result<[u8; 32]> {
     }
 }
 
+// Product CPU policy stays outside compact-query and compact-store hard caps.
+fn owner_audit_workers() -> compact_store::AuditWorkers {
+    static WORKERS: std::sync::OnceLock<compact_store::AuditWorkers> = std::sync::OnceLock::new();
+    *WORKERS.get_or_init(|| {
+        let available = std::thread::available_parallelism().map_or(1, usize::from);
+        let requested = std::env::var("RAYON_NUM_THREADS").ok();
+        resolve_owner_audit_workers(available, requested.as_deref())
+    })
+}
+fn resolve_owner_audit_workers(
+    available: usize,
+    requested: Option<&str>,
+) -> compact_store::AuditWorkers {
+    if proof_acceleration::worker_budget(available, requested) == 1 {
+        compact_store::AuditWorkers::One
+    } else {
+        compact_store::AuditWorkers::Two
+    }
+}
+
 // Recovered holder credit needs complete custody, independently pinned ID and
 // both heads. Neither a binding-only TargetVersion nor TLS is sufficient.
 fn holds_object(
@@ -409,6 +430,29 @@ fn holds_object(
     checked.version().object() == &object
         && checked.version().data_head().encode() == data
         && checked.version().index_head().encode() == index
+}
+
+#[cfg(test)]
+mod audit_policy_tests {
+    use super::*;
+    #[test]
+    fn owner_audit_workers_respect_the_existing_cpu_budget_without_environment_races() {
+        use compact_store::AuditWorkers::{One, Two};
+        for (available, requested, expected) in [
+            (0, None, One),
+            (1, Some("8"), One),
+            (64, Some("1"), One),
+            (64, Some(" 1 "), One),
+            (64, Some("2"), Two),
+            (2, Some("999"), Two),
+            (64, None, Two),
+            (64, Some("0"), Two),
+            (64, Some("invalid"), Two),
+            (1, Some("invalid"), One),
+        ] {
+            assert_eq!(resolve_owner_audit_workers(available, requested), expected);
+        }
+    }
 }
 
 #[cfg(test)]
