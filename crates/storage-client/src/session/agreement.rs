@@ -271,7 +271,7 @@ impl Session {
 }
 
 // A malformed envelope is one holder's failure, not permission to stop before
-// trying a healthy replica. Return no raw bytes beyond complete owner restore.
+// trying a healthy replica. Return no raw bytes beyond complete owner image validation.
 fn restore_agreed_object(
     owner: &backend::Owner,
     table: &compact_query::TableId,
@@ -283,7 +283,7 @@ fn restore_agreed_object(
     if version.data_head() != data || version.index_head() != index {
         return Err(protocol("A holder returned different agreed heads"));
     }
-    owner.restore_table_for_experiment(
+    owner.validate_table_images_for_experiment(
         &raw.data,
         &raw.index,
         table,

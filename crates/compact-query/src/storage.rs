@@ -3,7 +3,7 @@ use crate::{
     Error, MAX_TABLE_ROWS, PlainRow, ROW_BYTES, Result, RowIds, SCHEMA, Table, TableId,
     check_schema, index,
 };
-use compact_store::{Commitment, EncryptedSnapshot, Layout, Limits, Owner};
+use compact_store::{Commitment, EncryptedSnapshot, Layout, Limits, Owner, VerifiedSnapshotBytes};
 use std::collections::BTreeMap;
 use zeroize::Zeroizing;
 
@@ -72,17 +72,60 @@ pub(crate) fn restore(
     expected_index: &Commitment,
     limits: Limits,
 ) -> Result<Table> {
-    let data = EncryptedSnapshot::decode_for_head(data, expected_data, limits)?;
+    let (data, index) = validated_images(
+        owner,
+        data,
+        index_bytes,
+        table_id,
+        expected_data,
+        expected_index,
+        limits,
+    )?;
+    Ok(Table {
+        table_id: *table_id,
+        data: data.into_snapshot(),
+        index: index.into_snapshot(),
+    })
+}
+
+/// The same full custody and owner header validation without constructing a Table.
+#[cfg(any(feature = "bfv-experiment", test))]
+pub(crate) fn validate(
+    owner: &Owner,
+    data: &[u8],
+    index_bytes: &[u8],
+    table_id: &TableId,
+    expected_data: &Commitment,
+    expected_index: &Commitment,
+    limits: Limits,
+) -> Result<()> {
+    validated_images(
+        owner,
+        data,
+        index_bytes,
+        table_id,
+        expected_data,
+        expected_index,
+        limits,
+    )?;
+    Ok(())
+}
+fn validated_images<'a>(
+    owner: &Owner,
+    data: &'a [u8],
+    index_bytes: &'a [u8],
+    table_id: &TableId,
+    expected_data: &Commitment,
+    expected_index: &Commitment,
+    limits: Limits,
+) -> Result<(VerifiedSnapshotBytes<'a>, VerifiedSnapshotBytes<'a>)> {
+    let data = VerifiedSnapshotBytes::decode_for_head(data, expected_data, limits)?;
     let index =
-        EncryptedSnapshot::decode_for_head(index_bytes, expected_index, index::index_limits())?;
+        VerifiedSnapshotBytes::decode_for_head(index_bytes, expected_index, index::index_limits())?;
     check_schema(data.commitment())?;
     let heads = crate::ReadHeads::new(*table_id, data.commitment(), index.commitment(), limits)?;
     index::check_binding(owner, &index, &heads)?;
-    Ok(Table {
-        table_id: *table_id,
-        data,
-        index,
-    })
+    Ok((data, index))
 }
 
 pub(crate) fn row(owner: &Owner, table: &Table, ordinal: u64, limits: Limits) -> Result<PlainRow> {
@@ -188,6 +231,167 @@ pub(crate) fn grow_checked(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validation_and_restore_reject_the_same_full_tail_heads_identity_and_owner_failures() {
+        let owner = Owner::generate([64; 16]).unwrap();
+        let limits = Limits::default();
+        let table = seal(&owner, &[PlainRow { age: 42, amount: 1 }; 257], 256, limits).unwrap();
+        let data = table.data.encode();
+        let index = table.index.encode();
+        let check = |authority: &Owner,
+                     data: &[u8],
+                     index: &[u8],
+                     id: &TableId,
+                     dh: &Commitment,
+                     ih: &Commitment| {
+            let validation = validate(authority, data, index, id, dh, ih, limits);
+            let restoration = restore(authority, data, index, id, dh, ih, limits);
+            assert_eq!(validation.as_ref().err(), restoration.as_ref().err());
+            validation
+        };
+        check(
+            &owner,
+            &data,
+            &index,
+            table.table_id(),
+            table.commitment(),
+            table.index_commitment(),
+        )
+        .unwrap();
+        let wrong_id = TableId::generate().unwrap();
+        assert!(matches!(
+            check(
+                &owner,
+                &data,
+                &index,
+                &wrong_id,
+                table.commitment(),
+                table.index_commitment()
+            ),
+            Err(Error::WrongVersion)
+        ));
+        let other_owner = Owner::generate([64; 16]).unwrap();
+        assert!(matches!(
+            check(
+                &other_owner,
+                &data,
+                &index,
+                table.table_id(),
+                table.commitment(),
+                table.index_commitment()
+            ),
+            Err(Error::Storage(compact_store::Error::WrongOwner))
+        ));
+        let other = seal(&owner, &[PlainRow { age: 42, amount: 2 }; 257], 256, limits).unwrap();
+        for (dh, ih) in [
+            (other.commitment(), table.index_commitment()),
+            (table.commitment(), other.index_commitment()),
+        ] {
+            assert!(matches!(
+                check(&owner, &data, &index, table.table_id(), dh, ih),
+                Err(Error::Storage(compact_store::Error::WrongVersion))
+            ));
+        }
+        for corrupt_data in [true, false] {
+            let mut corrupt = if corrupt_data {
+                data.clone()
+            } else {
+                index.clone()
+            };
+            *corrupt.last_mut().unwrap() ^= 1;
+            let (d, i) = if corrupt_data {
+                (&corrupt[..], &index[..])
+            } else {
+                (&data[..], &corrupt[..])
+            };
+            assert!(matches!(
+                check(
+                    &owner,
+                    d,
+                    i,
+                    table.table_id(),
+                    table.commitment(),
+                    table.index_commitment()
+                ),
+                Err(Error::Storage(compact_store::Error::InvalidProof))
+            ));
+        }
+        assert!(matches!(
+            check(
+                &owner,
+                &data,
+                &index[..index.len() - 1],
+                table.table_id(),
+                table.commitment(),
+                table.index_commitment()
+            ),
+            Err(Error::Storage(compact_store::Error::InvalidFormat))
+        ));
+    }
+
+    #[test]
+    fn full_validation_preserves_the_selected_reference_scope_of_row_id_checks() {
+        let owner = Owner::generate([65; 16]).unwrap();
+        let limits = Limits::default();
+        for zero in [false, true] {
+            let mut table =
+                seal(&owner, &[PlainRow { age: 42, amount: 1 }; 257], 256, limits).unwrap();
+            let offset = index::identity_offset(257).unwrap() + 255 * crate::identity::ID_BYTES;
+            let page_index = (offset / index::INDEX_PAGE_BYTES) as u64;
+            assert!(page_index > 0, "malformed IDs live outside the header page");
+            let head = table.index_commitment().clone();
+            let verified = table
+                .index
+                .lookup(page_index, index::index_limits())
+                .unwrap()
+                .verify(&head, page_index, index::index_limits())
+                .unwrap();
+            let mut plain = Zeroizing::new(owner.decrypt(&verified).unwrap().as_bytes().to_vec());
+            let start = offset % index::INDEX_PAGE_BYTES;
+            if zero {
+                plain[start..start + 32].fill(0);
+            } else {
+                plain.copy_within(start..start + 32, start + 32);
+            }
+            owner
+                .replace_page(
+                    &mut table.index,
+                    &head,
+                    page_index,
+                    &plain,
+                    index::index_limits(),
+                )
+                .unwrap();
+            let data = table.data.encode();
+            let index = table.index.encode();
+            // Full restore audits ciphertext/header. Only selected references parse IDs.
+            validate(
+                &owner,
+                &data,
+                &index,
+                table.table_id(),
+                table.commitment(),
+                table.index_commitment(),
+                limits,
+            )
+            .unwrap();
+            let restored = restore(
+                &owner,
+                &data,
+                &index,
+                table.table_id(),
+                table.commitment(),
+                table.index_commitment(),
+                limits,
+            )
+            .unwrap();
+            assert!(matches!(
+                crate::index::references(&owner, &restored, &[255, 256], &mut 0),
+                Err(Error::InvalidIndex)
+            ));
+        }
+    }
 
     #[test]
     fn failed_index_rebind_after_data_staging_preserves_both_original_images() {

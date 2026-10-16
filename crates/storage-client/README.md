@@ -402,6 +402,14 @@ Copy preserves the envelope. Both recovered-holder paths call the same complete
 custody validator before crediting a replica. TargetVersion by itself proves no
 payload integrity, SQL completeness, authorization or agreed freshness.
 
+After an agreed mutation, FetchVersion still transfers the complete object and
+both image roots are independently rebuilt. The owner validates its exact heads,
+logical TableId and encrypted header through the shared full-image validator,
+without constructing a temporary Table that this metadata-refresh path discards.
+Other full fetch and holder-credit paths keep their complete custody checks.
+There is no reuse of a server audit or cross-RPC validation cache; wire/profile,
+proof, admission and freshness rules are unchanged. No timing gain is claimed.
+
 ## Static initial UPDATE source
 
 Before proof preparation, private `session/writeback` freezes each shard's

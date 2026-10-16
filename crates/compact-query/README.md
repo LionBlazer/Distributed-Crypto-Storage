@@ -414,6 +414,14 @@ Both BFV and TFHE completion check the prepared data and index heads against the
 supplied current Table, including an index-only revision change.
 restore_table_for_experiment reconstructs encrypted images with the same live key
 authority and independently supplied TableId and both heads. It does not persist or restore keys.
+The BFV owner's validate_table_images_for_experiment checks the same complete
+canonical images, roots, schema/geometry and AEAD header binding but returns ().
+Both paths share one validation pipeline; materialization consumes its sealed
+borrowed image audits only when a Table is needed. Validation decrypts the header,
+not the whole identity tail: nonzero/unique IDs retain their allocation and bounded
+selected-reference checks. This removes temporary packet copies for validation-only
+consumers, without omitting encrypted tail bytes or establishing SQL proof/freshness,
+process RAM or latency guarantees.
 
 The bincode round trips accept trusted experiment objects and enforce total wire
 limits; they are not hardened hostile FHE decoders. Metadata/domain/version checks

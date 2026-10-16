@@ -19,6 +19,17 @@ impl PageSource for EncryptedSnapshot {
     }
 }
 
+impl PageSource for compact_store::VerifiedSnapshotBytes<'_> {
+    fn commitment(&self) -> &Commitment {
+        self.commitment()
+    }
+    fn lookup(&self, page: u64, limits: Limits) -> Result<VerifiedPage> {
+        Ok(self
+            .lookup(page, limits)?
+            .verify(self.commitment(), page, limits)?)
+    }
+}
+
 /// Caller-selected authorized read heads and logical table. Parsing does not
 /// establish consensus freshness; the network caller must independently do so.
 #[derive(Clone, Debug, PartialEq, Eq)]

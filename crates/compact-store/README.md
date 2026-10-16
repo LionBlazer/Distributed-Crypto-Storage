@@ -31,6 +31,17 @@ address-based retrieval, not an FHE evaluator or SQL query proof.
   independently trusted head. It rejects a mismatched manifest before allocating
   pages, then verifies the full root. Plain `decode` checks internal consistency
   only; a peer-supplied embedded root does not establish authorization or freshness.
+- VerifiedSnapshotBytes::decode_for_head fully validates canonical immutable input
+  bytes against the independently expected head, checking every packet revision
+  and the complete root. Its private, non-cloneable/non-deserializable lineage
+  borrows the input and owns checked Merkle levels without allocating packet copies.
+  lookup returns the same ordinary owned membership response and rechecks current
+  resource limits. Consuming into_snapshot copies packets and moves the checked
+  tree without another root pass. Both owned decode entry points use this same
+  parser and root reducer. No byte can be omitted, changed through this API or
+  accepted from metadata alone. This is local validation, not an across-RPC cache,
+  AEAD/source proof or freshness guarantee. Wire bytes and all limits are unchanged;
+  full-operation speed and process memory still require measurement.
 - EncryptedSnapshot::apply_verified_replacements consumes an authenticated base
   and verified target pages, preserves database/domain/layout, requires the next
   global revision, and returns only an image whose complete reconstructed root

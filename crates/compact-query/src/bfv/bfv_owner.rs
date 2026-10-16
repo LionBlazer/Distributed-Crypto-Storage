@@ -54,6 +54,27 @@ impl Owner {
             limits,
         )
     }
+    /// Full canonical image/root and owner header checks, without allocating Table packets.
+    /// Same expected heads, TableId and live owner as restore; no SQL or freshness proof.
+    pub fn validate_table_images_for_experiment(
+        &self,
+        data: &[u8],
+        index: &[u8],
+        table_id: &crate::TableId,
+        expected_data: &Commitment,
+        expected_index: &Commitment,
+        limits: Limits,
+    ) -> Result<()> {
+        storage::validate(
+            &self.store,
+            data,
+            index,
+            table_id,
+            expected_data,
+            expected_index,
+            limits,
+        )
+    }
     pub fn decrypt_row_for_experiment(
         &self,
         table: &Table,

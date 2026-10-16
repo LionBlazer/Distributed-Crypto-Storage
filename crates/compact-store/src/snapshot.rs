@@ -78,47 +78,13 @@ impl EncryptedSnapshot {
     /// contribution to the root. The caller still owns the head's provenance and
     /// freshness; accepting an old trusted head intentionally permits an old image.
     pub fn decode_for_head(bytes: &[u8], expected: &Commitment, limits: Limits) -> Result<Self> {
-        if bytes.len() > limits.max_image_bytes {
-            return Err(Error::ResourceLimit);
-        }
-        let manifest = bytes.get(..MANIFEST_BYTES).ok_or(Error::InvalidFormat)?;
-        let received = Commitment::decode(manifest, limits)?;
-        if &received != expected {
-            return Err(Error::WrongVersion);
-        }
-        Self::decode(bytes, limits)
+        Ok(VerifiedSnapshotBytes::decode_for_head(bytes, expected, limits)?.into_snapshot())
     }
 
     /// Parses exact, tightly bounded storage, rebuilding and checking its root.
     /// The embedded root's provenance still needs an independent trust source.
     pub fn decode(bytes: &[u8], limits: Limits) -> Result<Self> {
-        if bytes.len() > limits.max_image_bytes {
-            return Err(Error::ResourceLimit);
-        }
-        if bytes.len() < MANIFEST_BYTES {
-            return Err(Error::InvalidFormat);
-        }
-        let commitment = Commitment::decode(&bytes[..MANIFEST_BYTES], limits)?;
-        if bytes.len() != commitment.layout.encoded_len()? {
-            return Err(Error::InvalidFormat);
-        }
-        let count = commitment.layout.page_count()?;
-        let mut pages = Vec::with_capacity(count);
-        let mut offset = MANIFEST_BYTES;
-        for index in 0..count {
-            let len = commitment.layout.page_plaintext_len(index as u64)? + PAGE_OVERHEAD;
-            let packet = &bytes[offset..offset + len];
-            if u64::from_le_bytes(packet[..8].try_into().unwrap()) > commitment.revision {
-                return Err(Error::InvalidFormat);
-            }
-            pages.push(Packet::from_slice(packet));
-            offset += len;
-        }
-        let snapshot = Self::from_packets(commitment.clone(), pages);
-        if snapshot.commitment != commitment {
-            return Err(Error::InvalidProof);
-        }
-        Ok(snapshot)
+        Ok(VerifiedSnapshotBytes::parse(bytes, None, limits)?.into_snapshot())
     }
 
     /// O(log pages) proof construction from the cached tree. Exact page index
@@ -127,26 +93,7 @@ impl EncryptedSnapshot {
         self.commitment.layout.validate(limits)?;
         let index = usize::try_from(index).map_err(|_| Error::InvalidPage)?;
         let packet = self.pages.get(index).ok_or(Error::InvalidPage)?.bytes();
-        let height = self.levels.len().saturating_sub(1);
-        if 16 + packet.len() + height * 32 > limits.max_response_bytes {
-            return Err(Error::ResourceLimit);
-        }
-        let mut siblings = Vec::with_capacity(height);
-        let mut position = index;
-        for level in self.levels.iter().take(self.levels.len().saturating_sub(1)) {
-            let sibling = (position ^ 1).min(level.len() - 1);
-            siblings.push(level[sibling]);
-            position /= 2;
-        }
-        let response = LookupResponse {
-            index: index as u64,
-            packet: packet.to_vec(),
-            siblings,
-        };
-        if response.encoded_len() > limits.max_response_bytes {
-            return Err(Error::ResourceLimit);
-        }
-        Ok(response)
+        lookup_packet(&self.levels, index, packet, limits)
     }
 
     /// Reconstructs an exact target image from an already authenticated base.
@@ -223,17 +170,142 @@ impl EncryptedSnapshot {
     }
 }
 
-fn build_tree(pages: &[Packet]) -> Vec<Vec<[u8; 32]>> {
-    if pages.is_empty() {
-        return Vec::new();
+/// Fully audited canonical image bytes borrowed for this local operation.
+/// The private constructor checks every packet and the complete root. No Clone,
+/// Deserialize or mutable bytes API can manufacture or change this lineage.
+/// Independently trusted heads and owner AEAD checks remain the caller's work.
+/// Materialization consumes the audit and retains its checked Merkle levels.
+///
+/// The input must remain immutable while the audit can still be used:
+/// ```compile_fail
+/// use compact_store::{Commitment, Limits, VerifiedSnapshotBytes};
+/// fn change(bytes: &mut [u8], head: &Commitment) {
+///     let checked = VerifiedSnapshotBytes::decode_for_head(bytes, head, Limits::default()).unwrap();
+///     bytes[112] ^= 1;
+///     let _ = checked.into_snapshot();
+/// }
+/// ```
+/// The audit cannot outlive its input:
+/// ```compile_fail
+/// use compact_store::{Commitment, Limits, VerifiedSnapshotBytes};
+/// fn escape(head: &Commitment) -> VerifiedSnapshotBytes<'static> {
+///     let bytes = vec![0; 112];
+///     VerifiedSnapshotBytes::decode_for_head(&bytes, head, Limits::default()).unwrap()
+/// }
+/// ```
+pub struct VerifiedSnapshotBytes<'a> {
+    bytes: &'a [u8],
+    commitment: Commitment,
+    levels: Vec<Vec<[u8; 32]>>,
+}
+impl<'a> VerifiedSnapshotBytes<'a> {
+    pub fn decode_for_head(bytes: &'a [u8], expected: &Commitment, limits: Limits) -> Result<Self> {
+        Self::parse(bytes, Some(expected), limits)
     }
-    let mut levels = vec![
+    // One canonical parser for borrowed validation and owned snapshot imports.
+    fn parse(bytes: &'a [u8], expected: Option<&Commitment>, limits: Limits) -> Result<Self> {
+        if bytes.len() > limits.max_image_bytes {
+            return Err(Error::ResourceLimit);
+        }
+        let manifest = bytes.get(..MANIFEST_BYTES).ok_or(Error::InvalidFormat)?;
+        let commitment = Commitment::decode(manifest, limits)?;
+        if expected.is_some_and(|expected| &commitment != expected) {
+            return Err(Error::WrongVersion);
+        }
+        if bytes.len() != commitment.layout.encoded_len()? {
+            return Err(Error::InvalidFormat);
+        }
+        let mut leaves = Vec::with_capacity(commitment.layout.page_count()?);
+        for (index, packet) in packets(bytes, commitment.layout).enumerate() {
+            if u64::from_le_bytes(packet[..8].try_into().unwrap()) > commitment.revision {
+                return Err(Error::InvalidFormat);
+            }
+            leaves.push(leaf(index, packet));
+        }
+        let levels = build_levels(leaves);
+        if commitment.with_tree_root(tree_root(&levels)) != commitment.root {
+            return Err(Error::InvalidProof);
+        }
+        Ok(Self {
+            bytes,
+            commitment,
+            levels,
+        })
+    }
+    pub fn commitment(&self) -> &Commitment {
+        &self.commitment
+    }
+    /// Ordinary owned membership response, subject to the caller's current caps.
+    /// The caller still verifies its independently expected head and address.
+    pub fn lookup(&self, index: u64, limits: Limits) -> Result<LookupResponse> {
+        self.commitment.layout.validate(limits)?;
+        let index = usize::try_from(index).map_err(|_| Error::InvalidPage)?;
+        let packet = packets(self.bytes, self.commitment.layout)
+            .nth(index)
+            .ok_or(Error::InvalidPage)?;
+        lookup_packet(&self.levels, index, packet, limits)
+    }
+    /// Copies packet payloads only when an owned snapshot is actually needed.
+    /// The complete checked tree moves with the consumed audit; no second hash pass.
+    pub fn into_snapshot(self) -> EncryptedSnapshot {
+        let pages = packets(self.bytes, self.commitment.layout)
+            .map(Packet::from_slice)
+            .collect();
+        EncryptedSnapshot {
+            commitment: self.commitment,
+            pages,
+            levels: self.levels,
+        }
+    }
+}
+
+// Called only after exact image length and layout validation. All but the final
+// packet have this public full capacity; the final packet can be shorter.
+fn packets(bytes: &[u8], layout: crate::Layout) -> std::slice::Chunks<'_, u8> {
+    let capacity = layout.row_width as usize * layout.rows_per_page as usize + PAGE_OVERHEAD;
+    bytes[MANIFEST_BYTES..].chunks(capacity)
+}
+fn lookup_packet(
+    levels: &[Vec<[u8; 32]>],
+    index: usize,
+    packet: &[u8],
+    limits: Limits,
+) -> Result<LookupResponse> {
+    let height = levels.len().saturating_sub(1);
+    if 16 + packet.len() + height * 32 > limits.max_response_bytes {
+        return Err(Error::ResourceLimit);
+    }
+    let mut siblings = Vec::with_capacity(height);
+    let mut position = index;
+    for level in levels.iter().take(levels.len().saturating_sub(1)) {
+        let sibling = (position ^ 1).min(level.len() - 1);
+        siblings.push(level[sibling]);
+        position /= 2;
+    }
+    let response = LookupResponse {
+        index: index as u64,
+        packet: packet.to_vec(),
+        siblings,
+    };
+    if response.encoded_len() > limits.max_response_bytes {
+        return Err(Error::ResourceLimit);
+    }
+    Ok(response)
+}
+fn build_tree(pages: &[Packet]) -> Vec<Vec<[u8; 32]>> {
+    build_levels(
         pages
             .iter()
             .enumerate()
-            .map(|(i, page)| leaf(i, page.bytes()))
-            .collect::<Vec<_>>(),
-    ];
+            .map(|(index, page)| leaf(index, page.bytes()))
+            .collect(),
+    )
+}
+fn build_levels(leaves: Vec<[u8; 32]>) -> Vec<Vec<[u8; 32]>> {
+    if leaves.is_empty() {
+        return Vec::new();
+    }
+    let mut levels = vec![leaves];
     while levels.last().unwrap().len() > 1 {
         let previous = levels.last().unwrap();
         let next = previous
