@@ -103,6 +103,31 @@ one million encoded bytes. The geometry count is bounded by the unchanged 64 MiB
 image cap, while page, transport-frame and participant disk-quota limits still
 apply before allocation. This is a byte budget, not an unbounded SQL row limit.
 
+`ReadImageRequest` / `FetchReadImage` is a separate static-footprint custody
+operation: one complete canonical data image plus every index membership response
+in `[0, prefix_pages)`, in order. It permits 0–512 prefix pages and at most 16 MiB
+for the **complete encoded runtime response**, excluding frame-prefix/TLS bytes.
+The exact data length, proof geometry and aggregate response length are checked
+before allocating images/pages. The response keeps an actual authenticated full
+`EncryptedSnapshot` for data and independent prefix proofs; it never represents
+an incomplete index as a snapshot or table. `RemotePeer::fetch_read_image` checks
+the exact original object, both heads, prefix count and all membership proofs.
+Consumers must still authenticate their own table identity, AEAD, complete query
+selection, computation proof and agreed freshness.
+
+The new tags append after `FetchPages`/`Pages`, using explicit `DCSRIMQ1`/`DCSRIMR1`
+magic and version 1. Existing tags, the global 64 MiB frame, eight connections,
+heavy-work permit, quotas and FHE/proof/application/ABI profiles are unchanged.
+Every image reply uses **one complete physical custody audit**, including bytes
+outside the returned prefix, then reuses those exact validated snapshots. No
+stat/mtime/status shortcut or extra disk cache is introduced.
+
+This generic RPC has no SQL schema dependency. Its public prefix length is visible.
+A privacy-preserving fixed-footprint consumer must derive the same complete
+prefix from public layout for every predicate, projection, LIMIT and empty result;
+it must not select ranges by query content or fall back by cache/failure outcome.
+This runtime does not choose an SQL privacy policy or claim sparse disk I/O.
+
 ## Computation and proof boundary
 
 `InstallSetup` restores minimal `PublicUpdateEvaluator` parameters. Large legacy
@@ -234,6 +259,7 @@ restart, authorization, quota and unrequested-page disk corruption:
 
 ```sh
 cargo test --release --locked --offline -p dcs-peer --test process_transport page_rpc -- --test-threads=1
+cargo test --release --locked --offline -p dcs-peer --test process_transport static_read_image -- --test-threads=1
 ```
 
 Owning process tests live in `dcs-peer`; they must exercise the complete client,

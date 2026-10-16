@@ -97,6 +97,7 @@ pub enum Request {
     Shutdown,
     /// Exact-address encrypted page custody, with its own fail-closed v1 payload.
     FetchPages(crate::PageBatchRequest),
+    FetchReadImage(crate::ReadImageRequest),
 }
 impl Request {
     pub fn name(&self) -> &'static str {
@@ -119,6 +120,7 @@ impl Request {
             Self::Quota(_) => "quota",
             Self::Shutdown => "shutdown",
             Self::FetchPages(_) => "fetch-pages",
+            Self::FetchReadImage(_) => "read-image",
         }
     }
 }
@@ -181,6 +183,7 @@ pub enum Response {
     Done,
     /// Untrusted ciphertext membership response; the client verifies exact heads.
     Pages(crate::PageBatch),
+    ReadImage(crate::ReadImage),
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProofReply {
@@ -242,14 +245,26 @@ pub(crate) fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> io::Result
 /// Reject a substituted RPC variant before its unrelated vector decoder can
 /// allocate. Page replies and errors have a separate narrow frame budget.
 pub(crate) fn decode_page_response(bytes: &[u8]) -> io::Result<WireResponse> {
-    let invalid = || io::Error::new(io::ErrorKind::InvalidData, "Invalid page response envelope");
-    if bytes.len() > crate::MAX_PAGE_BATCH_RESPONSE_BYTES || bytes.len() < 18 {
+    decode_custody_response(bytes, crate::MAX_PAGE_BATCH_RESPONSE_BYTES, 12)
+}
+pub(crate) fn decode_custody_response(
+    bytes: &[u8],
+    maximum: usize,
+    expected_tag: u32,
+) -> io::Result<WireResponse> {
+    let invalid = || {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid custody response envelope",
+        )
+    };
+    if bytes.len() > maximum || bytes.len() < 18 {
         return Err(invalid());
     }
     let result_tag = u32::from_le_bytes(bytes[10..14].try_into().unwrap());
     let response_tag = u32::from_le_bytes(bytes[14..18].try_into().unwrap());
     match result_tag {
-        0 if response_tag == 12 => {}
+        0 if response_tag == expected_tag => {}
         1 if response_tag <= 6 && bytes.len() == 18 => {}
         1 if matches!(response_tag, 7 | 8) && bytes.len() >= 26 => {
             let length = u64::from_le_bytes(bytes[18..26].try_into().unwrap());
@@ -261,7 +276,7 @@ pub(crate) fn decode_page_response(bytes: &[u8]) -> io::Result<WireResponse> {
     }
     bincode::DefaultOptions::new()
         .with_fixint_encoding()
-        .with_limit(crate::MAX_PAGE_BATCH_RESPONSE_BYTES as u64)
+        .with_limit(maximum as u64)
         .reject_trailing_bytes()
         .deserialize(bytes)
         .map_err(io::Error::other)

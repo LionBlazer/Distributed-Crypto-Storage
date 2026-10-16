@@ -332,6 +332,13 @@ impl Store {
         let (_, data, index) = self.read_verified(request.object())?;
         crate::PageBatch::from_snapshots(request, &data, &index).map_err(|_| RemoteError::Integrity)
     }
+    pub(crate) fn get_read_image(
+        &mut self,
+        request: crate::ReadImageRequest,
+    ) -> Result<crate::ReadImage, RemoteError> {
+        let (_, data, index) = self.read_verified(request.object())?;
+        crate::ReadImage::from_snapshots(request, data, &index).map_err(|_| RemoteError::Integrity)
+    }
     // Every route audits the complete physical bundle, including unrequested
     // bytes in both images. Cached names/status never establish custody.
     fn read_verified(
