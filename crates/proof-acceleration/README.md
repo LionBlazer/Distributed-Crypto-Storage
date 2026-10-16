@@ -5,8 +5,12 @@ proof protocol. This crate does not change FHE parameters, the arithmetic relati
 the proof frame, security settings, authorization or freshness checks.
 
 The default `loader` feature depends directly on `libloading = 0.8.9`. The
-`--no-default-features` build is `no_std` and exports only `Kind`, `Timings` and
-the shared `abi` POD definitions/constants; kernel wrappers depend on that mode.
+`--no-default-features` build is `no_std` and exports `Kind`, `Timings`,
+`worker_budget`, `MAX_PROOF_WORKERS` and the shared `abi` POD definitions/constants;
+kernel wrappers depend on that mode. `worker_budget(available, requested)` is a
+pure deployment policy: it clamps available/requested CPU workers to 1..8 and
+retains no environment, process, pool or SQL state. Invalid or zero requests use
+the bounded default; callers own environment reads and actual pool creation.
 No storage, SQL, playground or application crate is a dependency.
 
 ## Host contract

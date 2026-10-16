@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 relational-types = { path = "../crates/relational-types" }
 bfv-query-proof = { path = "../crates/bfv-query-proof" }
+proof-acceleration = { path = "../crates/proof-acceleration" }
 peer-runtime = { path = "../crates/peer-runtime" }
 peer-transport = { path = "../crates/peer-transport" }
 storage-client = { path = "../crates/storage-client" }

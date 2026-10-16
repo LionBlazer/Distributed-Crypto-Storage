@@ -2,6 +2,7 @@ mod graph_bundling;
 mod graph_layout;
 mod graph_routing;
 mod process_backend;
+mod resources;
 mod samples;
 mod supervision;
 mod traffic;
@@ -30,9 +31,9 @@ fn main() -> eframe::Result {
         }
     }
     rayon::ThreadPoolBuilder::new()
-        .num_threads(8)
+        .num_threads(resources::cpu_workers())
         .build_global()
-        .expect("configure the GUI's eight FHE CPU threads");
+        .expect("configure the GUI's bounded FHE CPU workers");
     eframe::run_native(
         "DCS | FHE Playground",
         eframe::NativeOptions {

@@ -9,7 +9,7 @@ bounds and serialized proof formats are identical across variants.
 | Direct project dependency | Responsibility |
 | --- | --- |
 | [bfv-query-proof](../../crates/bfv-query-proof/README.md) | Genuine arithmetic generation and verification; runtime dispatch disabled in production kernel builds |
-| [proof-acceleration](../../crates/proof-acceleration/README.md) | Versioned fixed-profile C ABI and shared ISA/profile identifiers; loader disabled in production kernel builds |
+| [proof-acceleration](../../crates/proof-acceleration/README.md) | Fixed-profile C ABI, ISA/profile identifiers and bounded CPU worker policy; loader disabled in production kernel builds |
 
 The three exports are `dcs_proof_backend_info_v1`,
 `dcs_proof_backend_prove_v1`, and `dcs_proof_backend_verify_v1`. The host owns every
@@ -41,8 +41,9 @@ cargo test --release --locked -p dcs-proof-kernel --lib
 ```
 
 The launcher's exact per-ISA flags and deployment filenames belong to the launcher
-and ABI loader. Unit tests cover descriptor identity, malformed buffers and stable
-rejection codes, worker budgets and private-pool reuse. The explicit cross-variant
+and ABI loader. Unit tests cover descriptor identity, malformed buffers, stable
+rejection codes and private-pool reuse. Shared worker-budget cases belong to
+proof-acceleration's tests. The explicit cross-variant
 integration test builds genuine addition and product proofs and verifies them across
 installed supported variants. After `dcs-launch --build-only`, run the following
 from the repository root with a portable test host build, without native/AVX-only

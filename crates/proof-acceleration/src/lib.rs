@@ -5,6 +5,20 @@
 pub mod abi;
 pub use abi::Timings;
 
+/// Maximum CPU workers in one fixed-profile proof engine, independent of ISA.
+pub const MAX_PROOF_WORKERS: usize = 8;
+
+/// Resolve a caller-provided worker request without reading process environment.
+/// Invalid or zero requests use the available bounded default; valid requests
+/// may lower that budget but never exceed available CPUs or the engine cap.
+pub fn worker_budget(available: usize, requested: Option<&str>) -> usize {
+    let default = available.clamp(1, MAX_PROOF_WORKERS);
+    requested
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|count| *count > 0)
+        .map_or(default, |count| count.min(default))
+}
+
 /// Deployment/descriptor identifier, independent of serialized Rust enum layouts.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,3 +77,28 @@ pub use loader::{CallError, Kernel, LoadError, Proved};
 #[cfg(feature = "loader")]
 #[allow(unsafe_code)]
 mod ffi;
+
+#[cfg(test)]
+mod worker_budget_tests {
+    use super::*;
+
+    #[test]
+    fn requested_workers_respect_available_cpus_and_the_engine_cap() {
+        for (available, expected) in [(0, 1), (1, 1), (4, 4), (8, 8), (128, 8)] {
+            assert_eq!(worker_budget(available, None), expected);
+            assert_eq!(worker_budget(available, Some("999")), expected);
+        }
+        assert_eq!(worker_budget(128, Some("2")), 2);
+        assert_eq!(worker_budget(4, Some("2")), 2);
+        assert_eq!(worker_budget(2, Some("4")), 2);
+        assert_eq!(worker_budget(128, Some(" 3 ")), 3);
+    }
+
+    #[test]
+    fn invalid_or_zero_requests_use_the_bounded_default() {
+        for requested in ["", "0", "-1", "many", "184467440737095516160", "1.5"] {
+            assert_eq!(worker_budget(128, Some(requested)), 8);
+            assert_eq!(worker_budget(2, Some(requested)), 2);
+        }
+    }
+}

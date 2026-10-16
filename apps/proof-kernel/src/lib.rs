@@ -3,22 +3,12 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use bfv_query_proof::{Error, ProverTimings, VerifierTimings};
-use proof_acceleration::{Timings, abi};
+use proof_acceleration::{Timings, abi, worker_budget};
 use std::mem::{align_of, size_of};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 use std::sync::OnceLock;
 use std::time::Duration;
-
-const MAX_WORKERS: usize = 8;
-
-fn worker_budget(available: usize, requested: Option<&str>) -> usize {
-    let default = available.clamp(1, MAX_WORKERS);
-    requested
-        .and_then(|value| value.trim().parse::<usize>().ok())
-        .filter(|count| *count > 0)
-        .map_or(default, |count| count.min(default))
-}
 
 fn worker_pool() -> Result<&'static rayon::ThreadPool, u32> {
     static POOL: OnceLock<Result<rayon::ThreadPool, u32>> = OnceLock::new();
@@ -293,31 +283,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn worker_budget_respects_available_cpus_and_the_fixed_eight_worker_cap() {
-        for (available, expected) in [(0, 1), (1, 1), (4, 4), (8, 8), (128, 8)] {
-            assert_eq!(worker_budget(available, None), expected);
-            assert_eq!(worker_budget(available, Some("999")), expected);
-        }
-        assert_eq!(worker_budget(128, Some("2")), 2);
-        assert_eq!(worker_budget(4, Some("2")), 2);
-        assert_eq!(worker_budget(2, Some("4")), 2);
-        assert_eq!(worker_budget(128, Some(" 3 ")), 3);
-    }
-
-    #[test]
-    fn malformed_zero_negative_and_overflowing_worker_requests_use_the_bounded_default() {
-        for requested in ["", "0", "-1", "many", "184467440737095516160", "1.5"] {
-            assert_eq!(worker_budget(128, Some(requested)), 8);
-            assert_eq!(worker_budget(2, Some(requested)), 2);
-        }
-    }
-
-    #[test]
     fn the_kernel_reuses_one_private_bounded_pool() {
         let first = worker_pool().unwrap();
         let second = worker_pool().unwrap();
         assert!(ptr::eq(first, second));
-        assert!((1..=MAX_WORKERS).contains(&first.current_num_threads()));
+        assert!((1..=proof_acceleration::MAX_PROOF_WORKERS).contains(&first.current_num_threads()));
         assert_eq!(
             first.install(rayon::current_num_threads),
             first.current_num_threads()

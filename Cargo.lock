@@ -1279,6 +1279,7 @@ dependencies = [
  "peer-protocol",
  "peer-runtime",
  "peer-transport",
+ "proof-acceleration",
  "rayon",
  "rcgen",
  "relational-types",

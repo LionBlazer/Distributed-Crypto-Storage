@@ -34,6 +34,15 @@ parameters, and a CPU without the optional x86 instructions uses the genuine
 compiled baseline. The launcher does not use `target-cpu=native`. Packaging several
 ISA variants does not establish a latency SLA.
 
+The GUI's FHE pool and each supervised peer use the same bounded CPU budget as
+the proof kernels: 1..8 workers, capped by available CPUs. A smaller positive
+`RAYON_NUM_THREADS` lowers that budget; invalid or zero requests use the bounded
+default. [proof-acceleration](../crates/proof-acceleration/README.md) owns the pure
+budget calculation; this adapter owns environment reads and child configuration.
+Peers no longer receive a hard-coded two-worker override. This is a per-process
+CPU cap, not a bound on total host threads or measured peak RAM. Each peer still
+admits only one heavy operation at a time.
+
 ## Network behavior and limits
 
 Each peer starts as a separate hidden child process with a real PID, ephemeral TLS

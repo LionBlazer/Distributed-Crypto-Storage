@@ -91,7 +91,10 @@ impl OwnedPeer {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .env("RAYON_NUM_THREADS", "2");
+            .env(
+                "RAYON_NUM_THREADS",
+                crate::resources::cpu_workers().to_string(),
+            );
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
