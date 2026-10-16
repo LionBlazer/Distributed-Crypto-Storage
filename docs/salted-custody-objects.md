@@ -4,7 +4,8 @@ This is a selected **prototype upgrade**, not a change to the requirements or a
 new SQL, consensus or cryptographic-computation guarantee. Old networks and
 workspaces reject; no migration, compatibility alias or fallback is provided.
 BFV/STARK parameters, kernel ABI, CSTORE01 images and private index formats stay
-unchanged. No latency or process-RAM improvement is established by this format.
+unchanged. The [matched operation record](../experiments/combined-sql/CUSTODY-PROFILE-MEASUREMENTS.md)
+reports measured prototype latency and its limits; no process-RAM improvement is established.
 
 ## Identity and metadata boundary
 
@@ -110,5 +111,6 @@ Owning tests use actual codecs, plus corruption, exact-envelope equality, nonce
 retention, quota, namespace byte-preservation and real process/proof/freshness paths.
 
 Removing the old whole-object hash removes 37,604,528 bytes of SHA input per legacy
-ID computation in this geometry. Complete Merkle audits remain. Performance needs
-matched whole-operation measurements; this document claims no milliseconds saved.
+ID computation in this geometry. Complete Merkle audits remain. The matched
+whole-operation measurements do not isolate the hash change or establish a
+general 500-ms bound.

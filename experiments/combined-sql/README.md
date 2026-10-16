@@ -19,6 +19,10 @@ The [shared-packet record](SHARED-PACKETS-MEASUREMENTS.md) retains both ownershi
 experiments, including the regression, final timings and separate memory observations.
 The [static aggregate comparison](AGGREGATE-MEASUREMENTS.md) measures complete
 COUNT/SUM over the same million-row source before and after fixed ReadImage preparation.
+The [object-profile comparison](CUSTODY-PROFILE-MEASUREMENTS.md) separates corrected
+clean timings from the first instrumented window. The subsequent
+[static UPDATE comparison](STATIC-UPDATE-MEASUREMENTS.md) records full mutation
+latency while retaining complete final custody verification.
 
 ## Full accepted operations
 
