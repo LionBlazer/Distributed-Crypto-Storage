@@ -87,7 +87,7 @@ impl Owner {
     ) -> Result<ExactSelection> {
         self.proof_selection_read(&table.read_view(), predicate, budget, limits)
     }
-    fn proof_selection_read(
+    pub(super) fn proof_selection_read(
         &self,
         source: &crate::ReadView<'_>,
         predicate: Option<AgeRange>,

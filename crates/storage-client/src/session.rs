@@ -16,6 +16,7 @@ mod execution;
 mod insert;
 mod pending;
 mod select;
+mod source;
 mod update;
 mod writeback;
 use pending::{MutationOutcome, PendingMutation, StoredMutation};

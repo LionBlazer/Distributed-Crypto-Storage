@@ -164,28 +164,32 @@ or automatically replays earlier statements. Session retains an ambiguous mutati
 for the existing `resume_pending` recovery contract. Ordinary syntax and table
 lifecycle errors are caught before the creator or any query executes.
 
-Every successful SELECT follows:
+Every successful fixed-schema row SELECT or COUNT/SUM follows:
 
 1. Synchronize and independently validate work, bodies, authorization and job proofs.
    Resolve the latest locally confirmed descendant of the previous read/write token.
-2. Fetch the same static encrypted ReadImage for every row SELECT on the same
+2. Fetch the same static encrypted ReadImage for every such read on the same
    public geometry: the entire data image and padded index posting prefix. Pin
    TableId and both agreed heads; authenticate complete private index coverage and
    selected pages before preparing original FHE operands. With explicit LIMIT,
    validate every matching posting and original candidate, retaining only the first
    `min(local matches, limit)` rows in physical ordinal order. This retained set must
    fit 256 slots; a larger literal is never silently clamped. Without LIMIT, the
-   complete matching set must fit the existing budget.
+   complete matching set must fit the existing budget. COUNT/SUM authenticate all
+   matches within their separate 2560-row-per-shard budget and prepare the original
+   encrypted amount limbs and presence markers. Both read forms share a private
+   static-source adapter with no predicate-dependent transport choice.
 3. Ask a peer for the full-residue STARK and encrypted result. Derive the trusted
    canonical input from the pending request and verify every shard, joining all
    admitted workers while retaining encrypted results.
 4. Recheck confirmed ancestry and state, then recheck current TableId and both
-   heads before decrypting any result. Merge proved shard prefixes by global
-   `ordinal * shard_count + shard_slot`, then apply the global LIMIT; return
-   `VerifiedResult` with the confirmed `HeadRef`.
+   heads before decrypting any result. Merge proved row prefixes by global
+   `ordinal * shard_count + shard_slot`, then apply the global LIMIT. For aggregates,
+   decrypt each checked encrypted partial count/sum only after this gate and add
+   them with overflow checks. Return `VerifiedResult` with the confirmed `HeadRef`.
    A reorganization or conflicting state requires retry.
 
-Fixed row SELECT never requests predicate-dependent pages or counts and never
+Fixed row SELECT and COUNT/SUM never request predicate-dependent pages or counts and never
 falls back to whole Fetch, FetchPages or selected-ID retrieval. Projection, LIMIT0,
 absent buckets and schema-false predicates use identical ReadImage frame lengths
 for a given geometry; even empty selections require genuine encrypted proofs.
@@ -196,7 +200,7 @@ claim sparse disk I/O. Its 16-MiB frame cap and 512-prefix-page cap cover the fi
 core geometry. This profile introduces no new selection-dependent address/volume
 leak relative to the existing full-fetch path; public layout, operation timing,
 failures and the existing owner-online conversion boundary remain observable.
-The typed imported-catalog path and aggregate/mutation full-image reads are unchanged.
+The typed imported-catalog path and mutation full-image reads are unchanged.
 The fixed LIMIT path still validates O(matches) source rows, including discarded
 candidates and LIMIT0, plus O(table rows / 64) bitmap traversal. It uses a zeroizing
 bitmap of at most 125,000 bytes per shard and one decrypted data-page scratch
@@ -213,6 +217,10 @@ images are dropped before proof waits. No persistent field/page answer cache is 
 The real-process `proved_sql` tests assert actual frame counts/lengths across query
 variants, complete over-budget rejection, empty-table proofs, interrupted image
 retrieval without fallback, and cancelled final freshness after a real proof reply.
+Aggregate tests cover the same cases, a sparse 2560-match million-row source and
+identical source frame lengths across COUNT, SUM, empty predicates and row SELECT.
+These transfer bounds do not establish a latency improvement; end-to-end timings
+must be measured separately with matching process and proof profiles.
 
 INSERT/UPDATE complete every proof and overflow check before sealing verified
 decrypted outputs into new compact images. Their client-owned `JobVerifier` derives

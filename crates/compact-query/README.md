@@ -174,9 +174,20 @@ separate 256-row bounds. The authenticated total count is preflighted before
 posting traversal or FHE; excess rejects without a result prefix. Arbitrary owner
 vectors cannot construct this storage-bound preparation. Original fields, pages
 and ordinals are dropped/zeroized after encryption; only the encrypted request,
-exact heads and cardinality/keyset/context pending capability remain. No aggregate
-answer comes from retained source fields. The owner-online AEAD-to-FHE boundary
-and aggregate full-snapshot network retrieval remain unchanged.
+exact logical TableId, both heads and cardinality/keyset/context pending capability
+remain. No aggregate answer comes from retained source fields. The owner-online
+AEAD-to-FHE boundary remains unchanged.
+
+`prepare_provable_aggregate_from_source` shares that complete parser through
+`ReadView`; a source can own only the fixed posting prefix and omit the encrypted
+RowId tail. It never constructs a partial Table or pretends the omitted pages
+were audited. Existing full-table preparation forwards to this same implementation.
+`check_aggregate_proof_for_heads` and `complete_checked_aggregate_for_heads` recheck
+the entire `ReadHeads`, including TableId, before proof acceptance or decryption;
+the full-table methods forward with `table.read_heads()`. Only encrypted pending
+state remains during a peer proof wait. The network caller establishes agreed
+freshness before checked completion. Neither these source contracts nor the
+arithmetic proof supply the missing public source-completeness proof or finality.
 
 The new path composes [bfv-query-proof](../bfv-query-proof/README.md) with the private
 exact-selection constructor. `prepare_provable_select` and `prepare_provable_update`
