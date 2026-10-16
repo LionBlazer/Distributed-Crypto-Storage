@@ -82,7 +82,7 @@ impl RemotePeer {
             .next
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
             .map_err(|_| io::Error::other("Request identity space exhausted"))?;
-        let (response_limit, expected_custody_tag) = match &request {
+        let (response_limit, custody_tag) = match &request {
             Request::FetchPages(_) => (crate::MAX_PAGE_BATCH_RESPONSE_BYTES, Some(12)),
             Request::FetchReadImage(_) => (crate::MAX_READ_IMAGE_RESPONSE_BYTES, Some(13)),
             Request::StoreDelta(_) => (crate::MAX_STORE_DELTA_RESPONSE_BYTES, Some(2)),
@@ -123,10 +123,9 @@ impl RemotePeer {
                     bytes: received,
                 });
             }
-            let response: WireResponse = if let Some(tag) = expected_custody_tag {
-                decode_custody_response(&payload, response_limit, tag)?
-            } else {
-                decode(&payload)?
+            let response: WireResponse = match custody_tag {
+                Some(tag) => decode_custody_response(&payload, response_limit, tag)?,
+                None => decode(&payload)?,
             };
             if response.version != 1 || response.id != id {
                 return Err(io::Error::new(

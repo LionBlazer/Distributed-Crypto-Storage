@@ -509,6 +509,102 @@ fn proved_projection_uses_postgresql_null_order_before_applying_limit() {
 }
 
 #[test]
+fn proved_row_windows_skip_after_ordering_and_extend_only_the_last_peer_group() {
+    let network = Network::new();
+    let database = import_database_dump(
+        "CREATE TABLE ranks (id INT NOT NULL, score INT NULL); INSERT INTO ranks VALUES (1,NULL),(2,10),(3,-5),(4,NULL),(5,10);",
+        ImportLimits::default(),
+    )
+    .unwrap();
+    let mut session =
+        RelationalSession::import(database, network.participants.clone(), test_profile()).unwrap();
+    let initial = session.version();
+    for (tail, expected) in [
+        ("ORDER BY score LIMIT 1 OFFSET 1", vec![2]),
+        (
+            "ORDER BY score OFFSET 1 ROW FETCH NEXT 1 ROWS WITH TIES",
+            vec![2, 5],
+        ),
+        ("ORDER BY score OFFSET 2 FETCH FIRST ROW WITH TIES", vec![5]),
+        ("ORDER BY score DESC FETCH FIRST ROW ONLY", vec![1]),
+        ("ORDER BY score DESC FETCH FIRST ROW WITH TIES", vec![1, 4]),
+        (
+            "ORDER BY score NULLS FIRST, id DESC OFFSET 1 FETCH FIRST 2 ROWS WITH TIES",
+            vec![1, 3],
+        ),
+        ("ORDER BY score LIMIT ALL OFFSET 3 ROWS", vec![1, 4]),
+        ("ORDER BY score OFFSET NULL LIMIT NULL", vec![3, 2, 5, 1, 4]),
+        (
+            "ORDER BY score FETCH FIRST (NULL) ROWS ONLY OFFSET (3)",
+            vec![1, 4],
+        ),
+        ("ORDER BY score LIMIT 0 OFFSET 1", vec![]),
+        ("ORDER BY score FETCH FIRST 0 ROWS WITH TIES", vec![]),
+        ("ORDER BY score OFFSET 9223372036854775807", vec![]),
+    ] {
+        let sql = format!("SELECT id FROM ranks {tail}");
+        network.activity.lock().unwrap().clear();
+
+        let selected = session.select(&sql).unwrap();
+
+        assert_eq!(
+            selected.rows,
+            expected
+                .into_iter()
+                .map(|id| vec![Value::Integer(id)])
+                .collect::<Vec<_>>(),
+            "{sql}"
+        );
+        assert_eq!(selected.version, initial);
+        assert_eq!(selected.proof_blocks, 1);
+        assert_eq!(
+            network
+                .activity
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|operation| *operation == "fhe-proof")
+                .count(),
+            1,
+            "Even an empty window needs an actual encrypted-result proof: {sql}"
+        );
+    }
+
+    for tail in [
+        "FETCH FIRST ROW WITH TIES",
+        "LIMIT ALL LIMIT 1",
+        "LIMIT NULL FETCH FIRST ROW ONLY",
+        "OFFSET NULL OFFSET 1",
+        "OFFSET -1",
+        "LIMIT 9223372036854775808",
+        "FETCH NEXT 2 ROWS",
+        "FETCH FIRST ROW ONLY FOR UPDATE SKIP LOCKED",
+    ] {
+        network.activity.lock().unwrap().clear();
+        assert!(
+            session
+                .select(&format!("SELECT id FROM ranks {tail}"))
+                .is_err(),
+            "{tail}"
+        );
+        assert!(
+            network.activity.lock().unwrap().is_empty(),
+            "Reject before network execution: {tail}"
+        );
+    }
+
+    let object = session.shards()[0].object;
+    network.damage_bundle(0, object);
+    network.damage_bundle(1, object);
+    assert!(
+        session
+            .select("SELECT id FROM ranks ORDER BY score LIMIT 0 OFFSET 5")
+            .is_err(),
+        "An empty window must not conceal corrupted source replicas"
+    );
+}
+
+#[test]
 fn damaged_replicas_cannot_silently_omit_rows_or_return_an_unproved_empty_result() {
     let network = Network::new();
     let database = import_database_dump(

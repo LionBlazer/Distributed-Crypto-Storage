@@ -7,8 +7,9 @@ projection and encrypted stable row identities. They do not establish complete
 PostgreSQL, SQL row locks, production consensus, a general 500-ms bound or a
 whole-process resource guarantee.
 
-The [latest combined recheck](#q2-page-custody-and-collection-recheck) below pins
-the later Q2/page-custody/collection integration separately from this original record.
+The [Q2 combined recheck](#q2-page-custody-and-collection-recheck) and the later
+[matched static-read comparison](#matched-static-select-read-images) below pin
+their source and artifact identities separately from this original record.
 
 ## Full accepted operations
 
@@ -196,3 +197,96 @@ formatting, requirement mirroring and document links passed. Portable GUI all-ta
 tests and packaging passed; its two opt-in real-process SQL-script scenarios passed
 with the newly packaged peers. The historical Northwind validation above was not
 repeated for this recheck.
+
+## Matched static SELECT read images
+
+The before source is `4ff5d30505b78de3a7816ce5d24090fe9def5949`; the after source
+is `6c960a63695e0d2ba560cb874b02c8b688bff407`. The latter integrates static
+authenticated read images into fixed-schema SELECT, shared canonical index
+parsing, and proof/freshness completion boundaries. Both include the earlier Q2,
+collection and pagination changes. This compares the complete integrated SELECT
+path, not an isolated network microbenchmark.
+
+On the same Windows host, both sources used Rust 1.99.0/MSVC release,
+`-C target-cpu=native`, eight owner and eight peer Rayon threads, and the unchanged
+AVX-512 proof kernel. Profile v3 still covers all 81,920 residues; application v3,
+fixed private index v3 and the FHE/kernel ABI are unchanged. Other builds and proof
+jobs were held during both timing windows. No RPC/PID hook or memory monitor ran.
+Startup, keys and table creation are outside the SQL timers; complete
+`Session::execute` preparation, real peer I/O, genuine proof verification, encrypted
+result completion and final freshness checks are inside. Writes include Store,
+fsync, agreed publication, confirmation and synchronous collection.
+
+Each of the following unchanged real-daemon fixtures ran three fresh times per
+source: `million_row_private_index_crosses_real_custody_frames_and_agreed_update_restore`
+and `proved_select_insert_update_survive_a_process_loss_and_journal_restart`.
+All twelve scenarios and 54 individual SQL timers passed their exact output,
+proof, head, durability and recovery assertions. The million-row fixture has one
+peer, 999,999 age-7 rows and one age-42 row whose amount changes from 1 to 2 before
+SELECT. The small fixture has four initial rows, two shards and two peers, followed
+by one inserted row and three updated rows. Its failure read deliberately stops
+the first holder; its final empty read follows journal restart.
+
+Each cell below is minimum / median / maximum milliseconds over three samples.
+
+| Initial rows | Complete SQL operation | Before ms | After ms |
+| ---: | --- | ---: | ---: |
+| 1,000,000 | `SELECT * FROM records WHERE age = 42` | 451.701 / 455.573 / 476.499 | 337.816 / 350.141 / 352.530 |
+| 1,000,000 | `UPDATE records SET amount = amount + 1 WHERE age = 42` | 980.912 / 1065.072 / 1093.189 | 1030.326 / 1075.575 / 1085.137 |
+| 4 | `SELECT * FROM records` | 198.845 / 200.241 / 203.812 | 199.393 / 199.644 / 208.639 |
+| 4 | `SELECT amount, age FROM records WHERE age >= 18 LIMIT 1` | 198.985 / 202.107 / 204.403 | 196.916 / 204.154 / 205.969 |
+| 4 | `INSERT INTO records VALUES (21, 255)` | 252.800 / 265.378 / 266.614 | 253.504 / 256.486 / 264.261 |
+| 4 | `UPDATE records SET amount = amount + 1 WHERE age >= 18` | 403.527 / 416.530 / 428.871 | 407.338 / 409.023 / 417.837 |
+| 4 | `SELECT * FROM records WHERE age >= 18`, after writes | 231.429 / 235.398 / 238.624 | 241.320 / 242.982 / 252.538 |
+| 4 | `SELECT amount FROM records WHERE age = 21`, after holder loss | 2319.676 / 2320.025 / 2328.732 | 2311.490 / 2335.784 / 2336.006 |
+| 4 | `SELECT age FROM records WHERE age > 255`, after restart | 268.461 / 270.561 / 283.281 | 257.451 / 263.453 / 263.745 |
+
+The million-row SELECT median falls by 105.432 ms, or 23.1%. Its encoded response
+shrinks from the full bundle's 37,604,546 bytes to 5,461,664 bytes: all encrypted
+data and the fixed 493-page posting prefix, with actual Merkle proofs. The omitted
+private row-identity tail is not needed for SELECT. Selection depends only on
+committed public geometry; predicates, projections, empty results and LIMIT do not
+change that footprint. The server still audits the entire physical bundle and both
+snapshots, including the omitted tail. Malformed or missing omitted pages reject.
+See the [compact-query boundary](../../crates/compact-query/README.md) and
+[privacy contract](../../docs/postgresql-contract.md) for the exact scope.
+
+UPDATE still uses full-image reads and publication and its median remains about
+1.08 seconds. The stopped-holder SELECT remains about 2.34 seconds; the current
+connection attempt to the unavailable endpoint has a two-second budget. This
+comparison does not isolate that phase. Three samples do not establish a tail SLA,
+throughput, WAN behavior or a general 500-ms bound. RAM was not remeasured. Adaptive
+page access, padded UPDATE deltas, complete PostgreSQL and live locks are not part
+of either measured source. The unchanged fixture work target and confirmation
+policy do not establish production consensus security.
+
+The ignored raw directories each retain the manifest, six logs, all 27 timers and
+copies of the exact owner, peer and kernels:
+
+- `.local/static-read-image-runs/20261016-052408-014-before/`
+- `.local/static-read-image-runs/20261016-054415-241-after/`
+
+| Artifact | Before SHA256 | After SHA256 |
+| --- | --- | --- |
+| Owner/test | `7018BAB56A81177C65BFE13DEE779BD335C03AFA9BD0EC5F19D0A378E4EAD8D1` | `8A4BF94410F4CAB5DACA8BDDCCE46A68954CC6A0FC4058C6B85E847CC456DAC8` |
+| Peer `dcs-peer.exe` | `581EADECC4CA1AFC2A255FB90C1FAC8E10FC5722ED98485AA94194FA253A81A2` | `871DC11DFE50D0F9578DBB4562063184ACC6FEDA7C4897B646F5FDFB2ABEAABE` |
+
+Both kernel hashes are the unchanged values in the first artifact table. The
+before owner is `proved_sql-43b267abd6ab93e6.exe`; the after owner is
+`proved_sql-b77c1dcb3169d113.exe`. Reproduce by building each pinned source with the
+native configuration above, then running these two exact fixture names three times
+with `--exact --nocapture --test-threads=1` and both thread variables set to 8.
+The test executable embeds its build-time `CARGO_BIN_EXE_dcs-peer` path; copying it
+alone does not redirect peer lookup. At execution that path must contain the
+matching preserved or freshly built peer and kernels. Do not run a before owner
+against the after peer or build during timing.
+
+On the after source, the native owning suites passed 146 behavioral tests and one
+compile-fail contract. Strict native Clippy and formatting passed. Portable GUI
+all-target tests passed 193 tests with 10 opt-in tests ignored; architecture,
+requirement mirroring and strict Clippy passed. Fresh packaging and both opt-in
+real-process SQL-script scenarios passed separately. These checks cover actual
+read-image frame bounds, source/head rebinding, malformed omitted pages, genuine
+proof rejection, cancellation before RPC and after proof, and mandatory final
+freshness. The historical Northwind scenario and memory observation were not rerun
+in this matched comparison.

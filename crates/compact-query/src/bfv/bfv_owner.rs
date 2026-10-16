@@ -221,7 +221,7 @@ impl Owner {
         Ok(PreparedSelect {
             request: prepared.request,
             pending: prepared.pending,
-            selection,
+            selection: SelectState::from_selection(table.read_heads(), selection),
         })
     }
     /// Recheck both current heads and consume encrypted peer output. Returned fields
@@ -232,7 +232,15 @@ impl Owner {
         prepared: PreparedSelect,
         output: &[u8],
     ) -> Result<UnverifiedSelectedRows> {
-        current(table, &prepared.selection)?;
+        self.complete_select_for_heads(&table.read_heads(), prepared, output)
+    }
+    pub(super) fn complete_select_for_heads(
+        &self,
+        heads: &crate::ReadHeads,
+        prepared: PreparedSelect,
+        output: &[u8],
+    ) -> Result<UnverifiedSelectedRows> {
+        current_select(heads, &prepared.selection)?;
         let answer = self
             .key
             .decrypt_indexed_select_unverified_for_experiment(prepared.pending, output)?;
@@ -265,35 +273,37 @@ impl Owner {
         budget: index::MaterializationBudget,
         limits: Limits,
     ) -> Result<ExactSelection> {
+        self.select_exact_read(&table.read_view(), predicate, budget, limits)
+    }
+    pub(super) fn select_exact_read(
+        &self,
+        source: &crate::ReadView<'_>,
+        predicate: AgeRange,
+        budget: index::MaterializationBudget,
+        limits: Limits,
+    ) -> Result<ExactSelection> {
         predicate.validate()?;
-        check_schema(table.commitment())?;
-        let ordinals = index::select(
-            &self.store,
-            &table.index,
-            table.commitment(),
-            table.table_id(),
-            predicate,
-            budget,
-            &mut 0,
-        )?;
+        let heads = source.heads();
+        check_schema(heads.data())?;
+        let ordinals = index::select(&self.store, source.index, heads, predicate, budget, &mut 0)?;
         // Capacity is known before any plaintext fields exist; never grow/copy their allocation.
         let fields = Vec::with_capacity(ordinals.len());
         let mut selection = ExactSelection {
-            data_head: table.commitment().clone(),
-            index_head: table.index_commitment().clone(),
+            data_head: heads.data().clone(),
+            index_head: heads.index().clone(),
             ordinals,
             fields,
             pages: BTreeMap::new(),
         };
-        let layout = table.commitment().layout();
+        let layout = heads.data().layout();
         for ordinal in &selection.ordinals {
             let address = layout.address_of(*ordinal)?;
             if let std::collections::btree_map::Entry::Vacant(entry) =
                 selection.pages.entry(address.page_index)
             {
-                let wire = table.data.lookup(address.page_index, limits)?.encode();
-                let verified = compact_store::LookupResponse::decode(&wire, limits)?.verify(
-                    table.commitment(),
+                let verified = crate::read::checked_page(
+                    source.data,
+                    heads.data(),
                     address.page_index,
                     limits,
                 )?;
@@ -313,7 +323,9 @@ impl Owner {
                 active: true,
             });
         }
-        current(table, &selection)?;
+        if source.data.commitment() != heads.data() || source.index.commitment() != heads.index() {
+            return Err(Error::WrongVersion);
+        }
         Ok(selection)
     }
     pub fn prepare_exact_aggregate_for_experiment(

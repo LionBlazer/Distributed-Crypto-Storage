@@ -4103,6 +4103,7 @@ name = "storage-client"
 version = "0.1.0"
 dependencies = [
  "bfv-query-core",
+ "bfv-query-proof",
  "compact-query",
  "compact-store",
  "ed25519-dalek",

@@ -1,6 +1,7 @@
 //! Compact authenticated storage composed with genuine selective FHE evaluation.
 //! Owner-assisted index selection and writeback are explicit experimental policy.
-//! Outputs carry no proof of correct or complete computation.
+//! Historical experiment outputs are unverified; explicit proved BFV methods check
+//! genuine arithmetic evidence and complete authenticated input selection.
 #![forbid(unsafe_code)]
 #[cfg(feature = "bfv-experiment")]
 pub mod bfv;
@@ -10,7 +11,11 @@ pub mod byte_select;
 mod evaluator;
 mod identity;
 mod index;
+mod read;
 pub use identity::{RowId, RowIds, RowReference, RowReferences, TableId};
+#[cfg(feature = "bfv-experiment")]
+pub use read::ReadView;
+pub use read::{PageSource, ReadHeads, ReadRequirements};
 #[cfg(feature = "tfhe-backend")]
 mod owner;
 mod storage;

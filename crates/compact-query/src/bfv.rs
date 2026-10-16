@@ -47,11 +47,34 @@ pub struct PreparedAggregate {
     pending: bfv_core::PendingIndexedAggregate,
     selection: ExactSelection,
 }
-/// One-use storage/head-bound encrypted SELECT operation.
+struct SelectState {
+    heads: crate::ReadHeads,
+    ordinals: Vec<u64>,
+}
+impl SelectState {
+    fn from_selection(heads: crate::ReadHeads, mut selection: ExactSelection) -> Self {
+        let ordinals = std::mem::take(&mut selection.ordinals);
+        // Input fields and decrypted pages are zeroized before any network wait.
+        drop(selection);
+        Self { heads, ordinals }
+    }
+}
+impl Drop for SelectState {
+    fn drop(&mut self) {
+        self.ordinals.zeroize();
+    }
+}
+fn current_select(heads: &crate::ReadHeads, state: &SelectState) -> Result<()> {
+    if heads != &state.heads {
+        return Err(Error::WrongVersion);
+    }
+    Ok(())
+}
+/// One-use storage/head-bound encrypted SELECT operation; retains no source plaintext.
 pub struct PreparedSelect {
     request: Vec<u8>,
     pending: bfv_core::PendingIndexedSelect,
-    selection: ExactSelection,
+    selection: SelectState,
 }
 /// One-use checked append state; only ciphertext request crosses to the evaluator.
 pub struct PreparedInsert {

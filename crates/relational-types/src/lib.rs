@@ -13,7 +13,9 @@ use std::{cmp::Ordering, fmt};
 
 pub use codec::{decode_row, decode_value, encode_row, encode_row_with_ranges, encode_value};
 pub use dump::{ImportLimits, import_database_dump, validate_database};
-pub use select::{CompareOp, Expr, OrderBy, SelectPlan, plan_select, plan_select_schemas};
+pub use select::{
+    CompareOp, Expr, OrderBy, RowWindow, SelectPlan, plan_select, plan_select_schemas,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DataType {

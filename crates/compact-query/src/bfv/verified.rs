@@ -85,21 +85,26 @@ impl Owner {
         budget: index::MaterializationBudget,
         limits: Limits,
     ) -> Result<ExactSelection> {
+        self.proof_selection_read(&table.read_view(), predicate, budget, limits)
+    }
+    fn proof_selection_read(
+        &self,
+        source: &crate::ReadView<'_>,
+        predicate: Option<AgeRange>,
+        budget: index::MaterializationBudget,
+        limits: Limits,
+    ) -> Result<ExactSelection> {
+        let heads = source.heads();
         match predicate {
-            Some(range) => self.select_exact(table, range, budget, limits),
+            Some(range) => self.select_exact_read(source, range, budget, limits),
             // None is the SQL planner's schema-proven constant-false predicate.
             // It examines no stored field and is not a substitute for filtering data.
             None => {
-                check_schema(table.commitment())?;
-                index::check_binding(
-                    &self.store,
-                    &table.index,
-                    table.commitment(),
-                    table.table_id(),
-                )?;
+                check_schema(heads.data())?;
+                index::check_binding(&self.store, source.index, heads)?;
                 Ok(ExactSelection {
-                    data_head: table.commitment().clone(),
-                    index_head: table.index_commitment().clone(),
+                    data_head: heads.data().clone(),
+                    index_head: heads.index().clone(),
                     ordinals: vec![],
                     fields: vec![],
                     pages: BTreeMap::new(),
@@ -118,8 +123,26 @@ impl Owner {
         budget: usize,
         limits: Limits,
     ) -> Result<PreparedSelect> {
-        let selection = self.proof_selection(
-            table,
+        self.prepare_provable_select_from_source(
+            &table.read_view(),
+            predicate,
+            projection,
+            budget,
+            limits,
+        )
+    }
+    /// Same canonical complete parser for full snapshots and immutable read views.
+    /// Source plaintext is erased immediately after fresh encrypted preparation.
+    pub fn prepare_provable_select_from_source(
+        &self,
+        source: &crate::ReadView<'_>,
+        predicate: Option<AgeRange>,
+        projection: RowProjection,
+        budget: usize,
+        limits: Limits,
+    ) -> Result<PreparedSelect> {
+        let selection = self.proof_selection_read(
+            source,
             predicate,
             index::MaterializationBudget::rows(budget),
             limits,
@@ -135,7 +158,7 @@ impl Owner {
         Ok(PreparedSelect {
             request: prepared.request,
             pending: prepared.pending,
-            selection,
+            selection: SelectState::from_selection(source.heads().clone(), selection),
         })
     }
 
@@ -173,12 +196,12 @@ impl Owner {
     /// selection, so another real executor may be tried after an invalid proof.
     pub fn check_select_proof(
         &self,
-        table: &Table,
+        heads: &crate::ReadHeads,
         prepared: &PreparedSelect,
         output: &[u8],
         proof: &[u8],
     ) -> Result<bfv_query_proof::CheckedOperation> {
-        current(table, &prepared.selection)?;
+        current_select(heads, &prepared.selection)?;
         let input = self.linear.select_circuit_request(prepared.request())?;
         bfv_query_proof::verify(&input, output, proof).map_err(proof_error)
     }
@@ -215,27 +238,27 @@ impl Owner {
         output: &[u8],
         proof: &[u8],
     ) -> Result<VerifiedSelection> {
-        let evidence = self.check_select_proof(table, &prepared, output, proof)?;
-        self.complete_checked_select(table, prepared, output, evidence)
+        let heads = table.read_heads();
+        let evidence = self.check_select_proof(&heads, &prepared, output, proof)?;
+        self.complete_checked_select(&heads, prepared, output, evidence)
     }
 
     /// Rechecks current heads and exact evidence binding before restoration and
     /// decryption. A marker from another pending request cannot finish this one.
     pub fn complete_checked_select(
         &self,
-        table: &Table,
+        heads: &crate::ReadHeads,
         prepared: PreparedSelect,
         output: &[u8],
         evidence: bfv_query_proof::CheckedOperation,
     ) -> Result<VerifiedSelection> {
-        current(table, &prepared.selection)?;
+        current_select(heads, &prepared.selection)?;
         let input = self.linear.select_circuit_request(prepared.request())?;
         require_checked_statement(&evidence, &input, output)?;
         let response = self
             .linear
             .restore_select_circuit_output(prepared.request(), output)?;
-        let answer =
-            self.complete_exact_select_unverified_for_experiment(table, prepared, &response)?;
+        let answer = self.complete_select_for_heads(heads, prepared, &response)?;
         Ok(VerifiedSelection {
             rows: answer.rows,
             evidence,

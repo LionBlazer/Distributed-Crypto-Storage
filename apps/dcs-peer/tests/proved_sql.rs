@@ -1811,3 +1811,303 @@ fn a_known_holder_endpoint_alias_is_rejected_before_proof_or_full_store() {
         objects
     );
 }
+
+#[test]
+fn fixed_select_fetches_identical_static_images_for_projections_limits_absent_and_false_predicates()
+{
+    use std::sync::{Arc, Mutex};
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let process = Process::start(owner.fingerprint(), 1, None);
+    let events = Arc::new(Mutex::new(Vec::<peer_runtime::Trace>::new()));
+    let observed = events.clone();
+    let mut participant = process.participant(1, &connector);
+    participant.remote = participant.remote.with_trace(Arc::new(move |event| {
+        if matches!(
+            event.operation.as_str(),
+            "read-image" | "fetch" | "fetch-version" | "fetch-pages" | "fhe-proof"
+        ) {
+            let mut events = observed.lock().unwrap();
+            assert!(events.len() < 64, "Bounded metadata recorder overflow");
+            events.push(event);
+        }
+    }));
+    let source: Vec<_> = (0..6040)
+        .map(|i| PlainRow {
+            age: if i % 25 == 0 { 18 } else { 7 },
+            amount: i as u16,
+        })
+        .collect();
+    let mut session = Session::create(
+        "static-read-shape".into(),
+        &source,
+        vec![participant.clone()],
+        test_contract(),
+    )
+    .unwrap();
+    let shard = &session.shards()[0];
+    // Geometry comes from independently agreed heads, without a predicate or match count.
+    // The logical table ID is irrelevant to this public byte-bound calculation.
+    let heads = compact_query::ReadHeads::new(
+        compact_query::TableId::from_bytes([96; 32]).unwrap(),
+        &shard.data_head,
+        &shard.index_head,
+        compact_store::Limits::default(),
+    )
+    .unwrap();
+    let required = heads.read_requirements().unwrap();
+    let request = peer_runtime::ReadImageRequest::new(
+        shard.object,
+        heads.data(),
+        heads.index(),
+        required.index_prefix_pages,
+    )
+    .unwrap();
+    assert!(
+        u64::from(required.index_prefix_pages)
+            < heads.index().layout().page_count().unwrap() as u64
+    );
+    let mut frame_shape = None;
+    for (sql, expected) in [
+        (
+            "SELECT * FROM records WHERE age = 18",
+            (0..6040)
+                .step_by(25)
+                .map(|amount| vec![18, amount])
+                .collect::<Vec<_>>(),
+        ),
+        (
+            "SELECT amount FROM records WHERE age = 18",
+            (0..6040).step_by(25).map(|amount| vec![amount]).collect(),
+        ),
+        (
+            "SELECT age, amount FROM records WHERE age = 18 LIMIT 1",
+            vec![vec![18, 0]],
+        ),
+        (
+            "SELECT amount, age FROM records WHERE age = 18 LIMIT 0",
+            vec![],
+        ),
+        ("SELECT age FROM records WHERE age = 99", vec![]),
+        ("SELECT * FROM records WHERE age > 255", vec![]),
+    ] {
+        events.lock().unwrap().clear();
+        assert_eq!(rows(session.execute(sql).unwrap()), expected, "{sql}");
+        let events = events.lock().unwrap();
+        assert!(
+            events.iter().all(|event| !matches!(
+                event.operation.as_str(),
+                "fetch" | "fetch-version" | "fetch-pages"
+            )),
+            "No whole-object or adaptive-page fallback: {sql}"
+        );
+        let reads: Vec<_> = events
+            .iter()
+            .filter(|event| event.operation == "read-image")
+            .collect();
+        let proofs: Vec<_> = events
+            .iter()
+            .filter(|event| event.operation == "fhe-proof")
+            .collect();
+        assert_eq!(reads.len(), 1, "{sql}");
+        assert_eq!(
+            proofs.len(),
+            1,
+            "Even LIMIT0/absent/false requires genuine proof: {sql}"
+        );
+        assert!(reads[0].succeeded && proofs[0].succeeded);
+        assert_eq!(
+            reads[0].response_bytes,
+            request.encoded_response_bytes().unwrap() as u64
+        );
+        let actual_shape = (
+            reads[0].request_bytes,
+            reads[0].response_bytes,
+            proofs[0].request_bytes,
+        );
+        if let Some(expected) = frame_shape {
+            assert_eq!(actual_shape, expected, "{sql}");
+        } else {
+            frame_shape = Some(actual_shape);
+        }
+    }
+    events.lock().unwrap().clear();
+    assert!(
+        session
+            .execute("SELECT * FROM records WHERE age = 7")
+            .is_err(),
+        "Complete over-budget selections cannot become a result prefix"
+    );
+    let observed = events.lock().unwrap();
+    let reads: Vec<_> = observed
+        .iter()
+        .filter(|event| event.operation == "read-image")
+        .collect();
+    assert_eq!(reads.len(), 1);
+    assert_eq!(
+        (reads[0].request_bytes, reads[0].response_bytes),
+        (frame_shape.unwrap().0, frame_shape.unwrap().1)
+    );
+    assert!(!observed.iter().any(|event| event.operation == "fhe-proof"));
+    drop(observed);
+    let mut empty = Session::create(
+        "empty-static-read".into(),
+        &[],
+        vec![participant],
+        test_contract(),
+    )
+    .unwrap();
+    let mut empty_frame_shape = None;
+    for sql in [
+        "SELECT * FROM records",
+        "SELECT amount FROM records WHERE age > 255 LIMIT 0",
+    ] {
+        events.lock().unwrap().clear();
+        assert!(rows(empty.execute(sql).unwrap()).is_empty());
+        let events = events.lock().unwrap();
+        let reads: Vec<_> = events
+            .iter()
+            .filter(|event| event.operation == "read-image")
+            .collect();
+        let proofs: Vec<_> = events
+            .iter()
+            .filter(|event| event.operation == "fhe-proof")
+            .collect();
+        assert_eq!(reads.len(), 1);
+        assert_eq!(proofs.len(), 1);
+        let actual = (
+            reads[0].request_bytes,
+            reads[0].response_bytes,
+            proofs[0].request_bytes,
+        );
+        if let Some(expected) = empty_frame_shape {
+            assert_eq!(actual, expected);
+        } else {
+            empty_frame_shape = Some(actual);
+        }
+        assert!(!events.iter().any(|event| matches!(
+            event.operation.as_str(),
+            "fetch" | "fetch-version" | "fetch-pages"
+        )));
+    }
+}
+
+#[test]
+fn interrupted_static_image_does_not_retry_an_uncancelled_replica_and_next_query_recovers() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let a = Process::start(owner.fingerprint(), 1, None);
+    let b = Process::start(owner.fingerprint(), 2, None);
+    let requests = peer_transport::RequestControl::default();
+    let armed = Arc::new(AtomicBool::new(false));
+    let active = armed.clone();
+    let control = requests.clone();
+    let mut first = a.participant(1, &connector);
+    first.remote = first
+        .remote
+        .with_control(requests.clone())
+        .with_activity(Arc::new(move |event| {
+            if event.operation == "read-image"
+                && event.phase == peer_runtime::ActivityPhase::RequestSent
+                && active.swap(false, Ordering::SeqCst)
+            {
+                control.cancel();
+            }
+        }));
+    let fallback_reads = Arc::new(AtomicUsize::new(0));
+    let fallback_count = fallback_reads.clone();
+    let mut second = b.participant(2, &connector);
+    second.remote = second.remote.with_activity(Arc::new(move |event| {
+        if matches!(event.operation.as_str(), "read-image" | "fhe-proof")
+            && event.phase == peer_runtime::ActivityPhase::RequestSent
+        {
+            fallback_count.fetch_add(1, Ordering::SeqCst);
+        }
+    }));
+    let mut session = Session::create(
+        "cancel-static-read".into(),
+        &[PlainRow { age: 42, amount: 1 }],
+        vec![first],
+        test_contract(),
+    )
+    .unwrap();
+    session.copy_shard(session.shards()[0].id, second).unwrap();
+    let before = session.version();
+    let scope = requests.begin().unwrap();
+    armed.store(true, Ordering::SeqCst);
+    let error = session.execute("SELECT * FROM records").unwrap_err();
+    assert!(
+        matches!(error, storage_client::Error::Transport(ref e) if e.kind() == std::io::ErrorKind::Interrupted),
+        "{error}"
+    );
+    assert!(scope.cancellation().is_cancelled());
+    assert_eq!(fallback_reads.load(Ordering::SeqCst), 0);
+    assert_eq!(session.version(), before);
+    drop(scope);
+    let _next = requests.begin().unwrap();
+    assert_eq!(
+        rows(session.execute("SELECT * FROM records").unwrap()),
+        vec![vec![42, 1]]
+    );
+}
+
+#[test]
+fn cancellation_after_the_real_proof_reply_refuses_static_select_before_final_freshness_completion()
+{
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let process = Process::start(owner.fingerprint(), 1, None);
+    let requests = peer_transport::RequestControl::default();
+    let armed = Arc::new(AtomicBool::new(false));
+    let active = armed.clone();
+    let checked_replies = Arc::new(AtomicUsize::new(0));
+    let replies = checked_replies.clone();
+    let control = requests.clone();
+    let mut participant = process.participant(1, &connector);
+    participant.remote = participant
+        .remote
+        .with_control(requests.clone())
+        .with_trace(Arc::new(move |event| {
+            // Trace runs after RemotePeer's cancellation check. This successful real
+            // reply therefore reaches the genuine proof verifier, then the cancelled
+            // final journal check refuses completion. No peer response is fabricated.
+            if event.operation == "fhe-proof"
+                && event.succeeded
+                && active.swap(false, Ordering::SeqCst)
+            {
+                replies.fetch_add(1, Ordering::SeqCst);
+                control.cancel();
+            }
+        }));
+    let mut session = Session::create(
+        "cancel-final-static-read".into(),
+        &[PlainRow { age: 42, amount: 1 }],
+        vec![participant],
+        test_contract(),
+    )
+    .unwrap();
+    let before = session.version();
+    let scope = requests.begin().unwrap();
+    armed.store(true, Ordering::SeqCst);
+    let error = session.execute("SELECT * FROM records").unwrap_err();
+    assert!(
+        matches!(error, storage_client::Error::Transport(ref e) if e.kind() == std::io::ErrorKind::Interrupted),
+        "{error}"
+    );
+    assert_eq!(checked_replies.load(Ordering::SeqCst), 1);
+    assert_eq!(session.version(), before);
+    drop(scope);
+    let _next = requests.begin().unwrap();
+    assert_eq!(
+        rows(session.execute("SELECT * FROM records").unwrap()),
+        vec![vec![42, 1]]
+    );
+}

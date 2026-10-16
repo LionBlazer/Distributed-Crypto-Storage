@@ -161,6 +161,62 @@ fn typed_300_row_select_accepts_complete_ordered_proved_bytes() {
 }
 
 #[test]
+fn typed_postgresql_windows_prove_offset_empty_and_null_peer_groups_after_holder_loss() {
+    let mut peers = start(false, false);
+    let initial = peers.session.version();
+    for (tail, ids) in [
+        ("ORDER BY id DESC LIMIT 1 OFFSET 298", vec![2]),
+        ("ORDER BY id DESC OFFSET 299 ROWS LIMIT ALL", vec![1]),
+        ("ORDER BY id DESC FETCH FIRST ROW ONLY OFFSET 298", vec![2]),
+        (
+            "WHERE id <= 5 ORDER BY region FETCH FIRST ROW WITH TIES",
+            vec![1, 2, 3, 4, 5],
+        ),
+        ("ORDER BY id OFFSET 300 FETCH NEXT ROW ONLY", vec![]),
+    ] {
+        *peers.observed.0.lock().unwrap() = Observed::default();
+
+        let answer = peers
+            .session
+            .select(&format!("SELECT id FROM typed_rows {tail}"))
+            .unwrap();
+
+        assert_eq!(
+            answer.rows,
+            ids.into_iter()
+                .map(|id| vec![Value::Integer(id)])
+                .collect::<Vec<_>>(),
+            "{tail}"
+        );
+        assert_eq!(answer.version, initial);
+        assert_eq!(answer.proof_blocks, 1);
+        assert_eq!(peers.observed.0.lock().unwrap().total_proofs(), 1);
+    }
+    peers.first.kill();
+    *peers.observed.0.lock().unwrap() = Observed::default();
+
+    let answer = peers.session.select("SELECT id FROM typed_rows WHERE id <= 5 ORDER BY region, id DESC OFFSET 1 FETCH NEXT 2 ROWS WITH TIES").unwrap();
+
+    assert_eq!(
+        answer.rows,
+        vec![vec![Value::Integer(4)], vec![Value::Integer(3)]]
+    );
+    assert_eq!(answer.version, initial);
+    assert_eq!(answer.proof_blocks, 1);
+    let observed = peers.observed.0.lock().unwrap();
+    assert_eq!(observed.sent.get(&2), Some(&1));
+    assert_eq!(
+        observed
+            .calls
+            .iter()
+            .filter(|(peer, _, _)| *peer == 1)
+            .count(),
+        1
+    );
+    assert!(observed.active.is_empty());
+}
+
+#[test]
 fn typed_byte_workers_use_two_holders_and_preserve_cross_chunk_order() {
     let mut peers = start(true, false);
 
