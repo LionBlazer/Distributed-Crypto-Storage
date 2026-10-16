@@ -1,5 +1,8 @@
 use crate::wire::*;
-use compact_store::{Commitment, EncryptedSnapshot, Limits};
+use crate::{CheckedObject, RawBundle, objects};
+use compact_store::{Commitment, Limits};
+mod workspace;
+pub(crate) const PROFILE_BYTES: usize = 40;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
@@ -9,20 +12,6 @@ use std::{
 
 mod candidate;
 use candidate::Candidate;
-
-/// Full physical read, canonical object hash and both snapshot roots checked.
-/// Only read_verified constructs this request-local, immutable custody capability.
-pub(crate) struct AuditedBundle {
-    object: [u8; 32],
-    bundle: Bundle,
-    data: EncryptedSnapshot,
-    index: EncryptedSnapshot,
-}
-impl AuditedBundle {
-    pub(crate) fn into_images(self) -> ([u8; 32], EncryptedSnapshot, EncryptedSnapshot) {
-        (self.object, self.data, self.index)
-    }
-}
 
 pub(crate) struct Store {
     directory: PathBuf,
@@ -41,7 +30,7 @@ fn filename(id: &[u8; 32]) -> String {
     id.iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>()
-        + ".bundle"
+        + ".object2"
 }
 /// Custody is bounded by authenticated image size rather than a SQL row model.
 /// A typed relation can use row_width=1, where row_count counts encoded bytes.
@@ -54,23 +43,8 @@ pub(crate) fn custody_limits() -> Limits {
         ..limits
     }
 }
-fn decode_images(bundle: &Bundle) -> Result<(EncryptedSnapshot, EncryptedSnapshot), RemoteError> {
-    let limits = custody_limits();
-    let data = Commitment::decode(&bundle.data_head, limits).map_err(|_| RemoteError::Integrity)?;
-    let index =
-        Commitment::decode(&bundle.index_head, limits).map_err(|_| RemoteError::Integrity)?;
-    let data = EncryptedSnapshot::decode_for_head(&bundle.data, &data, limits)
-        .map_err(|_| RemoteError::Integrity)?;
-    let index = EncryptedSnapshot::decode_for_head(&bundle.index, &index, limits)
-        .map_err(|_| RemoteError::Integrity)?;
-    Ok((data, index))
-}
-fn validate(bundle: &Bundle, stored: u64) -> Result<ObjectInfo, RemoteError> {
-    let (data, _) = decode_images(bundle)?;
-    object_info(bundle, stored, bundle.id(), data.commitment())
-}
 fn object_info(
-    bundle: &Bundle,
+    bundle: &RawBundle,
     stored: u64,
     object: [u8; 32],
     data: &Commitment,
@@ -90,9 +64,10 @@ fn object_info(
 }
 impl Store {
     pub(crate) fn open(directory: &Path, quota: u64) -> io::Result<Self> {
-        if quota == 0 {
-            return Err(io::Error::other("Storage quota must be positive"));
+        if quota < PROFILE_BYTES as u64 {
+            return Err(io::Error::other("Storage quota cannot fit the custody profile"));
         }
+        let fresh = workspace::preflight(directory, false)?;
         fs::create_dir_all(directory)?;
         let directory = directory.canonicalize()?;
         let lock = OpenOptions::new()
@@ -102,10 +77,11 @@ impl Store {
             .write(true)
             .open(directory.join("peer.lock"))?;
         lock.try_lock().map_err(io::Error::other)?;
-        let pending = directory.join("write.pending");
-        if pending.exists() {
-            fs::remove_file(pending)?;
+        workspace::preflight(&directory, fresh)?;
+        if fresh {
+            workspace::initialize(&directory)?;
         }
+        workspace::preflight(&directory, false)?;
         let mut store = Self {
             directory,
             _lock: lock,
@@ -118,7 +94,7 @@ impl Store {
         };
         for entry in fs::read_dir(&store.directory)? {
             let path = entry?.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("journal") {
+            if path.extension().and_then(|e| e.to_str()) == Some("journal2") {
                 if store.journals.len() >= 8 {
                     return Err(io::Error::other("Too many journals"));
                 }
@@ -146,15 +122,19 @@ impl Store {
                 store.journals.insert(id);
                 continue;
             }
-            if path.extension().and_then(|e| e.to_str()) != Some("bundle") {
+            if path.extension().and_then(|e| e.to_str()) != Some("object2") {
                 continue;
             }
             if store.objects.len() >= 1024 {
                 return Err(io::Error::other("Too many stored objects"));
             }
             let bytes = read_bounded(&path)?;
-            let bundle: Bundle = decode(&bytes)?;
-            let info = validate(&bundle, bytes.len() as u64).map_err(io::Error::other)?;
+            let checked =
+                CheckedObject::audit(objects::decode_disk(&bytes)?).map_err(io::Error::other)?;
+            let object = *checked.version().object();
+            let (version, bundle, _, _) = checked.into_parts();
+            let info = object_info(&bundle, bytes.len() as u64, object, version.data_head())
+                .map_err(io::Error::other)?;
             if path.file_name().and_then(|n| n.to_str()) != Some(filename(&info.id).as_str()) {
                 return Err(io::Error::other("Object filename/hash mismatch"));
             }
@@ -168,6 +148,10 @@ impl Store {
         if store.used() > quota {
             return Err(io::Error::other("Stored data exceeds the configured quota"));
         }
+        let pending = store.directory.join(workspace::PENDING);
+        if pending.exists() {
+            fs::remove_file(pending)?;
+        }
         Ok(store)
     }
     fn used(&self) -> u64 {
@@ -178,6 +162,7 @@ impl Store {
             .sum::<u64>()
             + self.journal_bytes()
             + self.reserved
+            + PROFILE_BYTES as u64
     }
     pub(crate) fn journal_bytes(&self) -> u64 {
         self.journals
@@ -188,7 +173,7 @@ impl Store {
     }
     pub(crate) fn journal_path(&self, id: &[u8; 32]) -> PathBuf {
         self.directory
-            .join(filename(id).trim_end_matches(".bundle").to_owned() + ".journal")
+            .join(filename(id).trim_end_matches(".object2").to_owned() + ".journal2")
     }
     pub(crate) fn has_unloaded_journal(&self, active: &BTreeSet<[u8; 32]>) -> bool {
         self.journals
@@ -308,12 +293,19 @@ impl Store {
         self.persist(Candidate::from_reconstructed(reconstructed)?)
     }
 
-    pub(crate) fn put(&mut self, bundle: Bundle) -> Result<ObjectInfo, RemoteError> {
+    pub(crate) fn put(&mut self, bundle: RawBundle) -> Result<ObjectInfo, RemoteError> {
         self.persist(Candidate::full(bundle)?)
     }
 
+    pub(crate) fn put_checked(
+        &mut self,
+        checked: CheckedObject,
+    ) -> Result<ObjectInfo, RemoteError> {
+        self.persist(Candidate::checked(checked)?)
+    }
+
     // The only durable admission route consumes an immutable fully checked
-    // candidate. No raw Bundle, advisory metadata or revalidation flag is accepted.
+    // candidate. No RawBundle, advisory metadata or revalidation flag is accepted.
     fn persist(&mut self, candidate: Candidate) -> Result<ObjectInfo, RemoteError> {
         let info = candidate.info();
         if let Some(existing) = self.objects.get(&info.id).cloned() {
@@ -328,7 +320,7 @@ impl Store {
         {
             return Err(RemoteError::ResourceLimit);
         }
-        let pending = self.directory.join("write.pending");
+        let pending = self.directory.join(workspace::PENDING);
         let result = (|| {
             let mut file = OpenOptions::new()
                 .create_new(true)
@@ -355,7 +347,7 @@ impl Store {
         &mut self,
         data_head: &[u8],
         index_head: &[u8],
-    ) -> Result<Bundle, RemoteError> {
+    ) -> Result<RawBundle, RemoteError> {
         if data_head.len() != 112 || index_head.len() != 112 {
             return Err(RemoteError::InvalidRequest);
         }
@@ -375,42 +367,37 @@ impl Store {
         }
         Err(RemoteError::NotFound)
     }
-    pub(crate) fn get(&mut self, id: &[u8; 32]) -> Result<Bundle, RemoteError> {
-        self.read_verified(id).map(|audited| audited.bundle)
+    pub(crate) fn get(&mut self, id: &[u8; 32]) -> Result<RawBundle, RemoteError> {
+        self.read_verified(id).map(CheckedObject::into_raw)
     }
     pub(crate) fn get_pages(
         &mut self,
         request: crate::PageBatchRequest,
     ) -> Result<crate::PageBatch, RemoteError> {
-        let AuditedBundle { data, index, .. } = self.read_verified(request.object())?;
+        let (_, _, data, index) = self.read_verified(request.object())?.into_parts();
         crate::PageBatch::from_snapshots(request, &data, &index).map_err(|_| RemoteError::Integrity)
     }
     pub(crate) fn get_read_image(
         &mut self,
         request: crate::ReadImageRequest,
     ) -> Result<crate::ReadImage, RemoteError> {
-        let AuditedBundle { data, index, .. } = self.read_verified(request.object())?;
-        crate::ReadImage::from_snapshots(request, data, &index).map_err(|_| RemoteError::Integrity)
+        let (version, _, data, index) = self.read_verified(request.object())?.into_parts();
+        crate::ReadImage::from_snapshots(request, version.nonce(), data, &index)
+            .map_err(|_| RemoteError::Integrity)
     }
     // Every route audits the complete physical bundle, including unrequested
     // bytes in both images. Cached names/status never establish custody.
-    fn read_verified(&mut self, id: &[u8; 32]) -> Result<AuditedBundle, RemoteError> {
+    fn read_verified(&mut self, id: &[u8; 32]) -> Result<CheckedObject, RemoteError> {
         if !self.objects.contains_key(id) {
             return Err(RemoteError::NotFound);
         }
         let result = (|| {
             let bytes = read_bounded(&self.directory.join(filename(id))).map_err(error)?;
-            let bundle: Bundle = decode(&bytes).map_err(error)?;
-            if &bundle.id() != id {
+            let checked = CheckedObject::audit(objects::decode_disk(&bytes).map_err(error)?)?;
+            if checked.version().object() != id {
                 return Err(RemoteError::Integrity);
             }
-            let (data, index) = decode_images(&bundle)?;
-            Ok(AuditedBundle {
-                object: *id,
-                bundle,
-                data,
-                index,
-            })
+            Ok(checked)
         })();
         if result.is_err() {
             self.invalid.insert(*id);
@@ -453,7 +440,8 @@ pub(crate) mod test_support;
 mod tests {
     use super::test_support::Directory;
     use super::*;
-    fn bundle() -> Bundle {
+    use compact_store::EncryptedSnapshot;
+    fn bundle() -> RawBundle {
         let owner = compact_store::Owner::generate([1; 16]).unwrap();
         let snapshot = owner
             .seal(
@@ -467,7 +455,9 @@ mod tests {
                 Limits::default(),
             )
             .unwrap();
-        Bundle {
+        RawBundle {
+            version: 2,
+            nonce: [31; 32],
             data_head: snapshot.commitment().encode().to_vec(),
             index_head: snapshot.commitment().encode().to_vec(),
             data: snapshot.encode(),
@@ -500,8 +490,11 @@ mod tests {
             store
                 .get_version(&committed.data_head, &committed.index_head)
                 .unwrap()
-                .id(),
-            committed.id()
+                .target_version()
+                .unwrap()
+                .object()
+                .to_owned(),
+            *committed.target_version().unwrap().object()
         );
         let history = BTreeSet::from([head_pair_id(&committed.data_head, &committed.index_head)]);
         let retained = BTreeSet::from([head_pair_id(&committed.data_head, &committed.index_head)]);
@@ -512,13 +505,19 @@ mod tests {
             .unwrap();
         assert_eq!(store.objects.len(), 1);
         assert_eq!(store.heads.len(), 1);
-        assert!(store.get(&staged.id()).is_ok());
+        assert!(store.get(staged.target_version().unwrap().object()).is_ok());
         assert!(
             store
                 .get_version(&committed.data_head, &committed.index_head)
                 .is_err()
         );
-        fs::write(store.directory.join(filename(&staged.id())), b"damaged").unwrap();
+        fs::write(
+            store
+                .directory
+                .join(filename(staged.target_version().unwrap().object())),
+            b"damaged",
+        )
+        .unwrap();
         assert!(
             store
                 .get_version(&staged.data_head, &staged.index_head)
@@ -541,25 +540,34 @@ mod tests {
         let mut store = Store::open(&directory.0, 1024 * 1024).unwrap();
         let mut preserved = Vec::new();
         for image in [&stale, &retained, &other_network, &staged] {
-            let path = store.directory.join(filename(&image.id()));
+            let path = store
+                .directory
+                .join(filename(image.target_version().unwrap().object()));
             let mut damaged = fs::read(&path).unwrap();
             *damaged.last_mut().unwrap() ^= 1;
             fs::write(&path, &damaged).unwrap();
-            if image.id() != stale.id() {
+            if *image.target_version().unwrap().object()
+                != *stale.target_version().unwrap().object()
+            {
                 assert!(matches!(
-                    store.get(&image.id()),
+                    store.get(image.target_version().unwrap().object()),
                     Err(RemoteError::Integrity)
                 ));
-                preserved.push((image.id(), path, damaged));
+                preserved.push((*image.target_version().unwrap().object(), path, damaged));
             }
         }
-        let pair = |image: &Bundle| head_pair_id(&image.data_head, &image.index_head);
+        let pair = |image: &RawBundle| head_pair_id(&image.data_head, &image.index_head);
         let history = BTreeSet::from([pair(&stale), pair(&retained), pair(&other_network)]);
         let keep = BTreeSet::from([pair(&retained), pair(&other_network)]);
 
         store.prune_journal_objects(&history, &keep).unwrap();
 
-        assert!(!store.directory.join(filename(&stale.id())).exists());
+        assert!(
+            !store
+                .directory
+                .join(filename(stale.target_version().unwrap().object()))
+                .exists()
+        );
         assert_eq!(store.objects.len(), 3);
         assert_eq!(store.heads.len(), 3);
         for (id, path, damaged) in preserved {
@@ -589,9 +597,13 @@ mod tests {
         for image in [&stale, &retained] {
             store.put(image.clone()).unwrap();
         }
-        let path = store.directory.join(filename(&stale.id()));
+        let path = store
+            .directory
+            .join(filename(stale.target_version().unwrap().object()));
         let original = fs::read(&path).unwrap();
-        let retained_path = store.directory.join(filename(&retained.id()));
+        let retained_path = store
+            .directory
+            .join(filename(retained.target_version().unwrap().object()));
         let retained_bytes = fs::read(&retained_path).unwrap();
         let pair = head_pair_id(&stale.data_head, &stale.index_head);
         let history = BTreeSet::from([pair]);
@@ -606,7 +618,7 @@ mod tests {
         );
 
         assert_eq!(store.objects.len(), 2);
-        assert!(store.heads[&pair].contains(&stale.id()));
+        assert!(store.heads[&pair].contains(stale.target_version().unwrap().object()));
         assert_eq!(fs::read(&retained_path).unwrap(), retained_bytes);
         fs::remove_dir(&path).unwrap();
         fs::write(&path, original).unwrap();
@@ -616,7 +628,12 @@ mod tests {
         assert!(!path.exists());
         assert!(!store.heads.contains_key(&pair));
         assert_eq!(store.objects.len(), 1);
-        assert_eq!(store.get(&retained.id()).unwrap(), retained);
+        assert_eq!(
+            store
+                .get(retained.target_version().unwrap().object())
+                .unwrap(),
+            retained
+        );
     }
     #[test]
     fn custody_rejects_a_corrupt_index_or_an_index_from_another_committed_object() {
@@ -649,7 +666,9 @@ mod tests {
                 custody_limits(),
             )
             .unwrap();
-        let bundle = Bundle {
+        let bundle = RawBundle {
+            version: 2,
+            nonce: [31; 32],
             data_head: snapshot.commitment().encode().to_vec(),
             index_head: snapshot.commitment().encode().to_vec(),
             data: snapshot.encode(),
@@ -681,7 +700,7 @@ mod tests {
         );
     }
 
-    fn delta_fixture() -> (Bundle, Bundle, crate::StoreDeltaRequest) {
+    fn delta_fixture() -> (RawBundle, RawBundle, crate::StoreDeltaRequest) {
         let owner = compact_store::Owner::generate([81; 16]).unwrap();
         let layout = compact_store::Layout {
             schema: [1; 16],
@@ -706,7 +725,9 @@ mod tests {
                 custody_limits(),
             )
             .unwrap();
-        let as_bundle = |data: &EncryptedSnapshot, index: &EncryptedSnapshot| Bundle {
+        let as_bundle = |data: &EncryptedSnapshot, index: &EncryptedSnapshot| RawBundle {
+            version: 2,
+            nonce: [31; 32],
             data_head: data.commitment().encode().to_vec(),
             index_head: index.commitment().encode().to_vec(),
             data: data.encode(),
@@ -751,10 +772,10 @@ mod tests {
             ),
         ];
         let delta = crate::StoreDeltaRequest::new(
-            base.id(),
+            *base.target_version().unwrap().object(),
             original_data.commitment(),
             original_index.commitment(),
-            &target,
+            &(target).target_version().unwrap(),
             &pages,
         )
         .unwrap();
@@ -770,14 +791,22 @@ mod tests {
             Err(RemoteError::NotFound)
         ));
         assert!(store.objects.is_empty());
-        assert!(!directory.0.join(filename(&target.id())).exists());
+        assert!(
+            !directory
+                .0
+                .join(filename(target.target_version().unwrap().object()))
+                .exists()
+        );
         store.put(base.clone()).unwrap();
 
         let stored = store.put_delta(delta.clone()).unwrap();
 
-        assert_eq!(stored.id, target.id());
+        assert_eq!(stored.id, *target.target_version().unwrap().object());
         assert_eq!(store.get(&stored.id).unwrap(), target);
-        assert_eq!(store.get(&base.id()).unwrap(), base);
+        assert_eq!(
+            store.get(base.target_version().unwrap().object()).unwrap(),
+            base
+        );
         assert_eq!(store.objects.len(), 2);
         drop(store);
         let mut store = Store::open(&directory.0, 8 * 1024 * 1024).unwrap();
@@ -791,7 +820,7 @@ mod tests {
         assert_eq!(store.objects.len(), 1);
         assert_eq!(store.put_delta(delta).unwrap().id, stored.id);
         assert_eq!(store.get(&stored.id).unwrap(), target);
-        assert!(!directory.0.join("write.pending").exists());
+        assert!(!directory.0.join(workspace::PENDING).exists());
     }
     #[test]
     fn unrequested_base_corruption_or_a_valid_overwrite_cannot_create_a_delta_target() {
@@ -806,8 +835,10 @@ mod tests {
                 1 => *altered.index.last_mut().unwrap() ^= 1,
                 _ => altered = delta_fixture().0,
             }
-            let corrupt_bytes = encode(&altered).unwrap();
-            let base_path = directory.0.join(filename(&base.id()));
+            let corrupt_bytes = objects::encode_disk(&altered).unwrap();
+            let base_path = directory
+                .0
+                .join(filename(base.target_version().unwrap().object()));
             fs::write(&base_path, &corrupt_bytes).unwrap();
 
             assert!(matches!(
@@ -817,25 +848,33 @@ mod tests {
 
             assert_eq!(fs::read(base_path).unwrap(), corrupt_bytes);
             assert_eq!(store.objects.len(), 1);
-            assert!(!directory.0.join(filename(&target.id())).exists());
-            assert!(!directory.0.join("write.pending").exists());
+            assert!(
+                !directory
+                    .0
+                    .join(filename(target.target_version().unwrap().object()))
+                    .exists()
+            );
+            assert!(!directory.0.join(workspace::PENDING).exists());
         }
     }
     #[test]
     fn quota_failure_and_a_wrong_old_head_leave_the_existing_full_base_unchanged() {
         let directory = Directory::new();
         let (base, target, delta) = delta_fixture();
-        let quota = encode(&base).unwrap().len() as u64;
+        let quota = objects::encode_disk(&base).unwrap().len() as u64 + PROFILE_BYTES as u64;
         let mut store = Store::open(&directory.0, quota).unwrap();
         store.put(base.clone()).unwrap();
         assert!(matches!(
             store.put_delta(delta.clone()),
             Err(RemoteError::ResourceLimit)
         ));
-        assert_eq!(store.get(&base.id()).unwrap(), base);
+        assert_eq!(
+            store.get(base.target_version().unwrap().object()).unwrap(),
+            base
+        );
         store.configure(8 * 1024 * 1024).unwrap();
         let mut wire = encode(&crate::wire::WireRequest {
-            version: 1,
+            version: 2,
             id: 1,
             request: Request::StoreDelta(delta),
         })
@@ -850,10 +889,18 @@ mod tests {
             store.put_delta(wrong),
             Err(RemoteError::Integrity)
         ));
-        assert_eq!(store.get(&base.id()).unwrap(), base);
+        assert_eq!(
+            store.get(base.target_version().unwrap().object()).unwrap(),
+            base
+        );
         assert_eq!(store.objects.len(), 1);
-        assert!(!directory.0.join(filename(&target.id())).exists());
-        assert!(!directory.0.join("write.pending").exists());
+        assert!(
+            !directory
+                .0
+                .join(filename(target.target_version().unwrap().object()))
+                .exists()
+        );
+        assert!(!directory.0.join(workspace::PENDING).exists());
     }
     #[test]
     fn duplicate_delta_acknowledgement_audits_every_byte_of_the_already_stored_target() {
@@ -865,8 +912,10 @@ mod tests {
         let mut altered = target.clone();
         *altered.index.last_mut().unwrap() ^= 1;
         fs::write(
-            directory.0.join(filename(&target.id())),
-            encode(&altered).unwrap(),
+            directory
+                .0
+                .join(filename(target.target_version().unwrap().object())),
+            objects::encode_disk(&altered).unwrap(),
         )
         .unwrap();
 
@@ -875,9 +924,12 @@ mod tests {
             Err(RemoteError::Integrity)
         ));
 
-        assert_eq!(store.get(&base.id()).unwrap(), base);
+        assert_eq!(
+            store.get(base.target_version().unwrap().object()).unwrap(),
+            base
+        );
         assert_eq!(store.objects.len(), 2);
-        assert!(!directory.0.join("write.pending").exists());
+        assert!(!directory.0.join(workspace::PENDING).exists());
     }
     #[test]
     fn raw_full_store_cannot_bypass_either_image_audit_through_candidate_admission() {
@@ -909,7 +961,7 @@ mod tests {
             );
 
             assert!(store.objects.is_empty());
-            assert!(!directory.0.join("write.pending").exists());
+            assert!(!directory.0.join(workspace::PENDING).exists());
             assert!(!fs::read_dir(&directory.0).unwrap().any(|entry| {
                 entry
                     .unwrap()
@@ -920,3 +972,11 @@ mod tests {
         }
     }
 }
+
+/// Read-only compatibility preflight. Does not claim custody or lock ownership.
+pub(crate) fn preflight_directory(directory: &Path) -> io::Result<()> {
+    workspace::preflight(directory, false).map(|_| ())
+}
+
+#[cfg(test)]
+mod profile_tests;

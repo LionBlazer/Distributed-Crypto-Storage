@@ -54,7 +54,11 @@ quota configuration, journal initialization, collection and shutdown. Other
 self-authenticated peers can fetch opaque bundles, execute/prove operations, mine
 bounded candidates and publish independently validated signed transitions.
 
-Objects are immutable, addressed by the complete bundle hash. `FetchVersion` uses
+Objects are immutable, addressed by randomized head-object profile 2. The selected
+[prototype contract](../../docs/salted-custody-objects.md) defines its nonce,
+complete admission and incompatible workspace/protocol boundary. RawBundle is an
+untrusted envelope; TargetVersion binds metadata only, while CheckedObject audits
+both complete images. `FetchVersion` uses
 an exact data/index-head pair cache and still reads/authenticates the physical
 bundle. Missing or modified data is rejected; cached names do not prove custody.
 `Copy` transfers actual encrypted bytes directly between authenticated processes.
@@ -65,19 +69,17 @@ values. `RemotePeer::fetch_pages` returns Merkle-verified ciphertext pages in th
 same requested order. The complete encoded runtime response is at most 1 MiB
 (excluding the transport frame prefix and TLS), and its announced frame length is
 checked before allocation. Both request and response payloads have distinct magic
-values and an explicit version 1. Their manual codecs and bounded sequence
+values and an explicit version 2. Their manual codecs and bounded sequence
 visitors check byte lengths, counts, head geometry and address-dependent proof
 sizes before allocating pages. Unknown versions/kinds, duplicate, omitted, extra,
 reordered or substituted pages fail closed. The client also rejects unrelated RPC
 response variants before decoding their vectors.
 
-The `FetchPages`/`Pages` enum tags are appended to the existing runtime boundary;
-unsupported peers reject the new RPC rather than falling back to a whole-object
-answer. The existing envelope version and every old tag stay unchanged. This
-optional custody capability changes neither the FHE wire, application commitment,
-proof profile nor cryptographic-kernel ABI. Authenticated nonowners keep the same
-opaque ciphertext-read rights as `Fetch`; owner-only writes and configuration
-remain owner-only.
+The custody enum tags retain their positions, but runtime RPC version 2 and each
+custody payload version 2 are mandatory. Unsupported peers fail closed. The
+application v4 anchor includes ObjectProfileID; BFV/STARK parameters and the
+cryptographic-kernel ABI remain unchanged. Authenticated nonowners retain opaque
+ciphertext-read rights; uploads and configuration remain owner-only.
 
 For every page batch, `Store` reads and validates the **complete physical bundle**,
 its immutable object hash and both encrypted snapshots, then derives real
@@ -115,9 +117,10 @@ the exact original object, both heads, prefix count and all membership proofs.
 Consumers must still authenticate their own table identity, AEAD, complete query
 selection, computation proof and agreed freshness.
 
-The new tags append after `FetchPages`/`Pages`, using explicit `DCSRIMQ1`/`DCSRIMR1`
-magic and version 1. Existing tags, the global 64 MiB frame, eight connections,
-heavy-work permit, quotas and FHE/proof/application/ABI profiles are unchanged.
+The new tags append after `FetchPages`/`Pages`, using explicit `DCSRIMQ2`/`DCSRIMR2`
+magic and version 2. The response adds one fixed 32-byte nonce and verifies its
+object/head binding before image use. Existing tags, the global 64 MiB frame,
+eight connections, heavy-work permit and FHE/proof/ABI profiles are unchanged.
 Every image reply uses **one complete physical custody audit**, including bytes
 outside the returned prefix, then reuses those exact validated snapshots. No
 stat/mtime/status shortcut or extra disk cache is introduced.
@@ -138,16 +141,17 @@ their last-page lengths and Merkle heights. It does not inspect changed pages.
 The complete encoded `WireRequest` is capped at 32 MiB; the unchanged global
 64-MiB frame cap also covers Full Store. Transport prefix and TLS bytes are extra.
 
-`StoreDeltaRequest::new` binds the exact old object and both old/new heads, the
-complete new `Bundle` hash, and 1–257 canonically ordered page replacements.
+`StoreDeltaRequest::new` binds the exact old object/heads, an immutable binding-only
+`TargetVersion` and 1-257 canonically ordered replacement proofs. Its target ID
+is derived from nonce and both heads; no ignored raw target image is accepted.
 Each image either keeps its exact head with no replacements or preserves geometry
 and advances its revision once. Both unchanged is rejected. The explicit
-`DCSDLTA1`/version-1 body has exact public-geometry length and zero padding.
+`DCSDLTA2`/version-2 body has exact public-geometry length and zero padding.
 Bounded serde first caps the frame allocation; header-derived exact length,
 entry counts, address-specific proof sizes and all padding are then checked.
 `Request::StoreDelta` appends tag 19 after the actual ReadImage request; its reply
-reuses `Response::Stored` tag 2. Existing tags and all cryptographic/application
-profiles remain unchanged. Unsupported peers fail rather than changing modes.
+reuses `Response::Stored` tag 2. Existing tags and cryptographic computation
+profiles remain unchanged; the object/application profiles deliberately change. Unsupported peers fail rather than changing modes.
 
 Only the configured TLS owner may upload a delta. On first write, the store
 audits the **whole physical base**, including unrequested pages and its complete
@@ -161,16 +165,17 @@ No metadata-only custody proof, sidecar, FHE bypass or sparse disk-I/O claim is 
 
 The private store admission boundary uses three request-local, non-cloneable
 capabilities. Only a complete physical read plus object-hash and both-root checks
-constructs `AuditedBundle`. Delta reconstruction consumes it and verified new
+constructs `CheckedObject`. Delta reconstruction consumes it and verified new
 pages into sealed `ReconstructedDelta` after both complete new roots match.
 Private `Candidate` consumes that result, rechecks both exact heads and hashes
-the complete canonical Bundle once before encoding immutable disk bytes. The ID
-still hashes four big-endian-length-prefixed parts; it is not a disk-byte hash.
+the exact target nonce and both heads before encoding immutable disk bytes. The ID
+is the randomized nonce/head commitment, conditional on full snapshot validation;
+it is not a hash of unvalidated raw or disk bytes.
 The full-upload factory retains its ordinary raw-bundle audit. Shared persistence
 accepts only this immutable candidate and preserves quota, sync, rename and map
 registration. It does not reparse images already fully authenticated by that
-construction. No validation flag, mutable prevalidated Bundle, persistent cache,
-public API, format or cryptographic profile is added. Existing-target replay still
+construction. No validation flag, mutable prevalidated Bundle or persistent
+custody cache is added. The object/application namespace deliberately changes. Existing-target replay still
 verifies requested new pages and fully reads/authenticates the physical target.
 
 The runtime does not choose recipient or privacy policy. A consumer must freeze
@@ -317,3 +322,8 @@ cargo test --release --locked --offline -p dcs-peer --test process_transport sta
 
 Owning process tests live in `dcs-peer`; they must exercise the complete client,
 real encrypted proving, actual RPC journal agreement and resulting storage changes.
+
+Status::disk_bytes is advisory observed object/journal storage plus the fixed
+40-byte root profile. It excludes pending writes, in-flight reservations and
+RAM/setup material; only Store enforces quota admission. The serialized Status
+fields are unchanged and carry no object nonce.

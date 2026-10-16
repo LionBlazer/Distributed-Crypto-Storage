@@ -29,7 +29,7 @@ pub(super) struct PreparedWrite {
     shard: u64,
     object: [u8; 32],
     heads: HeadPair,
-    full: Bundle,
+    full: RawBundle,
     delta: Option<StoreDeltaRequest>,
     recipients: Vec<Recipient>,
     copies: usize,
@@ -112,12 +112,9 @@ impl Writeback {
             .get_mut(slot)
             .and_then(Option::take)
             .ok_or_else(|| protocol("Missing frozen writeback placement"))?;
-        let full = Bundle {
-            data_head: table.commitment().encode().to_vec(),
-            index_head: table.index_commitment().encode().to_vec(),
-            data: table.snapshot().encode(),
-            index: table.encrypted_index().encode(),
-        };
+        let full = RawBundle::from_snapshots(table.snapshot(), table.encrypted_index())
+            .map_err(protocol)?;
+        let target = full.target_version().map_err(protocol)?;
         // INSERT changes geometry, so preflight the complete new full-store wire.
         StoreDeltaPlan::for_heads(table.commitment(), table.index_commitment())
             .map_err(protocol)?;
@@ -145,7 +142,7 @@ impl Writeback {
                 })
                 .collect::<Result<Vec<_>>>()?;
             Some(
-                StoreDeltaRequest::new(source.object, &source.data, &source.index, &full, &pages)
+                StoreDeltaRequest::new(source.object, &source.data, &source.index, &target, &pages)
                     .map_err(protocol)?,
             )
         } else {
@@ -153,7 +150,7 @@ impl Writeback {
         };
         let object = delta
             .as_ref()
-            .map_or_else(|| full.id(), |request| *request.object());
+            .map_or_else(|| *target.object(), |request| *request.object());
         Ok(PreparedWrite {
             slot,
             shard: source.shard,

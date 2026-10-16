@@ -25,7 +25,11 @@ Implemented public entry points:
   `validated_shards` is expressly unconfirmed protocol state, not a freshness gate.
 - `DurableJournal` holds an exclusive OS file lock, validates before append,
   `sync_all`s before in-memory publication, and revalidates records on reopen
-  against an independently pinned genesis. Incomplete or tampered tails fail closed.
+  against an independently pinned genesis. Create/open additionally require an
+  opaque caller-supplied 32-byte disk namespace; the DCSJL002 container pins it
+  before genesis bytes. check_namespace performs bounded read-only compatibility
+  preflight only. There is no legacy/default namespace or runtime dependency.
+  Incomplete or tampered tails fail closed.
 
 ## Consensus rules
 

@@ -1,10 +1,12 @@
 //! Authenticated, process-independent ciphertext custody and public-only FHE service.
 //! No owner FHE/AEAD secret, GUI, simulation clock or plaintext row type lives here.
 #![forbid(unsafe_code)]
+mod bootstrap;
 mod bytes;
 mod client;
 mod delta;
 pub mod evidence;
+mod objects;
 mod pages;
 mod read_image;
 mod server;
@@ -29,6 +31,14 @@ pub use read_image::{
 };
 pub use server::{PeerServer, RunningServer};
 pub use wire::{
-    Bootstrap, Bundle, JournalBlock, Neighbor, ObjectInfo, Observation, Operation, ProofReply,
-    RemoteError, Request, Response, Status,
+    JournalBlock, Neighbor, ObjectInfo, Observation, Operation, ProofReply, RemoteError, Request,
+    Response, Status,
 };
+
+pub use bootstrap::Bootstrap;
+pub use objects::{CheckedObject, OBJECT_PROFILE_ID, RawBundle, TargetVersion};
+
+/// Reject incompatible participant state before a producer writes or launches.
+pub fn check_workspace(directory: &std::path::Path) -> std::io::Result<()> {
+    store::preflight_directory(directory)
+}

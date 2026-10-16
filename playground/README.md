@@ -270,3 +270,11 @@ Production work/adversary calibration, independent failure-domain validation,
 NAT/discovery deployment, complete SQL and target-scale/resource measurements remain
 unfinished. Local process tests do not establish resistance to an eclipsed client
 or a majority of adversarial work, nor globally newest data during a partition.
+
+The process producer uses nested Bootstrap v2 and preflights every participant
+directory before adding or restarting any peer. Standalone peer restart checks
+its directory before stopping the current child. A legacy/mixed directory
+therefore rejects without launching a child or rewriting that workspace. This
+manager creates unique process roots; it has no existing-workspace reopen API,
+persisted owner-credential file or bootstrap JSON file (bootstrap uses stdin).
+See the [custody namespace contract](../docs/salted-custody-objects.md).

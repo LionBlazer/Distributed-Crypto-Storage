@@ -1,10 +1,13 @@
 use super::*;
+use crate::RawBundle;
 use crate::store::{Store, test_support::Directory};
 use crate::wire::{self, Request, WireRequest};
 use compact_store::{Layout, Limits, Owner};
 
-fn bundle(data: &EncryptedSnapshot, index: &EncryptedSnapshot) -> Bundle {
-    Bundle {
+fn bundle(data: &EncryptedSnapshot, index: &EncryptedSnapshot) -> RawBundle {
+    RawBundle {
+        version: 2,
+        nonce: [31; 32],
         data_head: data.commitment().encode().to_vec(),
         index_head: index.commitment().encode().to_vec(),
         data: data.encode(),
@@ -15,7 +18,7 @@ fn reconstruct(
     data: EncryptedSnapshot,
     index: EncryptedSnapshot,
     delta: StoreDeltaRequest,
-) -> std::result::Result<Bundle, crate::RemoteError> {
+) -> std::result::Result<RawBundle, crate::RemoteError> {
     let directory = Directory::new();
     let mut store = Store::open(&directory.0, 128 * 1024 * 1024).unwrap();
     store.put(bundle(&data, &index))?;
@@ -27,7 +30,7 @@ fn fixture(
 ) -> (
     EncryptedSnapshot,
     EncryptedSnapshot,
-    Bundle,
+    RawBundle,
     StoreDeltaRequest,
 ) {
     let owner = Owner::generate([61; 16]).unwrap();
@@ -99,10 +102,10 @@ fn fixture(
         index.lookup(299, custody_limits()).unwrap(),
     ));
     let delta = StoreDeltaRequest::new(
-        base.id(),
+        *base.target_version().unwrap().object(),
         original_data.commitment(),
         original_index.commitment(),
-        &next,
+        &(next).target_version().unwrap(),
         &pages,
     )
     .unwrap();
@@ -116,7 +119,7 @@ fn one_two_64_256_and_257_replacements_have_identical_complete_wire_lengths() {
         let fixed = delta.request_bytes();
         assert_eq!(*expected.get_or_insert(fixed), fixed);
         let wire_bytes = wire::encode(&WireRequest {
-            version: 1,
+            version: 2,
             id: 7,
             request: Request::StoreDelta(delta),
         })
@@ -201,27 +204,35 @@ fn actual_million_row_images_have_the_pinned_public_footprint_and_full_request_g
         ),
     ];
     let delta = StoreDeltaRequest::new(
-        base.id(),
+        *base.target_version().unwrap().object(),
         data.commitment(),
         index.commitment(),
-        &next,
+        &(next).target_version().unwrap(),
         &pages,
     )
     .unwrap();
     let actual_delta = wire::encode(&WireRequest {
-        version: 1,
+        version: 2,
         id: 1,
         request: Request::StoreDelta(delta.clone()),
     })
     .unwrap();
     let actual_full = wire::encode(&WireRequest {
-        version: 1,
+        version: 2,
         id: 1,
         request: Request::Store(next.clone()),
     })
     .unwrap();
     assert_eq!(actual_delta.len(), 1_188_143);
-    assert_eq!(actual_full.len(), 37_604_542);
+    assert_eq!(actual_full.len(), 37_604_576);
+    let full_reply = wire::encode(&crate::wire::WireResponse {
+        version: 2,
+        id: 1,
+        result: Ok(crate::Response::RawBundle(next.clone())),
+    })
+    .unwrap();
+    assert_eq!(full_reply.len(), 37_604_580);
+
     assert_eq!(reconstruct(data, index, delta).unwrap(), next);
 }
 #[test]
@@ -276,7 +287,7 @@ fn noncanonical_padding_lengths_counts_addresses_and_unbounded_serde_lengths_rej
             }
             2 => bad.push(0),
             3 => bad[..8].fill(0),
-            4 => bad[8..10].copy_from_slice(&2_u16.to_le_bytes()),
+            4 => bad[8..10].copy_from_slice(&1_u16.to_le_bytes()),
             5 => bad[522..524].copy_from_slice(&258_u16.to_le_bytes()),
             6 => bad[HEADER_BYTES] = 2,
             7 => bad[HEADER_BYTES + 1..HEADER_BYTES + 9].copy_from_slice(&u64::MAX.to_le_bytes()),
@@ -315,7 +326,14 @@ fn omitted_pages_tampered_membership_and_wrong_full_object_identity_never_recons
     let mut wrong_head = delta;
     wrong_head.binding.base.object[0] ^= 1;
     // Base object custody is checked by Store; the codec cannot establish it.
-    assert_ne!(wrong_head.base_object(), &bundle(&data, &index).id());
+    assert_ne!(
+        wrong_head.base_object(),
+        &bundle(&data, &index)
+            .target_version()
+            .unwrap()
+            .object()
+            .to_owned()
+    );
 }
 
 #[test]
@@ -348,14 +366,17 @@ fn full_and_reconstructed_admission_preserve_exact_disk_bytes_and_all_custody_me
             "count {count}"
         );
         let filename = next
-            .id()
+            .target_version()
+            .unwrap()
+            .object()
+            .to_owned()
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>()
-            + ".bundle";
+            + ".object2";
         let delta_bytes = std::fs::read(delta_directory.0.join(&filename)).unwrap();
         let full_bytes = std::fs::read(full_directory.0.join(&filename)).unwrap();
-        assert_eq!(delta_bytes, wire::encode(&next).unwrap());
+        assert_eq!(delta_bytes, crate::objects::encode_disk(&next).unwrap());
         assert_eq!(delta_bytes, full_bytes, "count {count}");
         assert_eq!(delta_store.get(&reconstructed.id).unwrap(), next);
         assert_eq!(full_store.get(&ordinary.id).unwrap(), next);
@@ -363,11 +384,11 @@ fn full_and_reconstructed_admission_preserve_exact_disk_bytes_and_all_custody_me
 }
 
 #[test]
-fn disk_serialization_hash_is_not_the_admissible_legacy_bundle_object_identity() {
+fn disk_serialization_hash_cannot_substitute_for_the_salted_head_object_identity() {
     use sha2::{Digest, Sha256};
     let (data, index, next, mut delta) = fixture(2);
-    let disk_hash: [u8; 32] = Sha256::digest(wire::encode(&next).unwrap()).into();
-    assert_ne!(disk_hash, next.id());
+    let disk_hash: [u8; 32] = Sha256::digest(crate::objects::encode_disk(&next).unwrap()).into();
+    assert_ne!(disk_hash, *next.target_version().unwrap().object());
     delta.binding.next.object = disk_hash;
 
     assert!(matches!(

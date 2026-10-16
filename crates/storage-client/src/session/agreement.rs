@@ -120,7 +120,7 @@ impl Session {
                 {
                     return Err(Error::Transport(response.err().unwrap()));
                 }
-                if let Ok(Response::Bundle(bundle)) = response {
+                if let Ok(Response::RawBundle(bundle)) = response {
                     if bundle.data_head != state.heads.data
                         || bundle.index_head != state.heads.index
                     {
@@ -151,7 +151,7 @@ impl Session {
                 Shard {
                     info: ShardInfo {
                         id: state.id,
-                        object: bundle.id(),
+                        object: *bundle.target_version().map_err(protocol)?.object(),
                         holders: vec![peer.id],
                         rows: data_head.layout().row_count as usize,
                         data_head,

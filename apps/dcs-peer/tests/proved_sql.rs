@@ -424,15 +424,17 @@ struct Process {
 impl Process {
     fn start(owner: [u8; 32], id: u64, directory: Option<PathBuf>) -> Self {
         let directory = directory.unwrap_or_else(|| {
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../../.local/network-tests")
                 .join(format!(
-                    "proved-{}-{id}-{}",
+                    "proved-{}-{id}-{}-{}",
                     std::process::id(),
                     SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .unwrap()
-                        .as_nanos()
+                        .as_nanos(),
+                    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
                 ))
         });
         let mut command = Command::new(env!("CARGO_BIN_EXE_dcs-peer"));
@@ -473,7 +475,17 @@ impl Process {
             let _ = tx.send(result);
         });
         let endpoint = match rx.recv_timeout(Duration::from_secs(10)) {
-            Ok(Ok(line)) => serde_json::from_str(&line).unwrap(),
+            Ok(Ok(line)) => match serde_json::from_str(&line) {
+                Ok(endpoint) => endpoint,
+                Err(error) => {
+                    let _ = child.kill();
+                    let status = child.wait();
+                    panic!(
+                        "Peer startup failed for {}: {error}; child={status:?}",
+                        directory.display()
+                    );
+                }
+            },
             other => {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -731,12 +743,7 @@ fn interrupted_confirmation_resumes_the_original_write_without_applying_it_twice
             // Actual peer quota permits the just-fsynced transition but prevents
             // its next confirmation append. No transport or proof is simulated.
             let status = administrator.status().unwrap();
-            let used = status.journal_bytes
-                + status
-                    .objects
-                    .iter()
-                    .map(|object| object.stored_bytes)
-                    .sum::<u64>();
+            let used = status.disk_bytes();
             assert!(matches!(
                 administrator.call(Request::Quota(used)).unwrap(),
                 Response::Done
@@ -780,7 +787,7 @@ fn interrupted_confirmation_resumes_the_original_write_without_applying_it_twice
                 .objects
                 .into_iter()
                 .map(|object| {
-                    let Response::Bundle(bundle) =
+                    let Response::RawBundle(bundle) =
                         control.call(Request::Fetch { object: object.id }).unwrap()
                     else {
                         panic!("stored bundle");
@@ -1596,8 +1603,7 @@ fn proved_update_keeps_frozen_delta_roles_on_quota_failure_and_preplans_full_for
         .collect();
     for peer in &controls[..2] {
         let status = peer.remote.status().unwrap();
-        let used =
-            status.objects.iter().map(|o| o.stored_bytes).sum::<u64>() + status.journal_bytes;
+        let used = status.disk_bytes();
         peer.remote.call(Request::Quota(used)).unwrap();
     }
     armed.store(true, Ordering::SeqCst);
@@ -2258,5 +2264,73 @@ fn cancellation_after_the_real_proof_reply_refuses_static_select_before_final_fr
     assert_eq!(
         rows(session.execute("SELECT * FROM records").unwrap()),
         vec![vec![42, 1]]
+    );
+}
+
+#[test]
+fn one_staged_nonce_survives_genuine_update_replication_copy_and_reopen() {
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let a = Process::start(owner.fingerprint(), 1, None);
+    let b = Process::start(owner.fingerprint(), 2, None);
+    let mut c = Process::start(owner.fingerprint(), 3, None);
+    let pa = a.participant(1, &connector);
+    let pb = b.participant(2, &connector);
+    let pc = c.participant(3, &connector);
+    let mut session = Session::create(
+        "salted-custody".into(),
+        &[
+            PlainRow {
+                age: 18,
+                amount: 10,
+            },
+            PlainRow {
+                age: 42,
+                amount: 20,
+            },
+        ],
+        vec![pa.clone(), pb.clone()],
+        test_contract(),
+    )
+    .unwrap();
+    let fetch = |peer: &Participant, object| {
+        let Response::RawBundle(raw) = peer.remote.call(Request::Fetch { object }).unwrap() else {
+            panic!("raw object required")
+        };
+        let checked = peer_runtime::CheckedObject::audit(raw.clone()).unwrap();
+        assert_eq!(checked.version().object(), &object);
+        raw
+    };
+    let initial = session
+        .shards()
+        .into_iter()
+        .map(|shard| (shard.id, fetch(&pa, shard.object)))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert!(matches!(
+        session
+            .execute("UPDATE records SET amount = amount + 1 WHERE age >= 18")
+            .unwrap(),
+        VerifiedResult::Updated {
+            affected_rows: 2,
+            ..
+        }
+    ));
+    for shard in session.shards() {
+        let one = fetch(&pa, shard.object);
+        let two = fetch(&pb, shard.object);
+        assert_eq!(one, two, "replicas must share the exact nonce/envelope");
+        assert_ne!(one.nonce, initial[&shard.id].nonce);
+        session.copy_shard(shard.id, pc.clone()).unwrap();
+        assert_eq!(fetch(&pc, shard.object), one);
+    }
+    c.kill();
+    let reopened = Process::start(owner.fingerprint(), 3, Some(c.directory.clone()));
+    let pc = reopened.participant(3, &connector);
+    for shard in session.shards() {
+        assert_eq!(fetch(&pc, shard.object), fetch(&pb, shard.object));
+    }
+    assert_eq!(
+        rows(session.execute("SELECT * FROM records").unwrap()),
+        vec![vec![18, 11], vec![42, 21]]
     );
 }

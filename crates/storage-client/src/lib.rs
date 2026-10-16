@@ -4,7 +4,7 @@
 #![forbid(unsafe_code)]
 use compact_query::{AgeRange, PlainRow, Table, bfv as backend};
 use compact_store::{Commitment, Limits};
-use peer_runtime::{Bundle, Operation, RemotePeer, Request, Response, Status};
+use peer_runtime::{Operation, RawBundle, RemotePeer, Request, Response, Status};
 use sql_plan::{Projection, QueryPlan};
 use std::{fmt, io};
 mod jobs;
@@ -130,14 +130,8 @@ impl Database {
         let row_ids =
             compact_query::RowIds::generate(rows.len())?.partition(&assignments, peers.len())?;
         drop(assignments);
-        let mut setup_id = None;
-        let mut shards = Vec::new();
+        let mut sealed = Vec::new();
         for (slot, (peer, ids)) in peers.iter().zip(row_ids).enumerate() {
-            let current = install(&peer.remote, &setup)?;
-            if setup_id.is_some_and(|id| id != current) {
-                return Err(Error::Cryptography("Public setup identity mismatch".into()));
-            }
-            setup_id = Some(current);
             let part: Vec<_> = rows
                 .iter()
                 .skip(slot)
@@ -145,13 +139,22 @@ impl Database {
                 .copied()
                 .collect();
             let table = owner.seal_partition(&table_id, &part, ids, 256, Limits::default())?;
-            let bundle = Bundle {
-                data_head: table.commitment().encode().to_vec(),
-                index_head: table.index_commitment().encode().to_vec(),
-                data: table.snapshot().encode(),
-                index: table.encrypted_index().encode(),
-            };
-            let object = bundle.id();
+            let bundle = RawBundle::from_snapshots(table.snapshot(), table.encrypted_index())
+                .map_err(|e| Error::Cryptography(e.to_string()))?;
+            sealed.push((peer, table, bundle, part.len()));
+        }
+        let mut setup_id = None;
+        let mut shards = Vec::new();
+        for (peer, table, bundle, rows) in sealed {
+            let current = install(&peer.remote, &setup)?;
+            if setup_id.is_some_and(|id| id != current) {
+                return Err(Error::Cryptography("Public setup identity mismatch".into()));
+            }
+            setup_id = Some(current);
+            let object = *bundle
+                .target_version()
+                .map_err(|e| Error::Cryptography(e.to_string()))?
+                .object();
             match peer.remote.call(Request::Store(bundle))? {
                 Response::Stored(info) if info.id == object => {}
                 _ => return Err(Error::Cryptography("Invalid store acknowledgement".into())),
@@ -161,7 +164,7 @@ impl Database {
                     id: peer.id,
                     object,
                     holders: vec![peer.id],
-                    rows: part.len(),
+                    rows,
                     data_head: table.commitment().clone(),
                     index_head: table.index_commitment().clone(),
                 },
@@ -213,10 +216,12 @@ impl Database {
     }
     fn fetch(&self, shard: &Shard) -> Result<(RemotePeer, Table)> {
         for peer in &shard.peers {
-            if let Ok(Response::Bundle(bundle)) = peer.remote.call(Request::Fetch {
+            if let Ok(Response::RawBundle(bundle)) = peer.remote.call(Request::Fetch {
                 object: shard.info.object,
             }) {
-                if bundle.id() != shard.info.object
+                if !bundle
+                    .target_version()
+                    .is_ok_and(|version| version.object() == &shard.info.object)
                     || bundle.data_head != shard.info.data_head.encode()
                     || bundle.index_head != shard.info.index_head.encode()
                 {
@@ -246,7 +251,14 @@ impl Database {
             .find(|s| s.info.id == shard_id)
             .ok_or_else(|| Error::InvalidInput("Unknown shard".into()))?;
         if shard.peers.iter().any(|p| p.id == target.id)
-            && matches!(target.remote.call(Request::Fetch { object: shard.info.object }), Ok(Response::Bundle(bundle)) if bundle.id() == shard.info.object)
+            && holds_object(
+                target.remote.call(Request::Fetch {
+                    object: shard.info.object,
+                }),
+                shard.info.object,
+                &shard.info.data_head.encode(),
+                &shard.info.index_head.encode(),
+            )
         {
             return Ok(());
         }
@@ -380,5 +392,84 @@ fn install(peer: &RemotePeer, setup: &[u8]) -> Result<[u8; 32]> {
         _ => Err(Error::Cryptography(
             "Missing public-setup acknowledgement".into(),
         )),
+    }
+}
+
+// Recovered holder credit needs complete custody, independently pinned ID and
+// both heads. Neither a binding-only TargetVersion nor TLS is sufficient.
+fn holds_object(
+    response: io::Result<Response>,
+    object: [u8; 32],
+    data: &[u8],
+    index: &[u8],
+) -> bool {
+    let Ok(Response::RawBundle(raw)) = response else {
+        return false;
+    };
+    let Ok(checked) = peer_runtime::CheckedObject::audit(raw) else {
+        return false;
+    };
+    checked.version().object() == &object
+        && checked.version().data_head().encode() == data
+        && checked.version().index_head().encode() == index
+}
+
+#[cfg(test)]
+mod holder_tests {
+    use super::*;
+    #[test]
+    fn recovered_holder_requires_both_complete_images_and_exact_object_and_heads() {
+        let owner = compact_store::Owner::generate([95; 16]).unwrap();
+        let image = owner
+            .seal(
+                compact_store::Layout {
+                    schema: [96; 16],
+                    row_width: 1,
+                    rows_per_page: 3,
+                    row_count: 7,
+                },
+                &[1; 7],
+                Limits::default(),
+            )
+            .unwrap();
+        let raw = RawBundle::from_snapshots(&image, &image).unwrap();
+        let version = raw.target_version().unwrap();
+        let id = *version.object();
+        let head = image.commitment().encode();
+        assert!(holds_object(
+            Ok(Response::RawBundle(raw.clone())),
+            id,
+            &head,
+            &head
+        ));
+        for field in 0..4 {
+            let mut bad = raw.clone();
+            match field {
+                0 => *bad.data.last_mut().unwrap() ^= 1,
+                1 => *bad.index.last_mut().unwrap() ^= 1,
+                2 => bad.nonce[0] ^= 1,
+                _ => bad.data_head[56] ^= 1,
+            }
+            assert!(!holds_object(
+                Ok(Response::RawBundle(bad)),
+                id,
+                &head,
+                &head
+            ));
+        }
+        let mut wrong = head;
+        wrong[56] ^= 1;
+        assert!(!holds_object(
+            Ok(Response::RawBundle(raw.clone())),
+            id,
+            &wrong,
+            &head
+        ));
+        assert!(!holds_object(
+            Ok(Response::RawBundle(raw)),
+            id,
+            &head,
+            &wrong
+        ));
     }
 }

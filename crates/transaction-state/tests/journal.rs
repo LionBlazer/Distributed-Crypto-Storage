@@ -627,7 +627,7 @@ fn durable_metadata_reopens_and_rejected_witness_cannot_change_file_or_head() {
         })
     ));
     let mut cleanup = OwnedFile(None);
-    let mut durable = DurableJournal::create(&path, fixture.genesis.clone()).unwrap();
+    let mut durable = DurableJournal::create(&path, fixture.genesis.clone(), [71; 32]).unwrap();
     cleanup.0 = Some(path.clone());
     let root = durable.journal().genesis_id();
     let signed = fixture.signed(
@@ -676,8 +676,14 @@ fn durable_metadata_reopens_and_rejected_witness_cannot_change_file_or_head() {
     // Close our writer before snapshotting, then reopen against the pinned genesis.
     drop(durable);
     let file_before = std::fs::read(&path).unwrap();
-    let mut durable =
-        DurableJournal::open(&path, fixture.genesis.clone(), 2000, &fixture.verifier).unwrap();
+    let mut durable = DurableJournal::open(
+        &path,
+        fixture.genesis.clone(),
+        [71; 32],
+        2000,
+        &fixture.verifier,
+    )
+    .unwrap();
 
     let result = durable.append_block(header, &bytes, 2000, &fixture.verifier);
 
@@ -692,8 +698,14 @@ fn durable_metadata_reopens_and_rejected_witness_cannot_change_file_or_head() {
     );
     drop(durable);
     assert_eq!(std::fs::read(&path).unwrap(), file_before);
-    let reopened =
-        DurableJournal::open(&path, fixture.genesis.clone(), 2000, &fixture.verifier).unwrap();
+    let reopened = DurableJournal::open(
+        &path,
+        fixture.genesis.clone(),
+        [71; 32],
+        2000,
+        &fixture.verifier,
+    )
+    .unwrap();
     assert_eq!(
         reopened
             .journal()

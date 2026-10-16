@@ -121,7 +121,7 @@ impl Process {
             use std::fmt::Write as _;
             write!(name, "{byte:02x}").unwrap();
         }
-        name.push_str(".bundle");
+        name.push_str(".object2");
         let path = self.directory.join(name);
         // Only this test's explicitly public ciphertext fixture is changed. Preserve
         // the filename and length so availability must detect content corruption.

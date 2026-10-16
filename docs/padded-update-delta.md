@@ -6,7 +6,8 @@ It sends those encrypted replacement pages with independent new-head membership
 proofs rather than uploading unchanged encrypted identity pages to existing holders.
 This changes transport only: complete authenticated selection, proof checking,
 overflow rejection, confirmed-head freshness and signed transition validation
-remain mandatory. No FHE/STARK profile, application anchor or kernel ABI changes.
+remain mandatory. The FHE/STARK profile and kernel ABI are unchanged. Custody profile 2 uses the
+[explicit new object/application namespace](salted-custody-objects.md).
 
 ## Placement and privacy contract
 
@@ -41,7 +42,7 @@ For the existing one-million-row fixed schema/private index-3 geometry:
 | Complete application request | Encoded bytes |
 | --- | ---: |
 | Padded Delta, every admissible changed-page count | 1,188,143 |
-| Ordinary Full Store | 37,604,542 |
+| Ordinary Full Store | 37,604,576 |
 
 The transport prefix adds 16 bytes; TLS/TCP overhead is separate.
 Independent default-limit extrema give a conservative padded-request upper bound
@@ -62,7 +63,7 @@ transition after all jobs pass and before the first write or signature.
 A first Delta write fully audits the old physical bundle, both old roots and its
 canonical immutable hash, including overwritten or unrequested corrupt bytes.
 Only verified new-head pages enter consuming same-geometry snapshot replacement.
-The complete reconstructed new roots and full new Bundle hash must match.
+The complete reconstructed new roots and nonce-derived target object binding must match after both complete-root checks.
 Complete target validation, full-object quota, file sync and atomic
 rename still apply. Failure does not modify the old file; the base remains until
 normal journal GC. An already stored target is fully audited on replay, even
@@ -70,16 +71,17 @@ when normal GC has removed its base. A cached object record never grants an ACK.
 
 A private admission handoff keeps the full physical-base audit while avoiding
 a second decode/tree rebuild of the reconstructed new images. Only the store's
-physical reader constructs an immutable `AuditedBundle`. Reconstructing all
+physical reader constructs an immutable `CheckedObject`. Reconstructing all
 verified replacements against it produces sealed `ReconstructedDelta` after
 both complete new roots match. The private candidate factory consumes that full
-reconstruction, checks both exact target heads and the unchanged whole-Bundle ID,
+reconstruction, checks both exact target heads and the profile-2 nonce/head object binding,
 then owns the canonical disk bytes and derived custody metadata. Shared durable
 persistence accepts no raw bundle or validation flag. Ordinary Full Store still
 audits its raw input, and every existing-target replay still audits the complete
 physical target. The capabilities do not survive their request and cannot be
-deserialized, cloned or used as freshness/SQL proof. IDs, disk/RPC bytes, quotas,
-durability, FHE/profile and application semantics remain unchanged.
+deserialized, cloned or used as freshness/SQL proof. The selected custody profile
+2 deliberately changes object/disk/RPC/application identity; quotas, durability
+and cryptographic computation rules remain mandatory.
 
 The runtime enforces TLS owner upload authority, not SQL authorization. The signed
 journal transition remains the authorization boundary. Cancellation can lose an

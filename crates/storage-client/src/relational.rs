@@ -8,7 +8,7 @@ use super::{Error, Participant, Result, ShardInfo, install};
 use crate::query_rpc::{ProofJob, Requests};
 use bfv_query_core::{Geometry, PublicUpdateEvaluator, QueryContext};
 use compact_store::{EncryptedSnapshot, Layout, Limits};
-use peer_runtime::{Bundle, JobVerifier, Operation, Request, Response};
+use peer_runtime::{JobVerifier, Operation, RawBundle, Request, Response};
 use relational_types::{ImportedDatabase, Row, TableSchema, Value};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, time::Instant};
@@ -158,17 +158,12 @@ impl RelationalSession {
             let data = seal(&owner, schema_id(&index.schema, false)?, &bytes)?;
             let encoded_index = Zeroizing::new(json(&index)?);
             let encrypted_index = seal(&owner, schema_id(&index.schema, true)?, &encoded_index)?;
-            let bundle = Bundle {
-                data_head: data.commitment().encode().to_vec(),
-                index_head: encrypted_index.commitment().encode().to_vec(),
-                data: data.encode(),
-                index: encrypted_index.encode(),
-            };
+            let bundle = RawBundle::from_snapshots(&data, &encrypted_index).map_err(crypto)?;
             let relation = Relation {
                 schema: index.schema,
                 shard: ShardInfo {
                     id: (slot + 1) as u64,
-                    object: bundle.id(),
+                    object: *bundle.target_version().map_err(crypto)?.object(),
                     holders: Vec::new(),
                     rows: index.cells.len(),
                     data_head: data.commitment().clone(),
@@ -296,13 +291,15 @@ impl RelationalSession {
                     object: relation.shard.object,
                 }
             }) {
-                Ok(Response::Bundle(bundle)) => bundle,
+                Ok(Response::RawBundle(bundle)) => bundle,
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {
                     return Err(error.into());
                 }
                 _ => continue,
             };
-            if bundle.id() != relation.shard.object
+            if !bundle
+                .target_version()
+                .is_ok_and(|version| version.object() == &relation.shard.object)
                 || bundle.data_head != relation.shard.data_head.encode()
                 || bundle.index_head != relation.shard.index_head.encode()
             {

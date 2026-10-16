@@ -104,3 +104,12 @@ The million-row fixed-table custody/update/restore fixture similarly supports
 `DCS_TEST_FIXED_PIDS=1` with `owned_fixed_process` notices for its owner and one
 directly owned peer before table creation. It is a separate lifecycle memory
 observation; disable this flag while measuring accepted SQL latency.
+
+## Incompatible custody profile 2
+
+Bootstrap is strictly nested JSON `{ "version": 2, "config": { ... } }`, bounded
+by the existing 64-KiB stdin frame. Old flat bootstraps, unknown fields/versions
+and RPC version 1 reject; no old-format fallback or migration exists. Participant
+state uses the [explicit profile-2 namespace](../../docs/salted-custody-objects.md).
+Read-only compatibility preflight precedes directory/lock creation and pending
+cleanup; initialized-v2 current pending recovery remains supported.

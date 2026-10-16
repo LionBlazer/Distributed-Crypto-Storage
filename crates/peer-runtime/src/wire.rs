@@ -1,35 +1,9 @@
+pub(crate) use crate::RawBundle;
 use bincode::Options;
-use peer_transport::{Endpoint, Identity, MAX_FRAME_BYTES};
+use peer_transport::{Endpoint, MAX_FRAME_BYTES};
 use serde::{Deserialize, Serialize};
-use std::{io, net::SocketAddr};
+use std::io;
 
-#[derive(Serialize, Deserialize)]
-pub struct Bootstrap {
-    pub identity: Identity,
-    pub authority: Vec<u8>,
-    pub owner: [u8; 32],
-    pub node_id: u64,
-    pub quota_bytes: u64,
-    pub listen: SocketAddr,
-}
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Bundle {
-    pub data_head: Vec<u8>,
-    pub index_head: Vec<u8>,
-    pub data: Vec<u8>,
-    pub index: Vec<u8>,
-}
-impl Bundle {
-    pub fn id(&self) -> [u8; 32] {
-        use sha2::{Digest, Sha256};
-        let mut h = Sha256::new();
-        for part in [&self.data_head, &self.index_head, &self.data, &self.index] {
-            h.update((part.len() as u64).to_be_bytes());
-            h.update(part);
-        }
-        h.finalize().into()
-    }
-}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Operation {
     Aggregate,
@@ -44,7 +18,7 @@ pub enum Operation {
 pub enum Request {
     Probe,
     Status,
-    Store(Bundle),
+    Store(RawBundle),
     Fetch {
         object: [u8; 32],
     },
@@ -166,6 +140,18 @@ pub struct Status {
     pub neighbors: Vec<Neighbor>,
     pub recent: Vec<Observation>,
 }
+impl Status {
+    /// Advisory observed object/journal bytes plus the fixed initialized root
+    /// profile. Excludes in-flight reservations, pending writes and RAM/setup.
+    /// This status observation never grants custody or quota admission.
+    pub fn disk_bytes(&self) -> u64 {
+        self.objects.iter().fold(
+            self.journal_bytes
+                .saturating_add(crate::store::PROFILE_BYTES as u64),
+            |total, object| total.saturating_add(object.stored_bytes),
+        )
+    }
+}
 #[derive(Serialize, Deserialize)]
 pub enum Response {
     Alive {
@@ -174,7 +160,7 @@ pub enum Response {
     },
     Status(Status),
     Stored(ObjectInfo),
-    Bundle(Bundle),
+    RawBundle(RawBundle),
     Setup([u8; 32]),
     /// Genuine peer FHE output, with no fabricated proof or accepted-result wrapper.
     UnverifiedCiphertext(Vec<u8>),
@@ -236,6 +222,16 @@ pub(crate) fn encode<T: Serialize>(value: &T) -> io::Result<Vec<u8>> {
         .serialize(value)
         .map_err(io::Error::other)
 }
+pub(crate) fn encode_into<T: Serialize>(
+    value: &T,
+    output: &mut impl std::io::Write,
+) -> io::Result<()> {
+    bincode::DefaultOptions::new()
+        .with_fixint_encoding()
+        .with_limit(MAX_FRAME_BYTES as u64)
+        .serialize_into(output, value)
+        .map_err(io::Error::other)
+}
 pub(crate) fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> io::Result<T> {
     bincode::DefaultOptions::new()
         .with_fixint_encoding()
@@ -284,4 +280,22 @@ pub(crate) fn decode_custody_response(
         .reject_trailing_bytes()
         .deserialize(bytes)
         .map_err(io::Error::other)
+}
+
+pub(crate) fn check_version(bytes: &[u8]) -> io::Result<()> {
+    if bytes.get(..2) != Some(2u16.to_le_bytes().as_slice()) {
+        return Err(io::Error::other("Unsupported RPC version"));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod version_tests {
+    #[test]
+    fn incompatible_rpc_prefix_rejects_before_body_decoding() {
+        for bytes in [vec![], vec![2], vec![1, 0], vec![3, 0, 255, 255]] {
+            assert!(super::check_version(&bytes).is_err());
+        }
+        assert!(super::check_version(&[2, 0]).is_ok());
+    }
 }

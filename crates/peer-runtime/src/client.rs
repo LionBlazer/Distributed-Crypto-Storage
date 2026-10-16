@@ -91,7 +91,7 @@ impl RemotePeer {
         let name = request.name().to_string();
         let started = Instant::now();
         let bytes = encode(&WireRequest {
-            version: 1,
+            version: 2,
             id,
             request,
         })?;
@@ -123,11 +123,12 @@ impl RemotePeer {
                     bytes: received,
                 });
             }
+            crate::wire::check_version(&payload)?;
             let response: WireResponse = match custody_tag {
                 Some(tag) => decode_custody_response(&payload, response_limit, tag)?,
                 None => decode(&payload)?,
             };
-            if response.version != 1 || response.id != id {
+            if response.version != 2 || response.id != id {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "Response version/request binding mismatch",

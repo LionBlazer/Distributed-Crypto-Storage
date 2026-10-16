@@ -8,9 +8,9 @@ pub const MAX_READ_IMAGE_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 const HEADER_BYTES: usize = 270;
 const ENVELOPE_BYTES: usize = 26;
 const MAX_BODY_BYTES: usize = MAX_READ_IMAGE_RESPONSE_BYTES - ENVELOPE_BYTES;
-const REQUEST_MAGIC: &[u8; 8] = b"DCSRIMQ1";
-const RESPONSE_MAGIC: &[u8; 8] = b"DCSRIMR1";
-const VERSION: u16 = 1;
+const REQUEST_MAGIC: &[u8; 8] = b"DCSRIMQ2";
+const RESPONSE_MAGIC: &[u8; 8] = b"DCSRIMR2";
+const VERSION: u16 = 2;
 type Result<T> = std::result::Result<T, PageError>;
 
 /// Exact immutable image request. Prefix length is public; SQL consumers must
@@ -62,7 +62,7 @@ impl ReadImageRequest {
     /// Exact successful encoded response length for this authenticated geometry.
     pub fn encoded_response_bytes(&self) -> Result<usize> {
         let mut bytes =
-            ENVELOPE_BYTES + HEADER_BYTES + 4 + self.data_head.layout().encoded_len()?;
+            ENVELOPE_BYTES + HEADER_BYTES + 32 + 4 + self.data_head.layout().encoded_len()?;
         for page in 0..u64::from(self.prefix_pages) {
             bytes = bytes
                 .checked_add(4 + lookup_bytes(&self.index_head, page)?)
@@ -101,15 +101,18 @@ impl ReadImageRequest {
 /// heads. Call verify with independently trusted heads/request before using it.
 pub struct ReadImage {
     request: ReadImageRequest,
+    nonce: [u8; 32],
     data: EncryptedSnapshot,
     index: Vec<LookupResponse>,
 }
 impl ReadImage {
     pub(crate) fn from_snapshots(
         request: ReadImageRequest,
+        nonce: [u8; 32],
         data: EncryptedSnapshot,
         index: &EncryptedSnapshot,
     ) -> Result<Self> {
+        check_object(&request, nonce)?;
         if data.commitment() != request.data_head() || index.commitment() != request.index_head() {
             return Err(PageError::BindingMismatch);
         }
@@ -122,11 +125,13 @@ impl ReadImage {
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
             request,
+            nonce,
             data,
             index: pages,
         })
     }
     pub fn verify(&self, expected: &ReadImageRequest) -> Result<()> {
+        check_object(expected, self.nonce)?;
         if &self.request != expected
             || self.data.commitment() != expected.data_head()
             || self.index.len() != expected.prefix_pages as usize
@@ -162,6 +167,7 @@ impl ReadImage {
                 - ENVELOPE_BYTES
                 - HEADER_BYTES,
         );
+        bytes.extend_from_slice(&self.nonce);
         bytes.extend_from_slice(&(self.data.encoded_len() as u32).to_le_bytes());
         bytes.extend_from_slice(&self.data.encode());
         for page in &self.index {
@@ -179,6 +185,8 @@ impl ReadImage {
             return Err(PageError::InvalidFormat);
         }
         let mut offset = HEADER_BYTES;
+        let nonce = take(bytes, &mut offset, 32)?.try_into().unwrap();
+        check_object(&request, nonce)?;
         let length = u32::from_le_bytes(take(bytes, &mut offset, 4)?.try_into().unwrap()) as usize;
         if length != request.data_head.layout().encoded_len()? {
             return Err(PageError::InvalidFormat);
@@ -205,10 +213,20 @@ impl ReadImage {
         }
         Ok(Self {
             request,
+            nonce,
             data,
             index,
         })
     }
+}
+fn check_object(request: &ReadImageRequest, nonce: [u8; 32]) -> Result<()> {
+    let version =
+        crate::TargetVersion::new(nonce, request.data_head.clone(), request.index_head.clone())
+            .map_err(|_| PageError::BindingMismatch)?;
+    if version.object() != request.object() {
+        return Err(PageError::BindingMismatch);
+    }
+    Ok(())
 }
 fn take<'a>(bytes: &'a [u8], offset: &mut usize, length: usize) -> Result<&'a [u8]> {
     let end = offset.checked_add(length).ok_or(PageError::ResourceLimit)?;
@@ -272,8 +290,19 @@ mod tests {
                 custody_limits(),
             )
             .unwrap();
-        let request =
-            ReadImageRequest::new([9; 32], data.commitment(), index.commitment(), 2).unwrap();
+        let request = ReadImageRequest::new(
+            *crate::TargetVersion::new(
+                [31; 32],
+                data.commitment().clone(),
+                index.commitment().clone(),
+            )
+            .unwrap()
+            .object(),
+            data.commitment(),
+            index.commitment(),
+            2,
+        )
+        .unwrap();
         (owner, data, index, request)
     }
     fn image(
@@ -281,13 +310,13 @@ mod tests {
         index: &EncryptedSnapshot,
         request: &ReadImageRequest,
     ) -> ReadImage {
-        ReadImage::from_snapshots(request.clone(), data.clone(), index).unwrap()
+        ReadImage::from_snapshots(request.clone(), [31; 32], data.clone(), index).unwrap()
     }
     #[test]
     fn immutable_read_image_authenticates_complete_data_and_the_exact_index_prefix() {
         let (owner, data, index, request) = fixture();
         let bytes = wire::encode(&WireResponse {
-            version: 1,
+            version: 2,
             id: 7,
             result: Ok(Response::ReadImage(image(&data, &index, &request))),
         })
@@ -325,6 +354,31 @@ mod tests {
         assert_eq!(decoded_request, request);
     }
     #[test]
+    fn nonce_tamper_rejects_and_rebound_nonce_never_matches_the_original_request() {
+        let (_, data, index, request) = fixture();
+        let mut encoded = image(&data, &index, &request).encode();
+        encoded[HEADER_BYTES] ^= 1;
+        assert!(ReadImage::decode(&encoded).is_err());
+        let nonce: [u8; 32] = encoded[HEADER_BYTES..HEADER_BYTES + 32].try_into().unwrap();
+        let rebound = crate::TargetVersion::new(
+            nonce,
+            request.data_head().clone(),
+            request.index_head().clone(),
+        )
+        .unwrap();
+        encoded[10..42].copy_from_slice(rebound.object());
+        let valid_other_object = ReadImage::decode(&encoded).unwrap();
+        assert!(valid_other_object.verify(&request).is_err());
+        let different = ReadImageRequest::new(
+            *rebound.object(),
+            request.data_head(),
+            request.index_head(),
+            request.prefix_pages(),
+        )
+        .unwrap();
+        valid_other_object.verify(&different).unwrap();
+    }
+    #[test]
     fn actual_custody_limits_bound_million_row_geometry_before_image_allocation() {
         let (_, data, index, _) = fixture();
         let mut data_head = data.commitment().encode();
@@ -339,7 +393,7 @@ mod tests {
         let request = ReadImageRequest::new([9; 32], &data_head, &index_head, 493).unwrap();
         assert_eq!(data_head.layout().encoded_len().unwrap(), 3_187_648);
         assert_eq!(index_head.layout().page_count().unwrap(), 8306);
-        assert_eq!(request.encoded_response_bytes().unwrap(), 5_461_664);
+        assert_eq!(request.encoded_response_bytes().unwrap(), 5_461_696);
         assert!(ReadImageRequest::new([9; 32], &data_head, &index_head, 512).is_ok());
         assert!(matches!(
             ReadImageRequest::new([9; 32], &data_head, &index_head, 513),
@@ -364,7 +418,7 @@ mod tests {
             8,
             42 + 80,
             154 + 80,
-            HEADER_BYTES + 4 + 112 + 32,
+            HEADER_BYTES + 32 + 4 + 112 + 32,
             original.len() - 1,
         ] {
             let mut changed = original.clone();
@@ -386,9 +440,9 @@ mod tests {
         changed.push(0);
         assert!(ReadImage::decode(&changed).is_err());
         let mut changed = original.clone();
-        changed[HEADER_BYTES..HEADER_BYTES + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+        changed[HEADER_BYTES + 32..HEADER_BYTES + 36].copy_from_slice(&u32::MAX.to_le_bytes());
         assert!(ReadImage::decode(&changed).is_err());
-        let first_lookup = HEADER_BYTES + 4 + data.encoded_len() + 4;
+        let first_lookup = HEADER_BYTES + 32 + 4 + data.encoded_len() + 4;
         let second_lookup =
             first_lookup + index.lookup(0, custody_limits()).unwrap().encoded_len() + 4;
         let mut duplicate = original.clone();
@@ -406,15 +460,25 @@ mod tests {
         let wrong_object =
             ReadImageRequest::new([8; 32], request.data_head(), request.index_head(), 2).unwrap();
         assert!(actual.verify(&wrong_object).is_err());
-        let wrong_prefix =
-            ReadImageRequest::new([9; 32], request.data_head(), request.index_head(), 1).unwrap();
+        let wrong_prefix = ReadImageRequest::new(
+            *request.object(),
+            request.data_head(),
+            request.index_head(),
+            1,
+        )
+        .unwrap();
         assert!(actual.verify(&wrong_prefix).is_err());
         let wrong_heads =
             ReadImageRequest::new([9; 32], request.index_head(), request.data_head(), 2).unwrap();
         assert!(actual.verify(&wrong_heads).is_err());
-        assert!(ReadImage::from_snapshots(wrong_heads, data.clone(), &index).is_err());
-        let data_only =
-            ReadImageRequest::new([9; 32], request.data_head(), request.index_head(), 0).unwrap();
+        assert!(ReadImage::from_snapshots(wrong_heads, [31; 32], data.clone(), &index).is_err());
+        let data_only = ReadImageRequest::new(
+            *request.object(),
+            request.data_head(),
+            request.index_head(),
+            0,
+        )
+        .unwrap();
         let actual = image(&data, &index, &data_only);
         actual.verify(&data_only).unwrap();
         assert!(actual.index_page(0, custody_limits()).is_err());

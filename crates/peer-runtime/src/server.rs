@@ -1,4 +1,4 @@
-use crate::{RemotePeer, store::Store, wire::*};
+use crate::{Bootstrap, CheckedObject, RemotePeer, store::Store, wire::*};
 use bfv_query_core::{PeerEvaluator, PublicSetup};
 use mio::{Events, Interest, Poll, Token, Waker};
 use peer_transport::{Acceptor, Connector, Endpoint, MAX_FRAME_BYTES, read_frame, write_frame};
@@ -255,8 +255,9 @@ impl PeerServer {
 fn serve(socket: TcpStream, acceptor: Acceptor, shared: Arc<Shared>) -> io::Result<()> {
     let (remote, mut stream) = acceptor.accept(socket)?;
     let bytes = read_frame(&mut stream, MAX_FRAME_BYTES)?;
+    crate::wire::check_version(&bytes)?;
     let wire: WireRequest = decode(&bytes)?;
-    if wire.version != 1 {
+    if wire.version != 2 {
         return Err(io::Error::other("Unsupported RPC version"));
     }
     let response_limit = match &wire.request {
@@ -269,7 +270,7 @@ fn serve(socket: TcpStream, acceptor: Acceptor, shared: Arc<Shared>) -> io::Resu
     let result = dispatch(&shared, remote, wire.request);
     let succeeded = result.is_ok();
     let payload = encode(&WireResponse {
-        version: 1,
+        version: 2,
         id: wire.id,
         result,
     })?;
@@ -347,13 +348,14 @@ fn dispatch(
     // Copy reads from another authenticated peer; the owner never supplies source plaintext.
     if let Request::Copy { source, object } = &request {
         let source = RemotePeer::new(source.clone(), shared.connector.clone());
-        let Response::Bundle(bundle) = source
+        let Response::RawBundle(bundle) = source
             .call(Request::Fetch { object: *object })
             .map_err(io_error)?
         else {
             return Err(RemoteError::InvalidRequest);
         };
-        if bundle.id() != *object {
+        let checked = CheckedObject::audit(bundle)?;
+        if checked.version().object() != object {
             return Err(RemoteError::Integrity);
         }
         return shared
@@ -361,7 +363,7 @@ fn dispatch(
             .lock()
             .map_err(io_error)?
             .store
-            .put(bundle)
+            .put_checked(checked)
             .map(Response::Stored);
     }
     let mut state = shared.state.lock().map_err(io_error)?;
@@ -384,7 +386,7 @@ fn dispatch(
         })),
         Request::Store(bundle) => state.store.put(bundle).map(Response::Stored),
         Request::StoreDelta(delta) => state.store.put_delta(delta).map(Response::Stored),
-        Request::Fetch { object } => state.store.get(&object).map(Response::Bundle),
+        Request::Fetch { object } => state.store.get(&object).map(Response::RawBundle),
         Request::FetchPages(request) => state.store.get_pages(request).map(Response::Pages),
         Request::FetchReadImage(request) => {
             state.store.get_read_image(request).map(Response::ReadImage)
@@ -395,7 +397,7 @@ fn dispatch(
         } => state
             .store
             .get_version(&data_head, &index_head)
-            .map(Response::Bundle),
+            .map(Response::RawBundle),
         Request::Neighbors(endpoints) => {
             if endpoints.len() > 32
                 || endpoints

@@ -1,6 +1,6 @@
 //! Fixed public-geometry padded ciphertext replacement; never SQL acceptance.
 use crate::{
-    Bundle, PageAddress, PageError, PageImage, pages::lookup_bytes, store::custody_limits,
+    PageAddress, PageError, PageImage, TargetVersion, pages::lookup_bytes, store::custody_limits,
 };
 use compact_store::{Commitment, EncryptedSnapshot, LookupResponse, VerifiedPage};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
@@ -11,10 +11,10 @@ pub const MAX_STORE_DELTA_REQUEST_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_STORE_DELTA_RESPONSE_BYTES: usize = 64 * 1024;
 const HEADER_BYTES: usize = 524;
 const REQUEST_ENVELOPE_BYTES: usize = 22;
-const FULL_STORE_ENVELOPE_BYTES: usize = 270;
+const FULL_STORE_ENVELOPE_BYTES: usize = 304;
 const MAX_BODY_BYTES: usize = MAX_STORE_DELTA_REQUEST_BYTES - REQUEST_ENVELOPE_BYTES;
-const MAGIC: &[u8; 8] = b"DCSDLTA1";
-const VERSION: u16 = 1;
+const MAGIC: &[u8; 8] = b"DCSDLTA2";
+const VERSION: u16 = 2;
 type Result<T> = std::result::Result<T, PageError>;
 
 /// Advisory transport geometry only. Recipient classification belongs to the
@@ -99,7 +99,7 @@ impl ObjectVersion {
 #[derive(Clone)]
 struct VersionBinding {
     base: ObjectVersion,
-    next: ObjectVersion,
+    next: TargetVersion,
 }
 /// Untrusted encrypted delta with a canonical zero-padded length. Parsing does
 /// not establish source custody, target membership, authorization or freshness.
@@ -116,27 +116,21 @@ pub(crate) struct VerifiedReplacementPages {
 /// Sealed complete target derived only from an audited physical base and all
 /// verified replacements. It grants custody admission, not SQL authorization.
 pub(crate) struct ReconstructedDelta {
-    expected: ObjectVersion,
+    expected: TargetVersion,
     data: EncryptedSnapshot,
     index: EncryptedSnapshot,
 }
 impl ReconstructedDelta {
-    pub(crate) fn into_images(
-        self,
-    ) -> (
-        [u8; 32],
-        Commitment,
-        Commitment,
-        EncryptedSnapshot,
-        EncryptedSnapshot,
-    ) {
-        (
-            self.expected.object,
-            self.expected.data,
-            self.expected.index,
-            self.data,
-            self.index,
-        )
+    pub(crate) fn into_images(self) -> (TargetVersion, EncryptedSnapshot, EncryptedSnapshot) {
+        (self.expected, self.data, self.index)
+    }
+}
+impl TargetVersion {
+    fn head(&self, image: PageImage) -> &Commitment {
+        match image {
+            PageImage::Data => self.data_head(),
+            PageImage::Index => self.index_head(),
+        }
     }
 }
 impl StoreDeltaRequest {
@@ -144,38 +138,27 @@ impl StoreDeltaRequest {
         base_object: [u8; 32],
         old_data: &Commitment,
         old_index: &Commitment,
-        next: &Bundle,
+        next: &TargetVersion,
         pages: &[(PageAddress, LookupResponse)],
     ) -> Result<Self> {
         if pages.is_empty() || pages.len() > MAX_STORE_DELTA_PAGES {
             return Err(PageError::ResourceLimit);
         }
-        let data = Commitment::decode(&next.data_head, custody_limits())?;
-        let index = Commitment::decode(&next.index_head, custody_limits())?;
-        check_transition(old_data, &data)?;
-        check_transition(old_index, &index)?;
-        if next.data.len() != data.layout().encoded_len()?
-            || next.index.len() != index.layout().encoded_len()?
-        {
-            return Err(PageError::InvalidFormat);
-        }
+        check_transition(old_data, next.data_head())?;
+        check_transition(old_index, next.index_head())?;
         Self::checked(
             ObjectVersion {
                 object: base_object,
                 data: old_data.clone(),
                 index: old_index.clone(),
             },
-            ObjectVersion {
-                object: next.id(),
-                data,
-                index,
-            },
+            next.clone(),
             pages.to_vec(),
         )
     }
     fn checked(
         base: ObjectVersion,
-        next: ObjectVersion,
+        next: TargetVersion,
         pages: Vec<(PageAddress, LookupResponse)>,
     ) -> Result<Self> {
         let Some(request_bytes) =
@@ -251,7 +234,7 @@ impl StoreDeltaRequest {
     }
     pub(crate) fn reconstruct(
         self,
-        base: crate::store::AuditedBundle,
+        base: crate::CheckedObject,
         verified: VerifiedReplacementPages,
     ) -> Result<ReconstructedDelta> {
         let (object, data, index) = base.into_images();
@@ -283,7 +266,7 @@ impl StoreDeltaRequest {
         bytes.extend_from_slice(MAGIC);
         bytes.extend_from_slice(&VERSION.to_le_bytes());
         bytes.extend_from_slice(&self.binding.base.object);
-        bytes.extend_from_slice(&self.binding.next.object);
+        bytes.extend_from_slice(&self.binding.next.nonce());
         for head in [
             &self.binding.base.data,
             &self.binding.base.index,
@@ -324,11 +307,8 @@ impl StoreDeltaRequest {
             data: head(74)?,
             index: head(186)?,
         };
-        let next = ObjectVersion {
-            object: bytes[42..74].try_into().unwrap(),
-            data: head(298)?,
-            index: head(410)?,
-        };
+        let next = TargetVersion::new(bytes[42..74].try_into().unwrap(), head(298)?, head(410)?)
+            .map_err(|_| PageError::BindingMismatch)?;
         let Some(request_bytes) =
             StoreDeltaPlan::for_heads(&base.data, &base.index)?.padded_request_bytes()
         else {

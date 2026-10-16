@@ -189,8 +189,8 @@ Fixed row SELECT never requests predicate-dependent pages or counts and never
 falls back to whole Fetch, FetchPages or selected-ID retrieval. Projection, LIMIT0,
 absent buckets and schema-false predicates use identical ReadImage frame lengths
 for a given geometry; even empty selections require genuine encrypted proofs.
-At one million rows / 256 rows per page this is a 5,461,664-byte whole response,
-instead of the 37,604,546-byte full Bundle response. The runtime still audits the
+At one million rows / 256 rows per page this is a 5,461,696-byte whole response,
+instead of the 37,604,580-byte full RawBundle response. The runtime still audits the
 entire physical object once, including the omitted RowId tail, so this does not
 claim sparse disk I/O. Its 16-MiB frame cap and 512-prefix-page cap cover the fixed
 core geometry. This profile introduces no new selection-dependent address/volume
@@ -373,3 +373,13 @@ v3 identity map is owned by [compact-query](../compact-query/README.md), includi
 its sparse owner reference API and exact byte limits. Network fetch still transfers
 full encrypted bundles. The public FHE profile, RPC fields and application policy
 are unchanged; this does not implement SQL locking or finality.
+
+## Custody object profile
+
+The client uses [randomized object profile 2](../../docs/salted-custody-objects.md).
+Creation/import stage all new object nonces before their first Store. Mutation
+PreparedWrite retains one immutable raw Full object and the same TargetVersion for
+all preplanned Delta/Full recipients. Publication retries preserve recorded IDs;
+Copy preserves the envelope. Both recovered-holder paths call the same complete
+custody validator before crediting a replica. TargetVersion by itself proves no
+payload integrity, SQL completeness, authorization or agreed freshness.

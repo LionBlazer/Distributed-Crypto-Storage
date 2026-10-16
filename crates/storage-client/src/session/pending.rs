@@ -177,9 +177,14 @@ impl Session {
                 if shard.peers.iter().any(|p| p.id == peer.id) {
                     continue;
                 }
-                if matches!(peer.remote.call(Request::Fetch { object: recorded.object }), Ok(Response::Bundle(ref bundle))
-                    if bundle.id() == recorded.object && bundle.data_head == recorded.heads.data && bundle.index_head == recorded.heads.index)
-                {
+                if holds_object(
+                    peer.remote.call(Request::Fetch {
+                        object: recorded.object,
+                    }),
+                    recorded.object,
+                    &recorded.heads.data,
+                    &recorded.heads.index,
+                ) {
                     shard.peers.push(peer.clone());
                 }
             }

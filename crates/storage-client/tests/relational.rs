@@ -110,7 +110,7 @@ impl Network {
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>()
-            + ".bundle";
+            + ".object2";
         let path = self.directory.join((peer + 1).to_string()).join(name);
         let mut ciphertext = fs::read(&path).unwrap();
         *ciphertext.last_mut().unwrap() ^= 1;

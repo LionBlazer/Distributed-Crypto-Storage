@@ -2,7 +2,7 @@
 use compact_query::{AgeRange, PlainRow, bfv as backend};
 use compact_store::Limits;
 use peer_runtime::{
-    Bootstrap, Bundle, Connector, Endpoint, Identity, Operation, RemotePeer, Request, Response,
+    Bootstrap, Connector, Endpoint, Identity, Operation, RawBundle, RemotePeer, Request, Response,
 };
 use rcgen::{
     BasicConstraints, CertificateParams, ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair,
@@ -298,7 +298,7 @@ fn frame_activity_reports_real_io_before_completion_and_nothing_for_an_unreachab
     );
 }
 
-fn fixture(owner: &backend::Owner) -> (Bundle, compact_query::TableId) {
+fn fixture(owner: &backend::Owner) -> (RawBundle, compact_query::TableId) {
     let table = owner
         .seal(
             &[
@@ -319,7 +319,9 @@ fn fixture(owner: &backend::Owner) -> (Bundle, compact_query::TableId) {
             Limits::default(),
         )
         .unwrap();
-    let bundle = Bundle {
+    let bundle = RawBundle {
+        version: 2,
+        nonce: [31; 32],
         data_head: table.commitment().encode().to_vec(),
         index_head: table.index_commitment().encode().to_vec(),
         data: table.snapshot().encode(),
@@ -344,7 +346,7 @@ fn separate_processes_execute_real_fhe_and_copy_ciphertext_without_owner_keys() 
         panic!("public setup expected")
     };
     let (bundle, table_id) = fixture(&owner);
-    let object = bundle.id();
+    let object = *bundle.target_version().unwrap().object();
     let table = owner
         .restore_table_for_experiment(
             &bundle.data,
@@ -437,7 +439,7 @@ fn separate_processes_execute_real_fhe_and_copy_ciphertext_without_owner_keys() 
     );
     first.kill();
     assert!(a.status().is_err());
-    let Response::Bundle(surviving) = b.call(Request::Fetch { object }).unwrap() else {
+    let Response::RawBundle(surviving) = b.call(Request::Fetch { object }).unwrap() else {
         panic!("physical replica expected")
     };
     assert_eq!(surviving, bundle);
@@ -448,7 +450,7 @@ fn separate_processes_execute_real_fhe_and_copy_ciphertext_without_owner_keys() 
         Some(first.directory.clone()),
     );
     assert!(
-        matches!(restarted.remote(&connector).call(Request::Fetch{object}).unwrap(),Response::Bundle(value) if value==bundle)
+        matches!(restarted.remote(&connector).call(Request::Fetch{object}).unwrap(),Response::RawBundle(value) if value==bundle)
     );
 }
 #[test]
@@ -537,7 +539,7 @@ fn real_disk_tampering_and_quota_failures_never_return_cached_owner_data() {
     let peer = process.remote(&connector);
     let (data_owner, _) = backend::Owner::generate(*b"NETWORK-TEST-002").unwrap();
     let (bundle, _) = fixture(&data_owner);
-    let object = bundle.id();
+    let object = *bundle.target_version().unwrap().object();
     assert!(matches!(
         peer.call(Request::Store(bundle.clone())).unwrap(),
         Response::Stored(_)
@@ -546,7 +548,7 @@ fn real_disk_tampering_and_quota_failures_never_return_cached_owner_data() {
     let file = fs::read_dir(&process.directory)
         .unwrap()
         .map(|e| e.unwrap().path())
-        .find(|p| p.extension().and_then(|e| e.to_str()) == Some("bundle"))
+        .find(|p| p.extension().and_then(|e| e.to_str()) == Some("object2"))
         .unwrap();
     let mut bytes = fs::read(&file).unwrap();
     let last = bytes.len() - 1;
@@ -561,7 +563,7 @@ fn real_disk_tampering_and_quota_failures_never_return_cached_owner_data() {
 }
 
 // Public non-secret byte fixtures exercise custody independently of SQL/FHE.
-fn page_fixture() -> (compact_store::Owner, Bundle) {
+fn page_fixture() -> (compact_store::Owner, RawBundle) {
     let owner = compact_store::Owner::generate([63; 16]).unwrap();
     let layout = compact_store::Layout {
         schema: [64; 16],
@@ -582,7 +584,9 @@ fn page_fixture() -> (compact_store::Owner, Bundle) {
             Limits::default(),
         )
         .unwrap();
-    let bundle = Bundle {
+    let bundle = RawBundle {
+        version: 2,
+        nonce: [31; 32],
         data_head: data.commitment().encode().to_vec(),
         index_head: index.commitment().encode().to_vec(),
         data: data.encode(),
@@ -590,10 +594,10 @@ fn page_fixture() -> (compact_store::Owner, Bundle) {
     };
     (owner, bundle)
 }
-fn page_request(bundle: &Bundle) -> peer_runtime::PageBatchRequest {
+fn page_request(bundle: &RawBundle) -> peer_runtime::PageBatchRequest {
     use peer_runtime::{PageAddress, PageBatchRequest, PageImage};
     PageBatchRequest::new(
-        bundle.id(),
+        *bundle.target_version().unwrap().object(),
         &compact_store::Commitment::decode(&bundle.data_head, Limits::default()).unwrap(),
         &compact_store::Commitment::decode(&bundle.index_head, Limits::default()).unwrap(),
         &[
@@ -615,7 +619,7 @@ fn bundle_path(process: &Process, object: &[u8; 32]) -> PathBuf {
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>()
-            + ".bundle",
+            + ".object2",
     )
 }
 #[test]
@@ -638,7 +642,7 @@ fn exact_page_rpc_reads_actual_ciphertext_survives_restart_and_fails_over_to_a_r
         .remote(&connector)
         .call(Request::Copy {
             source: first.endpoint.clone(),
-            object: bundle.id(),
+            object: *bundle.target_version().unwrap().object(),
         })
         .unwrap();
     traces.lock().unwrap().clear();
@@ -713,14 +717,16 @@ fn page_rpc_preserves_authentication_write_authority_quota_and_exact_object_head
             Limits::default(),
         )
         .unwrap();
-    let oversized = Bundle {
+    let oversized = RawBundle {
+        version: 2,
+        nonce: [31; 32],
         data_head: image.commitment().encode().to_vec(),
         index_head: image.commitment().encode().to_vec(),
         data: image.encode(),
         index: image.encode(),
     };
     let absent = peer_runtime::PageBatchRequest::new(
-        oversized.id(),
+        *oversized.target_version().unwrap().object(),
         image.commitment(),
         image.commitment(),
         &[peer_runtime::PageAddress {
@@ -768,7 +774,7 @@ fn page_rpc_preserves_authentication_write_authority_quota_and_exact_object_head
     let wrong_head =
         compact_store::Commitment::decode(&other.index_head, Limits::default()).unwrap();
     let mismatched = peer_runtime::PageBatchRequest::new(
-        bundle.id(),
+        *bundle.target_version().unwrap().object(),
         request.data_head(),
         &wrong_head,
         request.addresses(),
@@ -799,7 +805,7 @@ fn page_rpc_audits_unrequested_bytes_after_store_and_reopen_and_rejects_truncati
     );
     let peer = restarted.remote(&connector);
     assert!(peer.fetch_pages(&request).is_ok());
-    let path = bundle_path(&restarted, &bundle.id());
+    let path = bundle_path(&restarted, bundle.target_version().unwrap().object());
     let original = fs::read(&path).unwrap();
     let mut damaged = original.clone();
     // Last byte is index page 2, absent from the requested index page 0/data page 2.
@@ -828,8 +834,13 @@ fn static_read_image_uses_real_data_prefix_proofs_and_rejects_unrequested_disk_c
         compact_store::Commitment::decode(&bundle.data_head, Limits::default()).unwrap();
     let index_head =
         compact_store::Commitment::decode(&bundle.index_head, Limits::default()).unwrap();
-    let request =
-        peer_runtime::ReadImageRequest::new(bundle.id(), &data_head, &index_head, 2).unwrap();
+    let request = peer_runtime::ReadImageRequest::new(
+        *bundle.target_version().unwrap().object(),
+        &data_head,
+        &index_head,
+        2,
+    )
+    .unwrap();
     let remote = process.remote(&connector);
     remote.call(Request::Store(bundle.clone())).unwrap();
 
@@ -881,8 +892,13 @@ fn static_read_image_uses_real_data_prefix_proofs_and_rejects_unrequested_disk_c
     let wrong_object =
         peer_runtime::ReadImageRequest::new([0; 32], &data_head, &index_head, 2).unwrap();
     assert!(remote.fetch_read_image(&wrong_object).is_err());
-    let wrong_heads =
-        peer_runtime::ReadImageRequest::new(bundle.id(), &index_head, &data_head, 2).unwrap();
+    let wrong_heads = peer_runtime::ReadImageRequest::new(
+        *bundle.target_version().unwrap().object(),
+        &index_head,
+        &data_head,
+        2,
+    )
+    .unwrap();
     assert!(remote.fetch_read_image(&wrong_heads).is_err());
     process.kill();
     let restarted = Process::start(
@@ -893,7 +909,7 @@ fn static_read_image_uses_real_data_prefix_proofs_and_rejects_unrequested_disk_c
     );
     let remote = restarted.remote(&connector);
     assert!(remote.fetch_read_image(&request).is_ok());
-    let path = bundle_path(&restarted, &bundle.id());
+    let path = bundle_path(&restarted, bundle.target_version().unwrap().object());
     let mut damaged = fs::read(&path).unwrap();
     // Index page2 is outside this static prefix; complete custody must still reject it.
     *damaged.last_mut().unwrap() ^= 1;
@@ -904,7 +920,7 @@ fn static_read_image_uses_real_data_prefix_proofs_and_rejects_unrequested_disk_c
 }
 
 // Public, non-secret ciphertext custody fixtures; they do not stand in for SQL proofs.
-fn delta_fixture() -> (Bundle, Bundle, peer_runtime::StoreDeltaRequest) {
+fn delta_fixture() -> (RawBundle, RawBundle, peer_runtime::StoreDeltaRequest) {
     use compact_store::{Layout, Owner};
     use peer_runtime::{PageAddress, PageImage, StoreDeltaRequest};
     let limits = Limits::default();
@@ -930,7 +946,9 @@ fn delta_fixture() -> (Bundle, Bundle, peer_runtime::StoreDeltaRequest) {
         .unwrap();
     let old_data = data.commitment().clone();
     let old_index = index.commitment().clone();
-    let base = Bundle {
+    let base = RawBundle {
+        version: 2,
+        nonce: [31; 32],
         data_head: old_data.encode().to_vec(),
         index_head: old_index.encode().to_vec(),
         data: data.encode(),
@@ -942,17 +960,19 @@ fn delta_fixture() -> (Bundle, Bundle, peer_runtime::StoreDeltaRequest) {
     owner
         .replace_page(&mut index, &old_index, 299, &[10; 509], limits)
         .unwrap();
-    let next = Bundle {
+    let next = RawBundle {
+        version: 2,
+        nonce: [31; 32],
         data_head: data.commitment().encode().to_vec(),
         index_head: index.commitment().encode().to_vec(),
         data: data.encode(),
         index: index.encode(),
     };
     let delta = StoreDeltaRequest::new(
-        base.id(),
+        *base.target_version().unwrap().object(),
         &old_data,
         &old_index,
-        &next,
+        &(next).target_version().unwrap(),
         &[
             (
                 PageAddress {
@@ -986,7 +1006,11 @@ fn padded_delta_rpc_requires_owner_and_recovers_exact_durable_ciphertext_after_l
     peer.call(Request::Quota(16 * 1024 * 1024)).unwrap();
     let (base, next, delta) = delta_fixture();
     peer.call(Request::Store(base.clone())).unwrap();
-    let original = fs::read(bundle_path(&process, &base.id())).unwrap();
+    let original = fs::read(bundle_path(
+        &process,
+        base.target_version().unwrap().object(),
+    ))
+    .unwrap();
     let member = Connector::new(&authority.identity(), &authority.der).unwrap();
 
     assert!(
@@ -996,7 +1020,7 @@ fn padded_delta_rpc_requires_owner_and_recovers_exact_durable_ciphertext_after_l
             .is_err()
     );
     assert_eq!(peer.status().unwrap().objects.len(), 1);
-    assert!(!bundle_path(&process, &next.id()).exists());
+    assert!(!bundle_path(&process, next.target_version().unwrap().object()).exists());
 
     let traces = Arc::new(Mutex::new(Vec::new()));
     let sink = traces.clone();
@@ -1023,7 +1047,11 @@ fn padded_delta_rpc_requires_owner_and_recovers_exact_durable_ciphertext_after_l
     assert_eq!(error.kind(), std::io::ErrorKind::Interrupted);
     assert_eq!(peer.status().unwrap().objects.len(), 2);
     assert_eq!(
-        fs::read(bundle_path(&process, &base.id())).unwrap(),
+        fs::read(bundle_path(
+            &process,
+            base.target_version().unwrap().object()
+        ))
+        .unwrap(),
         original
     );
     let recorded = traces.lock().unwrap();
@@ -1033,10 +1061,10 @@ fn padded_delta_rpc_requires_owner_and_recovers_exact_durable_ciphertext_after_l
     assert!(recorded[0].response_bytes > 0);
     drop(recorded);
     assert!(
-        matches!(peer.call(Request::StoreDelta(delta.clone())).unwrap(), Response::Stored(info) if info.id == next.id())
+        matches!(peer.call(Request::StoreDelta(delta.clone())).unwrap(), Response::Stored(info) if info.id == *next.target_version().unwrap().object())
     );
     assert!(
-        matches!(peer.call(Request::Fetch { object: next.id() }).unwrap(), Response::Bundle(actual) if actual == next)
+        matches!(peer.call(Request::Fetch { object: *next.target_version().unwrap().object() }).unwrap(), Response::RawBundle(actual) if actual == next)
     );
     process.kill();
     let restarted = Process::start(
@@ -1048,17 +1076,78 @@ fn padded_delta_rpc_requires_owner_and_recovers_exact_durable_ciphertext_after_l
     let peer = restarted.remote(&connector);
 
     assert!(
-        matches!(peer.call(Request::StoreDelta(delta.clone())).unwrap(), Response::Stored(info) if info.id == next.id())
+        matches!(peer.call(Request::StoreDelta(delta.clone())).unwrap(), Response::Stored(info) if info.id == *next.target_version().unwrap().object())
     );
     assert_eq!(peer.status().unwrap().objects.len(), 2);
-    let target = bundle_path(&restarted, &next.id());
+    let target = bundle_path(&restarted, next.target_version().unwrap().object());
     let mut damaged = fs::read(&target).unwrap();
     // Last index page is replaced, but this byte is still fully audited on replay.
     *damaged.last_mut().unwrap() ^= 1;
     fs::write(&target, damaged).unwrap();
     assert!(peer.call(Request::StoreDelta(delta)).is_err());
     assert_eq!(
-        fs::read(bundle_path(&restarted, &base.id())).unwrap(),
+        fs::read(bundle_path(
+            &restarted,
+            base.target_version().unwrap().object()
+        ))
+        .unwrap(),
         original
+    );
+}
+
+#[test]
+fn legacy_or_unknown_rpc_version_cannot_store_a_valid_current_object() {
+    use bincode::Options;
+    let authority = Authority::new();
+    let owner_tls = authority.identity();
+    let connector = Connector::new(&owner_tls, &authority.der).unwrap();
+    let process = Process::start(&authority, owner_tls.fingerprint(), 1, None);
+    let owner = compact_store::Owner::generate([97; 16]).unwrap();
+    let image = owner
+        .seal(
+            compact_store::Layout {
+                schema: [98; 16],
+                row_width: 1,
+                rows_per_page: 4,
+                row_count: 3,
+            },
+            &[1, 2, 3],
+            Limits::default(),
+        )
+        .unwrap();
+    let raw = RawBundle::from_snapshots(&image, &image).unwrap();
+    let remote = process.remote(&connector);
+    let files = || {
+        fs::read_dir(&process.directory)
+            .unwrap()
+            .map(|entry| {
+                let entry = entry.unwrap();
+                let bytes = if entry.metadata().unwrap().len() == 0 {
+                    vec![]
+                } else {
+                    fs::read(entry.path()).unwrap()
+                };
+                (entry.file_name(), bytes)
+            })
+            .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    let before = files();
+    for version in [1u16, 3] {
+        // Struct and fixed-width tuple encodings have the same field order.
+        // This is a valid Store body; only its runtime prefix is incompatible.
+        let frame = bincode::DefaultOptions::new()
+            .with_fixint_encoding()
+            .serialize(&(version, 99u64, Request::Store(raw.clone())))
+            .unwrap();
+        let mut connection = connector.connect(&process.endpoint).unwrap();
+        peer_transport::write_frame(&mut connection, &frame, peer_transport::MAX_FRAME_BYTES)
+            .unwrap();
+        assert!(peer_transport::read_frame(&mut connection, 65536).is_err());
+        assert!(remote.status().unwrap().objects.is_empty());
+        assert_eq!(files(), before);
+    }
+    let object = *raw.target_version().unwrap().object();
+    assert!(
+        matches!(remote.call(Request::Store(raw)).unwrap(), Response::Stored(info) if info.id == object)
     );
 }

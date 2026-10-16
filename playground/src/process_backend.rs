@@ -73,6 +73,7 @@ struct OwnedPeer {
 }
 impl OwnedPeer {
     fn start(&mut self) -> io::Result<Endpoint> {
+        peer_runtime::check_workspace(&self.directory)?;
         self.stop();
         let executable = if let Some(path) = std::env::var_os("DCS_PEER_BIN") {
             PathBuf::from(path)
@@ -265,6 +266,30 @@ impl ProcessBackend {
             observe_topology: None,
         })
     }
+    fn preflight_workspace(&self) -> io::Result<()> {
+        match std::fs::read_dir(&self.root) {
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e),
+            Ok(entries) => {
+                for (count, entry) in entries.enumerate() {
+                    if count >= 16 {
+                        return Err(io::Error::other("Too many participant directories"));
+                    }
+                    let entry = entry?;
+                    let name = entry.file_name();
+                    if !name.to_str().is_some_and(|name| {
+                        name.strip_prefix("peer-").is_some_and(|id| {
+                            !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())
+                        })
+                    }) {
+                        return Err(io::Error::other("Incompatible process workspace"));
+                    }
+                    peer_runtime::check_workspace(&entry.path())?;
+                }
+                Ok(())
+            }
+        }
+    }
     fn remote(&self, endpoint: Endpoint, node: NodeId) -> RemotePeer {
         let sender = self.trace_sender.clone();
         let traffic = self.traffic.clone();
@@ -321,6 +346,7 @@ impl ProcessBackend {
             }))
     }
     pub fn add_peer(&mut self, config: PeerConfig) -> Result<NodeId, LabError> {
+        self.preflight_workspace().map_err(error)?;
         config.validate()?;
         if config.delay_ms != 0 {
             return Err(error(
@@ -629,6 +655,7 @@ impl ProcessBackend {
                 .process
                 .stop();
         } else {
+            self.preflight_workspace().map_err(error)?;
             let endpoint = self
                 .peers
                 .get_mut(&id)
@@ -898,11 +925,7 @@ impl ProcessBackend {
                     logical_bytes: objects.iter().map(|o| o.logical_bytes as usize).sum(),
                     data_bytes: objects.iter().map(|o| o.data_bytes as usize).sum(),
                     index_bytes: objects.iter().map(|o| o.index_bytes as usize).sum(),
-                    stored_bytes: objects
-                        .iter()
-                        .map(|o| o.stored_bytes as usize)
-                        .sum::<usize>()
-                        + journal_bytes,
+                    stored_bytes: observed.map_or(0, |status| status.disk_bytes() as usize),
                     journal_bytes,
                     public_setup_bytes,
                     owner_row_indices: indices,
@@ -1057,6 +1080,94 @@ impl ProcessBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn workspace_tree(root: &std::path::Path) -> BTreeMap<PathBuf, Option<Vec<u8>>> {
+        fn walk(
+            root: &std::path::Path,
+            current: &std::path::Path,
+            files: &mut BTreeMap<PathBuf, Option<Vec<u8>>>,
+        ) {
+            for entry in std::fs::read_dir(current).unwrap() {
+                let entry = entry.unwrap();
+                let path = entry.path();
+                let relative = path.strip_prefix(root).unwrap().to_owned();
+                if path.is_dir() {
+                    files.insert(relative, None);
+                    walk(root, &path, files);
+                } else {
+                    // Windows denies reads of the live daemon's exclusive lock.
+                    // Its canonical contents are empty; check that length without
+                    // opening the locked range rather than omit it from the tree.
+                    let bytes = if entry.file_name() == "peer.lock" {
+                        assert_eq!(entry.metadata().unwrap().len(), 0);
+                        Vec::new()
+                    } else {
+                        std::fs::read(path).unwrap()
+                    };
+                    files.insert(relative, Some(bytes));
+                }
+            }
+        }
+        let mut files = BTreeMap::new();
+        walk(root, root, &mut files);
+        files
+    }
+    struct PublicWorkspace(PathBuf);
+    impl Drop for PublicWorkspace {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    #[test]
+    fn legacy_or_late_mixed_participant_directory_rejects_without_launching_or_changing_tree() {
+        for late in [false, true] {
+            let mut backend = ProcessBackend::new().unwrap();
+            let _cleanup = PublicWorkspace(backend.root.clone());
+            std::fs::create_dir_all(&backend.root).unwrap();
+            if late {
+                let current = backend.root.join("peer-1");
+                std::fs::create_dir(&current).unwrap();
+                let mut profile = b"DCSDIR02".to_vec();
+                profile.extend_from_slice(&peer_runtime::OBJECT_PROFILE_ID);
+                std::fs::write(current.join("custody-v2.profile"), profile).unwrap();
+                std::fs::write(current.join("peer.lock"), []).unwrap();
+            }
+            let legacy = backend.root.join(if late { "peer-2" } else { "peer-1" });
+            std::fs::create_dir(&legacy).unwrap();
+            std::fs::write(legacy.join("write.pending"), b"public old pending fixture").unwrap();
+            std::fs::write(
+                legacy.join("owner-credentials.fixture"),
+                b"non-secret sentinel",
+            )
+            .unwrap();
+            let before = workspace_tree(&backend.root);
+            assert!(backend.add_peer(default_peer_config(1)).is_err());
+            assert!(backend.peers.is_empty());
+            assert_eq!(backend.next_peer, 1);
+            assert_eq!(workspace_tree(&backend.root), before);
+        }
+    }
+    #[test]
+    #[ignore = "starts an owned peer daemon; build dcs-peer and set DCS_PEER_BIN"]
+    fn rejected_standalone_restart_preserves_the_existing_live_child_and_old_tree() {
+        let mut backend = ProcessBackend::new().unwrap();
+        let _cleanup = PublicWorkspace(backend.root.clone());
+        backend.add_peer(default_peer_config(1)).unwrap();
+        let peer = backend.peers.get_mut(&1).unwrap();
+        let pid = peer.process.pid().unwrap();
+        std::fs::write(
+            peer.process.directory.join("write.pending"),
+            b"public legacy pending",
+        )
+        .unwrap();
+        let before = workspace_tree(&backend.root);
+        assert!(peer.process.start().is_err());
+        assert_eq!(peer.process.pid(), Some(pid));
+        assert!(peer.process.running());
+        assert_eq!(peer.remote.status().unwrap().pid, pid);
+        assert_eq!(workspace_tree(&backend.root), before);
+        drop(backend);
+    }
+
     #[test]
     #[ignore = "starts owned peer daemons; build dcs-peer and set DCS_PEER_BIN"]
     fn real_peer_inventory_and_configuration_exist_before_database_creation() {

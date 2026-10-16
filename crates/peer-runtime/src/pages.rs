@@ -12,9 +12,9 @@ const HEADER_BYTES: usize = 8 + 2 + 32 + 112 + 112 + 2;
 const RESPONSE_ENVELOPE_BYTES: usize = 2 + 8 + 4 + 4 + 8;
 const MAX_REPLY_BODY: usize = MAX_PAGE_BATCH_RESPONSE_BYTES - RESPONSE_ENVELOPE_BYTES;
 const MAX_REQUEST_BODY: usize = HEADER_BYTES + MAX_PAGE_BATCH_ADDRESSES * 9;
-const REQUEST_MAGIC: &[u8; 8] = b"DCSPAGQ1";
-const RESPONSE_MAGIC: &[u8; 8] = b"DCSPAGR1";
-const VERSION: u16 = 1;
+const REQUEST_MAGIC: &[u8; 8] = b"DCSPAGQ2";
+const RESPONSE_MAGIC: &[u8; 8] = b"DCSPAGR2";
+const VERSION: u16 = 2;
 
 type Result<T> = std::result::Result<T, PageError>;
 
@@ -398,7 +398,7 @@ mod tests {
         let batch = response(&data, &index, &request);
         let body_length = batch.encode().len();
         let bytes = wire::encode(&WireResponse {
-            version: 1,
+            version: 2,
             id: 4,
             result: Ok(Response::Pages(batch)),
         })
@@ -429,13 +429,13 @@ mod tests {
     fn page_response_envelope_rejects_other_rpc_tags_and_unbounded_error_lengths() {
         let (_, data, index, request) = fixture();
         let bytes = wire::encode(&WireResponse {
-            version: 1,
+            version: 2,
             id: 2,
             result: Ok(Response::Pages(response(&data, &index, &request))),
         })
         .unwrap();
         let mut substituted = bytes.clone();
-        // Bundle has arbitrary-sized vectors; it is forbidden before decoding it.
+        // RawBundle has arbitrary-sized vectors; it is forbidden before decoding it.
         substituted[14..18].copy_from_slice(&3u32.to_le_bytes());
         substituted[18..26].copy_from_slice(&u64::MAX.to_le_bytes());
         assert!(wire::decode_page_response(&substituted).is_err());
@@ -444,7 +444,7 @@ mod tests {
             crate::RemoteError::Io("read failed".into()),
         ] {
             let encoded = wire::encode(&WireResponse {
-                version: 1,
+                version: 2,
                 id: 2,
                 result: Err(error),
             })
@@ -457,7 +457,7 @@ mod tests {
             );
         }
         let mut oversized_error = wire::encode(&WireResponse {
-            version: 1,
+            version: 2,
             id: 2,
             result: Err(crate::RemoteError::Io(String::new())),
         })
@@ -528,7 +528,7 @@ mod tests {
         .unwrap();
         let batch = response(&image, &image, &valid);
         let wire = wire::encode(&WireResponse {
-            version: 1,
+            version: 2,
             id: 1,
             result: Ok(Response::Pages(batch)),
         })

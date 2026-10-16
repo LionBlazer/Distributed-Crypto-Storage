@@ -423,7 +423,7 @@ impl Drop for TempPath {
 fn durable_reopen_revalidates_the_same_work_and_requires_the_pinned_genesis() {
     let path = TempPath::new();
     let pinned = genesis();
-    let mut durable = DurableJournal::create(&path.0, pinned.clone()).unwrap();
+    let mut durable = DurableJournal::create(&path.0, pinned.clone(), [71; 32]).unwrap();
     let root = durable.journal().genesis_id();
     let (one, body) = empty_block(durable.journal(), root, 1001);
     let one = durable
@@ -441,8 +441,14 @@ fn durable_reopen_revalidates_the_same_work_and_requires_the_pinned_genesis() {
     let bytes = durable.disk_bytes();
     drop(durable);
 
-    let reopened =
-        DurableJournal::open(&path.0, pinned.clone(), 10_000, &RejectUnprovedTransitions).unwrap();
+    let reopened = DurableJournal::open(
+        &path.0,
+        pinned.clone(),
+        [71; 32],
+        10_000,
+        &RejectUnprovedTransitions,
+    )
+    .unwrap();
     assert_eq!(reopened.disk_bytes(), bytes);
     assert_eq!(
         reopened
@@ -456,7 +462,7 @@ fn durable_reopen_revalidates_the_same_work_and_requires_the_pinned_genesis() {
     let mut wrong = pinned;
     wrong.profile.initial_target = target(15);
     assert!(matches!(
-        DurableJournal::open(&path.0, wrong, 10_000, &RejectUnprovedTransitions),
+        DurableJournal::open(&path.0, wrong, [71; 32], 10_000, &RejectUnprovedTransitions),
         Err(Error::WrongDomain)
     ));
 }
@@ -464,11 +470,17 @@ fn durable_reopen_revalidates_the_same_work_and_requires_the_pinned_genesis() {
 #[test]
 fn durable_unproved_mutation_changes_neither_file_nor_published_head() {
     let path = TempPath::new();
-    let durable = DurableJournal::create(&path.0, genesis()).unwrap();
+    let durable = DurableJournal::create(&path.0, genesis(), [71; 32]).unwrap();
     drop(durable);
     let initial = std::fs::read(&path.0).unwrap();
-    let mut durable =
-        DurableJournal::open(&path.0, genesis(), 10_000, &RejectUnprovedTransitions).unwrap();
+    let mut durable = DurableJournal::open(
+        &path.0,
+        genesis(),
+        [71; 32],
+        10_000,
+        &RejectUnprovedTransitions,
+    )
+    .unwrap();
     let body = signed_transition(durable.journal());
     let wire = body.encode(durable.journal().profile()).unwrap();
     let mut header = durable
@@ -492,7 +504,7 @@ fn durable_unproved_mutation_changes_neither_file_nor_published_head() {
 fn incomplete_or_tampered_durable_records_fail_closed() {
     let path = TempPath::new();
     let pinned = genesis();
-    let mut durable = DurableJournal::create(&path.0, pinned.clone()).unwrap();
+    let mut durable = DurableJournal::create(&path.0, pinned.clone(), [71; 32]).unwrap();
     let (header, body) = empty_block(durable.journal(), durable.journal().genesis_id(), 1001);
     durable
         .append_block(header, &body, 10_000, &RejectUnprovedTransitions)
@@ -506,7 +518,13 @@ fn incomplete_or_tampered_durable_records_fail_closed() {
         .write_all(&[1, 2])
         .unwrap();
     assert!(matches!(
-        DurableJournal::open(&path.0, pinned.clone(), 10_000, &RejectUnprovedTransitions),
+        DurableJournal::open(
+            &path.0,
+            pinned.clone(),
+            [71; 32],
+            10_000,
+            &RejectUnprovedTransitions
+        ),
         Err(Error::CorruptJournal)
     ));
     let mut tampered = clean;
@@ -514,7 +532,13 @@ fn incomplete_or_tampered_durable_records_fail_closed() {
     tampered[last] ^= 1;
     std::fs::write(&path.0, tampered).unwrap();
     assert!(matches!(
-        DurableJournal::open(&path.0, pinned, 10_000, &RejectUnprovedTransitions),
+        DurableJournal::open(
+            &path.0,
+            pinned,
+            [71; 32],
+            10_000,
+            &RejectUnprovedTransitions
+        ),
         Err(Error::CorruptJournal)
     ));
 }
@@ -523,13 +547,28 @@ fn incomplete_or_tampered_durable_records_fail_closed() {
 fn a_second_durable_owner_cannot_open_the_same_journal_until_drop() {
     let path = TempPath::new();
     let pinned = genesis();
-    let owner = DurableJournal::create(&path.0, pinned.clone()).unwrap();
+    let owner = DurableJournal::create(&path.0, pinned.clone(), [71; 32]).unwrap();
     assert!(matches!(
-        DurableJournal::open(&path.0, pinned.clone(), 10_000, &RejectUnprovedTransitions),
+        DurableJournal::open(
+            &path.0,
+            pinned.clone(),
+            [71; 32],
+            10_000,
+            &RejectUnprovedTransitions
+        ),
         Err(Error::JournalLocked)
     ));
     drop(owner);
-    assert!(DurableJournal::open(&path.0, pinned, 10_000, &RejectUnprovedTransitions).is_ok());
+    assert!(
+        DurableJournal::open(
+            &path.0,
+            pinned,
+            [71; 32],
+            10_000,
+            &RejectUnprovedTransitions
+        )
+        .is_ok()
+    );
 }
 
 #[test]
@@ -572,4 +611,38 @@ fn header_commits_exact_body_and_rejects_invented_state_roots() {
     );
     assert_eq!(journal.best_header(), journal.genesis_id());
     assert_eq!(journal.best_validated(), journal.genesis_head());
+}
+
+#[test]
+fn durable_namespace_is_opaque_pinned_and_old_containers_are_never_rewritten() {
+    let path = TempPath::new();
+    drop(DurableJournal::create(&path.0, genesis(), [71; 32]).unwrap());
+    let before = std::fs::read(&path.0).unwrap();
+    assert!(DurableJournal::check_namespace(&path.0, [71; 32]).is_ok());
+    assert!(DurableJournal::check_namespace(&path.0, [72; 32]).is_err());
+    assert!(
+        DurableJournal::open(
+            &path.0,
+            genesis(),
+            [72; 32],
+            10_000,
+            &RejectUnprovedTransitions
+        )
+        .is_err()
+    );
+    assert_eq!(std::fs::read(&path.0).unwrap(), before);
+    let mut legacy = before;
+    legacy[..8].copy_from_slice(b"DCSJL001");
+    std::fs::write(&path.0, &legacy).unwrap();
+    assert!(
+        DurableJournal::open(
+            &path.0,
+            genesis(),
+            [71; 32],
+            10_000,
+            &RejectUnprovedTransitions
+        )
+        .is_err()
+    );
+    assert_eq!(std::fs::read(&path.0).unwrap(), legacy);
 }

@@ -174,13 +174,19 @@ pub(super) fn dispatch(shared: &Arc<Shared>, request: Request) -> Result<Respons
                 if exists {
                     0
                 } else {
-                    genesis.encode().map_err(crypto)?.len() as u64 + 44
+                    genesis.encode().map_err(crypto)?.len() as u64 + 76
                 },
             )?;
             let journal = if exists {
-                DurableJournal::open(&path, genesis, seconds(), verifier.as_ref())
+                DurableJournal::open(
+                    &path,
+                    genesis,
+                    crate::OBJECT_PROFILE_ID,
+                    seconds(),
+                    verifier.as_ref(),
+                )
             } else {
-                DurableJournal::create(&path, genesis)
+                DurableJournal::create(&path, genesis, crate::OBJECT_PROFILE_ID)
             }
             .map_err(crypto)?;
             shared.state.lock().map_err(io_error)?.journals.insert(

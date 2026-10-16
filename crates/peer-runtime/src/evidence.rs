@@ -270,7 +270,8 @@ impl JobVerifier {
         let evaluator =
             Arc::new(PublicUpdateEvaluator::from_parameters(&parameters).map_err(crypto)?);
         let mut application = Sha256::new();
-        application.update(b"dcs/peer-runtime/proved-job-application/v3");
+        application.update(b"dcs/peer-runtime/proved-job-application/v4");
+        application.update(crate::OBJECT_PROFILE_ID);
         application.update((bytes.len() as u64).to_le_bytes());
         application.update(&bytes);
         application.update(bfv_query_proof::PROOF_PROFILE_ID);
@@ -696,6 +697,15 @@ mod tests {
         let (owner, setup) = Owner::generate(Geometry::Rows16).unwrap();
         let parameters = setup.update_parameters().unwrap();
         let legacy_application = version_journal::hash(&parameters.to_bytes().unwrap());
+        let bytes = parameters.to_bytes().unwrap();
+        let mut old = Sha256::new();
+        old.update(b"dcs/peer-runtime/proved-job-application/v3");
+        old.update((bytes.len() as u64).to_le_bytes());
+        old.update(&bytes);
+        old.update(bfv_query_proof::PROOF_PROFILE_ID);
+        old.update((bfv_query_core::POLYNOMIAL_AGGREGATE_SEMANTICS_ID.len() as u64).to_le_bytes());
+        old.update(bfv_query_core::POLYNOMIAL_AGGREGATE_SEMANTICS_ID);
+        let old_v3_application: [u8; 32] = old.finalize().into();
         let verifier = JobVerifier::new(parameters).unwrap();
         let prepared = owner
             .prepare_indexed_update_for_experiment(
@@ -763,6 +773,14 @@ mod tests {
                     // The old setup-only anchor cannot advertise this new
                     // accepted arithmetic proof format, even on a cache hit.
                     application_commitment: legacy_application,
+                    ..statement
+                })
+                .is_err()
+        );
+        assert!(
+            verifier
+                .verify(TransitionStatement {
+                    application_commitment: old_v3_application,
                     ..statement
                 })
                 .is_err()

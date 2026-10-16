@@ -16,9 +16,17 @@ pub struct DurableJournal {
     length: u64,
 }
 impl DurableJournal {
-    pub fn create(path: impl AsRef<Path>, genesis: Genesis) -> Result<Self> {
+    pub fn create(path: impl AsRef<Path>, genesis: Genesis, namespace: [u8; 32]) -> Result<Self> {
         let journal = Journal::new(genesis)?;
         let genesis_wire = journal.genesis().encode()?;
+        let mut initial = b"DCSJL002".to_vec();
+        initial.extend_from_slice(&namespace);
+        initial.extend_from_slice(&(genesis_wire.len() as u32).to_le_bytes());
+        initial.extend_from_slice(&genesis_wire);
+        initial.extend_from_slice(&hash(&genesis_wire));
+        if initial.len() as u64 > journal.profile().max_journal_bytes {
+            return Err(Error::ResourceLimit);
+        }
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -32,13 +40,6 @@ impl DurableJournal {
                 }
             })?;
         lock(&file)?;
-        let mut initial = b"DCSJL001".to_vec();
-        initial.extend_from_slice(&(genesis_wire.len() as u32).to_le_bytes());
-        initial.extend_from_slice(&genesis_wire);
-        initial.extend_from_slice(&hash(&genesis_wire));
-        if initial.len() as u64 > journal.profile().max_journal_bytes {
-            return Err(Error::ResourceLimit);
-        }
         file.write_all(&initial)?;
         file.sync_all()?;
         Ok(Self {
@@ -52,6 +53,7 @@ impl DurableJournal {
     pub fn open<V: TransitionVerifier + ?Sized>(
         path: impl AsRef<Path>,
         pinned_genesis: Genesis,
+        namespace: [u8; 32],
         now: u64,
         verifier: &V,
     ) -> Result<Self> {
@@ -65,8 +67,14 @@ impl DurableJournal {
         let mut magic = [0; 8];
         file.read_exact(&mut magic)
             .map_err(|_| Error::CorruptJournal)?;
-        if &magic != b"DCSJL001" {
+        if &magic != b"DCSJL002" {
             return Err(Error::CorruptJournal);
+        }
+        let mut received_namespace = [0; 32];
+        file.read_exact(&mut received_namespace)
+            .map_err(|_| Error::CorruptJournal)?;
+        if received_namespace != namespace {
+            return Err(Error::WrongDomain);
         }
         let mut number = [0; 4];
         file.read_exact(&mut number)
@@ -118,6 +126,18 @@ impl DurableJournal {
             file,
             length,
         })
+    }
+    /// Read-only bounded namespace preflight, before application state mutation.
+    /// Does not validate genesis, blocks, authorization or physical custody.
+    pub fn check_namespace(path: impl AsRef<Path>, namespace: [u8; 32]) -> Result<()> {
+        let mut file = File::open(path)?;
+        let mut header = [0; 40];
+        file.read_exact(&mut header)
+            .map_err(|_| Error::CorruptJournal)?;
+        if &header[..8] != b"DCSJL002" || header[8..] != namespace {
+            return Err(Error::WrongDomain);
+        }
+        Ok(())
     }
     pub fn journal(&self) -> &Journal {
         &self.journal
