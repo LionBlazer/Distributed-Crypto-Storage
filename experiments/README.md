@@ -12,10 +12,15 @@ in ignored `.local/`, not in the library source tree.
 - [bfv-addition-proof](bfv-addition-proof/README.md) is a standalone, pinned Plonky3
   proof of exact BFV ciphertext addition. It verifies serialized proofs against
   independently committed public inputs; it does not accept SQL or authorize writes.
-- [public source-primitive gates](hiding-fri-sha256-gate/README.md) share a private
-  hiding-FRI backend. Fixed public SHA-256/HChaCha20/ChaCha20 relations have genuine
-  proofs and nineteen passing tests, with recorded observation limits. They do
-  not implement private CSTORE opening, SQL completeness or locks.
+- [source-primitive and opening gates](hiding-fri-sha256-gate/README.md) share an
+  experimental private hiding-FRI backend. Genuine primitive proofs extend to a
+  bounded private CSTORE opening and the
+  [canonical four-row index relation](hiding-fri-sha256-gate/CANONICAL-INDEX-VALIDATION.md),
+  using public nonsecret fixtures. General source/SQL completeness, production
+  key custody and live locks remain unmet.
+- [BFV formation oracle](bfv-formation-oracle/README.md) validates original input
+  encoding and every upstream encryption residue with public fixtures and seven
+  native tests. It implements no cryptographic proof or accepting SQL API.
 - Other directories keep their own manifests, reproduction scripts and README
   files. Some deliberately export pinned historical source revisions into an
   isolated local workspace; these are research candidates, not core imports.
