@@ -72,7 +72,7 @@ The initial logical shard set is fixed; infrastructure peers can be added as
 holders/executors without becoming a voting committee.
 
 `Session::execute(&mut self, sql)` accepts row SELECT/projections, supported age
-filters, LIMIT, single-row INSERT and additive amount UPDATE on
+filters, LIMIT, atomic literal INSERT batches and additive amount UPDATE on
 `records(age: u8, amount: u16)`, plus COUNT(*), SUM(amount) and their combined
 projection. Aggregates authenticate at most 256 complete matching rows per shard;
 over-budget groups reject rather than truncate. Each peer computes encrypted
@@ -85,9 +85,11 @@ immutable and their aggregate syntax remains unsupported.
 `SqlScript::parse(sql)` validates a bounded script before any network operation.
 It supports ordinary comments, the exact non-null unsigned `records` schema,
 `CREATE TABLE IF NOT EXISTS`, and the proof-supported Session statements. Multi-row
-literal INSERTs lower into individual verified INSERTs. The public `statements()`
+literal INSERTs retain one SQL plan, mutation identity, transition and result count
+for the entire batch. The public `statements()`
 view exposes validated plans for import tooling, never stored plaintext or answers.
-Scripts are limited to 64 KiB and 256 operations after INSERT expansion.
+Scripts are limited to 64 KiB, 256 source statements and 256 total inserted rows.
+Each normalized statement retains the SQL planner's 4096-byte bound.
 
 `script.execute(&mut Option<Session>, create_empty)` owns no process policy: the
 caller supplies an actual empty-Session creator with its participants and protocol
@@ -155,7 +157,17 @@ UPDATE workers only stage encrypted images in owner memory. Every worker finishe
 before an error returns, including overflow; no physical copy is stored and no
 transition is signed before every shard completes. The existing freshness check,
 all-shard manifest, durable publication and pending-write recovery follow this
-preparation unchanged. INSERT still prepares its single selected shard directly.
+preparation unchanged. INSERT preflights the whole incoming batch and protocol
+update budget, then packs contiguous input chunks into the largest available shard
+capacities, breaking ties by shard ID. This minimizes the number of proof jobs and
+changed heads; jobs retain canonical shard order. At most two independent shard jobs run concurrently. Every
+target's existing plus incoming relation must fit 256 rows; at most 256 rows enter
+one statement. All proofs and complete in-memory stages precede the first Store.
+The exact unsigned transition is encoded against all immutable profile budgets
+before Store, signature or pending state, so local resource rejection cannot create
+a permanently pending write. One signature/manifest publishes every affected shard
+atomically and retry retains the original whole-batch identity. Storage RPC failure
+may leave unreferenced ciphertext copies; it never publishes a partial shard set.
 
 Both SQL paths use the same private proof-request scheduler for genuine proof
 verification and replica failover. A query-local permit serializes RPCs to the

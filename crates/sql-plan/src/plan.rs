@@ -79,7 +79,7 @@ impl Projection {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QueryPlan {
     Aggregate {
         predicate: Predicate,
@@ -101,6 +101,7 @@ pub enum QueryPlan {
         delta: u16,
     },
     Insert {
-        row: RowValues,
+        /// All literal tuples from one statement, in their original order.
+        rows: Vec<RowValues>,
     },
 }

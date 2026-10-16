@@ -52,14 +52,26 @@ impl Owner {
         self.key.secret_key_serialized_bytes()
     }
     /// Authenticate every original row of the bounded target shard; input preparation
-    /// encrypts originals and the new row separately, never a preassembled append answer.
+    /// encrypts originals and the incoming batch separately, never a preassembled answer.
     pub fn prepare_insert_for_experiment(
         &self,
         table: &Table,
-        incoming: PlainRow,
+        incoming: &[PlainRow],
         budget: usize,
         limits: Limits,
     ) -> Result<PreparedInsert> {
+        let total = table
+            .commitment()
+            .layout()
+            .row_count
+            .checked_add(incoming.len() as u64);
+        if incoming.is_empty() || total.is_none_or(|total| total > MAX_ROWS.min(budget) as u64) {
+            return Err(Error::InvalidInsertSize {
+                existing: table.commitment().layout().row_count,
+                incoming: incoming.len(),
+                maximum: MAX_ROWS.min(budget),
+            });
+        }
         let selection = self.select_exact(
             table,
             AgeRange {
@@ -74,21 +86,33 @@ impl Owner {
             selection.data_head.encode(),
             selection.index_head.encode(),
         );
-        let prepared = self.key.prepare_indexed_insert_for_experiment(
-            context,
-            &selection.fields,
-            bfv_core::SelectedField {
-                age: incoming.age,
-                amount: incoming.amount,
-                active: true,
-            },
-        )?;
-        let [low, high] = incoming.amount.to_le_bytes();
+        let fields = Zeroizing::new(
+            incoming
+                .iter()
+                .map(|row| bfv_core::SelectedField {
+                    age: row.age,
+                    amount: row.amount,
+                    active: true,
+                })
+                .collect::<Vec<_>>(),
+        );
+        let prepared =
+            self.key
+                .prepare_indexed_insert_for_experiment(context, &selection.fields, &fields)?;
+        let incoming = Zeroizing::new(
+            incoming
+                .iter()
+                .map(|row| {
+                    let [low, high] = row.amount.to_le_bytes();
+                    [row.age, low, high]
+                })
+                .collect(),
+        );
         Ok(PreparedInsert {
             request: prepared.request,
             pending: prepared.pending,
             selection,
-            incoming: Zeroizing::new([incoming.age, low, high]),
+            incoming,
         })
     }
     /// All decoded rows must match authenticated originals and the authorized insertion
@@ -105,7 +129,9 @@ impl Owner {
             .key
             .decrypt_indexed_insert_unverified_for_experiment(prepared.pending, output)?;
         let count = prepared.selection.fields.len();
-        if answer.proof != ProofStatus::Unavailable || answer.rows.len() != count + 1 {
+        if answer.proof != ProofStatus::Unavailable
+            || answer.rows.len() != count + prepared.incoming.len()
+        {
             return Err(Error::InvalidOutput);
         }
         for (slot, row) in answer.rows.iter().enumerate() {
@@ -115,10 +141,8 @@ impl Owner {
                     prepared.selection.fields[slot].amount,
                 )
             } else {
-                (
-                    prepared.incoming[0],
-                    u16::from_le_bytes([prepared.incoming[1], prepared.incoming[2]]),
-                )
+                let incoming = prepared.incoming[slot - count];
+                (incoming[0], u16::from_le_bytes([incoming[1], incoming[2]]))
             };
             if row.slot != slot || row.age != age || row.amount != amount {
                 return Err(Error::InvalidOutput);
@@ -137,6 +161,7 @@ impl Owner {
             table,
             &prepared.selection.data_head,
             &prepared.selection.index_head,
+            prepared.incoming.len(),
             &rows,
             limits,
         )?;

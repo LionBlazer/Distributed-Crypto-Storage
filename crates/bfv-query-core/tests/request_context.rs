@@ -20,7 +20,7 @@ fn supported_original_requests_expose_exact_query_and_both_heads_after_full_shap
         .prepare_exact_select_for_experiment(context.clone(), &fields, RowProjection::AgeAmount)
         .unwrap();
     let insert = owner
-        .prepare_indexed_insert_for_experiment(context.clone(), &fields, fields[0])
+        .prepare_indexed_insert_for_experiment(context.clone(), &fields, &[fields[0]])
         .unwrap();
 
     for request in [&update.request, &select.request, &insert.request] {

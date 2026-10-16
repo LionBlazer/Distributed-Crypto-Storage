@@ -21,14 +21,19 @@ pub fn parse_sql(sql: &str) -> Result<QueryPlan, Error> {
             }
         }
         parser.expect("VALUES")?;
-        parser.expect("(")?;
-        let age = parser.number("age must be in 0..=255")?;
-        parser.expect(",")?;
-        let amount = parser.number("amount must be in 0..=65535")?;
-        parser.expect(")")?;
-        QueryPlan::Insert {
-            row: RowValues { age, amount },
+        let mut rows = Vec::new();
+        loop {
+            parser.expect("(")?;
+            let age = parser.number("age must be in 0..=255")?;
+            parser.expect(",")?;
+            let amount = parser.number("amount must be in 0..=65535")?;
+            parser.expect(")")?;
+            rows.push(RowValues { age, amount });
+            if !parser.take(",") {
+                break;
+            }
         }
+        QueryPlan::Insert { rows }
     } else if parser.take("UPDATE") {
         for token in ["RECORDS", "SET", "AMOUNT", "=", "AMOUNT", "+"] {
             parser.expect(token)?;
@@ -230,6 +235,6 @@ impl Parser {
 
 fn unsupported(reason: &str) -> Error {
     Error::UnsupportedSql(format!(
-        "{reason}. Supported: SELECT *, age, amount, COUNT(*), SUM(amount), or COUNT(*), SUM(amount) FROM records; INSERT INTO records (age, amount) VALUES (A, N); UPDATE records SET amount = amount + N. Optional read/update WHERE age =, <, <=, >, >= N or age BETWEEN lower AND upper. Row SELECT allows a non-negative LIMIT; execution resource budgets are checked by the executor."
+        "{reason}. Supported: SELECT *, age, amount, COUNT(*), SUM(amount), or COUNT(*), SUM(amount) FROM records; INSERT INTO records (age, amount) VALUES (A, N) [, (A, N) ...]; UPDATE records SET amount = amount + N. Optional read/update WHERE age =, <, <=, >, >= N or age BETWEEN lower AND upper. Row SELECT allows a non-negative LIMIT; execution resource budgets are checked by the executor."
     ))
 }

@@ -12,7 +12,11 @@ fn field(age: u8, amount: u16) -> SelectedField {
 }
 fn prepare(owner: &Owner) -> PreparedIndexedInsert {
     owner
-        .prepare_indexed_insert_for_experiment(context(), &[field(18, 255)], field(42, 256))
+        .prepare_indexed_insert_for_experiment(
+            context(),
+            &[field(18, 255)],
+            &[field(42, 256), field(7, 65535)],
+        )
         .unwrap()
 }
 fn response(request: &Request, rows: Vec<u8>) -> Response {
@@ -24,6 +28,7 @@ fn response(request: &Request, rows: Vec<u8>) -> Response {
         context: request.context.clone(),
         geometry: request.geometry,
         existing_rows: request.existing_rows,
+        incoming_rows: request.incoming_rows,
         rows,
     }
 }
@@ -37,6 +42,10 @@ fn independently_encrypted_originals_and_incoming_are_merged_only_by_the_peer() 
     let pt = Zeroizing::new(owner.key.try_decrypt(&ct).unwrap());
     let slots = Zeroizing::new(Vec::<u64>::try_decode(&pt, Encoding::simd()).unwrap());
     assert_eq!((slots[0], slots[DEGREE / 2], slots[VALIDITY]), (0, 0, 0));
+    assert_eq!(
+        (slots[2], slots[DEGREE / 2 + 2], slots[VALIDITY + 2]),
+        (7, 65535, 1)
+    );
     assert_eq!(
         (
             slots[1],
@@ -81,7 +90,7 @@ fn canonical_append_addition_matches_both_upstream_evaluators_at_every_boundary(
             .collect();
         let incoming = field(255, 65535);
         let prepared = owner
-            .prepare_indexed_insert_for_experiment(context(), &fields, incoming)
+            .prepare_indexed_insert_for_experiment(context(), &fields, &[incoming])
             .unwrap();
 
         let canonical = minimal.insert_circuit_request(&prepared.request).unwrap();
@@ -124,7 +133,7 @@ fn canonical_append_binds_query_heads_and_validates_both_original_ciphertexts() 
     let output =
         bfv_linear_circuit::evaluate(&peer.insert_circuit_request(&prepared.request).unwrap())
             .unwrap();
-    for fault in 0..6 {
+    for fault in 0..8 {
         let mut request: Request = decode(&prepared.request).unwrap();
         match fault {
             0 => request.context.query_id[0] ^= 1,
@@ -133,6 +142,8 @@ fn canonical_append_binds_query_heads_and_validates_both_original_ciphertexts() 
             3 => request.existing_rows += 1,
             4 => request.keyset_id[0] ^= 1,
             5 => request.geometry = Geometry::Rows16,
+            6 => request.incoming_rows += 1,
+            7 => request.version = 2,
             _ => unreachable!(),
         }
         assert!(
@@ -181,7 +192,7 @@ fn insert_metadata_wire_and_other_operation_domains_are_bound_at_both_roles() {
     let honest = peer
         .evaluate_indexed_insert_for_experiment(&prepared.request)
         .unwrap();
-    for fault in 0..8 {
+    for fault in 0..9 {
         let mut reply: Response = decode(&honest.output).unwrap();
         match fault {
             0 => reply.magic[0] ^= 1,
@@ -192,6 +203,7 @@ fn insert_metadata_wire_and_other_operation_domains_are_bound_at_both_roles() {
             5 => reply.context.data_head[0] ^= 1,
             6 => reply.context.index_head[0] ^= 1,
             7 => reply.existing_rows += 1,
+            8 => reply.incoming_rows += 1,
             _ => unreachable!(),
         }
         assert!(matches!(
@@ -272,13 +284,16 @@ fn all_decoded_rows_validity_and_unused_slots_are_checked_before_returning_any_r
         (0, 256),
         (DEGREE / 2 + 1, 65536),
         (VALIDITY + 1, 0),
-        (2, 1),
-        (VALIDITY + 2, 1),
+        (2, 256),
+        (VALIDITY + 2, 0),
+        (3, 1),
+        (VALIDITY + 3, 1),
         (DEGREE - 1, 1),
     ] {
         let mut slots = Zeroizing::new(vec![0u64; DEGREE]);
         slots[VALIDITY] = 1;
         slots[VALIDITY + 1] = 1;
+        slots[VALIDITY + 2] = 1;
         slots[index] = value;
         let reply = response(&request, owner.encrypted(&slots).unwrap());
         assert!(matches!(

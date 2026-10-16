@@ -23,7 +23,7 @@ fn encrypted_append_places_new_rows_after_actual_old_relation_including_empty_an
             active: true,
         };
         let prepared = owner
-            .prepare_indexed_insert_for_experiment(context(), &fields, incoming)
+            .prepare_indexed_insert_for_experiment(context(), &fields, &[incoming])
             .unwrap();
         let output = peer
             .evaluate_indexed_insert_for_experiment(&prepared.request)
@@ -60,7 +60,15 @@ fn full_tables_inactive_holes_and_unsupported_geometry_reject_before_encryption(
         active: true,
     };
     assert!(matches!(
-        owner.prepare_indexed_insert_for_experiment(context(), &[row; 256], row),
+        owner.prepare_indexed_insert_for_experiment(context(), &[], &[]),
+        Err(Error::GeometryLimit)
+    ));
+    assert!(matches!(
+        owner.prepare_indexed_insert_for_experiment(context(), &[row; 255], &[row; 2]),
+        Err(Error::GeometryLimit)
+    ));
+    assert!(matches!(
+        owner.prepare_indexed_insert_for_experiment(context(), &[row; 256], &[row]),
         Err(Error::GeometryLimit)
     ));
     let inactive = SelectedField {
@@ -68,18 +76,74 @@ fn full_tables_inactive_holes_and_unsupported_geometry_reject_before_encryption(
         ..row
     };
     assert!(matches!(
-        owner.prepare_indexed_insert_for_experiment(context(), &[inactive], row),
+        owner.prepare_indexed_insert_for_experiment(context(), &[inactive], &[row]),
         Err(Error::InvalidShape)
     ));
     assert!(matches!(
-        owner.prepare_indexed_insert_for_experiment(context(), &[], inactive),
+        owner.prepare_indexed_insert_for_experiment(context(), &[], &[inactive]),
         Err(Error::InvalidShape)
     ));
     let (small, _) = Owner::generate(Geometry::Rows16).unwrap();
     assert!(matches!(
-        small.prepare_indexed_insert_for_experiment(context(), &[], row),
+        small.prepare_indexed_insert_for_experiment(context(), &[], &[row]),
         Err(Error::GeometryLimit)
     ));
+}
+
+#[test]
+fn an_independently_encrypted_batch_fills_all256_slots_with_one_real_append() {
+    let (owner, setup) = Owner::generate(Geometry::Rows256).unwrap();
+    let peer = PeerEvaluator::from_public_setup(&setup).unwrap();
+    for existing in [0usize, 1, 254] {
+        let original = vec![
+            SelectedField {
+                age: 18,
+                amount: 255,
+                active: true
+            };
+            existing
+        ];
+        let incoming: Vec<_> = (existing..256)
+            .map(|slot| SelectedField {
+                age: slot as u8,
+                amount: if slot % 2 == 0 { 65535 } else { 256 },
+                active: true,
+            })
+            .collect();
+        let prepared = owner
+            .prepare_indexed_insert_for_experiment(context(), &original, &incoming)
+            .unwrap();
+        let metadata = bfv_query_core::PublicUpdateEvaluator::from_parameters(
+            &setup.update_parameters().unwrap(),
+        )
+        .unwrap()
+        .insert_metadata(&prepared.request)
+        .unwrap();
+        assert_eq!(
+            (metadata.existing_rows, metadata.incoming_rows),
+            (existing, incoming.len())
+        );
+        let output = peer
+            .evaluate_indexed_insert_for_experiment(&prepared.request)
+            .unwrap();
+        let answer = owner
+            .decrypt_indexed_insert_unverified_for_experiment(prepared.pending, &output.output)
+            .unwrap();
+        assert_eq!(answer.rows.len(), 256);
+        for (slot, (actual, expected)) in answer
+            .rows
+            .iter()
+            .zip(original.iter().chain(&incoming))
+            .enumerate()
+        {
+            assert_eq!(
+                (actual.slot, actual.age, actual.amount),
+                (slot, expected.age, expected.amount)
+            );
+        }
+        assert_eq!(output.stats.ciphertext_additions, 1);
+        assert_eq!(output.stats.rotations, 0);
+    }
 }
 #[test]
 fn zero_insert_is_a_real_row_and_fresh_ciphertexts_do_not_depend_on_context_changes() {
@@ -92,10 +156,10 @@ fn zero_insert_is_a_real_row_and_fresh_ciphertexts_do_not_depend_on_context_chan
         active: true,
     };
     let first = owner
-        .prepare_indexed_insert_for_experiment(context(), &[], row)
+        .prepare_indexed_insert_for_experiment(context(), &[], &[row])
         .unwrap();
     let second = owner
-        .prepare_indexed_insert_for_experiment(context(), &[], row)
+        .prepare_indexed_insert_for_experiment(context(), &[], &[row])
         .unwrap();
     assert_ne!(
         first.ciphertext_payload_bytes().unwrap(),

@@ -89,10 +89,15 @@ RAM guarantee or a 50-100 ms request SLA; full operations must be measured.
 set and every original job request. `MutationEvidence` contains the corresponding
 canonical outputs and STARKs. Their manual codecs reject trailing bytes and bound
 aggregate frames to 32 MiB, jobs to 32, and each request/output/proof to 2 MiB before
-allocation. UPDATE must cover every shard, including empty ones; INSERT has exactly
-one chosen shard. `JobVerifier` checks pinned crypto parameters, original contexts,
+allocation. UPDATE must cover every shard, including empty ones; INSERT covers a
+nonempty ordered set of existing shards with exactly matching jobs and updates.
+Version-3 INSERT metadata binds each old row count and incoming batch count; each
+new data head must grow by exactly that job's authorized count. `JobVerifier` checks pinned crypto parameters, original contexts,
 all job proofs, allowed changed shard IDs and head revision/schema/domain/count
 constraints. The journal additionally checks parent state, work and owner signature.
+The application commitment uses domain version 2 for these batch-aware transition
+rules, alongside the unchanged FHE/STARK profile identity. Old application anchors
+reject during initialization; older INSERT wires and journals are not migrated.
 
 `JobVerifier` keeps at most 128 successful arithmetic-proof digests in RAM, keyed
 by its pinned application commitment and every byte/length of canonical input,

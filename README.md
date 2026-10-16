@@ -52,7 +52,7 @@ typed mutations, joins, aggregates and transactions reject until their separate
 proof/transition paths exist. See the [typed client contract](crates/storage-client/README.md).
 
 The earlier two-column SQL frontend supports row SELECT/projections with age filters and LIMIT,
-single-row INSERT and amount addition on `age: u8, amount: u16`; it is not an arbitrary-SQL
+atomic literal INSERT batches and amount addition on `age: u8, amount: u16`; it is not an arbitrary-SQL
 database. Row projection uses actual BFV encrypted masking. The client authenticates
 complete private index selection, verifies exact peer arithmetic, then rechecks the
 confirmed version. INSERT/UPDATE publish actual compact ciphertext only after all

@@ -39,11 +39,7 @@ struct ExactSelection {
 impl Drop for ExactSelection {
     fn drop(&mut self) {
         self.ordinals.zeroize();
-        for field in &mut self.fields {
-            field.age.zeroize();
-            field.amount.zeroize();
-            field.active.zeroize();
-        }
+        self.fields.zeroize();
     }
 }
 pub struct PreparedAggregate {
@@ -62,7 +58,7 @@ pub struct PreparedInsert {
     request: Vec<u8>,
     pending: bfv_core::PendingIndexedInsert,
     selection: ExactSelection,
-    incoming: Zeroizing<[u8; 3]>,
+    incoming: Zeroizing<Vec<[u8; 3]>>,
 }
 impl PreparedInsert {
     pub fn request(&self) -> &[u8] {

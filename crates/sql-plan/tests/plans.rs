@@ -178,28 +178,62 @@ fn oversized_sql_is_rejected_before_tokenization() {
     assert!(parse_sql(&" ".repeat(4097)).is_err());
 }
 #[test]
-fn insert_has_bounded_typed_values_and_never_ignores_extra_rows_or_clauses() {
+fn insert_preserves_a_nonempty_ordered_batch_of_bounded_typed_values() {
     use sql_plan::RowValues;
     assert_eq!(
         parse_sql("INSERT INTO records (age, amount) VALUES (255,65535);").unwrap(),
         QueryPlan::Insert {
-            row: RowValues {
+            rows: vec![RowValues {
                 age: 255,
                 amount: 65535
-            }
+            }]
         }
     );
     assert_eq!(
         parse_sql("insert into records values(0,0)").unwrap(),
         QueryPlan::Insert {
-            row: RowValues { age: 0, amount: 0 }
+            rows: vec![RowValues { age: 0, amount: 0 }]
         }
     );
+    assert_eq!(
+        parse_sql("INSERT INTO records(age,amount) VALUES (255,65535),(0,0),(18,20);").unwrap(),
+        QueryPlan::Insert {
+            rows: vec![
+                RowValues {
+                    age: 255,
+                    amount: 65535
+                },
+                RowValues { age: 0, amount: 0 },
+                RowValues {
+                    age: 18,
+                    amount: 20
+                },
+            ]
+        }
+    );
+}
+
+#[test]
+fn insert_rejects_malformed_later_tuples_and_extra_clauses_without_a_partial_plan() {
     for sql in [
         "INSERT INTO records VALUES (256,1)",
         "INSERT INTO records VALUES (1,65536)",
         "INSERT INTO records VALUES (-1,1)",
-        "INSERT INTO records VALUES (1,1),(2,2)",
+        "INSERT INTO records VALUES (1,1),(256,2)",
+        "INSERT INTO records VALUES (1,1),(2,65536)",
+        "INSERT INTO records VALUES (1,1),(2,-1)",
+        "INSERT INTO records VALUES (1,1),(2)",
+        "INSERT INTO records VALUES (1,1),(2,2,2)",
+        "INSERT INTO records VALUES (1,1),(2,2",
+        "INSERT INTO records VALUES (1,1),(2,2),",
+        "INSERT INTO records VALUES (1,1),",
+        "INSERT INTO records VALUES (1,1),2,2",
+        "INSERT INTO records VALUES (1,1),()",
+        "INSERT INTO records VALUES (1,1) (2,2)",
+        "INSERT INTO records VALUES (1,1),(2,2) WHERE age=1",
+        "INSERT INTO records VALUES (1,1),(2,2); SELECT * FROM records",
+        "INSERT INTO records VALUES",
+        "INSERT INTO records VALUES ()",
         "INSERT INTO records (amount,age) VALUES (1,2)",
         "INSERT INTO records VALUES (1,1) WHERE age=1",
         "INSERT INTO other VALUES (1,1)",
@@ -208,6 +242,20 @@ fn insert_has_bounded_typed_values_and_never_ignores_extra_rows_or_clauses() {
     ] {
         assert!(parse_sql(sql).is_err(), "{sql}");
     }
+}
+
+#[test]
+fn insert_tuple_count_is_not_coupled_to_executor_capacity() {
+    let tuples = std::iter::repeat_n("(1,2)", 257)
+        .collect::<Vec<_>>()
+        .join(",");
+
+    assert_eq!(
+        parse_sql(&format!("INSERT INTO records VALUES {tuples}")).unwrap(),
+        QueryPlan::Insert {
+            rows: vec![sql_plan::RowValues { age: 1, amount: 2 }; 257],
+        }
+    );
 }
 #[test]
 fn output_limit_is_not_coupled_to_a_playground_row_cap() {

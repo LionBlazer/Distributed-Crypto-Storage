@@ -10,7 +10,7 @@ pub use polynomial_aggregate::{
 };
 mod typed_projection;
 pub use indexed_insert::{
-    EvaluatedIndexedInsert, IndexedInsertStats, InsertedRow, PendingIndexedInsert,
+    EvaluatedIndexedInsert, IndexedInsertStats, InsertMetadata, InsertedRow, PendingIndexedInsert,
     PreparedIndexedInsert, UnverifiedInsertedRows,
 };
 pub use typed_projection::{
@@ -46,7 +46,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 pub const HEAD_BYTES: usize = 112;
 pub const MAX_ROWS: usize = 256;
@@ -102,6 +102,13 @@ pub struct SelectedField {
     pub age: u8,
     pub amount: u16,
     pub active: bool,
+}
+impl Zeroize for SelectedField {
+    fn zeroize(&mut self) {
+        self.age.zeroize();
+        self.amount.zeroize();
+        self.active.zeroize();
+    }
 }
 #[derive(Clone, Copy, Debug)]
 pub enum Predicate {

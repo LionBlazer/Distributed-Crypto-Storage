@@ -425,16 +425,15 @@ pub(super) fn execute(
     progress: &impl Fn(LabProgress),
 ) -> Result<(QueryOutcome, Option<PreparedUpdate>), LabError> {
     let replicas = &db.replication;
-    if let QueryPlan::Insert { row } = plan {
-        return insert(
-            db,
-            replicas,
-            PlainRow {
+    if let QueryPlan::Insert { rows } = &plan {
+        let incoming: Vec<_> = rows
+            .iter()
+            .map(|row| PlainRow {
                 age: row.age,
                 amount: row.amount,
-            },
-            progress,
-        );
+            })
+            .collect();
+        return insert(db, replicas, &incoming, progress);
     }
     if let QueryPlan::Select {
         predicate,
@@ -544,13 +543,19 @@ pub(super) fn execute(
 fn insert(
     db: &Database,
     replicas: &Replication,
-    row: PlainRow,
+    incoming: &[PlainRow],
     progress: &impl Fn(LabProgress),
 ) -> Result<(QueryOutcome, Option<PreparedUpdate>), LabError> {
     let total: usize = replicas.shards.iter().map(|shard| shard.rows.len()).sum();
-    if total >= MAX_LAB_ROWS {
+    let end = total
+        .checked_add(incoming.len())
+        .filter(|end| *end <= MAX_LAB_ROWS)
+        .ok_or_else(|| {
+            LabError::InvalidInput("INSERT would exceed the 128-row laboratory bound.".into())
+        })?;
+    if incoming.is_empty() {
         return Err(LabError::InvalidInput(
-            "INSERT would exceed the 128-row laboratory bound.".into(),
+            "INSERT requires a nonempty batch.".into(),
         ));
     }
     let (slot, shard) = replicas
@@ -565,14 +570,18 @@ fn insert(
     progress(LabProgress {
         peer_id: executor,
         message: format!(
-            "Homomorphically appending an encrypted row to logical shard {}...",
+            "Homomorphically appending {} encrypted rows to logical shard {}...",
+            incoming.len(),
             shard.id
         ),
     });
     let mut table = shard.materialize(db, executor)?;
-    let query =
-        db.owner
-            .prepare_insert_for_experiment(&table, row, MAX_LAB_ROWS, Limits::default())?;
+    let query = db.owner.prepare_insert_for_experiment(
+        &table,
+        incoming,
+        MAX_LAB_ROWS,
+        Limits::default(),
+    )?;
     let peer = db
         .peers
         .iter()
@@ -585,9 +594,12 @@ fn insert(
         &evaluated.output,
         Limits::default(),
     )?;
-    let actual =
-        db.owner
-            .decrypt_row_for_experiment(&table, shard.rows.len() as u64, Limits::default())?;
+    let actual = (shard.rows.len()..shard.rows.len() + incoming.len())
+        .map(|ordinal| {
+            db.owner
+                .decrypt_row_for_experiment(&table, ordinal as u64, Limits::default())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let mut next = replicas.fork();
     let staged = &mut next.shards[slot];
     for peer in db.peers.iter().filter(|peer| peer.online) {
@@ -599,14 +611,16 @@ fn insert(
             staged.holders.insert(peer.id, table.fork_for_experiment());
         }
     }
-    staged.rows.push(total);
+    staged.rows.extend(total..end);
     staged.data = table.commitment().clone();
     staged.index = table.index_commitment().clone();
     next.check_quotas(db)?;
     let mut rows = db.owner_rows.clone();
-    rows.push(actual);
+    rows.extend(actual);
     Ok((
-        QueryOutcome::Inserted { count: 1 },
+        QueryOutcome::Inserted {
+            count: incoming.len() as u32,
+        },
         Some(PreparedUpdate {
             rows,
             replication: next,

@@ -1,10 +1,10 @@
-//! Single-row encrypted append; storage retrieval, authorization and writeback are external.
+//! Atomic encrypted batch append; storage retrieval, authorization and writeback are external.
 use super::*;
 const REQUEST_MAGIC: [u8; 8] = *b"BFVINSQ1";
 const RESPONSE_MAGIC: [u8; 8] = *b"BFVINSR1";
-// Version 2 places the independently encrypted new row at its public append slot.
-// Version 1's staging/rotation semantics must never be interpreted as this circuit.
-const INSERT_VERSION: u16 = 2;
+// Version 3 binds a nonempty positioned batch and its exact count. Older versions
+// must never be interpreted as this circuit, even when the batch has one row.
+const INSERT_VERSION: u16 = 3;
 const VALIDITY: usize = 2 * MAX_ROWS;
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum Operation {
@@ -19,6 +19,7 @@ struct Request {
     context: QueryContext,
     geometry: Geometry,
     existing_rows: u16,
+    incoming_rows: u16,
     existing: Vec<u8>,
     incoming: Vec<u8>,
 }
@@ -31,6 +32,7 @@ struct Response {
     context: QueryContext,
     geometry: Geometry,
     existing_rows: u16,
+    incoming_rows: u16,
     rows: Vec<u8>,
 }
 /// One-use owner binding; it contains no original field values and has no wire codec.
@@ -38,6 +40,13 @@ pub struct PendingIndexedInsert {
     context: QueryContext,
     keyset_id: [u8; 32],
     existing_rows: usize,
+    incoming_rows: usize,
+}
+/// Validated public append shape and original query/head identity. It conveys no proof.
+pub struct InsertMetadata {
+    pub context: QueryContext,
+    pub existing_rows: usize,
+    pub incoming_rows: usize,
 }
 impl PendingIndexedInsert {
     pub fn context(&self) -> &QueryContext {
@@ -79,27 +88,32 @@ pub struct EvaluatedIndexedInsert {
     pub output: Vec<u8>,
     pub stats: IndexedInsertStats,
 }
-fn check_geometry(geometry: Geometry, existing: usize) -> Result<()> {
-    if geometry != Geometry::Rows256 || existing >= MAX_ROWS {
+fn check_geometry(geometry: Geometry, existing: usize, incoming: usize) -> Result<()> {
+    if geometry != Geometry::Rows256
+        || incoming == 0
+        || existing
+            .checked_add(incoming)
+            .is_none_or(|total| total > MAX_ROWS)
+    {
         return Err(Error::GeometryLimit);
     }
     Ok(())
 }
 impl Owner {
-    /// Encrypt actual authenticated contiguous rows and the authorized new row separately.
-    /// The incoming ciphertext contains only the new row at the public append position.
+    /// Encrypt authenticated originals and the authorized incoming batch separately.
+    /// The incoming ciphertext contains only new rows at their public append positions.
     /// The peer must add both independent ciphertexts to obtain the complete relation.
     pub fn prepare_indexed_insert_for_experiment(
         &self,
         context: QueryContext,
         existing: &[SelectedField],
-        incoming: SelectedField,
+        incoming: &[SelectedField],
     ) -> Result<PreparedIndexedInsert> {
-        check_geometry(self.geometry, existing.len())?;
+        check_geometry(self.geometry, existing.len(), incoming.len())?;
         if !context.valid() {
             return Err(Error::BindingMismatch);
         }
-        if !incoming.active || existing.iter().any(|field| !field.active) {
+        if incoming.iter().chain(existing).any(|field| !field.active) {
             return Err(Error::InvalidShape);
         }
         let mut old = Zeroizing::new(vec![0u64; DEGREE]);
@@ -109,9 +123,12 @@ impl Owner {
             old[VALIDITY + slot] = 1;
         }
         let mut new = Zeroizing::new(vec![0u64; DEGREE]);
-        new[existing.len()] = u64::from(incoming.age);
-        new[DEGREE / 2 + existing.len()] = u64::from(incoming.amount);
-        new[VALIDITY + existing.len()] = 1;
+        for (offset, field) in incoming.iter().enumerate() {
+            let slot = existing.len() + offset;
+            new[slot] = u64::from(field.age);
+            new[DEGREE / 2 + slot] = u64::from(field.amount);
+            new[VALIDITY + slot] = 1;
+        }
         let request = encode(&Request {
             magic: REQUEST_MAGIC,
             version: INSERT_VERSION,
@@ -120,6 +137,7 @@ impl Owner {
             context: context.clone(),
             geometry: self.geometry,
             existing_rows: existing.len() as u16,
+            incoming_rows: incoming.len() as u16,
             existing: self.encrypted(&old)?,
             incoming: self.encrypted(&new)?,
         })?;
@@ -129,6 +147,7 @@ impl Owner {
                 context,
                 keyset_id: self.keyset_id,
                 existing_rows: existing.len(),
+                incoming_rows: incoming.len(),
             },
         })
     }
@@ -138,7 +157,7 @@ impl Owner {
         pending: PendingIndexedInsert,
         output: &[u8],
     ) -> Result<UnverifiedInsertedRows> {
-        check_geometry(self.geometry, pending.existing_rows)?;
+        check_geometry(self.geometry, pending.existing_rows, pending.incoming_rows)?;
         let response: Response = decode(output)?;
         if response.magic != RESPONSE_MAGIC
             || response.version != INSERT_VERSION
@@ -149,6 +168,7 @@ impl Owner {
             || !pending.context.valid()
             || response.context != pending.context
             || usize::from(response.existing_rows) != pending.existing_rows
+            || usize::from(response.incoming_rows) != pending.incoming_rows
         {
             return Err(Error::BindingMismatch);
         }
@@ -159,7 +179,7 @@ impl Owner {
         if decoded.len() != DEGREE {
             return Err(Error::InvalidShape);
         }
-        let count = pending.existing_rows + 1;
+        let count = pending.existing_rows + pending.incoming_rows;
         for (index, value) in decoded.iter().copied().enumerate() {
             let maximum = if index < count {
                 255
@@ -213,6 +233,7 @@ impl PeerEvaluator {
             context: request.context,
             geometry: request.geometry,
             existing_rows: request.existing_rows,
+            incoming_rows: request.incoming_rows,
             rows: rows.to_bytes(),
         })?;
         Ok(EvaluatedIndexedInsert {
@@ -232,7 +253,11 @@ impl PeerEvaluator {
 
 fn checked_request(geometry: Geometry, keyset_id: [u8; 32], wire: &[u8]) -> Result<Request> {
     let request: Request = decode(wire)?;
-    check_geometry(geometry, usize::from(request.existing_rows))?;
+    check_geometry(
+        geometry,
+        usize::from(request.existing_rows),
+        usize::from(request.incoming_rows),
+    )?;
     if request.magic != REQUEST_MAGIC
         || request.version != INSERT_VERSION
         || request.operation != Operation::IndexedAppend
@@ -263,10 +288,23 @@ pub(super) fn request_context(
     keyset_id: [u8; 32],
     wire: &[u8],
 ) -> Result<QueryContext> {
+    Ok(metadata(parameters, geometry, keyset_id, wire)?.context)
+}
+
+pub(super) fn metadata(
+    parameters: &Arc<BfvParameters>,
+    geometry: Geometry,
+    keyset_id: [u8; 32],
+    wire: &[u8],
+) -> Result<InsertMetadata> {
     let request = checked_request(geometry, keyset_id, wire)?;
     checked_ciphertext(&request.existing, parameters)?;
     checked_ciphertext(&request.incoming, parameters)?;
-    Ok(request.context)
+    Ok(InsertMetadata {
+        context: request.context,
+        existing_rows: usize::from(request.existing_rows),
+        incoming_rows: usize::from(request.incoming_rows),
+    })
 }
 
 pub(super) fn circuit_request(
@@ -315,6 +353,7 @@ fn response(request: Request, rows: Vec<u8>) -> Result<Vec<u8>> {
         context: request.context,
         geometry: request.geometry,
         existing_rows: request.existing_rows,
+        incoming_rows: request.incoming_rows,
         rows,
     })
 }

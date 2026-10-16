@@ -11,7 +11,12 @@ larger workload and tail-latency contract remain to be established.
 ## Current execution boundary
 
 The fixed-schema `storage-client::Session` accepts genuine proved row SELECT,
-COUNT/SUM, one-row INSERT and additive amount UPDATE. Aggregates perform an
+COUNT/SUM, atomic literal INSERT batches and additive amount UPDATE. INSERT admits
+1..=256 incoming rows and a maximum 256-row completed relation per target shard.
+One statement prepares every target proof and compact image before any Store or
+authorization, then publishes one signed transition and retains one retry identity.
+It preflights shard capacity and immutable protocol frame/update budgets; this
+statement atomicity does not provide general transactions. Aggregates perform an
 encrypted coefficient convolution under the existing full-residue product proof,
 with checked client-side limb/shard completion and SQL NULL for empty SUM.
 They currently admit at most 256 matching rows per shard and reject excess;
@@ -23,6 +28,19 @@ Parsing syntax or preserving imported stored programs does not execute them.
 Typed SELECT ordering follows PostgreSQL's ASC NULLS LAST / DESC NULLS FIRST
 defaults and explicit NULLS FIRST/LAST per key, before applying LIMIT. See
 [sorting rows](https://www.postgresql.org/docs/18/queries-order.html).
+
+Other inherited SQL Server adapter semantics still differ from PostgreSQL. Typed
+imported queries currently lose quoted-identifier case and bind identifiers without
+case sensitivity; PostgreSQL preserves quoted names and folds unquoted names to
+lowercase. Variable VARCHAR/NVARCHAR comparisons currently trim trailing spaces,
+whereas PostgreSQL varchar/text comparisons preserve them; fixed CHAR has different
+padding rules. See [identifier rules](https://www.postgresql.org/docs/18/sql-syntax-lexical.html)
+and [character types](https://www.postgresql.org/docs/18/datatype-character.html).
+The fixed UPDATE outcome reports physically changed rows: `amount = amount + 0`
+reports zero. PostgreSQL's UPDATE command tag counts matched rows, including values
+that remain unchanged; reconciling this outcome with locking remains open. See
+[UPDATE output](https://www.postgresql.org/docs/18/sql-update.html#SQL-UPDATE-OUTPUTS).
+These existing boundaries do not establish full PostgreSQL compatibility.
 
 Current public proofs attest full BFV addition and public-polynomial products.
 Private AEAD/index-to-FHE preparation remains the designated owner's responsibility.

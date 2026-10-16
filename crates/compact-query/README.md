@@ -71,15 +71,19 @@ COUNT/SUM answer is substituted. Input authentication does not prove output
 arithmetic; core outputs remain ProofStatus::Unavailable.
 
 `prepare_insert_for_experiment` authenticates the complete bounded target table
-and independently encrypts original rows and the authorized incoming row.
-`Evaluator::evaluate_indexed_insert` adds the independently encrypted incoming row,
-already placed at its public append slot, to the encrypted original relation. `apply_insert_checked_for_experiment` consumes that BFV
+and independently encrypts original rows and the nonempty authorized incoming batch.
+`Evaluator::evaluate_indexed_insert` adds the independently encrypted incoming batch,
+already placed at its public append slots, to the encrypted original relation. `apply_insert_checked_for_experiment` consumes that BFV
 output, checks every decoded old/new field against the authenticated inputs, then
 stages larger compact data and a rebuilt exact index. It preserves the storage/key
-identity and advances revisions; every target data page receives fresh encryption
+identity and advances each revision once for the whole batch; every target data page receives fresh encryption
 because its AEAD binds row count. Other tables remain unchanged. A failed head,
 output, bound or storage check publishes neither image. No fixture supplies the
 append result; local validation still does not constitute a succinct proof.
+The combined relation must fit the caller budget and the 256-row FHE boundary.
+`stage_proved_insert`/`stage_checked_insert` require the exact full-residue Addition
+evidence, decrypt the complete peer result and stage one whole grown data/index pair.
+Prepared incoming fields are zeroized when their single-use state is dropped.
 
 The low-level crate carries Rust 1.99 and the exact N8192/Q218/t114689/full-keyset
 profile. Independent security/noise/CCA gates remain unresolved. Retained public

@@ -13,6 +13,7 @@ use version_journal::{
 mod aggregate;
 mod agreement;
 mod execution;
+mod insert;
 mod pending;
 mod select;
 mod shards;

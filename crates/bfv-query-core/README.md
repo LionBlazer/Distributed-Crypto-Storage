@@ -47,7 +47,7 @@ Owner owns the only secret key; PublicSetup contains only original parameters,
 relinearization and rotation keys; PeerEvaluator restores public material only.
 Inputs are fresh encrypted selected fields. Public contracts include generic
 Equal/AtLeast/ClosedRange COUNT/SUM, explicitly caller-asserted exact-index aggregate,
-indexed encrypted row projection, indexed amount addition and single-row encrypted
+indexed encrypted row projection, indexed amount addition and bounded encrypted batch
 append. Indexed wire contracts bind operation/keyset/geometry/query ID and both
 opaque 112-byte heads. Generic pending tokens also bind their local owner keyset;
 they do not add malicious-response authentication. Results remain Unverified;
@@ -63,7 +63,7 @@ process; no secret key or row data enters that cache. This reduced execution pat
 does not itself supply a computation proof or authorize accepting a SQL answer.
 
 `PublicUpdateEvaluator::request_context` validates a supported original UPDATE,
-exact-set SELECT or version-2 INSERT request, including every ciphertext's level,
+exact-set SELECT or version-3 INSERT request, including every ciphertext's level,
 component count and representation, then returns its public `QueryContext`. Runtime
 and journal validators can compare both heads against independently agreed storage
 state without exposing private request types or executing an SQL/FHE operation.
@@ -100,20 +100,23 @@ The exact-index contract belongs to the caller, as for exact-index aggregates; t
 operation does not conceal or re-evaluate an arbitrary SQL predicate.
 
 `Owner::prepare_indexed_insert_for_experiment` independently encrypts the original
-contiguous relation and an incoming row at the public append position. The incoming
+contiguous relation and an incoming batch at public append positions. The incoming
 operand contains no existing rows, and the existing operand contains no incoming
-row. The public-only `PeerEvaluator::evaluate_indexed_insert_for_experiment` adds
+rows. The public-only `PeerEvaluator::evaluate_indexed_insert_for_experiment` adds
 these ciphertexts, including encrypted presence markers. No rotation is required:
-the request already exposes the append position as `existing_rows`. This is input
+the request exposes `existing_rows` and nonzero `incoming_rows`. This is input
 placement for genuine encrypted addition, not owner assembly of the complete answer.
-The append request version is 2; earlier staging/rotation requests are rejected
+The append request version is 3; earlier single-row/staging requests are rejected
 rather than interpreted under different arithmetic semantics.
 `decrypt_indexed_insert_unverified_for_experiment` returns only decoded peer output
-after binding, lane and value checks. This operation requires Rows256 and fewer
-than 256 existing rows; it retains the original parameters and public rotation keys.
-`PublicUpdateEvaluator::{evaluate_insert,insert_circuit_request,restore_insert_circuit_output}`
+after binding, lane and value checks. This operation requires Rows256 and a complete
+old-plus-incoming relation of at most 256 rows. Empty/oversized batches reject before
+encryption. It retains the original parameters and public rotation keys.
+`PublicUpdateEvaluator::{evaluate_insert,insert_circuit_request,restore_insert_circuit_output,insert_metadata}`
 expose the same operation without rotation/relinearization keys. Canonical circuit
-outputs match both full and minimal upstream evaluator bytes exactly.
+outputs match both full and minimal upstream evaluator bytes exactly. `insert_metadata`
+validates both original ciphertexts before exposing the public counts and query heads;
+it supplies neither an arithmetic proof nor a freshness decision.
 Storage growth, authorization and validation against authenticated originals belong
 to the caller. It does not provide a succinct computation proof.
 
