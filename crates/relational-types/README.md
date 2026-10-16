@@ -41,6 +41,9 @@ Planning rejects SQL over 64 KiB, predicates over 128 nodes, and comments or
 parentheses deeper than 128 levels. The codec bounds each field to 8 MiB and each
 encoded row to 16 MiB. Schema validation runs even for empty tables and rejects
 invalid widths, precision, ranges and constraint indices before data access.
+Redundant later ORDER BY columns are validated and eliminated: they cannot break
+ties on the same earlier column. Executor sort keys therefore never exceed the
+validated schema's column count, regardless of repeated SQL syntax.
 
 Run hermetic examples with `cargo test --release -p relational-types`. The opt-in
 official Northwind test reads `DCS_NORTHWIND_SQL` and verifies all 13 base tables

@@ -361,7 +361,10 @@ fn proved_projection_uses_postgresql_null_order_before_applying_limit() {
         ("ORDER BY score DESC LIMIT 2", vec![1, 4]),
         ("ORDER BY score ASC NULLS FIRST LIMIT 2", vec![1, 4]),
         ("ORDER BY score DESC NULLS LAST LIMIT 3", vec![2, 5, 3]),
-        ("ORDER BY score NULLS FIRST, id DESC", vec![4, 1, 3, 5, 2]),
+        (
+            "ORDER BY score NULLS FIRST, id DESC, score DESC NULLS LAST",
+            vec![4, 1, 3, 5, 2],
+        ),
     ] {
         let sql = format!("SELECT id FROM ranks {tail}");
         network.activity.lock().unwrap().clear();

@@ -278,6 +278,10 @@ mod tests {
             ("ORDER BY score ASC NULLS FIRST", vec![0, 3, 2, 1, 4]),
             ("ORDER BY score DESC NULLS LAST", vec![1, 4, 2, 0, 3]),
             ("ORDER BY score NULLS FIRST, id DESC", vec![3, 0, 2, 4, 1]),
+            (
+                "ORDER BY score NULLS FIRST, id DESC, score DESC NULLS LAST",
+                vec![3, 0, 2, 4, 1],
+            ),
             ("ORDER BY score LIMIT 1", vec![2]),
             ("WHERE score IS NULL ORDER BY id DESC", vec![3, 0]),
             ("WHERE score <> 10 ORDER BY score", vec![2]),

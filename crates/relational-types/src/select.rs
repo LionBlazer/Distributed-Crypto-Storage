@@ -109,6 +109,7 @@ pub fn plan_select_schemas(schemas: &[TableSchema], sql: &str) -> Result<SelectP
     let mut order_by = Vec::new();
     if parser.eat_word("ORDER") {
         parser.expect_word("BY")?;
+        let mut ordered_columns = vec![false; schema.columns.len()];
         loop {
             let column = column_name(&mut parser)?.resolve(schema, qualifier)?;
             let descending = parser.eat_word("DESC");
@@ -125,11 +126,17 @@ pub fn plan_select_schemas(schemas: &[TableSchema], sql: &str) -> Result<SelectP
             } else {
                 descending
             };
-            order_by.push(OrderBy {
-                column,
-                descending,
-                nulls_first,
-            });
+            // Later keys are consulted only when earlier values compare equal.
+            // Repeating the same column cannot break that tie, even with another
+            // direction or NULL placement. Bound executor work to distinct columns.
+            if !ordered_columns[column] {
+                ordered_columns[column] = true;
+                order_by.push(OrderBy {
+                    column,
+                    descending,
+                    nulls_first,
+                });
+            }
             if !parser.eat_symbol(',') {
                 break;
             }
@@ -499,5 +506,44 @@ mod tests {
                 "{tail}"
             );
         }
+    }
+
+    #[test]
+    fn repeated_ordering_columns_do_not_expand_the_executor_working_set() {
+        let database = import_database_dump(
+            "CREATE TABLE ranks (id INT NOT NULL, score INT NULL);",
+            Default::default(),
+        )
+        .unwrap();
+        let repeated = std::iter::repeat_n("score ASC NULLS LAST", 2_000)
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql =
+            format!("SELECT id FROM ranks ORDER BY {repeated}, id DESC, score DESC NULLS FIRST");
+        let plan = plan_select(&database, &sql).unwrap();
+        assert_eq!(plan.order_by.len(), 2);
+        assert_eq!(
+            plan.order_by,
+            [
+                OrderBy {
+                    column: 1,
+                    descending: false,
+                    nulls_first: false,
+                },
+                OrderBy {
+                    column: 0,
+                    descending: true,
+                    nulls_first: true,
+                },
+            ]
+        );
+        assert!(
+            plan_select(
+                &database,
+                "SELECT id FROM ranks ORDER BY score, score NULLS MIDDLE"
+            )
+            .is_err(),
+            "Eliminating a redundant key must not skip validation of its syntax"
+        );
     }
 }
