@@ -251,6 +251,15 @@ a full-query speed guarantee. UPDATE still misses 500 ms; larger workloads and
 tail latency remain unestablished. Every measured result, process-loss recovery
 and exact-head read-after-write assertion passed.
 
+A separate resource run of that v3/eight-thread scenario passed every genuine SQL
+assertion. Observed OS peak working sets were 206 MiB for the client and 168–174 MiB
+for the three peer process lifetimes (two initial processes and one restart).
+The maximum sampled simultaneous working-set sum was 287 MiB; it is not the sum
+of each process's independent peak. Sampling ran every 100 ms, with child discovery
+every 500 ms and a 1.75-GiB per-process sampled guard. This resource run is excluded
+from latency samples. It covers one small scenario under concurrent development
+load, not arbitrary databases, adversarial concurrency or a production RAM bound.
+
 ### Reusing the owner's checked mutation proof (2026-10-16)
 
 `JobVerifier::check_job` derives the exact canonical input from the trusted
