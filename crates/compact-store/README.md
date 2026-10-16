@@ -40,7 +40,8 @@ address-based retrieval, not an FHE evaluator or SQL query proof.
   durable staging and provenance. It does not copy every base page again.
 - LookupResponse::verify_for_reissue uses the same ordinary membership verifier
   and returns a non-cloneable, non-serializable VerifiedPagePath. It retains the
-  exact old head, address, packet and private siblings. Owner::reissue_page consumes
+  exact old head, address, packet and private siblings. Immutable commitment/address
+  accessors expose only its authenticated binding metadata. Owner::reissue_page consumes
   it with an independently supplied matching head and same-length new plaintext.
   It rechecks owner, geometry, resource/response bounds and revision exhaustion,
   authenticates the old AEAD, then uses the existing fresh-nonce page encryption

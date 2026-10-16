@@ -557,19 +557,45 @@ pub(crate) fn rebound(
     table_id: &TableId,
 ) -> Result<EncryptedSnapshot> {
     let heads = crate::ReadHeads::new(*table_id, old, index.commitment(), Limits::default())?;
-    let header = check_binding(owner, index, &heads)?;
+    let bytes = rebound_bytes(owner, index, &heads, new)?;
+    let mut staged = index.clone();
+    let expected = staged.commitment().clone();
+    owner.replace_page(&mut staged, &expected, 0, &bytes, index_limits())?;
+    Ok(staged)
+}
+
+fn rebound_bytes(
+    owner: &compact_store::Owner,
+    index: &dyn crate::PageSource,
+    heads: &crate::ReadHeads,
+    new: &Commitment,
+) -> Result<Zeroizing<Vec<u8>>> {
+    let header = check_binding(owner, index, heads)?;
+    let old = heads.data();
     if old.layout() != new.layout()
         || old.database() != new.database()
         || old.key_domain() != new.key_domain()
     {
         return Err(Error::InvalidIndex);
     }
-    let mut staged = index.clone();
     let mut bytes = Zeroizing::new(header.first_page.as_bytes().to_vec());
     bytes[..MANIFEST_BYTES].copy_from_slice(&new.encode());
-    let expected = staged.commitment().clone();
-    owner.replace_page(&mut staged, &expected, 0, &bytes, index_limits())?;
-    Ok(staged)
+    Ok(bytes)
+}
+
+#[cfg(feature = "bfv-experiment")]
+pub(crate) fn rebound_from_path(
+    owner: &compact_store::Owner,
+    index: &dyn crate::PageSource,
+    heads: &crate::ReadHeads,
+    new: &Commitment,
+    header: compact_store::VerifiedPagePath,
+) -> Result<(Commitment, compact_store::LookupResponse)> {
+    if header.commitment() != heads.index() || header.page_index() != 0 {
+        return Err(Error::WrongVersion);
+    }
+    let bytes = rebound_bytes(owner, index, heads, new)?;
+    Ok(owner.reissue_page(header, heads.index(), &bytes, index_limits())?)
 }
 
 #[cfg(test)]

@@ -46,6 +46,8 @@ fn odd_even_and_partial_page_paths_match_full_reconstruction_of_the_same_packet(
             let original_plain = owner.decrypt(&old_page).unwrap();
             let replacement = vec![71; original_plain.as_bytes().len()];
             let source = response.verify_for_reissue(&old, index, limits).unwrap();
+            assert_eq!(source.commitment(), &old);
+            assert_eq!(source.page_index(), index);
 
             let (next, replacement_proof) = owner
                 .reissue_page(source, &old, &replacement, limits)

@@ -442,6 +442,7 @@ impl Owner {
             self.key
                 .prepare_indexed_update_for_experiment(context, &selection.fields, delta)?;
         Ok(PreparedUpdate {
+            heads: table.read_heads(),
             request: prepared.request,
             pending: prepared.pending,
             selection,
@@ -457,7 +458,7 @@ impl Owner {
         output: &[u8],
         limits: Limits,
     ) -> Result<AppliedUpdate> {
-        current(table, &prepared.selection)?;
+        current_update(&table.read_heads(), &prepared)?;
         let PreparedUpdate {
             pending,
             mut selection,
