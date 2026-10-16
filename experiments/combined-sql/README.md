@@ -7,9 +7,10 @@ projection and encrypted stable row identities. They do not establish complete
 PostgreSQL, SQL row locks, production consensus, a general 500-ms bound or a
 whole-process resource guarantee.
 
-The [Q2 combined recheck](#q2-page-custody-and-collection-recheck) and the later
-[matched static-read comparison](#matched-static-select-read-images) below pin
-their source and artifact identities separately from this original record.
+The [Q2 combined recheck](#q2-page-custody-and-collection-recheck),
+[matched static-read comparison](#matched-static-select-read-images) and
+[padded UPDATE comparison](#padded-update-writeback-comparison) below pin their
+source and artifact identities separately from this original record.
 
 ## Full accepted operations
 
@@ -290,3 +291,91 @@ read-image frame bounds, source/head rebinding, malformed omitted pages, genuine
 proof rejection, cancellation before RPC and after proof, and mandatory final
 freshness. The historical Northwind scenario and memory observation were not rerun
 in this matched comparison.
+
+## Padded UPDATE writeback comparison
+
+Source `0b92c939ddd913b4cb5b1edb243eea1ff84a4b02` adds
+[padded verified replacement uploads](../../docs/padded-update-delta.md) to the
+static-read source `6c960a63695e0d2ba560cb874b02c8b688bff407`. Existing holders
+receive a geometry-fixed delta only when it is smaller than Full Store; new
+replicas retain their preplanned Full Store role. The million-row complete request
+falls from 37,604,542 to 1,188,143 bytes. A four-row image still chooses Full Store.
+The base and reconstructed target are fully audited, quota charges the full new
+object, and ordinary fsync, publication, confirmation and collection remain.
+This wire reduction does **not** establish a latency improvement.
+
+The same two real-daemon fixture functions, assertions and timed operation
+boundaries as the static-read comparison were unchanged. Owner and peers used
+eight Rayon threads, native Rust 1.99.0/MSVC release and the exact preserved
+AVX2/AVX-512 libraries identified above. Application v3, proof profile v3, all
+81,920 residues and kernel ABI are unchanged. All agents finished heavy commands
+before timing and held further builds/proof jobs. No RPC/PID/memory hook ran.
+Each fixture ran three fresh times, producing these 27 accepted SQL timers:
+
+| Initial rows | Complete SQL operation | Minimum ms | Median ms | Maximum ms |
+| ---: | --- | ---: | ---: | ---: |
+| 1,000,000 | `UPDATE records SET amount = amount + 1 WHERE age = 42` | 1127.306 | 1141.710 | 1157.888 |
+| 1,000,000 | `SELECT * FROM records WHERE age = 42` | 354.410 | 354.861 | 356.922 |
+| 4 | `SELECT * FROM records` | 196.267 | 199.427 | 202.411 |
+| 4 | `SELECT amount, age FROM records WHERE age >= 18 LIMIT 1` | 198.463 | 198.764 | 205.678 |
+| 4 | `INSERT INTO records VALUES (21, 255)` | 249.274 | 314.714 | 317.884 |
+| 4 | `UPDATE records SET amount = amount + 1 WHERE age >= 18` | 412.225 | 444.273 | 452.387 |
+| 4 | `SELECT * FROM records WHERE age >= 18`, after writes | 235.812 | 241.874 | 245.794 |
+| 4 | `SELECT amount FROM records WHERE age = 21`, after holder loss | 2317.041 | 2322.797 | 2326.987 |
+| 4 | `SELECT age FROM records WHERE age > 255`, after restart | 255.762 | 262.333 | 271.130 |
+
+The million-row UPDATE median exceeds the earlier source's 1075.575 ms. To check
+this concern against adjacent runs, one additional window alternated before then
+after for each of three fresh million-row pairs. Both variants used their exact
+preserved owner and matching baked peer, with the same preserved kernels. No build
+or other heavy job resumed between these six scenarios. All twelve additional
+timers passed the same exact result/proof/head assertions; neither series was
+discarded. Cells show minimum / median / maximum milliseconds:
+
+| Complete SQL operation | Before, `6c960a6` | After, `0b92c93` |
+| --- | ---: | ---: |
+| `UPDATE records SET amount = amount + 1 WHERE age = 42` | 1126.187 / 1139.967 / 1156.295 | 1159.141 / 1164.171 / 1167.407 |
+| `SELECT * FROM records WHERE age = 42` | 340.532 / 346.132 / 350.482 | 353.436 / 372.698 / 403.649 |
+
+The adjacent UPDATE median increases by 24.204 ms, or 2.1%; the new path did not
+improve complete-operation latency on this loopback fixture. The later baseline
+also differs from the earlier window, and SELECT has visible spread. Three samples
+cannot isolate causation or establish a tail SLA. Delta adds a full base audit and
+reconstruction while retaining target validation; phase costs were not measured
+here. A smaller upload must not be presented as a measured WAN speedup. UPDATE
+still exceeds 500 ms, as does the stopped-holder read. RAM and throughput were not
+remeasured. Complete PostgreSQL, transactions and live row locks remain incomplete.
+
+Ignored raw records, exact artifact copies and manifests are retained in:
+
+- `.local/padded-delta-runs/20261016-060812-435-after/` (six logs, 27 timers).
+- `.local/padded-delta-runs/20261016-061001-083-adjacent-pairs/` (six logs, 12 timers).
+
+| After artifact | SHA256 |
+| --- | --- |
+| Owner/test `proved_sql-b77c1dcb3169d113.exe` | `613F570290C5515EE979091247E0CB773E50FAE81489C95C8A53A55F753AE127` |
+| Peer `dcs-peer.exe` | `60F4529B2B5BAF4870A6E3D32F31CADB6D2F5DD4FC8548AC8A1CF4626974ABCB` |
+
+Before owner/peer hashes are `8A4BF944...456DAC8` / `871DC11D...ABEAABE`, with full
+hashes and preserved files in the static-read table above. Both variants used the
+same full kernel hashes in the original artifact table. The after test executable
+embeds `.local/target-padded-update-delta/release/dcs-peer.exe`; the before embeds
+`.local/target-bfv-query-proof-native/release/dcs-peer.exe`. Reproduce using the
+earlier native configuration and two exact fixture names. A copied owner still
+launches its baked peer path: install matching preserved files there outside the
+timer. For the adjacent window, the unused before path's original peer and kernels
+were backed up, restored in `finally` and hash-checked after all pairs. Never mix
+source variants or overwrite another running consumer's artifacts.
+
+The combined source passed 159 native behavioral tests and one compile-fail
+contract, strict native Clippy and formatting. Portable GUI passed 193 tests with
+10 opt-in tests ignored, strict Clippy, architecture and requirements mirroring;
+both opt-in real-process SQL-script scenarios passed separately. After freezing
+the native artifacts, the million-row, small mutation/failover and Q2 aggregate
+fixtures also passed with the exact preserved SIMD libraries used for timing.
+Independent source review covered full-root reconstruction, malformed padding,
+corrupt overwritten/omitted base pages, duplicate replay after restart/base GC,
+TLS upload authority, lost ACK and preplanned recipient roles. The alias regression
+rejects distinct routing IDs for one TLS identity or socket before proof/upload;
+the quota regression rejects same-holder Full fallback without advancing state.
+Requirements and production-finality limitations are unchanged.
