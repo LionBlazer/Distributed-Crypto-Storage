@@ -23,7 +23,7 @@ pub(crate) struct Store {
     journals: BTreeSet<[u8; 32]>,
     reserved: u64,
 }
-fn error(e: impl std::fmt::Display) -> RemoteError {
+pub(super) fn error(e: impl std::fmt::Display) -> RemoteError {
     RemoteError::Io(e.to_string())
 }
 fn filename(id: &[u8; 32]) -> String {
@@ -217,7 +217,7 @@ impl Store {
         // put/open populate this index only after validating the complete images
         // and canonical object hash. Collection needs those immutable identities,
         // not a second audit of retained or unrelated ciphertext. Actual reads
-        // and proving still call get and validate every physical byte.
+        // and proving still validate every physical byte.
         let protected: BTreeSet<_> = retained
             .iter()
             .filter_map(|pair| self.heads.get(pair))
@@ -396,17 +396,39 @@ impl Store {
     // Every route audits the complete physical bundle, including unrequested
     // bytes in both images. Cached names/status never establish custody.
     fn read_verified(&mut self, id: &[u8; 32]) -> Result<CheckedObject, RemoteError> {
-        if !self.objects.contains_key(id) {
-            return Err(RemoteError::NotFound);
-        }
-        let result = (|| {
-            let bytes = read_bounded(&self.directory.join(filename(id))).map_err(error)?;
+        self.read_audited(id, |bytes| {
             let checked = CheckedObject::audit(objects::decode_disk(&bytes).map_err(error)?)?;
             if checked.version().object() != id {
                 return Err(RemoteError::Integrity);
             }
             Ok(checked)
-        })();
+        })
+    }
+    pub(crate) fn audit_version(
+        &mut self,
+        id: &[u8; 32],
+    ) -> Result<crate::TargetVersion, RemoteError> {
+        self.read_audited(id, |bytes| {
+            let version = objects::audit_disk_version(&bytes)?;
+            if version.object() != id {
+                return Err(RemoteError::Integrity);
+            }
+            Ok(version)
+        })
+    }
+    // Both private callers complete both image audits and check the object ID.
+    // Unknown names stay NotFound; every failed known read marks it unavailable.
+    fn read_audited<T>(
+        &mut self,
+        id: &[u8; 32],
+        audit: impl FnOnce(Vec<u8>) -> Result<T, RemoteError>,
+    ) -> Result<T, RemoteError> {
+        if !self.objects.contains_key(id) {
+            return Err(RemoteError::NotFound);
+        }
+        let result = read_bounded(&self.directory.join(filename(id)))
+            .map_err(error)
+            .and_then(audit);
         if result.is_err() {
             self.invalid.insert(*id);
         } else {
@@ -1032,3 +1054,6 @@ pub(crate) fn preflight_directory(directory: &Path) -> io::Result<()> {
 
 #[cfg(test)]
 mod profile_tests;
+
+#[cfg(test)]
+mod audit_tests;

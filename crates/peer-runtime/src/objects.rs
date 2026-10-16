@@ -297,6 +297,13 @@ pub(crate) fn decode_disk(bytes: &[u8]) -> std::io::Result<RawBundle> {
     crate::wire::check_frame_size(bytes)?;
     decode_slice(&bytes[DISK_HEADER_BYTES..])
 }
+// Request-local full custody audit. The returned metadata is only a binding;
+// it cannot authorize a later physical read or stand in for a computation proof.
+pub(crate) fn audit_disk_version(bytes: &[u8]) -> Result<TargetVersion, RemoteError> {
+    check_disk_header(bytes).map_err(crate::store::error)?;
+    crate::wire::check_frame_size(bytes).map_err(crate::store::error)?;
+    slice::audit_version(&bytes[DISK_HEADER_BYTES..])
+}
 pub(crate) fn check_disk_header(bytes: &[u8]) -> std::io::Result<()> {
     if bytes.get(..8) != Some(DISK_MAGIC.as_slice())
         || bytes.get(8..40) != Some(OBJECT_PROFILE_ID.as_slice())

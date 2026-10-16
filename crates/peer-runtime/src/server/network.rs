@@ -107,7 +107,7 @@ pub(super) fn dispatch(shared: &Arc<Shared>, request: Request) -> Result<Respons
             let _permit = ProofPermit::acquire(&shared.proof_busy)?;
             let setup = {
                 let mut state = shared.state.lock().map_err(io_error)?;
-                state.store.get(&object)?;
+                state.store.audit_version(&object)?;
                 state
                     .setups
                     .get(&setup)
@@ -448,14 +448,18 @@ pub(super) fn prove(
     let _permit = ProofPermit::acquire(&shared.proof_busy)?;
     let (evaluator, data_head, index_head) = {
         let mut state = shared.state.lock().map_err(io_error)?;
-        let bundle = state.store.get(&object)?;
+        let version = state.store.audit_version(&object)?;
         let evaluator = state
             .setups
             .get(&setup)
             .ok_or(RemoteError::NotFound)?
             .verifier
             .evaluator();
-        (evaluator, bundle.data_head, bundle.index_head)
+        (
+            evaluator,
+            version.data_head().encode(),
+            version.index_head().encode(),
+        )
     };
     let context = evaluator.request_context(&ciphertext).map_err(crypto)?;
     if context.data_head() != data_head || context.index_head() != index_head {

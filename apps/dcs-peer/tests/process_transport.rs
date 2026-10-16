@@ -1,4 +1,6 @@
 //! Public-fixture, actual OS-process/TLS/FHE tests; no simulated transport or GUI.
+#[path = "support/compute_custody.rs"]
+mod compute_custody;
 #[path = "support/received_version.rs"]
 mod received_version;
 use compact_query::{AgeRange, PlainRow, bfv as backend};

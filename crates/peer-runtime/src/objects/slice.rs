@@ -1,6 +1,7 @@
-//! Private bounded-slice decoding, not object or custody admission.
+//! Private bounded-slice parsing and request-local full-image audits.
 use super::{RawBundle, TargetVersion};
 use crate::{RemoteError, wire};
+use compact_store::VerifiedSnapshotBytes;
 use serde::Deserialize;
 use std::{io, ops::Range};
 
@@ -86,6 +87,33 @@ impl<'a> RawBundleSlice<'a> {
 }
 pub(crate) fn decode(bytes: &[u8]) -> io::Result<RawBundle> {
     Ok(RawBundleSlice::parse(bytes)?.into_owned())
+}
+
+// Compute admission needs the complete physical audit, but retains neither image.
+// Lend the same fully parsed fields directly to the canonical snapshot auditor.
+pub(super) fn audit_version(bytes: &[u8]) -> Result<TargetVersion, RemoteError> {
+    let raw = RawBundleSlice::parse(bytes).map_err(crate::store::error)?;
+    super::check_size([
+        raw.data_head.len(),
+        raw.index_head.len(),
+        raw.data.len(),
+        raw.index.len(),
+    ])?;
+    let version = super::target_version(raw.version, raw.nonce, raw.data_head, raw.index_head)?;
+    let workers = super::audit_workers();
+    for (bytes, head) in [
+        (raw.data, version.data_head()),
+        (raw.index, version.index_head()),
+    ] {
+        VerifiedSnapshotBytes::decode_for_head_with_workers(
+            bytes,
+            head,
+            super::custody_limits(),
+            workers,
+        )
+        .map_err(|_| RemoteError::Integrity)?;
+    }
+    Ok(version)
 }
 
 pub(crate) fn receive_version(

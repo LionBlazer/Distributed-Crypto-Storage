@@ -115,6 +115,20 @@ root audits, and all quota, retry, Copy, proof and freshness guards remain in
 place. Owned payloads and full disk/frame buffers still exist; no zero-copy
 custody, process-RAM or complete-query latency guarantee follows.
 
+Compute admission (`Prove` and the explicitly unverified legacy `Evaluate`) uses
+the same fully parsed borrowed fields to audit both complete images directly in
+the bounded disk buffer. It retains only `TargetVersion` after both audits and
+the requested object-ID check; it does not allocate the four owned payload copies.
+The private store read helper shares known-object lookup, physical read bounds
+and invalid/status accounting with ordinary owned reads. Each compute RPC rereads
+and reaudits the file, including unrequested tails in both images; exact repair
+clears unavailability only after a successful full audit. Namespace, all four
+lengths, trailing bytes, inner metadata, revisions and roots keep their existing
+validation order. Setup lookup, heavy-work admission and Prove's exact two-head
+request binding remain unchanged. TargetVersion is still metadata only, and this
+path adds no source/completeness or freshness proof. The complete disk buffer and
+Merkle hash/tree work remain; latency and process memory need separate measurement.
+
 `PageBatchRequest::new` binds an immutable object ID, both independently trusted
 compact-store heads, and 1–64 unique `PageAddress { image: PageImage, index }`
 values. `RemotePeer::fetch_pages` returns Merkle-verified ciphertext pages in the
