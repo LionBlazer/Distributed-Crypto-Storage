@@ -1,7 +1,8 @@
 //! Static public-geometry custody: one full data image and an index prefix.
 use crate::{PageError, bytes::deserialize_frame, pages::lookup_bytes, store::custody_limits};
 use compact_store::{
-    Commitment, EncryptedSnapshot, Limits, LookupResponse, VerifiedPage, VerifiedPagePath,
+    Commitment, EncryptedSnapshot, Limits, LookupResponse, OwnedVerifiedSnapshotBytes,
+    VerifiedPage, VerifiedPagePath,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
@@ -108,11 +109,11 @@ pub struct ReadImage {
     index: Vec<LookupResponse>,
 }
 impl ReadImage {
-    pub(crate) fn from_snapshots(
+    pub(crate) fn from_images(
         request: ReadImageRequest,
         nonce: [u8; 32],
-        data: EncryptedSnapshot,
-        index: &EncryptedSnapshot,
+        data: OwnedVerifiedSnapshotBytes,
+        index: &OwnedVerifiedSnapshotBytes,
     ) -> Result<Self> {
         check_object(&request, nonce)?;
         if data.commitment() != request.data_head() || index.commitment() != request.index_head() {
@@ -128,7 +129,7 @@ impl ReadImage {
         Ok(Self {
             request,
             nonce,
-            data,
+            data: data.into_snapshot(),
             index: pages,
         })
     }
@@ -322,7 +323,15 @@ mod tests {
         index: &EncryptedSnapshot,
         request: &ReadImageRequest,
     ) -> ReadImage {
-        ReadImage::from_snapshots(request.clone(), [31; 32], data.clone(), index).unwrap()
+        ReadImage::from_images(request.clone(), [31; 32], audited(data), &audited(index)).unwrap()
+    }
+    fn audited(image: &EncryptedSnapshot) -> OwnedVerifiedSnapshotBytes {
+        OwnedVerifiedSnapshotBytes::decode_for_head(
+            image.encode(),
+            image.commitment(),
+            custody_limits(),
+        )
+        .unwrap()
     }
     #[test]
     fn immutable_read_image_authenticates_complete_data_and_the_exact_index_prefix() {
@@ -494,7 +503,10 @@ mod tests {
         let wrong_heads =
             ReadImageRequest::new([9; 32], request.index_head(), request.data_head(), 2).unwrap();
         assert!(actual.verify(&wrong_heads).is_err());
-        assert!(ReadImage::from_snapshots(wrong_heads, [31; 32], data.clone(), &index).is_err());
+        assert!(
+            ReadImage::from_images(wrong_heads, [31; 32], audited(&data), &audited(&index))
+                .is_err()
+        );
         let data_only = ReadImageRequest::new(
             *request.object(),
             request.data_head(),

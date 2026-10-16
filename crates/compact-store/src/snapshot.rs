@@ -238,24 +238,95 @@ impl<'a> VerifiedSnapshotBytes<'a> {
     /// Ordinary owned membership response, subject to the caller's current caps.
     /// The caller still verifies its independently expected head and address.
     pub fn lookup(&self, index: u64, limits: Limits) -> Result<LookupResponse> {
-        self.commitment.layout.validate(limits)?;
-        let index = usize::try_from(index).map_err(|_| Error::InvalidPage)?;
-        let packet = packets(self.bytes, self.commitment.layout)
-            .nth(index)
-            .ok_or(Error::InvalidPage)?;
-        lookup_packet(&self.levels, index, packet, limits)
+        lookup_bytes(self.bytes, &self.commitment, &self.levels, index, limits)
     }
     /// Copies packet payloads only when an owned snapshot is actually needed.
     /// The complete checked tree moves with the consumed audit; no second hash pass.
     pub fn into_snapshot(self) -> EncryptedSnapshot {
-        let pages = packets(self.bytes, self.commitment.layout)
-            .map(Packet::from_slice)
-            .collect();
-        EncryptedSnapshot {
-            commitment: self.commitment,
-            pages,
-            levels: self.levels,
-        }
+        materialize(self.bytes, self.commitment, self.levels)
+    }
+}
+
+/// Fully audited canonical ciphertext in its original owned allocation.
+/// Construction consumes the input through the same complete parser as
+/// VerifiedSnapshotBytes. No packet payload is copied until into_snapshot;
+/// into_bytes instead returns the original allocation. This request-local audit
+/// supplies no owner AEAD, head authorization, SQL proof or freshness.
+///
+/// The audit cannot be cloned:
+/// ```compile_fail
+/// use compact_store::OwnedVerifiedSnapshotBytes;
+/// fn duplicate(image: &OwnedVerifiedSnapshotBytes) {
+///     let _: OwnedVerifiedSnapshotBytes = image.clone();
+/// }
+/// ```
+/// Releasing the bytes consumes their checked lineage:
+/// ```compile_fail
+/// use compact_store::OwnedVerifiedSnapshotBytes;
+/// fn reuse(image: OwnedVerifiedSnapshotBytes) {
+///     let _bytes = image.into_bytes();
+///     let _snapshot = image.into_snapshot();
+/// }
+/// ```
+pub struct OwnedVerifiedSnapshotBytes {
+    bytes: Vec<u8>,
+    commitment: Commitment,
+    levels: Vec<Vec<[u8; 32]>>,
+}
+impl OwnedVerifiedSnapshotBytes {
+    pub fn decode_for_head(bytes: Vec<u8>, expected: &Commitment, limits: Limits) -> Result<Self> {
+        let VerifiedSnapshotBytes {
+            commitment, levels, ..
+        } = VerifiedSnapshotBytes::decode_for_head(&bytes, expected, limits)?;
+        Ok(Self {
+            bytes,
+            commitment,
+            levels,
+        })
+    }
+    pub fn commitment(&self) -> &Commitment {
+        &self.commitment
+    }
+    /// Owned membership response, rechecking the caller's current resource caps.
+    pub fn lookup(&self, index: u64, limits: Limits) -> Result<LookupResponse> {
+        lookup_bytes(&self.bytes, &self.commitment, &self.levels, index, limits)
+    }
+    /// Returns the exact original canonical Vec without copying or re-encoding.
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
+    /// Copies packet payloads and moves the already checked tree without rehashing.
+    pub fn into_snapshot(self) -> EncryptedSnapshot {
+        materialize(&self.bytes, self.commitment, self.levels)
+    }
+}
+
+fn lookup_bytes(
+    bytes: &[u8],
+    commitment: &Commitment,
+    levels: &[Vec<[u8; 32]>],
+    index: u64,
+    limits: Limits,
+) -> Result<LookupResponse> {
+    commitment.layout.validate(limits)?;
+    let index = usize::try_from(index).map_err(|_| Error::InvalidPage)?;
+    let packet = packets(bytes, commitment.layout)
+        .nth(index)
+        .ok_or(Error::InvalidPage)?;
+    lookup_packet(levels, index, packet, limits)
+}
+fn materialize(
+    bytes: &[u8],
+    commitment: Commitment,
+    levels: Vec<Vec<[u8; 32]>>,
+) -> EncryptedSnapshot {
+    let pages = packets(bytes, commitment.layout)
+        .map(Packet::from_slice)
+        .collect();
+    EncryptedSnapshot {
+        commitment,
+        pages,
+        levels,
     }
 }
 

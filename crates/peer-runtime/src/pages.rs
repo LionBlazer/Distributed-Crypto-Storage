@@ -1,6 +1,6 @@
 //! Bounded, exact-head ciphertext page custody. Membership is not SQL acceptance.
 use crate::{bytes::deserialize_frame, store::custody_limits};
-use compact_store::{Commitment, EncryptedSnapshot, LookupResponse, VerifiedPage};
+use compact_store::{Commitment, LookupResponse, OwnedVerifiedSnapshotBytes, VerifiedPage};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::{collections::BTreeSet, fmt};
 
@@ -141,10 +141,10 @@ pub struct PageBatch {
     pages: Vec<LookupResponse>,
 }
 impl PageBatch {
-    pub(crate) fn from_snapshots(
+    pub(crate) fn from_images(
         request: PageBatchRequest,
-        data: &EncryptedSnapshot,
-        index: &EncryptedSnapshot,
+        data: &OwnedVerifiedSnapshotBytes,
+        index: &OwnedVerifiedSnapshotBytes,
     ) -> Result<Self> {
         if data.commitment() != request.data_head() || index.commitment() != request.index_head() {
             return Err(PageError::BindingMismatch);
@@ -336,7 +336,7 @@ impl<'de> Deserialize<'de> for PageBatch {
 mod tests {
     use super::*;
     use crate::wire::{self, Response, WireResponse};
-    use compact_store::{Layout, Owner};
+    use compact_store::{EncryptedSnapshot, Layout, Owner};
 
     fn fixture() -> (
         Owner,
@@ -387,7 +387,15 @@ mod tests {
         index: &EncryptedSnapshot,
         request: &PageBatchRequest,
     ) -> PageBatch {
-        PageBatch::from_snapshots(request.clone(), data, index).unwrap()
+        PageBatch::from_images(request.clone(), &audited(data), &audited(index)).unwrap()
+    }
+    fn audited(image: &EncryptedSnapshot) -> OwnedVerifiedSnapshotBytes {
+        OwnedVerifiedSnapshotBytes::decode_for_head(
+            image.encode(),
+            image.commitment(),
+            custody_limits(),
+        )
+        .unwrap()
     }
     #[test]
     fn exact_ordered_pages_round_trip_and_decrypt_only_at_the_owner() {
@@ -638,7 +646,7 @@ mod tests {
         let mut unknown_kind = encoded.clone();
         unknown_kind[HEADER_BYTES] = 2;
         assert!(PageBatch::decode(&unknown_kind).is_err());
-        assert!(PageBatch::from_snapshots(request, &index, &data).is_err());
+        assert!(PageBatch::from_images(request, &audited(&index), &audited(&data)).is_err());
     }
     #[test]
     fn valid_framing_cannot_hide_tampered_ciphertext_membership_or_embedded_address() {

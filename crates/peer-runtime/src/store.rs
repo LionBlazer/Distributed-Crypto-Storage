@@ -134,7 +134,7 @@ impl Store {
             let checked =
                 CheckedObject::audit(objects::decode_disk(&bytes)?).map_err(io::Error::other)?;
             let object = *checked.version().object();
-            let (version, bundle, _, _) = checked.into_parts();
+            let (version, bundle) = checked.into_raw_with_version();
             let info = object_info(&bundle, bytes.len() as u64, object, version.data_head())
                 .map_err(io::Error::other)?;
             if path.file_name().and_then(|n| n.to_str()) != Some(filename(&info.id).as_str()) {
@@ -376,15 +376,15 @@ impl Store {
         &mut self,
         request: crate::PageBatchRequest,
     ) -> Result<crate::PageBatch, RemoteError> {
-        let (_, _, data, index) = self.read_verified(request.object())?.into_parts();
-        crate::PageBatch::from_snapshots(request, &data, &index).map_err(|_| RemoteError::Integrity)
+        let (_, data, index) = self.read_verified(request.object())?.into_verified_images();
+        crate::PageBatch::from_images(request, &data, &index).map_err(|_| RemoteError::Integrity)
     }
     pub(crate) fn get_read_image(
         &mut self,
         request: crate::ReadImageRequest,
     ) -> Result<crate::ReadImage, RemoteError> {
-        let (version, _, data, index) = self.read_verified(request.object())?.into_parts();
-        crate::ReadImage::from_snapshots(request, version.nonce(), data, &index)
+        let (version, data, index) = self.read_verified(request.object())?.into_verified_images();
+        crate::ReadImage::from_images(request, version.nonce(), data, &index)
             .map_err(|_| RemoteError::Integrity)
     }
     // Every route audits the complete physical bundle, including unrequested

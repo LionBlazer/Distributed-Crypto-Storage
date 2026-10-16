@@ -813,11 +813,52 @@ fn page_rpc_audits_unrequested_bytes_after_store_and_reopen_and_rejects_truncati
     fs::write(&path, &damaged).unwrap();
 
     assert!(peer.fetch_pages(&request).is_err());
+    assert!(
+        peer.call(Request::Fetch {
+            object: *request.object()
+        })
+        .is_err()
+    );
+    assert!(
+        peer.call(Request::FetchVersion {
+            data_head: bundle.data_head.clone(),
+            index_head: bundle.index_head.clone(),
+        })
+        .is_err()
+    );
+    let recipient = Process::start(&authority, owner.fingerprint(), 2, None);
+    let recipient_peer = recipient.remote(&connector);
+    assert!(
+        recipient_peer
+            .call(Request::Copy {
+                source: restarted.endpoint.clone(),
+                object: *request.object(),
+            })
+            .is_err()
+    );
+    assert!(recipient_peer.status().unwrap().objects.is_empty());
 
     assert!(!peer.status().unwrap().objects[0].available);
-    assert!(peer.call(Request::Store(bundle)).is_err());
+    assert!(peer.call(Request::Store(bundle.clone())).is_err());
     fs::write(&path, &original).unwrap();
     assert!(peer.fetch_pages(&request).is_ok());
+    recipient_peer
+        .call(Request::Copy {
+            source: restarted.endpoint.clone(),
+            object: *request.object(),
+        })
+        .unwrap();
+    let Response::RawBundle(copied) = recipient_peer
+        .call(Request::Fetch {
+            object: *request.object(),
+        })
+        .unwrap()
+    else {
+        panic!("expected copied raw bundle")
+    };
+    assert_eq!(copied.data, bundle.data);
+    assert_eq!(copied.index, bundle.index);
+    assert_eq!(copied.nonce, bundle.nonce);
     fs::write(&path, &original[..original.len() - 1]).unwrap();
     assert!(peer.fetch_pages(&request).is_err());
 }

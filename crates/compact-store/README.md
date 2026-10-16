@@ -42,6 +42,15 @@ address-based retrieval, not an FHE evaluator or SQL query proof.
   accepted from metadata alone. This is local validation, not an across-RPC cache,
   AEAD/source proof or freshness guarantee. Wire bytes and all limits are unchanged;
   full-operation speed and process memory still require measurement.
+- OwnedVerifiedSnapshotBytes::decode_for_head consumes a canonical Vec through
+  that same complete parser, retaining its exact allocation and checked Merkle
+  levels. The sealed capability has no Clone, Deserialize or mutable-byte API.
+  lookup produces ordinary owned responses under current resource caps without
+  materializing the image. Consuming into_bytes returns the original Vec;
+  into_snapshot allocates packet payloads only when required and moves the checked
+  tree without another root pass. This still audits every byte and retains the
+  bounded tree. Materialization temporarily holds canonical bytes and copied
+  packets; no process-memory or full-operation latency improvement is established.
 - EncryptedSnapshot::apply_verified_replacements consumes an authenticated base
   and verified target pages, preserves database/domain/layout, requires the next
   global revision, and returns only an image whose complete reconstructed root

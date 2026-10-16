@@ -1,6 +1,6 @@
 //! Randomized object binding and complete custody admission; no SQL policy.
 use crate::{RemoteError, store::custody_limits};
-use compact_store::{Commitment, EncryptedSnapshot};
+use compact_store::{Commitment, EncryptedSnapshot, OwnedVerifiedSnapshotBytes};
 use peer_transport::MAX_FRAME_BYTES;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -154,23 +154,50 @@ impl TargetVersion {
 /// This capability is never cached across physical reads or RPCs.
 pub struct CheckedObject {
     version: TargetVersion,
-    raw: RawBundle,
-    data: EncryptedSnapshot,
-    index: EncryptedSnapshot,
+    envelope: ObjectEnvelope,
+    data: OwnedVerifiedSnapshotBytes,
+    index: OwnedVerifiedSnapshotBytes,
+}
+// Original wire metadata moves with the fully audited canonical image buffers.
+// It is never reconstructed from an independently supplied target or new nonce.
+struct ObjectEnvelope {
+    version: u16,
+    nonce: [u8; 32],
+    data_head: Vec<u8>,
+    index_head: Vec<u8>,
 }
 impl CheckedObject {
     pub fn audit(raw: RawBundle) -> Result<Self, RemoteError> {
         raw.check_frame()?;
         let version = raw.target_version()?;
-        let data =
-            EncryptedSnapshot::decode_for_head(&raw.data, version.data_head(), custody_limits())
-                .map_err(|_| RemoteError::Integrity)?;
-        let index =
-            EncryptedSnapshot::decode_for_head(&raw.index, version.index_head(), custody_limits())
-                .map_err(|_| RemoteError::Integrity)?;
+        let RawBundle {
+            version: format,
+            nonce,
+            data_head,
+            index_head,
+            data,
+            index,
+        } = raw;
+        let data = OwnedVerifiedSnapshotBytes::decode_for_head(
+            data,
+            version.data_head(),
+            custody_limits(),
+        )
+        .map_err(|_| RemoteError::Integrity)?;
+        let index = OwnedVerifiedSnapshotBytes::decode_for_head(
+            index,
+            version.index_head(),
+            custody_limits(),
+        )
+        .map_err(|_| RemoteError::Integrity)?;
         Ok(Self {
             version,
-            raw,
+            envelope: ObjectEnvelope {
+                version: format,
+                nonce,
+                data_head,
+                index_head,
+            },
             data,
             index,
         })
@@ -179,20 +206,33 @@ impl CheckedObject {
         &self.version
     }
     pub fn into_raw(self) -> RawBundle {
-        self.raw
+        self.into_raw_with_version().1
     }
-    pub(crate) fn into_parts(
+    pub(crate) fn into_raw_with_version(self) -> (TargetVersion, RawBundle) {
+        let ObjectEnvelope {
+            version,
+            nonce,
+            data_head,
+            index_head,
+        } = self.envelope;
+        let raw = RawBundle {
+            version,
+            nonce,
+            data_head,
+            index_head,
+            data: self.data.into_bytes(),
+            index: self.index.into_bytes(),
+        };
+        (self.version, raw)
+    }
+    pub(crate) fn into_verified_images(
         self,
     ) -> (
         TargetVersion,
-        RawBundle,
-        EncryptedSnapshot,
-        EncryptedSnapshot,
+        OwnedVerifiedSnapshotBytes,
+        OwnedVerifiedSnapshotBytes,
     ) {
-        (self.version, self.raw, self.data, self.index)
-    }
-    pub(crate) fn into_images(self) -> ([u8; 32], EncryptedSnapshot, EncryptedSnapshot) {
-        (*self.version.object(), self.data, self.index)
+        (self.version, self.data, self.index)
     }
 }
 pub(crate) fn encode_disk(raw: &RawBundle) -> Result<Vec<u8>, RemoteError> {
@@ -253,6 +293,41 @@ mod tests {
             assert!(CheckedObject::audit(bad).is_err());
         }
         assert_eq!(CheckedObject::audit(raw.clone()).unwrap().into_raw(), raw);
+    }
+    #[test]
+    fn checked_raw_round_trip_moves_all_original_buffers_and_binding_metadata() {
+        let (data, index) = images();
+        let mut raw = RawBundle::from_snapshots(&data, &index).unwrap();
+        for bytes in [
+            &mut raw.data_head,
+            &mut raw.index_head,
+            &mut raw.data,
+            &mut raw.index,
+        ] {
+            bytes.reserve_exact(71);
+        }
+        let expected = raw.clone();
+        let buffers = [&raw.data_head, &raw.index_head, &raw.data, &raw.index]
+            .map(|bytes| (bytes.as_ptr(), bytes.capacity()));
+        let expected_version = raw.target_version().unwrap();
+
+        let checked = CheckedObject::audit(raw).unwrap();
+        assert!(checked.version() == &expected_version);
+        let returned = checked.into_raw();
+
+        assert_eq!(returned, expected);
+        for (bytes, (pointer, capacity)) in [
+            &returned.data_head,
+            &returned.index_head,
+            &returned.data,
+            &returned.index,
+        ]
+        .into_iter()
+        .zip(buffers)
+        {
+            assert_eq!(bytes.as_ptr(), pointer);
+            assert_eq!(bytes.capacity(), capacity);
+        }
     }
     #[test]
     fn fresh_owner_staging_randomizes_ids_and_entropy_failure_returns_no_object() {

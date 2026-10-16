@@ -1,5 +1,6 @@
 use compact_store::{
-    EncryptedSnapshot, Error, Layout, Limits, MANIFEST_BYTES, Owner, VerifiedSnapshotBytes,
+    EncryptedSnapshot, Error, Layout, Limits, MANIFEST_BYTES, OwnedVerifiedSnapshotBytes, Owner,
+    VerifiedSnapshotBytes,
 };
 
 fn image(owner: &Owner, pages: usize) -> EncryptedSnapshot {
@@ -153,6 +154,16 @@ fn borrowed_and_owned_imports_keep_canonical_rejection_and_check_order() {
             "borrowed: {name}"
         );
         assert_eq!(
+            OwnedVerifiedSnapshotBytes::decode_for_head(
+                changed.clone(),
+                source.commitment(),
+                Limits::default(),
+            )
+            .err(),
+            Some(expected),
+            "owned bytes: {name}"
+        );
+        assert_eq!(
             EncryptedSnapshot::decode_for_head(&changed, source.commitment(), Limits::default())
                 .err(),
             Some(expected),
@@ -175,6 +186,15 @@ fn borrowed_and_owned_imports_keep_canonical_rejection_and_check_order() {
         EncryptedSnapshot::decode_for_head(truncated, other.commitment(), Limits::default()).err(),
         Some(Error::WrongVersion)
     );
+    assert_eq!(
+        OwnedVerifiedSnapshotBytes::decode_for_head(
+            truncated.to_vec(),
+            other.commitment(),
+            Limits::default(),
+        )
+        .err(),
+        Some(Error::WrongVersion)
+    );
     let restricted = Limits {
         max_image_bytes: 1,
         ..Limits::default()
@@ -187,7 +207,25 @@ fn borrowed_and_owned_imports_keep_canonical_rejection_and_check_order() {
         EncryptedSnapshot::decode_for_head(truncated, other.commitment(), restricted).err(),
         Some(Error::ResourceLimit)
     );
+    assert_eq!(
+        OwnedVerifiedSnapshotBytes::decode_for_head(
+            truncated.to_vec(),
+            other.commitment(),
+            restricted,
+        )
+        .err(),
+        Some(Error::ResourceLimit)
+    );
     for length in 0..MANIFEST_BYTES {
+        assert_eq!(
+            OwnedVerifiedSnapshotBytes::decode_for_head(
+                encoded[..length].to_vec(),
+                source.commitment(),
+                Limits::default(),
+            )
+            .err(),
+            Some(Error::InvalidFormat)
+        );
         assert_eq!(
             VerifiedSnapshotBytes::decode_for_head(
                 &encoded[..length],

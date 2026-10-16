@@ -18,4 +18,4 @@ pub use format::{
     Commitment, Error, Layout, Limits, MANIFEST_BYTES, PAGE_OVERHEAD, Result, RowAddress,
 };
 pub use proof::{LookupResponse, VerifiedPage, VerifiedPagePath};
-pub use snapshot::{EncryptedSnapshot, VerifiedSnapshotBytes};
+pub use snapshot::{EncryptedSnapshot, OwnedVerifiedSnapshotBytes, VerifiedSnapshotBytes};

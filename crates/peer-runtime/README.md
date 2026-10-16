@@ -195,8 +195,19 @@ No metadata-only custody proof, sidecar, FHE bypass or sparse disk-I/O claim is 
 
 The private store admission boundary uses three request-local, non-cloneable
 capabilities. Only a complete physical read plus object-hash and both-root checks
-constructs `CheckedObject`. Delta reconstruction consumes it and verified new
-pages into sealed `ReconstructedDelta` after both complete new roots match.
+constructs `CheckedObject`. It retains the original envelope version, nonce and
+head buffers together with two `OwnedVerifiedSnapshotBytes` capabilities. Their
+single canonical parser checks all packet revisions and both complete roots;
+raw Fetch, Copy, startup and full candidate admission can move the exact buffers
+without creating packet copies. PageBatch looks up both images directly;
+ReadImage materializes its complete data image and looks up only the requested
+index prefix. Delta materializes both authenticated images before reconstruction.
+No checked object is cached across physical reads or RPCs, and omitted/unrequested
+bytes remain part of every complete audit. Checked trees still occupy memory,
+and image materialization temporarily overlaps canonical bytes with packet copies.
+These ownership boundaries do not establish a memory or latency improvement.
+Delta reconstruction consumes it and verified new pages into sealed
+`ReconstructedDelta` after both complete new roots match.
 Private `Candidate` consumes that result, rechecks both exact heads and hashes
 the exact target nonce and both heads before encoding immutable disk bytes. The ID
 is the randomized nonce/head commitment, conditional on full snapshot validation;

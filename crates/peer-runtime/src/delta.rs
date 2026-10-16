@@ -237,17 +237,17 @@ impl StoreDeltaRequest {
         base: crate::CheckedObject,
         verified: VerifiedReplacementPages,
     ) -> Result<ReconstructedDelta> {
-        let (object, data, index) = base.into_images();
-        if object != self.binding.base.object {
+        let (version, data, index) = base.into_verified_images();
+        if version.object() != &self.binding.base.object {
             return Err(PageError::BindingMismatch);
         }
-        let data = data.apply_verified_replacements(
+        let data = data.into_snapshot().apply_verified_replacements(
             &self.binding.base.data,
             &self.binding.next.data,
             verified.data,
             custody_limits(),
         )?;
-        let index = index.apply_verified_replacements(
+        let index = index.into_snapshot().apply_verified_replacements(
             &self.binding.base.index,
             &self.binding.next.index,
             verified.index,

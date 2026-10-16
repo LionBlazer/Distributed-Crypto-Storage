@@ -16,7 +16,7 @@ impl Candidate {
         Self::checked(CheckedObject::audit(bundle)?)
     }
     pub(super) fn checked(checked: CheckedObject) -> Result<Self, RemoteError> {
-        let (version, bundle, _, _) = checked.into_parts();
+        let (version, bundle) = checked.into_raw_with_version();
         let bytes = objects::encode_disk(&bundle)?;
         let info = object_info(
             &bundle,
