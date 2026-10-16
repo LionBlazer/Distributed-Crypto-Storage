@@ -200,7 +200,8 @@ claim sparse disk I/O. Its 16-MiB frame cap and 512-prefix-page cap cover the fi
 core geometry. This profile introduces no new selection-dependent address/volume
 leak relative to the existing full-fetch path; public layout, operation timing,
 failures and the existing owner-online conversion boundary remain observable.
-The typed imported-catalog path and mutation full-image reads are unchanged.
+Typed imported-catalog reads and final mutation custody checks retain complete
+images. Initial UPDATE source eligibility is described below.
 The fixed LIMIT path still validates O(matches) source rows, including discarded
 candidates and LIMIT0, plus O(table rows / 64) bitmap traversal. It uses a zeroizing
 bitmap of at most 125,000 bytes per shard and one decrypted data-page scratch
@@ -384,9 +385,10 @@ same round-robin positions as input rows; INSERT allocates once in VALUES order
 and moves disjoint contiguous chunks into its jobs. Fetch and agreed-head restore
 require that expected TableId together with both exact heads. The private index
 v3 identity map is owned by [compact-query](../compact-query/README.md), including
-its sparse owner reference API and exact byte limits. Fixed SELECT and aggregates
-use the static ReadImage footprint; mutation and typed-table fetches retain full
-objects. Identity-map changes do not change the public FHE profile. The current
+its sparse owner reference API and exact byte limits. Fixed SELECT, aggregates
+and eligible initial UPDATE reads use the static ReadImage footprint. Final
+mutation custody checks, Full-source UPDATE and typed-table fetches retain
+complete objects. Identity-map changes do not change the public FHE profile. The current
 custody RPC/application namespace is specified below; SQL locking and finality
 remain unimplemented.
 
@@ -394,8 +396,39 @@ remain unimplemented.
 
 The client uses [randomized object profile 2](../../docs/salted-custody-objects.md).
 Creation/import stage all new object nonces before their first Store. Mutation
-PreparedWrite retains one immutable raw Full object and the same TargetVersion for
-all preplanned Delta/Full recipients. Publication retries preserve recorded IDs;
+PreparedWrite retains one immutable TargetVersion for all preplanned Delta/Full
+recipients and a complete raw object whenever a frozen Full recipient requires it. Publication retries preserve recorded IDs;
 Copy preserves the envelope. Both recovered-holder paths call the same complete
 custody validator before crediting a replica. TargetVersion by itself proves no
 payload integrity, SQL completeness, authorization or agreed freshness.
+
+## Static initial UPDATE source
+
+Before proof preparation, private `session/writeback` freezes each shard's
+recipient transports from public geometry and committed known holders. UPDATE
+uses the shared fixed `ReadImage` source only when every frozen candidate is
+Delta. Any Full candidate, including a new replica, requires a complete source
+before that shard's proof; fetch or Store errors never change this class.
+
+Private `StagedImages` carries either a complete Table with proved replacement
+addresses or the core's immutable `UpdatePatch`. The static path uses the same
+complete posting/candidate authentication, 256-row budget, genuine BFV Addition
+proof and whole-ReadHeads binding. No partial index is represented as a Table or
+snapshot. All shards finish proof/decode/overflow staging and all candidate wire
+and journal budgets pass before the first Store or owner signature.
+
+Each `PreparedWrite` owns one fresh salted `TargetVersion`, shared by every full
+and padded-delta recipient. Static patches supply full new data and the genuine
+index-header replacement proof, preserving encrypted row identities through
+unchanged Merkle subtrees. A known holder's failed Delta never becomes Full.
+INSERT continues to stage and send complete images.
+
+Final agreement synchronization still receives and audits both complete images.
+Pending holder restoration also retains its complete Fetch/CheckedObject audit;
+a prefix, nonce binding or earlier Store acknowledgement never establishes
+complete custody. Existing signed-pending recovery keeps the same authorized
+transition and object instead of rerunning FHE or allocating another nonce.
+Interrupted static-source reads terminate immediately; mutation proof
+cancellation follows the query RPC contract. This does not establish global
+cancellation across legacy Full-source or journal phases, public source
+completeness, SQL locks or a new latency guarantee.

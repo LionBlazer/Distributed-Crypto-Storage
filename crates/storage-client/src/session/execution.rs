@@ -92,10 +92,12 @@ impl Session {
         let mut inserted_rows = 0;
         match &plan {
             QueryPlan::AddAmount { predicate, delta } => {
-                for staged in self.prepare_update_shards(*predicate, *delta, &requests)? {
+                for staged in
+                    self.prepare_update_shards(*predicate, *delta, &requests, &writeback)?
+                {
                     affected_rows += staged.affected_rows;
-                    if let Some(table) = staged.table {
-                        stages.push((staged.slot, table, Some(staged.replacements)));
+                    if let Some(images) = staged.images {
+                        stages.push((staged.slot, images));
                     }
                     jobs.push(staged.job);
                     proofs.push(staged.proof);
@@ -103,7 +105,13 @@ impl Session {
             }
             QueryPlan::Insert { rows } => {
                 for staged in self.prepare_insert_shards(rows, &requests)? {
-                    stages.push((staged.slot, staged.table, None));
+                    stages.push((
+                        staged.slot,
+                        super::writeback::StagedImages::Full {
+                            table: staged.table,
+                            replacements: None,
+                        },
+                    ));
                     jobs.push(staged.job);
                     proofs.push(staged.proof);
                 }
@@ -125,16 +133,13 @@ impl Session {
         }
         let mut updates = Vec::new();
         let mut uploads = Vec::new();
-        for (slot, table, replacements) in stages {
+        for (slot, images) in stages {
             updates.push(ShardUpdate {
                 id: self.data.shards[slot].info.id,
                 old: heads(&self.data.shards[slot].info),
-                new: HeadPair {
-                    data: table.commitment().encode(),
-                    index: table.index_commitment().encode(),
-                },
+                new: images.heads(),
             });
-            uploads.push(writeback.prepare(slot, table, replacements)?);
+            uploads.push(writeback.prepare(slot, images)?);
         }
         let mut query_salt = [0; 32];
         getrandom::getrandom(&mut query_salt).map_err(protocol)?;

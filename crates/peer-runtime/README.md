@@ -327,3 +327,10 @@ Status::disk_bytes is advisory observed object/journal storage plus the fixed
 40-byte root profile. It excludes pending writes, in-flight reservations and
 RAM/setup material; only Store enforces quota admission. The serialized Status
 fields are unchanged and carry no object nonce.
+
+`ReadImage::index_page_for_reissue` delegates the existing membership verifier
+and returns a sealed `compact-store::VerifiedPagePath` for a page already in the
+fixed prefix. It exposes no raw siblings or mutable bytes. Owner reissue still
+requires an independently supplied exact head, owner AEAD authentication and
+format-specific bounds. This accessor grants no full-object custody, SQL
+completeness, authorization or freshness.

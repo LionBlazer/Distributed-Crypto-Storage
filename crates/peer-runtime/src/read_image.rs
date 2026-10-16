@@ -1,6 +1,8 @@
 //! Static public-geometry custody: one full data image and an index prefix.
 use crate::{PageError, bytes::deserialize_frame, pages::lookup_bytes, store::custody_limits};
-use compact_store::{Commitment, EncryptedSnapshot, Limits, LookupResponse, VerifiedPage};
+use compact_store::{
+    Commitment, EncryptedSnapshot, Limits, LookupResponse, VerifiedPage, VerifiedPagePath,
+};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 pub const MAX_READ_IMAGE_PREFIX_PAGES: u32 = 512;
@@ -157,6 +159,16 @@ impl ReadImage {
             .and_then(|page| self.index.get(page))
             .ok_or(PageError::Page(compact_store::Error::InvalidPage))?;
         Ok(response.verify(self.request.index_head(), page, limits)?)
+    }
+    /// Authenticated immutable rewrite path for an already returned prefix page.
+    /// The caller independently supplies its trusted head to the owner reissue API.
+    /// This grants no complete custody, SQL authorization or freshness.
+    pub fn index_page_for_reissue(&self, page: u64) -> Result<VerifiedPagePath> {
+        let response = usize::try_from(page)
+            .ok()
+            .and_then(|page| self.index.get(page))
+            .ok_or(PageError::Page(compact_store::Error::InvalidPage))?;
+        Ok(response.verify_for_reissue(self.request.index_head(), page, custody_limits())?)
     }
     fn encode(&self) -> Vec<u8> {
         let mut bytes = self.request.encode(RESPONSE_MAGIC);
@@ -339,6 +351,17 @@ mod tests {
             );
         }
         assert!(actual.index_page(2, custody_limits()).is_err());
+        for page in 0..2 {
+            let path = actual.index_page_for_reissue(page).unwrap();
+            assert_eq!(path.commitment(), request.index_head());
+            assert_eq!(path.page_index(), page);
+            let (next, rewritten) = owner
+                .reissue_page(path, request.index_head(), &[92; 8], custody_limits())
+                .unwrap();
+            let checked = rewritten.verify(&next, page, custody_limits()).unwrap();
+            assert_eq!(owner.decrypt(&checked).unwrap().as_bytes(), &[92; 8]);
+        }
+        assert!(actual.index_page_for_reissue(2).is_err());
         let data_page = actual
             .data()
             .lookup(2, custody_limits())

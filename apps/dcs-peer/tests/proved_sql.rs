@@ -8,6 +8,8 @@ mod mutation_cancellation;
 mod rpc_observation;
 #[path = "support/static_aggregate.rs"]
 mod static_aggregate;
+#[path = "support/static_update.rs"]
+mod static_update;
 #[path = "support/typed_sql.rs"]
 mod typed_sql;
 
