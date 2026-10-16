@@ -80,6 +80,11 @@ impl Session {
             if heads(&shard.info) == state.heads {
                 continue;
             }
+            let data_head =
+                Commitment::decode(&state.heads.data, Limits::default()).map_err(protocol)?;
+            let index_head =
+                compact_query::decode_index_head(&state.heads.index, data_head.layout().row_count)
+                    .map_err(protocol)?;
             let mut fetched = None;
             for peer in &self.participants {
                 if self.unavailable_this_operation.contains(&peer.id) {
@@ -100,10 +105,9 @@ impl Session {
                         .restore_table_for_experiment(
                             &bundle.data,
                             &bundle.index,
-                            &Commitment::decode(&state.heads.data, Limits::default())
-                                .map_err(protocol)?,
-                            &Commitment::decode(&state.heads.index, Limits::default())
-                                .map_err(protocol)?,
+                            &self.data.table_id,
+                            &data_head,
+                            &index_head,
                             Limits::default(),
                         )
                         .is_err()
@@ -115,10 +119,6 @@ impl Session {
                 }
             }
             let (bundle, peer) = fetched.ok_or(Error::UnavailableShard(state.id))?;
-            let data_head =
-                Commitment::decode(&state.heads.data, Limits::default()).map_err(protocol)?;
-            let index_head =
-                Commitment::decode(&state.heads.index, Limits::default()).map_err(protocol)?;
             staged.push((
                 slot,
                 Shard {

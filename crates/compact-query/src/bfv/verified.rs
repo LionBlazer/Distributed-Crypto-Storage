@@ -74,7 +74,12 @@ impl Owner {
             // It examines no stored field and is not a substitute for filtering data.
             None => {
                 check_schema(table.commitment())?;
-                index::check_binding(&self.store, &table.index, table.commitment())?;
+                index::check_binding(
+                    &self.store,
+                    &table.index,
+                    table.commitment(),
+                    table.table_id(),
+                )?;
                 Ok(ExactSelection {
                     data_head: table.commitment().clone(),
                     index_head: table.index_commitment().clone(),
@@ -270,6 +275,7 @@ impl Owner {
         if changed_rows == 0 {
             return Ok(VerifiedUpdate {
                 table: Some(Table {
+                    table_id: table.table_id,
                     data: table.data.clone(),
                     index: table.index.clone(),
                 }),
@@ -357,7 +363,7 @@ impl Owner {
             table,
             &prepared.selection.data_head,
             &prepared.selection.index_head,
-            prepared.incoming.len(),
+            &prepared.ids,
             &rows,
             limits,
         )?;

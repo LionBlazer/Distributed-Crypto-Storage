@@ -73,11 +73,18 @@ impl Session {
             .map(|shard| (shard.info.id, shard.info.rows))
             .collect();
         let targets = insert_targets(&counts, incoming.len(), self.journal.profile().max_updates)?;
-        crate::jobs::run(0..targets.len(), |target| {
-            let (slot, ordinals) = &targets[target];
+        // Allocate once in original VALUES order, then move disjoint identity chunks
+        // into each preparation. Stored pending images retain these exact identities.
+        let mut assignments = vec![0; incoming.len()];
+        for (target, (_, range)) in targets.iter().enumerate() {
+            assignments[range.clone()].fill(target);
+        }
+        let ids = compact_query::RowIds::generate(incoming.len())?
+            .partition(&assignments, targets.len())?;
+        drop(assignments);
+        crate::jobs::run(targets.into_iter().zip(ids), |((slot, ordinals), ids)| {
             let rows = Zeroizing::new(
                 ordinals
-                    .clone()
                     .map(|ordinal| {
                         let row = incoming[ordinal];
                         PlainRow {
@@ -87,7 +94,7 @@ impl Session {
                     })
                     .collect::<Vec<_>>(),
             );
-            self.prepare_insert_shard(*slot, &rows, requests)
+            self.prepare_insert_shard(slot, &rows, ids, requests)
         })
     }
 
@@ -95,6 +102,7 @@ impl Session {
         &self,
         slot: usize,
         incoming: &[PlainRow],
+        ids: compact_query::RowIds,
         requests: &Requests,
     ) -> Result<StagedShardInsert> {
         let shard = &self.data.shards[slot];
@@ -102,6 +110,7 @@ impl Session {
         let prepared = self.data.owner.prepare_insert_for_experiment(
             &table,
             incoming,
+            ids,
             256,
             Limits::default(),
         )?;

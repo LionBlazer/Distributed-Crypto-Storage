@@ -71,3 +71,13 @@ BFV/PIR keys remain counted: actual files plus observed native peak private tota
 security/noise/CCA and malicious arithmetic-proof gates remain open; heads/authentication
 do not verify peer arithmetic. No general SQL, hidden writes, restart, consensus,
 replication, WAN guarantee or same-fixture measured PIR speedup is established.
+
+
+The current compact-query private index schema v3 adds encrypted stable row IDs.
+At one million rows its index image is 34,416,624 bytes, exceeding this historical
+candidate's independent 8 MiB image envelope. That workload now rejects at its
+existing resource preflight; the envelope and PIR/cryptographic profile have not
+been relaxed. Historical measurements below describe the earlier index format
+and do not establish current storage expansion, memory or latency. Owner-held
+trusted metadata now retains the independently expected logical TableId for
+restore; no plaintext logical IDs were added to the candidate's peer header.

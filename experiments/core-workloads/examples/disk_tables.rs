@@ -16,7 +16,7 @@ use std::{
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const HEADER: u64 = 24;
-const MAX_IMAGE: u64 = 8 * 1024 * 1024;
+const MAX_IMAGE: u64 = 64 * 1024 * 1024;
 const MAGIC: &[u8; 8] = b"CQDISK01";
 const ROWS: usize = 1_000_000;
 const RESERVE: u64 = 64 * 1024 * 1024;
@@ -40,6 +40,7 @@ fn row(table: usize, ordinal: usize) -> PlainRow {
 }
 struct Entry {
     path: PathBuf,
+    logical_id: compact_query::TableId,
     data: Commitment,
     index: Commitment,
 }
@@ -126,6 +127,7 @@ fn load(owner: &Owner, entry: &Entry) -> Result<Table> {
     Ok(owner.restore_table_for_experiment(
         &data,
         &index,
+        &entry.logical_id,
         &entry.data,
         &entry.index,
         Limits::default(),
@@ -173,6 +175,7 @@ fn main() -> Result<()> {
         file_bytes += run.write(&table, table_id)?;
         entries.push(Entry {
             path: run.path(table_id),
+            logical_id: *table.table_id(),
             data: table.commitment().clone(),
             index: table.index_commitment().clone(),
         });
@@ -273,6 +276,7 @@ fn main() -> Result<()> {
     assert!(load(&owner, &entries[0]).is_ok());
     let wrong_head = Entry {
         path: entries[0].path.clone(),
+        logical_id: entries[1].logical_id,
         data: entries[1].data.clone(),
         index: entries[1].index.clone(),
     };

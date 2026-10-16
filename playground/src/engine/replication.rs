@@ -41,6 +41,7 @@ pub(super) struct Replication {
 }
 struct Shard {
     id: usize,
+    table_id: compact_query::TableId,
     rows: Vec<usize>,
     data: Commitment,
     index: Commitment,
@@ -71,6 +72,7 @@ impl Shard {
         Ok(db.owner.restore_table_for_experiment(
             &table.snapshot().encode(),
             &table.encrypted_index().encode(),
+            &self.table_id,
             &self.data,
             &self.index,
             Limits::default(),
@@ -89,13 +91,24 @@ impl Replication {
                 "At least one storage peer is required to create encrypted shards.".into(),
             ));
         }
+        let table_id = compact_query::TableId::generate()?;
+        let assignments: Vec<_> = (0..rows.len()).map(|row| row % peers.len()).collect();
+        let ids =
+            compact_query::RowIds::generate(rows.len())?.partition(&assignments, peers.len())?;
         let shards = peers
             .iter()
+            .zip(ids)
             .enumerate()
-            .map(|(position, peer)| {
+            .map(|(position, (peer, ids))| {
                 let indices: Vec<_> = (position..rows.len()).step_by(peers.len()).collect();
                 let plaintext: Vec<_> = indices.iter().map(|index| rows[*index]).collect();
-                let table = owner.seal(&plaintext, ROWS_PER_PAGE, Limits::default())?;
+                let table = owner.seal_partition(
+                    &table_id,
+                    &plaintext,
+                    ids,
+                    ROWS_PER_PAGE,
+                    Limits::default(),
+                )?;
                 peer.config.check_size(
                     table.canonical_data_bytes()
                         + table.encrypted_index_bytes()
@@ -103,6 +116,7 @@ impl Replication {
                 )?;
                 Ok(Shard {
                     id: peer.id,
+                    table_id,
                     rows: indices,
                     data: table.commitment().clone(),
                     index: table.index_commitment().clone(),
@@ -120,6 +134,7 @@ impl Replication {
                 .iter()
                 .map(|shard| Shard {
                     id: shard.id,
+                    table_id: shard.table_id,
                     rows: shard.rows.clone(),
                     data: shard.data.clone(),
                     index: shard.index.clone(),
@@ -335,6 +350,7 @@ impl Replication {
                 let table = db.owner.restore_table_for_experiment(
                     data,
                     index,
+                    &shard.table_id,
                     &shard.data,
                     &shard.index,
                     Limits::default(),
@@ -579,6 +595,7 @@ fn insert(
     let query = db.owner.prepare_insert_for_experiment(
         &table,
         incoming,
+        compact_query::RowIds::generate(incoming.len())?,
         MAX_LAB_ROWS,
         Limits::default(),
     )?;

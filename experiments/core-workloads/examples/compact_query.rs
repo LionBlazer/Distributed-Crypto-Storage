@@ -154,6 +154,7 @@ fn main() -> Result<()> {
     table = owner.restore_table_for_experiment(
         &table.snapshot().encode(),
         &table.encrypted_index().encode(),
+        table.table_id(),
         table.commitment(),
         table.index_commitment(),
         Limits::default(),
@@ -265,6 +266,7 @@ fn main() -> Result<()> {
         table = owner.restore_table_for_experiment(
             &data_wire,
             &index_wire,
+            table.table_id(),
             table.commitment(),
             table.index_commitment(),
             Limits::default(),
@@ -331,6 +333,7 @@ fn main() -> Result<()> {
         table = owner.restore_table_for_experiment(
             &data_wire,
             &index_wire,
+            table.table_id(),
             table.commitment(),
             table.index_commitment(),
             Limits::default(),

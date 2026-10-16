@@ -19,11 +19,27 @@ impl Owner {
     pub fn seal(&self, rows: &[PlainRow], rows_per_page: u32, limits: Limits) -> Result<Table> {
         storage::seal(&self.store, rows, rows_per_page, limits)
     }
+    /// Seals one partition of an existing logical table, consuming its fresh row-ID allocation.
+    pub fn seal_partition(
+        &self,
+        table_id: &crate::TableId,
+        rows: &[PlainRow],
+        ids: crate::RowIds,
+        rows_per_page: u32,
+        limits: Limits,
+    ) -> Result<Table> {
+        crate::storage::seal_partition(&self.store, table_id, rows, ids, rows_per_page, limits)
+    }
+    /// Authenticated private metadata at this exact table/head pair; no SQL proof or lock grant.
+    pub fn row_references(&self, table: &Table, ordinals: &[u64]) -> Result<crate::RowReferences> {
+        crate::index::references(&self.store, table, ordinals, &mut 0)
+    }
     /// Same live authority only: this does not restore either secret key.
     pub fn restore_table_for_experiment(
         &self,
         data: &[u8],
         index: &[u8],
+        table_id: &crate::TableId,
         expected_data: &Commitment,
         expected_index: &Commitment,
         limits: Limits,
@@ -32,6 +48,7 @@ impl Owner {
             &self.store,
             data,
             index,
+            table_id,
             expected_data,
             expected_index,
             limits,
@@ -57,9 +74,13 @@ impl Owner {
         &self,
         table: &Table,
         incoming: &[PlainRow],
+        ids: crate::RowIds,
         budget: usize,
         limits: Limits,
     ) -> Result<PreparedInsert> {
+        if ids.len() != incoming.len() {
+            return Err(Error::InvalidIndex);
+        }
         let total = table
             .commitment()
             .layout()
@@ -113,6 +134,7 @@ impl Owner {
             pending: prepared.pending,
             selection,
             incoming,
+            ids,
         })
     }
     /// All decoded rows must match authenticated originals and the authorized insertion
@@ -161,7 +183,7 @@ impl Owner {
             table,
             &prepared.selection.data_head,
             &prepared.selection.index_head,
-            prepared.incoming.len(),
+            &prepared.ids,
             &rows,
             limits,
         )?;
@@ -244,6 +266,7 @@ impl Owner {
             &self.store,
             &table.index,
             table.commitment(),
+            table.table_id(),
             predicate,
             budget.min(MAX_ROWS),
             &mut 0,

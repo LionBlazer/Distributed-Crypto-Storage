@@ -70,9 +70,15 @@ unimplemented; metadata outcomes are not encrypted SQL results or final lock gra
 
 The remaining integration boundaries are:
 
-1. Give rows stable opaque identities independent of shard, physical ordinal,
-   primary-key edits and page compaction. Define transaction/statement identities,
-   authorization, isolation, sequence, read/write sets and resource bounds.
+1. The fixed table now has encrypted stable logical TableId/RowId metadata in
+   compact-query private index v3, preserved by genuine amount UPDATE, atomic
+   INSERT staging, restore and exact pending retry. Owner-issued references bind
+   both exact heads and physical ordinal, with at most 256 sparse ID lookups.
+   Existing network fetch still transfers the full encrypted image. These private
+   references provide no public row-existence/completeness or lock proof. Typed
+   imported tables, checked movement/compaction and a cross-data/lock proof
+   relation remain open. Define transaction/statement identities, authorization,
+   isolation, sequence, read/write sets and resource bounds.
 2. Commit transaction and lock registries to agreed state. A separately typed
    metadata shard and its canonical witnesses are implemented independently;
    the live data application still needs a composite verifier and synchronization.

@@ -99,3 +99,8 @@ the public source. A monitor can retain those exact handles before proof work
 without blocking CIM discovery. Disable this opt-in flag for all latency samples;
 report actual sample gaps and independent OS peaks separately from simultaneous
 working-set samples. It is test metadata, not production telemetry or a RAM bound.
+
+The million-row fixed-table custody/update/restore fixture similarly supports
+`DCS_TEST_FIXED_PIDS=1` with `owned_fixed_process` notices for its owner and one
+directly owned peer before table creation. It is a separate lifecycle memory
+observation; disable this flag while measuring accepted SQL latency.

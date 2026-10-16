@@ -59,6 +59,7 @@ pub struct PreparedInsert {
     pending: bfv_core::PendingIndexedInsert,
     selection: ExactSelection,
     incoming: Zeroizing<Vec<[u8; 3]>>,
+    ids: crate::RowIds,
 }
 impl PreparedInsert {
     pub fn request(&self) -> &[u8] {
