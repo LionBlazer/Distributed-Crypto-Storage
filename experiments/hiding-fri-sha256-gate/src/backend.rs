@@ -318,6 +318,7 @@ pub(crate) fn analyze(air: &PrimitiveAir) -> Result<(StarkSecurityParams, Securi
 /// One typed public statement owns this backend's analytical parameters.
 /// Exact public values bind its lifetime; another statement requires a new
 /// backend even when kind/width match (empty and nonempty degrees may differ).
+/// The same immutable, public AIR is analyzed, proved and verified throughout.
 pub(crate) struct Backend {
     pub(crate) config: Config,
     pub(crate) parameters: StarkSecurityParams,
@@ -326,6 +327,7 @@ pub(crate) struct Backend {
     width: usize,
     next_row: bool,
     public_values: Vec<Val>,
+    air: PrimitiveAir,
 }
 impl Backend {
     pub(crate) fn new(statement: &impl PublicStatement) -> Result<Self, Error> {
@@ -344,6 +346,7 @@ impl Backend {
             width: air.width(),
             next_row: !air.main_next_row_columns().is_empty(),
             public_values,
+            air,
         })
     }
 
@@ -369,7 +372,7 @@ impl Backend {
         if trace.width != self.width || trace.values.len() != TRACE_HEIGHT * self.width {
             return Err(Error::Shape);
         }
-        prove(&self.config, &statement.air(), trace, &public_values).map_err(|_| Error::Proving)
+        prove(&self.config, &self.air, trace, &public_values).map_err(|_| Error::Proving)
     }
 
     pub(crate) fn verify(
@@ -397,7 +400,6 @@ impl Backend {
             ..self.report
         }
         .require_target()?;
-        verify(&self.config, &statement.air(), proof, &public_values)
-            .map_err(|_| Error::Verification)
+        verify(&self.config, &self.air, proof, &public_values).map_err(|_| Error::Verification)
     }
 }

@@ -8,7 +8,7 @@ use crate::opening::{commitment, poseidon, schedule, statement as source};
 use crate::primitive::PublicStatement;
 use p3_air::{Air, AirBuilder, BaseAir, WindowAccess, utils::pack_bits_le};
 use p3_field::{Algebra, PrimeCharacteristicRing};
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::OnceLock};
 
 pub(super) const CHECKPOINT: usize = poseidon::WIDTH;
 pub(super) const WORDS: usize = CHECKPOINT + 12;
@@ -53,10 +53,12 @@ pub(crate) struct SelectionAir {
     values: [Val; statement::PUBLIC_VALUES],
     source_prefix: Vec<Val>,
     context: Vec<Val>,
+    public_schedule: OnceLock<Vec<Vec<Val>>>,
 }
 impl SelectionAir {
     pub(super) fn new(statement: &Statement) -> Self {
         Self {
+            public_schedule: OnceLock::new(),
             statement: statement.clone(),
             values: statement.public_values().try_into().unwrap(),
             source_prefix: commitment::prefix(&statement.source, [Val::ZERO; 4]),
@@ -143,7 +145,7 @@ impl BaseAir<Val> for SelectionAir {
         TRACE_HEIGHT
     }
     fn periodic_columns(&self) -> Cow<'_, [Vec<Val>]> {
-        Cow::Owned(schedule::columns())
+        Cow::Borrowed(self.public_schedule.get_or_init(schedule::columns))
     }
     fn max_constraint_degree(&self) -> Option<usize> {
         Some(5)

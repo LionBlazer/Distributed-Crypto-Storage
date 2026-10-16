@@ -17,6 +17,58 @@ use crate::primitive::PublicStatement;
 use crate::statement::{Statement, reference_output};
 
 #[test]
+fn backend_reuses_its_analyzed_air_and_rejects_a_changed_request() {
+    use std::cell::Cell;
+
+    use crate::primitive::{Kind, PrimitiveAir, PrimitiveStatement};
+
+    struct CountedStatement {
+        statement: crate::chacha::statement::Statement,
+        air_constructions: Cell<usize>,
+    }
+    impl PublicStatement for CountedStatement {
+        fn kind(&self) -> Kind {
+            self.statement.kind()
+        }
+
+        fn public_values(&self) -> Vec<Val> {
+            self.statement.public_values()
+        }
+
+        fn air(&self) -> PrimitiveAir {
+            self.air_constructions.set(self.air_constructions.get() + 1);
+            self.statement.air()
+        }
+    }
+    impl PrimitiveStatement for CountedStatement {
+        fn trace(&self) -> RowMajorMatrix<Val> {
+            self.statement.trace()
+        }
+    }
+
+    let mut statement = CountedStatement {
+        statement: crate::chacha::statement::Statement::hchacha_fixture(),
+        air_constructions: Cell::new(0),
+    };
+    let backend = Backend::new(&statement).unwrap();
+    let proof = backend.prove(&statement).unwrap();
+    backend.verify(&statement, &proof).unwrap();
+    backend.verify(&statement, &proof).unwrap();
+    assert_eq!(statement.air_constructions.get(), 1);
+
+    statement.statement.request[0] ^= 1;
+    let witness_called = Cell::new(false);
+    let result = backend.prove_with_trace(&statement, || {
+        witness_called.set(true);
+        Ok(statement.trace())
+    });
+    assert!(matches!(result, Err(Error::Shape)));
+    assert!(!witness_called.get());
+    assert_eq!(backend.verify(&statement, &proof), Err(Error::Shape));
+    assert_eq!(statement.air_constructions.get(), 1);
+}
+
+#[test]
 fn public_compression_matches_independent_oracle_at_word_boundaries() {
     for (block, state) in [
         ([0; 16], SHA256_IV),

@@ -11,7 +11,7 @@ use crate::poly1305::{LIMBS, arithmetic as pa};
 use crate::primitive::PublicStatement;
 use p3_air::{Air, AirBuilder, BaseAir, WindowAccess, utils::pack_bits_le};
 use p3_field::{Algebra, PrimeCharacteristicRing};
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::OnceLock};
 pub(crate) const LANES: usize = 7;
 pub(crate) const BUFFERS: usize = LANES * ca::WIDTH;
 pub(crate) const BANKS: usize = BUFFERS + LANES * 512;
@@ -32,10 +32,12 @@ pub(crate) struct OpeningAir {
     key_prefix: [Val; 14],
     open_prefix: [Val; 83],
     mac_fields: [[Val; 5]; 165],
+    public_schedule: OnceLock<Vec<Vec<Val>>>,
 }
 impl OpeningAir {
     pub(crate) fn new(source: &Statement) -> Self {
         Self {
+            public_schedule: OnceLock::new(),
             source: source.clone(),
             values: source.public_values().try_into().unwrap(),
             key_prefix: commitment::key_fields(&source.heads[0], [0; 32], [Val::ZERO; 4])[..14]
@@ -367,7 +369,7 @@ impl BaseAir<Val> for OpeningAir {
         TRACE_HEIGHT
     }
     fn periodic_columns(&self) -> Cow<'_, [Vec<Val>]> {
-        Cow::Owned(schedule::columns())
+        Cow::Borrowed(self.public_schedule.get_or_init(schedule::columns))
     }
     // Upper bound only; actual selector-aware inference is a separate gate.
     fn max_constraint_degree(&self) -> Option<usize> {

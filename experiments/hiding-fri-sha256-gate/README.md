@@ -27,6 +27,11 @@ failures, exact timer/resource scope and unmet guarantees. See the packed
 [module contract](src/opening/README.md#packed-canonical-source-candidate).
 No composed128-bit, SQL, RAM or causal speedup claim follows.
 
+The subsequent [owned-AIR validation](OWNED-AIR-VALIDATION.md) covers reuse of the
+analyzed public AIR and its immutable schedule. All eleven numerical reports
+remained exact; both CLI proofs and all 86 serial tests passed. Timer scopes and
+remaining SQL/FHE/locking limits are recorded there.
+
 Historical public-primitive status: the Poly1305 raw and separately padded-segment modes passed their
 isolated lock audit, release build, strict Clippy, seven actual security analyses,
 five observed genuine public-fixture proof/verify processes and all 33 serial
@@ -157,7 +162,15 @@ Backend is bound to one complete typed public statement (691 fields for the
 fixed pair; at most 97 in the public primitive modes), so cached analysis cannot cross empty/nonempty shapes.
 Prove and verify compare those exact values before trace/verification work and
 reuse the compared vector in the SDK call. A different statement uses a fresh
-Backend. Negative replay tests also use that fresh path, preserving actual SDK
+Backend. Each Backend retains the exact public AIR it analyzed and uses it for
+proving and verification. Opening and Selection AIRs lazily retain their immutable
+512-by-512 public schedule in a per-instance `OnceLock` and return borrowed columns.
+This removes repeated constructors and schedule generation; SDK symbolic degree,
+constraint-layout, periodic interpolation and proof checks still run. The retained
+schedule payload is 2,097,152 bytes per initialized AIR, excluding allocation
+overhead; this is not a peak-memory or latency claim. No witness, prover data,
+random stream or proof-dependent interpolation is cached.
+Negative replay tests also use that fresh path, preserving actual SDK
 rejection coverage rather than relying only on the wrapper's early guard. BOTH decoding
 reports must reach 128 before the normal Backend/CLI path allocates the full trace
 or proof. Direct public-fixture tests may construct a trace first; their actual
