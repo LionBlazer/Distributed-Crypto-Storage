@@ -286,7 +286,7 @@ pub(crate) fn factorized_canonical_gate(mode: &str) -> Result<(), crate::backend
     gate_relation(mode, Relation::FactorizedPackedCanonicalIndex)
 }
 fn gate_relation(mode: &str, relation: Relation) -> Result<(), crate::backend::Error> {
-    use crate::backend::{Backend, Error};
+    use crate::backend::Error;
     use std::time::Instant;
     let (statement, witness) = match relation {
         Relation::Bytes => fixture::fixture()?,
@@ -295,8 +295,9 @@ fn gate_relation(mode: &str, relation: Relation) -> Result<(), crate::backend::E
         Relation::FactorizedPackedCanonicalIndex => fixture::factorized_canonical_fixture()?,
         Relation::StateCertificate => return Err(Error::Shape),
     };
-    crate::security(
+    let backend = crate::prepare_gate(
         &statement,
+        mode,
         match relation {
             Relation::Bytes => "fixed-four-row-pair",
             Relation::CanonicalIndex => "canonical-four-row-index",
@@ -318,8 +319,7 @@ fn gate_relation(mode: &str, relation: Relation) -> Result<(), crate::backend::E
         periodic_bytes,
         periodics * 8192 * std::mem::size_of::<crate::backend::Val>()
     );
-    if mode == "prove" {
-        let backend = Backend::new(&statement)?;
+    if let Some(backend) = backend {
         let started = Instant::now();
         let proof = backend.prove_with_trace(&statement, || witness.trace(&statement))?;
         let proving = started.elapsed();
@@ -342,8 +342,6 @@ fn gate_relation(mode: &str, relation: Relation) -> Result<(), crate::backend::E
             proving.as_secs_f64() * 1000.0,
             started.elapsed().as_secs_f64() * 1000.0
         );
-    } else if mode != "security" {
-        return Err(Error::Shape);
     }
     Ok(())
 }

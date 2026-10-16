@@ -79,9 +79,7 @@ fn run() -> Result<(), Error> {
 }
 
 fn gate(statement: &impl PrimitiveStatement, mode: &str, case: &str) -> Result<(), Error> {
-    security(statement, case)?;
-    if mode == "prove" {
-        let backend = Backend::new(statement)?;
+    if let Some(backend) = prepare_gate(statement, mode, case)? {
         let started = Instant::now();
         let proof = backend.prove(statement)?;
         let proving = started.elapsed();
@@ -98,14 +96,45 @@ fn gate(statement: &impl PrimitiveStatement, mode: &str, case: &str) -> Result<(
     Ok(())
 }
 
+/// Simple primitive/source CLI gates own one checked Backend in prove mode.
+/// Composite gates retain their separate source/child proof lifecycles.
+pub(crate) fn prepare_gate(
+    statement: &impl PublicStatement,
+    mode: &str,
+    case: &str,
+) -> Result<Option<Backend>, Error> {
+    match mode {
+        "security" => {
+            security(statement, case)?;
+            Ok(None)
+        }
+        "prove" => {
+            let backend = Backend::new(statement)?;
+            let (kind, air) = backend.checked_public_air();
+            print_security(kind, case, air, backend.report)?;
+            Ok(Some(backend))
+        }
+        _ => Err(Error::Shape),
+    }
+}
+
 fn security(statement: &impl PublicStatement, case: &str) -> Result<(), Error> {
     let air = statement.air();
     let (_, report) = analyze(&air)?;
+    print_security(statement.kind(), case, &air, report)
+}
+
+fn print_security(
+    kind: primitive::Kind,
+    case: &str,
+    air: &primitive::PrimitiveAir,
+    report: backend::SecurityReport,
+) -> Result<(), Error> {
     let allocation = AllocationEstimate::for_width(air.width());
     let points = 1 + usize::from(!air.main_next_row_columns().is_empty());
     println!(
         "{{\"stage\":\"security\",\"primitive\":\"{}\",\"statement_case\":\"{}\",\"trace_height\":{},\"trace_width\":{},\"proof_degree_bits\":{},\"queries\":{},\"random_codewords\":{},\"opening_points\":{},\"periodic_columns\":{},\"unique_decoding_bits\":{},\"list_decoding_bits\":{},\"constraints\":{},\"degree\":{},\"quotient_chunks\":{},\"batched_functions\":{},\"trace_bytes\":{},\"masked_trace_bytes\":{},\"main_lde_bytes\":{}}}",
-        statement.kind().name(),
+        kind.name(),
         case,
         backend::TRACE_HEIGHT,
         air.width(),

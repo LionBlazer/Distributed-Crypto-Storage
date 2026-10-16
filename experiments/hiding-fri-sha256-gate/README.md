@@ -267,3 +267,11 @@ reports, six observed genuine proofs and all 121 serial tests passed. The
 [validation record](FACTORIZED-PERIODICS-VALIDATION.md) reports lower observed
 source memory together with a slower outer interval and verification; it
 establishes no speedup. Existing consumers retain their original profiles.
+
+## Single checked setup for simple proof gates
+
+Simple primitive/source CLI prove modes report and use one retained checked
+Backend. The fifteen numerical reports remain field-exact; genuine old/new
+proof comparisons and all 122 serial tests passed. The
+[validation record](SOURCE-GATE-SETUP-VALIDATION.md) gives complete cold-process
+intervals and limitations. Security-only and composite lifecycles remain unchanged.

@@ -304,3 +304,12 @@ It reports lower memory and slower outer/verification intervals, establishing
 no speedup or 500-ms target. No SDK fork, custom verifier, new witness columns,
 private cache, production acceptance, formation or lock/finality guarantee
 is introduced. Fixtures remain explicitly PUBLIC NONSECRET.
+
+## Simple source-gate setup ownership
+
+`gate_relation` receives one checked Backend from shared CLI `prepare_gate`,
+reports its retained public AIR and then uses it for genuine proving/verification.
+A shared formatter preserves the security JSON. Public-only `security` and the
+State/Selection/SelectedEncoding composite lifecycles are unchanged. All 122 tests
+passed; the [validation record](../../SOURCE-GATE-SETUP-VALIDATION.md) compares
+old/new executables for each fixed profile. This remains a nonaccepting experiment.

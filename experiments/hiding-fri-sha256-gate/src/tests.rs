@@ -366,3 +366,98 @@ fn allocation_estimates_name_only_the_arrays_they_actually_count() {
     assert_eq!(estimate.masked_trace_bytes, 63_348_736);
     assert_eq!(estimate.main_lde_bytes, 506_789_888);
 }
+
+#[test]
+fn cli_preparation_uses_one_checked_air_and_keeps_security_and_wrong_statements_trace_free() {
+    use std::cell::Cell;
+
+    use crate::primitive::{Kind, PrimitiveAir, PrimitiveStatement};
+
+    struct CountedStatement {
+        statement: crate::chacha::statement::Statement,
+        kind_override: Option<Kind>,
+        air_constructions: Cell<usize>,
+        trace_constructions: Cell<usize>,
+    }
+    impl CountedStatement {
+        fn fixture() -> Self {
+            Self {
+                statement: crate::chacha::statement::Statement::hchacha_fixture(),
+                kind_override: None,
+                air_constructions: Cell::new(0),
+                trace_constructions: Cell::new(0),
+            }
+        }
+    }
+    impl PublicStatement for CountedStatement {
+        fn kind(&self) -> Kind {
+            self.kind_override.unwrap_or_else(|| self.statement.kind())
+        }
+        fn public_values(&self) -> Vec<Val> {
+            self.statement.public_values()
+        }
+        fn air(&self) -> PrimitiveAir {
+            self.air_constructions.set(self.air_constructions.get() + 1);
+            self.statement.air()
+        }
+    }
+    impl PrimitiveStatement for CountedStatement {
+        fn trace(&self) -> RowMajorMatrix<Val> {
+            self.trace_constructions
+                .set(self.trace_constructions.get() + 1);
+            self.statement.trace()
+        }
+    }
+
+    // Security-only and rejected CLI modes never allocate a witness trace.
+    let security_only = CountedStatement::fixture();
+    assert!(
+        crate::prepare_gate(&security_only, "security", "fixture")
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(security_only.air_constructions.get(), 1);
+    assert_eq!(security_only.trace_constructions.get(), 0);
+    let invalid = CountedStatement::fixture();
+    assert!(matches!(
+        crate::prepare_gate(&invalid, "invalid", "fixture"),
+        Err(Error::Shape)
+    ));
+    assert_eq!(invalid.air_constructions.get(), 0);
+    assert_eq!(invalid.trace_constructions.get(), 0);
+
+    // The CLI reports the retained checked AIR and moves the same Backend to proof work.
+    let mut statement = CountedStatement::fixture();
+    let backend = crate::prepare_gate(&statement, "prove", "fixture")
+        .unwrap()
+        .unwrap();
+    assert_eq!(statement.air_constructions.get(), 1);
+    assert_eq!(statement.trace_constructions.get(), 0);
+    let proof = backend.prove(&statement).unwrap();
+    backend.verify(&statement, &proof).unwrap();
+    assert_eq!(statement.air_constructions.get(), 1);
+    assert_eq!(statement.trace_constructions.get(), 1);
+
+    // Changed kind, request and claimed output reject before another witness factory.
+    let genuine = statement.statement.clone();
+    for change in 0..3 {
+        statement.statement = genuine.clone();
+        statement.kind_override = None;
+        match change {
+            0 => statement.kind_override = Some(Kind::ChaCha20),
+            1 => statement.statement.request[0] ^= 1,
+            2 => statement.statement.output[0] ^= 1,
+            _ => unreachable!(),
+        }
+        let witness_called = Cell::new(false);
+        let result = backend.prove_with_trace(&statement, || {
+            witness_called.set(true);
+            Ok(statement.trace())
+        });
+        assert!(matches!(result, Err(Error::Shape)));
+        assert!(!witness_called.get());
+        assert_eq!(backend.verify(&statement, &proof), Err(Error::Shape));
+        assert_eq!(statement.air_constructions.get(), 1);
+        assert_eq!(statement.trace_constructions.get(), 1);
+    }
+}

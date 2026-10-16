@@ -366,6 +366,12 @@ impl Backend {
         })
     }
 
+    /// Read-only public context already analyzed for this exact Backend.
+    /// This does not expose configuration, witness data or an unchecked report.
+    pub(crate) fn checked_public_air(&self) -> (Kind, &PrimitiveAir) {
+        (self.kind, &self.air)
+    }
+
     pub(crate) fn prove(
         &self,
         statement: &impl PrimitiveStatement,
