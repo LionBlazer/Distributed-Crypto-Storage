@@ -232,13 +232,61 @@ pub(crate) fn encode_into<T: Serialize>(
         .serialize_into(output, value)
         .map_err(io::Error::other)
 }
-pub(crate) fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> io::Result<T> {
+pub(crate) fn decode<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> io::Result<T> {
+    check_frame_size(bytes)?;
     bincode::DefaultOptions::new()
         .with_fixint_encoding()
         .with_limit(MAX_FRAME_BYTES as u64)
         .reject_trailing_bytes()
         .deserialize(bytes)
         .map_err(io::Error::other)
+}
+
+// Slice deserialization in pinned bincode replaces with_limit with Infinite.
+// The actual complete input, including its outer envelope, needs its own cap.
+pub(crate) fn check_frame_size(bytes: &[u8]) -> io::Result<()> {
+    if bytes.len() > MAX_FRAME_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Frame exceeds limit",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn decode_request(bytes: &[u8]) -> io::Result<WireRequest> {
+    check_frame_size(bytes)?;
+    check_version(bytes)?;
+    // Only Store has a full RawBundle. Every other variant keeps its ordinary
+    // decoder; a malformed Store body never falls through to a second codec.
+    if bytes.get(10..14) == Some(2u32.to_le_bytes().as_slice()) {
+        let (version, id, _): (u16, u64, u32) = decode(&bytes[..14])?;
+        let bundle = crate::objects::decode_slice(&bytes[14..])?;
+        Ok(WireRequest {
+            version,
+            id,
+            request: Request::Store(bundle),
+        })
+    } else {
+        decode(bytes)
+    }
+}
+
+pub(crate) fn decode_response(bytes: &[u8]) -> io::Result<WireResponse> {
+    check_frame_size(bytes)?;
+    check_version(bytes)?;
+    // The fixed tags are pinned by codec tests against the actual enum encoder.
+    if bytes.get(10..18) == Some([0u8, 0, 0, 0, 3, 0, 0, 0].as_slice()) {
+        let (version, id, _, _): (u16, u64, u32, u32) = decode(&bytes[..18])?;
+        let bundle = crate::objects::decode_slice(&bytes[18..])?;
+        Ok(WireResponse {
+            version,
+            id,
+            result: Ok(Response::RawBundle(bundle)),
+        })
+    } else {
+        decode(bytes)
+    }
 }
 
 /// Reject a substituted RPC variant before its unrelated vector decoder can

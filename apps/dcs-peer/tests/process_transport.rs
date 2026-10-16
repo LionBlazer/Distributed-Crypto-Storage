@@ -1151,3 +1151,45 @@ fn legacy_or_unknown_rpc_version_cannot_store_a_valid_current_object() {
         matches!(remote.call(Request::Store(raw)).unwrap(), Response::Stored(info) if info.id == object)
     );
 }
+
+#[test]
+fn raw_store_decoder_keeps_owner_authorization_before_inner_custody_admission() {
+    let authority = Authority::new();
+    let owner = authority.identity();
+    let owner_connector = Connector::new(&owner, &authority.der).unwrap();
+    let outsider = Connector::new(&authority.identity(), &authority.der).unwrap();
+    let process = Process::start(&authority, owner.fingerprint(), 1, None);
+    let authorized = process.remote(&owner_connector);
+    let unprivileged = process.remote(&outsider);
+    let (_, original) = page_fixture();
+    for mutation in 0..6 {
+        let mut malformed = original.clone();
+        match mutation {
+            0 => malformed.version = 1,
+            1 => malformed.version = 3,
+            2 => {
+                malformed.data_head.pop();
+            }
+            3 => malformed.index_head.push(0),
+            4 => *malformed.data.last_mut().unwrap() ^= 1,
+            _ => *malformed.index.last_mut().unwrap() ^= 1,
+        }
+        // A structurally valid raw envelope is not authenticated by parsing it.
+        let Err(error) = unprivileged.call(Request::Store(malformed.clone())) else {
+            panic!("Only the configured owner can reach custody admission");
+        };
+        assert_eq!(error.to_string(), "Unauthorized");
+        let Err(error) = authorized.call(Request::Store(malformed)) else {
+            panic!("The owner cannot admit invalid complete images");
+        };
+        assert_eq!(error.to_string(), "Integrity");
+        assert!(authorized.status().unwrap().objects.is_empty());
+    }
+    let object = *original.target_version().unwrap().object();
+    assert!(
+        matches!(authorized.call(Request::Store(original.clone())).unwrap(), Response::Stored(info) if info.id == object)
+    );
+    assert!(
+        matches!(unprivileged.call(Request::Fetch { object }).unwrap(), Response::RawBundle(raw) if raw == original)
+    );
+}

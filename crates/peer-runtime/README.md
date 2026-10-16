@@ -74,6 +74,25 @@ fixture also checks actual stored ciphertext after its proved result assertions.
 This changes serialization work only; no complete-operation speed or RAM claim
 follows without separate measurement.
 
+Full-object disk reads, Store requests and successful RawBundle replies additionally
+use a private borrowed serde view of the four byte fields. Every length must fit
+the remaining immutable input, and trailing bytes reject before any payload Vec
+is allocated. Only a completely parsed view is copied to the ordinary untrusted
+RawBundle. Public generic Deserialize and the existing bounded sequence visitors
+remain unchanged; this slice-only path is never used with an arbitrary IoReader.
+The actual whole disk/RPC byte count is capped at 64 MiB, including its existing
+40/14/18-byte envelope. This explicit cap is required because pinned bincode's
+slice API replaces its configured size limit with Infinite.
+
+The specialized wrappers retain the existing v2 namespace, profiles and enum tags;
+all other RPC variants use the ordinary decoder. A malformed specialized body
+rejects without trying another format. Inner raw version, nonce, head lengths and
+image bytes remain untrusted data: parsing does not run custody checks before
+owner authorization. Every physical read still performs both complete snapshot
+root audits, and all quota, retry, Copy, proof and freshness guards remain in
+place. Owned payloads and full disk/frame buffers still exist; no zero-copy
+custody, process-RAM or complete-query latency guarantee follows.
+
 `PageBatchRequest::new` binds an immutable object ID, both independently trusted
 compact-store heads, and 1–64 unique `PageAddress { image: PageImage, index }`
 values. `RemotePeer::fetch_pages` returns Merkle-verified ciphertext pages in the

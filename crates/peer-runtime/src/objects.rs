@@ -9,6 +9,8 @@ pub const OBJECT_PROFILE_ID: [u8; 32] = *b"DCS-SALTED-HEAD-OBJECT-PROFILE02";
 const DOMAIN: &[u8] = b"dcs/peer-runtime/salted-head-object/v2";
 pub(crate) const DISK_MAGIC: &[u8; 8] = b"DCSOBJ02";
 pub(crate) const DISK_HEADER_BYTES: usize = 40;
+mod slice;
+pub(crate) use slice::decode as decode_slice;
 
 /// Untrusted wire envelope. Parsing/version metadata never establishes custody.
 /// Nonce is public to object recipients, but must not enter Status or journals.
@@ -203,7 +205,8 @@ pub(crate) fn encode_disk(raw: &RawBundle) -> Result<Vec<u8>, RemoteError> {
 }
 pub(crate) fn decode_disk(bytes: &[u8]) -> std::io::Result<RawBundle> {
     check_disk_header(bytes)?;
-    crate::wire::decode(&bytes[DISK_HEADER_BYTES..])
+    crate::wire::check_frame_size(bytes)?;
+    decode_slice(&bytes[DISK_HEADER_BYTES..])
 }
 pub(crate) fn check_disk_header(bytes: &[u8]) -> std::io::Result<()> {
     if bytes.get(..8) != Some(DISK_MAGIC.as_slice())

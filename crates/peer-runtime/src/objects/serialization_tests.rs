@@ -70,6 +70,7 @@ fn raw_store_fetch_and_disk_keep_plain_vec_bytes_and_mutual_decoding() {
         let plain_bytes = wire::encode(&plain).unwrap();
         assert_eq!(raw_bytes, plain_bytes);
         assert_eq!(wire::decode::<RawBundle>(&plain_bytes).unwrap(), raw);
+        assert_eq!(decode_slice(&plain_bytes).unwrap(), raw);
         assert_eq!(
             RawBundle::from(wire::decode::<PlainVecBundle>(&raw_bytes).unwrap()),
             raw
@@ -84,6 +85,8 @@ fn raw_store_fetch_and_disk_keep_plain_vec_bytes_and_mutual_decoding() {
         // Fixed tuple fields encode the actual v2 envelope and Store tag 2.
         let plain_store = wire::encode(&(2u16, 19u64, 2u32, &plain)).unwrap();
         assert_eq!(store, plain_store);
+        let decoded = wire::decode_request(&plain_store).unwrap();
+        assert!(matches!(decoded.request, Request::Store(actual) if actual == raw));
         let decoded: WireRequest = wire::decode(&plain_store).unwrap();
         assert!(matches!(decoded.request, Request::Store(actual) if actual == raw));
         let (version, id, tag, actual): (u16, u64, u32, PlainVecBundle) =
@@ -99,6 +102,8 @@ fn raw_store_fetch_and_disk_keep_plain_vec_bytes_and_mutual_decoding() {
         .unwrap();
         let plain_fetch = wire::encode(&(2u16, 19u64, 0u32, 3u32, &plain)).unwrap();
         assert_eq!(fetch, plain_fetch);
+        let decoded = wire::decode_response(&plain_fetch).unwrap();
+        assert!(matches!(decoded.result, Ok(Response::RawBundle(actual)) if actual == raw));
         let decoded: WireResponse = wire::decode(&plain_fetch).unwrap();
         assert!(matches!(decoded.result, Ok(Response::RawBundle(actual)) if actual == raw));
         let (version, id, result, tag, actual): (u16, u64, u32, u32, PlainVecBundle) =
@@ -174,10 +179,12 @@ fn unchanged_decoder_rejects_truncation_trailing_and_hostile_field_lengths() {
     let bytes = wire::encode(&PlainVecBundle::from(&raw)).unwrap();
     for boundary in [0, 1, 33, 34, 41, 153, bytes.len() - 1] {
         assert!(wire::decode::<RawBundle>(&bytes[..boundary]).is_err());
+        assert!(decode_slice(&bytes[..boundary]).is_err());
     }
     let mut trailing = bytes.clone();
     trailing.push(0);
     assert!(wire::decode::<RawBundle>(&trailing).is_err());
+    assert!(decode_slice(&trailing).is_err());
     // All four existing fixint length slots reject without trusting their claims.
     let lengths = [
         34,
@@ -189,5 +196,6 @@ fn unchanged_decoder_rejects_truncation_trailing_and_hostile_field_lengths() {
         let mut announced = bytes.clone();
         announced[offset..offset + 8].copy_from_slice(&u64::MAX.to_le_bytes());
         assert!(wire::decode::<RawBundle>(&announced).is_err());
+        assert!(decode_slice(&announced).is_err());
     }
 }

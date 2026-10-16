@@ -126,7 +126,7 @@ impl RemotePeer {
             crate::wire::check_version(&payload)?;
             let response: WireResponse = match custody_tag {
                 Some(tag) => decode_custody_response(&payload, response_limit, tag)?,
-                None => decode(&payload)?,
+                None => decode_response(&payload)?,
             };
             if response.version != 2 || response.id != id {
                 return Err(io::Error::new(

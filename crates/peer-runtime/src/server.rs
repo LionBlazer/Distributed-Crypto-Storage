@@ -255,8 +255,7 @@ impl PeerServer {
 fn serve(socket: TcpStream, acceptor: Acceptor, shared: Arc<Shared>) -> io::Result<()> {
     let (remote, mut stream) = acceptor.accept(socket)?;
     let bytes = read_frame(&mut stream, MAX_FRAME_BYTES)?;
-    crate::wire::check_version(&bytes)?;
-    let wire: WireRequest = decode(&bytes)?;
+    let wire = decode_request(&bytes)?;
     if wire.version != 2 {
         return Err(io::Error::other("Unsupported RPC version"));
     }
