@@ -508,3 +508,28 @@ publication, SQL locks, public completeness proof or finality. The existing
 owner-online complete-source and malicious-output arithmetic boundaries remain.
 Actual future transport must preserve fixed source footprints, full peer custody
 audits, all-shard staging, authorization and independent agreed freshness.
+
+## Canonical age-set selection
+
+`AgeSet256` owns the exact selection domain for proved BFV SELECT, COUNT/SUM and
+additive UPDATE, for both full tables and ReadView sources. It has no SQL/parser
+dependency or serialization: its 32 bytes use bit `age % 8` of byte `age / 8`.
+Every pattern is a valid set; empty and all-age conditions need no alternate API.
+The caller compiles SQL three-valued logic and supplies only its final TRUE set.
+The set itself grants no authorization, completeness proof or freshness.
+
+One authenticated index traversal visits each selected age bucket once, in age
+order, then returns rows in original ordinal order. It preflights the total count
+across the entire union against the operation's materialization budget before
+allocating original fields or encrypting them. Distinct selected buckets containing
+the same ordinal reject as index corruption; overlapping SQL branches do not
+produce repeated bucket visits or repeated updates. LIMIT still validates every
+selected posting and original candidate, including LIMIT 0, and only bounds the
+retained prefix. Existing 256-row and aggregate 2560-row ceilings remain unchanged.
+
+Source/input encryption, genuine peer arithmetic, exact checked statements, full
+ReadHeads binding and network freshness/custody contracts are unchanged. This
+owner-assisted selector does not add peer-side homomorphic SQL boolean evaluation
+or the missing public source/index-completeness proof. Separate historical
+unverified BFV/TFHE range experiments retain their explicit AgeRange contract;
+checked conversion to AgeSet256 is used only at their shared index boundary.

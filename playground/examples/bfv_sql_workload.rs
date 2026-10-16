@@ -68,13 +68,7 @@ const CASES: &[(&str, &str)] = &[
     ),
 ];
 fn selected(row: &PlainRow, predicate: Predicate) -> bool {
-    predicate
-        .age_range()
-        .map(|range| compact_query::AgeRange {
-            lower: range.lower,
-            upper: range.upper,
-        })
-        .is_some_and(|range| row.age >= range.lower && row.age <= range.upper)
+    compact_query::AgeSet256::from_bytes(predicate.age_mask()).contains(row.age)
 }
 fn memory_json() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let value = memory::guard(0)?;

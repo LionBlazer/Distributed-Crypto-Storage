@@ -3,7 +3,7 @@
 use bfv_query_core::{PublicSetup, PublicUpdateEvaluator};
 use bfv_query_proof::{GeneratedOperation, Operation, prove};
 use compact_query::{
-    AgeRange, Error, PageSource, PlainRow, ReadHeads, Table, TableId, UpdateView,
+    AgeRange, AgeSet256, Error, PageSource, PlainRow, ReadHeads, Table, TableId, UpdateView,
     bfv::{Owner, PreparedUpdate},
 };
 use compact_store::{Commitment, Limits, LookupResponse, VerifiedPage};
@@ -91,13 +91,7 @@ fn million_row_update_uses_only_prefix_pages_and_preserves_the_entire_encrypted_
     let prefix = Prefix::new(&table);
     let view = prefix.view(&table, table.read_heads());
     let prepared = owner
-        .prepare_provable_update_from_source(
-            view.read_view(),
-            Some(AgeRange::equal(42)),
-            1,
-            256,
-            limits,
-        )
+        .prepare_provable_update_from_source(view.read_view(), AgeSet256::equal(42), 1, 256, limits)
         .unwrap();
     assert_eq!(prepared.selected_rows(), 3);
     let generated = prove_update(&public, &prepared);
@@ -210,13 +204,14 @@ fn genuine_empty_zero_delta_and_overflow_results_never_reissue_source_images() {
         .unwrap();
     let before = images(&table);
     for (predicate, delta, matched, overflowed) in [
-        (None, 1, 0, false),
-        (Some(AgeRange::equal(42)), 0, 2, false),
+        (AgeSet256::empty(), 1, 0, false),
+        (AgeSet256::equal(42), 0, 2, false),
         (
-            Some(AgeRange {
+            AgeSet256::try_from(AgeRange {
                 lower: 0,
                 upper: 255,
-            }),
+            })
+            .unwrap(),
             1,
             3,
             true,
@@ -272,7 +267,7 @@ fn whole_logical_heads_exact_evidence_and_current_source_limits_bind_static_stag
         owner
             .prepare_provable_update_from_source(
                 &table.read_view(),
-                Some(AgeRange::equal(42)),
+                AgeSet256::equal(42),
                 1,
                 256,
                 limits,
@@ -409,7 +404,7 @@ fn incomplete_later_prefix_or_missing_header_rejects_and_preserves_the_whole_sou
     let prepared = owner
         .prepare_provable_update_from_source(
             prefix.view(&table, table.read_heads()).read_view(),
-            Some(AgeRange::equal(42)),
+            AgeSet256::equal(42),
             1,
             256,
             limits,
@@ -422,7 +417,7 @@ fn incomplete_later_prefix_or_missing_header_rejects_and_preserves_the_whole_sou
         owner
             .prepare_provable_update_from_source(
                 prefix.view(&table, table.read_heads()).read_view(),
-                Some(AgeRange::equal(42)),
+                AgeSet256::equal(42),
                 1,
                 256,
                 limits
@@ -485,7 +480,7 @@ fn update_view_rejects_foreign_or_nonzero_header_paths_and_preparation_keeps_256
     assert!(matches!(
         owner.prepare_provable_update_from_source(
             &table.read_view(),
-            Some(AgeRange::equal(42)),
+            AgeSet256::equal(42),
             1,
             usize::MAX,
             limits
@@ -518,13 +513,7 @@ fn reissued_small_index_header_preserves_every_row_identity_inside_page_zero() {
     let prefix = Prefix::new(&table);
     let view = prefix.view(&table, table.read_heads());
     let prepared = owner
-        .prepare_provable_update_from_source(
-            view.read_view(),
-            Some(AgeRange::equal(42)),
-            1,
-            256,
-            limits,
-        )
+        .prepare_provable_update_from_source(view.read_view(), AgeSet256::equal(42), 1, 256, limits)
         .unwrap();
     let generated = prove_update(&public, &prepared);
     let checked = owner

@@ -440,3 +440,29 @@ Interrupted static-source reads terminate immediately; mutation proof
 cancellation follows the query RPC contract. This does not establish global
 cancellation across legacy Full-source or journal phases, public source
 completeness, SQL locks or a new latency guarantee.
+
+## Boolean conditions on the writable fixed table
+
+Live `Session` row SELECT, COUNT/SUM and additive UPDATE accept bounded age-only
+boolean WHERE expressions, including AND/OR/NOT, parentheses, comparisons,
+[NOT] BETWEEN, [NOT] IN, IS [NOT] NULL and boolean TRUE/FALSE/NULL. SQL UNKNOWN is
+preserved through compilation; only TRUE ages enter the complete authenticated
+selection. Signed i64 comparison bounds can extend beyond the u8 storage domain;
+unsupported numeric types and expressions reject rather than being coerced.
+
+The owner's compiled 32-byte age mask is handed to compact-query and never sent as
+new peer metadata. All selected original operands still require genuine encrypted
+peer computation and exact proof checks. Fixed ReadImage footprints, frozen Full/
+Delta UPDATE placement, statement-wide staging, pending retry identity, final
+full-image custody audits and agreed-version checks remain unchanged. A union's
+whole per-shard cardinality shares the existing budget; OR overlap never applies
+an additive update twice. NULL comparisons cannot become TRUE merely through NOT.
+
+`SqlScript` plans every statement before any creator callback or execution and
+runs only live Session operations. Its signed-literal/operator token boundaries
+are preserved. The historical `Database::execute` and local laboratory range
+adapters reject discontinuous age sets before fetching/evaluating; they are not
+live fallbacks. Typed imported catalogs keep their separate nullable Expr/index
+semantics and immutable mutation contract. This fixed-domain feature implements
+neither general typed expressions nor SQL locks/transactions or a new public
+source/completeness proof.

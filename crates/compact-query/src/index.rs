@@ -1,6 +1,6 @@
 use crate::identity::ID_BYTES;
 use crate::{
-    AgeRange, Error, INDEX_HEADER_BYTES, INDEX_SCHEMA, MAX_TABLE_ROWS, PlainRow, Result, RowId,
+    AgeSet256, Error, INDEX_HEADER_BYTES, INDEX_SCHEMA, MAX_TABLE_ROWS, PlainRow, Result, RowId,
     RowIds, RowReference, RowReferences, Table, TableId,
 };
 use compact_store::{Commitment, EncryptedSnapshot, Layout, Limits, MANIFEST_BYTES};
@@ -351,19 +351,18 @@ pub(crate) fn select(
     owner: &compact_store::Owner,
     index: &dyn crate::PageSource,
     heads: &crate::ReadHeads,
-    range: AgeRange,
+    ages: AgeSet256,
     budget: MaterializationBudget,
     transferred: &mut usize,
 ) -> Result<Vec<u64>> {
-    range.validate()?;
     let header = check_binding_counted(owner, index, heads, transferred)?;
-    let selected = matching_count(&header, range)?;
+    let selected = matching_count(&header, ages)?;
     let budget = budget.0;
     if selected > budget {
         return Err(Error::SelectionBudget { selected, budget });
     }
     let mut result = Vec::with_capacity(selected);
-    visit_complete_postings(owner, index, heads, range, header, transferred, |ordinal| {
+    visit_complete_postings(owner, index, heads, ages, header, transferred, |ordinal| {
         result.push(ordinal);
         Ok(())
     })?;
@@ -374,12 +373,11 @@ pub(crate) fn select(
     Ok(result)
 }
 
-fn matching_count(header: &IndexHeader, range: AgeRange) -> Result<usize> {
-    header.counts[range.lower as usize..=range.upper as usize]
-        .iter()
-        .try_fold(0_usize, |sum, count| {
-            sum.checked_add(*count as usize).ok_or(Error::InvalidIndex)
-        })
+fn matching_count(header: &IndexHeader, ages: AgeSet256) -> Result<usize> {
+    ages.ages().try_fold(0_usize, |sum, age| {
+        sum.checked_add(header.counts[usize::from(age)] as usize)
+            .ok_or(Error::InvalidIndex)
+    })
 }
 
 /// One canonical decoder for complete matching buckets; success never means early stop.
@@ -387,7 +385,7 @@ fn visit_complete_postings(
     owner: &compact_store::Owner,
     index: &dyn crate::PageSource,
     heads: &crate::ReadHeads,
-    range: AgeRange,
+    ages: AgeSet256,
     header: IndexHeader,
     transferred: &mut usize,
     mut visit: impl FnMut(u64) -> Result<()>,
@@ -396,12 +394,13 @@ fn visit_complete_postings(
         owner,
         snapshot: index,
         head: heads.index(),
-        position: INDEX_HEADER_BYTES + header.offsets[range.lower as usize] as usize,
+        position: INDEX_HEADER_BYTES,
         page_index: 0,
         page: header.first_page,
         transferred,
     };
-    for age in range.lower as usize..=range.upper as usize {
+    for age in ages.ages().map(usize::from) {
+        reader.position = INDEX_HEADER_BYTES + header.offsets[age] as usize;
         let bucket_end = INDEX_HEADER_BYTES + header.offsets[age + 1] as usize;
         let mut previous = 0_u32;
         for position in 0..header.counts[age] {
@@ -455,14 +454,13 @@ pub(crate) fn select_candidates(
     owner: &compact_store::Owner,
     index: &dyn crate::PageSource,
     heads: &crate::ReadHeads,
-    range: AgeRange,
+    ages: AgeSet256,
     limit: usize,
     budget: MaterializationBudget,
 ) -> Result<SelectCandidates> {
-    range.validate()?;
     let transferred = &mut 0;
     let header = check_binding_counted(owner, index, heads, transferred)?;
-    let retained = matching_count(&header, range)?.min(limit);
+    let retained = matching_count(&header, ages)?.min(limit);
     if retained > budget.0 {
         return Err(Error::SelectionBudget {
             selected: retained,
@@ -473,7 +471,7 @@ pub(crate) fn select_candidates(
         0_u64;
         (heads.data().layout().row_count as usize).div_ceil(64)
     ]);
-    visit_complete_postings(owner, index, heads, range, header, transferred, |ordinal| {
+    visit_complete_postings(owner, index, heads, ages, header, transferred, |ordinal| {
         let word = &mut words[ordinal as usize / 64];
         let bit = 1_u64 << (ordinal % 64);
         if *word & bit != 0 {

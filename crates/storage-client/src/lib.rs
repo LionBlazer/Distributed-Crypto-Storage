@@ -288,6 +288,24 @@ impl Database {
     /// reply case is rejected; it can never produce AcceptedResult or advance heads.
     pub fn execute(&self, sql: &str) -> Result<AcceptedResult> {
         let plan = sql_plan::parse_sql(sql)?;
+        let range = match &plan {
+            QueryPlan::Insert { .. } => None,
+            QueryPlan::Select { predicate, .. }
+            | QueryPlan::Aggregate { predicate }
+            | QueryPlan::Count { predicate }
+            | QueryPlan::Sum { predicate }
+            | QueryPlan::AddAmount { predicate, .. } => {
+                let mask = compact_query::AgeSet256::from_bytes(predicate.age_mask());
+                let ages: Vec<_> = mask.ages().collect();
+                let Some((&lower, &upper)) = ages.first().zip(ages.last()) else {
+                    return Err(Error::MissingComputationProof);
+                };
+                if ages.len() != usize::from(upper) - usize::from(lower) + 1 {
+                    return Err(Error::InvalidInput("This historical unverified adapter accepts only contiguous age sets; use Session for proved boolean predicates".into()));
+                }
+                Some(AgeRange { lower, upper })
+            }
+        };
         let shards: Vec<_> = if matches!(plan, QueryPlan::Insert { .. }) {
             vec![self.shards.iter().min_by_key(|s| s.info.rows).unwrap()]
         } else {
@@ -296,14 +314,8 @@ impl Database {
         for shard in shards {
             let (peer, table) = self.fetch(shard)?;
             let (operation, ciphertext) = match &plan {
-                QueryPlan::Select {
-                    predicate,
-                    projection,
-                    ..
-                } => {
-                    let Some(range) = predicate.age_range() else {
-                        return Err(Error::MissingComputationProof);
-                    };
+                QueryPlan::Select { projection, .. } => {
+                    let range = range.expect("non-insert range admitted before fetching");
                     let projection = match projection {
                         Projection::Age => backend::RowProjection::Age,
                         Projection::Amount => backend::RowProjection::Amount,
@@ -311,43 +323,28 @@ impl Database {
                     };
                     let prepared = self.owner.prepare_exact_select_for_experiment(
                         &table,
-                        AgeRange {
-                            lower: range.lower,
-                            upper: range.upper,
-                        },
+                        range,
                         projection,
                         256,
                         Limits::default(),
                     )?;
                     (Operation::Select, prepared.request().to_vec())
                 }
-                QueryPlan::Aggregate { predicate }
-                | QueryPlan::Count { predicate }
-                | QueryPlan::Sum { predicate } => {
-                    let Some(range) = predicate.age_range() else {
-                        return Err(Error::MissingComputationProof);
-                    };
+                QueryPlan::Aggregate { .. } | QueryPlan::Count { .. } | QueryPlan::Sum { .. } => {
+                    let range = range.expect("non-insert range admitted before fetching");
                     let prepared = self.owner.prepare_exact_aggregate_for_experiment(
                         &table,
-                        AgeRange {
-                            lower: range.lower,
-                            upper: range.upper,
-                        },
+                        range,
                         256,
                         Limits::default(),
                     )?;
                     (Operation::Aggregate, prepared.request().to_vec())
                 }
-                QueryPlan::AddAmount { predicate, delta } => {
-                    let Some(range) = predicate.age_range() else {
-                        return Err(Error::MissingComputationProof);
-                    };
+                QueryPlan::AddAmount { delta, .. } => {
+                    let range = range.expect("non-insert range admitted before fetching");
                     let prepared = self.owner.prepare_exact_update_for_experiment(
                         &table,
-                        AgeRange {
-                            lower: range.lower,
-                            upper: range.upper,
-                        },
+                        range,
                         *delta,
                         256,
                         Limits::default(),

@@ -379,6 +379,7 @@ impl LabEngine {
     ) -> Result<QueryOutcome, LabError> {
         self.prepared = None;
         let plan = parse_sql(sql)?;
+        replication::admitted_range(&plan)?;
         let db = self.database.as_mut().ok_or(LabError::NoDatabase)?;
         db.replication.ensure_available(db)?;
         let (outcome, prepared) = replication::execute(db, plan, &progress)?;

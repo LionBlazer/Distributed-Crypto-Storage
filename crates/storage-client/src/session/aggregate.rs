@@ -28,10 +28,7 @@ impl Session {
                 let source = ReadView::new(heads.clone(), image.data(), &index)?;
                 self.data.owner.prepare_provable_aggregate_from_source(
                     &source,
-                    predicate.age_range().map(|range| AgeRange {
-                        lower: range.lower,
-                        upper: range.upper,
-                    }),
+                    compact_query::AgeSet256::from_bytes(predicate.age_mask()),
                     backend::POLYNOMIAL_AGGREGATE_CAPACITY,
                     Limits::default(),
                 )?

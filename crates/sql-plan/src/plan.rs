@@ -5,53 +5,21 @@ pub struct RowValues {
     pub amount: u16,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct AgeRange {
-    pub lower: u8,
-    pub upper: u8,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Comparison {
-    Equal,
-    AtLeast,
-    LessThan,
-    AtMost,
-    GreaterThan,
-    Between { upper: u8 },
-}
-
 pub const MAX_SQL_BYTES: usize = 4_096;
 
+/// Compiled WHERE truth over the fixed nonnullable age domain; no stored rows are read.
+/// The canonical mask stays owner-side: bit `age % 8` of byte `age / 8` is SQL TRUE.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Predicate {
-    pub comparison: Comparison,
-    /// Comparison bound, or the inclusive lower bound of BETWEEN.
-    pub threshold: u8,
-}
-
+pub struct Predicate(pub(crate) [u8; 32]);
 impl Predicate {
-    /// Normalize the public SQL condition without inspecting any stored rows.
-    /// None denotes a constant-false condition in the unsigned age domain.
-    pub fn age_range(self) -> Option<AgeRange> {
-        let (lower, upper) = match self.comparison {
-            Comparison::Equal => (self.threshold, self.threshold),
-            Comparison::AtLeast => (self.threshold, u8::MAX),
-            Comparison::LessThan => (0, self.threshold.checked_sub(1)?),
-            Comparison::AtMost => (0, self.threshold),
-            Comparison::GreaterThan => (self.threshold.checked_add(1)?, u8::MAX),
-            Comparison::Between { upper } => (self.threshold, upper),
-        };
-        (lower <= upper).then_some(AgeRange { lower, upper })
+    /// Exact final TRUE set after three-valued compilation, never a peer query field.
+    pub fn age_mask(self) -> [u8; 32] {
+        self.0
     }
 }
-
 impl Default for Predicate {
     fn default() -> Self {
-        Self {
-            comparison: Comparison::AtLeast,
-            threshold: 0,
-        }
+        Self([u8::MAX; 32])
     }
 }
 

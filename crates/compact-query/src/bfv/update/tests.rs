@@ -22,7 +22,7 @@ fn update_source_rejects_a_later_candidate_whose_authenticated_age_disagrees_wit
     assert!(matches!(
         owner.prepare_provable_update_from_source(
             &table.read_view(),
-            Some(AgeRange::equal(42)),
+            AgeSet256::equal(42),
             1,
             256,
             limits
@@ -78,7 +78,7 @@ fn update_source_rejects_authenticated_unterminated_later_posting_before_input_e
     assert!(matches!(
         owner.prepare_provable_update_from_source(
             &table.read_view(),
-            Some(AgeRange::equal(42)),
+            AgeSet256::equal(42),
             1,
             256,
             limits

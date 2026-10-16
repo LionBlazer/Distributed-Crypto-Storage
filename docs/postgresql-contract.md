@@ -15,7 +15,15 @@ larger workload and tail-latency contract remain to be established.
 ## Current execution boundary
 
 The fixed-schema `storage-client::Session` accepts genuine proved row SELECT,
-COUNT/SUM, atomic literal INSERT batches and additive amount UPDATE. INSERT admits
+COUNT/SUM, atomic literal INSERT batches and additive amount UPDATE. Their fixed
+age-only WHERE compiler supports AND/OR/NOT, parentheses, comparisons, [NOT]
+BETWEEN/IN, IS [NOT] NULL and boolean TRUE/FALSE/NULL, preserving SQL UNKNOWN until
+only TRUE ages enter the complete authenticated selection. Signed i64 comparison
+bounds are never truncated to u8; larger numeric literals and general typed
+expressions reject explicitly. One union shares each shard's existing selection
+budget and updates overlapping OR matches once. These are owner-side selection
+semantics under the existing proof limitations, not a new public predicate circuit.
+INSERT admits
 1..=256 incoming rows and a maximum 256-row completed relation per target shard.
 One statement prepares every target proof and compact image before any Store or
 authorization, then publishes one signed transition and retains one retry identity.

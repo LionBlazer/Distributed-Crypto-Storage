@@ -1,6 +1,6 @@
 //! Public synthetic rows and malformed public index fixtures; no participant data.
 use super::*;
-use crate::{MAX_ROWS, ROW_BYTES, SCHEMA};
+use crate::{AgeRange, MAX_ROWS, ROW_BYTES, SCHEMA};
 
 fn table_id() -> TableId {
     TableId::from_bytes([71; 32]).unwrap()
@@ -130,7 +130,7 @@ fn select(
         owner,
         index,
         &crate::ReadHeads::new(*table_id, head, index.commitment(), Limits::default())?,
-        range,
+        AgeSet256::try_from(range)?,
         MaterializationBudget::rows(budget),
         transferred,
     )
@@ -187,7 +187,7 @@ fn complete_selection_matches_uniform_skew_random_and_one_age_fixtures() {
             let expected: Vec<_> = rows
                 .iter()
                 .enumerate()
-                .filter(|(_, row)| range.contains(row.age))
+                .filter(|(_, row)| (range.lower..=range.upper).contains(&row.age))
                 .map(|(ordinal, _)| ordinal as u64)
                 .collect();
             if expected.len() > MAX_ROWS {
@@ -347,10 +347,11 @@ fn limited_candidates_keep_complete_sorted_membership_and_bound_only_the_prefix(
             &owner,
             &index,
             &heads,
-            AgeRange {
+            AgeSet256::try_from(AgeRange {
                 lower: 41,
                 upper: 42,
-            },
+            })
+            .unwrap(),
             limit,
             MaterializationBudget::rows(MAX_ROWS),
         )
@@ -364,10 +365,11 @@ fn limited_candidates_keep_complete_sorted_membership_and_bound_only_the_prefix(
             &owner,
             &index,
             &heads,
-            AgeRange {
+            AgeSet256::try_from(AgeRange {
                 lower: 41,
                 upper: 42,
-            },
+            })
+            .unwrap(),
             limit,
             MaterializationBudget::rows(budget),
         )
@@ -399,7 +401,7 @@ fn limited_candidates_keep_complete_sorted_membership_and_bound_only_the_prefix(
         &owner,
         &index,
         &heads,
-        AgeRange::equal(42),
+        AgeSet256::equal(42),
         usize::MAX,
         MaterializationBudget::rows(1),
     )
@@ -453,7 +455,7 @@ fn malformed_postings_are_rejected_at_the_selected_bucket_boundary() {
                         &owner,
                         &index,
                         &heads,
-                        AgeRange::equal(42),
+                        AgeSet256::equal(42),
                         limit,
                         MaterializationBudget::rows(MAX_ROWS),
                     ),
@@ -514,10 +516,11 @@ fn duplicate_addresses_across_distinct_age_buckets_are_rejected() {
                 &owner,
                 &index,
                 &heads,
-                AgeRange {
+                AgeSet256::try_from(AgeRange {
                     lower: 41,
                     upper: 42
-                },
+                })
+                .unwrap(),
                 limit,
                 MaterializationBudget::rows(MAX_ROWS),
             ),
@@ -850,7 +853,7 @@ fn million_row_identity_index_has_exact_bounded_geometry_and_sparse_lookup() {
             &owner,
             &table.index,
             &table.read_heads(),
-            AgeRange::equal(42),
+            AgeSet256::equal(42),
             0,
             MaterializationBudget::rows(MAX_ROWS),
         )
@@ -1061,7 +1064,7 @@ fn aggregate_capacity_is_separate_and_preflight_rejects_before_posting_traversal
                     Limits::default(),
                 )
                 .unwrap(),
-                AgeRange::equal(42),
+                AgeSet256::equal(42),
                 budget,
                 &mut transferred,
             );
@@ -1080,6 +1083,123 @@ fn aggregate_capacity_is_separate_and_preflight_rejects_before_posting_traversal
             } else {
                 assert_eq!(result.unwrap(), (0..count as u64).collect::<Vec<_>>());
             }
+        }
+    }
+}
+
+#[test]
+fn discontinuous_buckets_share_one_budget_and_keep_global_ordinal_order() {
+    let owner = compact_store::Owner::generate([91; 16]).unwrap();
+    let rows: Vec<_> = (0..15)
+        .map(|ordinal| PlainRow {
+            age: [7, 18, 99][ordinal % 3],
+            amount: ordinal as u16,
+        })
+        .collect();
+    let data = seal_data(&owner, &rows);
+    let index = build(&owner, &rows, data.commitment()).unwrap();
+    let heads = crate::ReadHeads::new(
+        table_id(),
+        data.commitment(),
+        index.commitment(),
+        Limits::default(),
+    )
+    .unwrap();
+    let mut mask = AgeSet256::equal(7).to_bytes();
+    mask[99 / 8] |= 1 << (99 % 8);
+    let set = AgeSet256::from_bytes(mask);
+    let actual = super::select(
+        &owner,
+        &index,
+        &heads,
+        set,
+        MaterializationBudget::rows(256),
+        &mut 0,
+    )
+    .unwrap();
+    assert_eq!(actual, vec![0, 2, 3, 5, 6, 8, 9, 11, 12, 14]);
+    let rows: Vec<_> = (0..401)
+        .map(|ordinal| PlainRow {
+            age: if ordinal == 200 {
+                18
+            } else if ordinal < 200 {
+                7
+            } else {
+                99
+            },
+            amount: 0,
+        })
+        .collect();
+    let data = seal_data(&owner, &rows);
+    let index = build(&owner, &rows, data.commitment()).unwrap();
+    let heads = crate::ReadHeads::new(
+        table_id(),
+        data.commitment(),
+        index.commitment(),
+        Limits::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        super::select(
+            &owner,
+            &index,
+            &heads,
+            set,
+            MaterializationBudget::rows(256),
+            &mut 0
+        ),
+        Err(Error::SelectionBudget {
+            selected: 400,
+            budget: 256
+        })
+    );
+}
+#[test]
+fn discontinuous_later_bucket_corruption_is_not_hidden_by_union_or_zero_limit() {
+    let owner = compact_store::Owner::generate([92; 16]).unwrap();
+    let data = seal_data(
+        &owner,
+        &[
+            PlainRow { age: 7, amount: 1 },
+            PlainRow { age: 18, amount: 2 },
+            PlainRow { age: 99, amount: 3 },
+        ],
+    );
+    let mut mask = AgeSet256::equal(7).to_bytes();
+    mask[99 / 8] |= 1 << (99 % 8);
+    let set = AgeSet256::from_bytes(mask);
+    for (last, expected) in [
+        (&[0u8][..], Error::DuplicateAddress),
+        (&[0x80u8][..], Error::InvalidIndex),
+    ] {
+        let index = raw_index(
+            &owner,
+            data.commitment(),
+            &[(7, 1, &[0]), (18, 1, &[1]), (99, 1, last)],
+        );
+        let heads = crate::ReadHeads::new(
+            table_id(),
+            data.commitment(),
+            index.commitment(),
+            Limits::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            super::select(
+                &owner,
+                &index,
+                &heads,
+                set,
+                MaterializationBudget::rows(256),
+                &mut 0
+            ),
+            Err(expected.clone())
+        );
+        #[cfg(feature = "bfv-experiment")]
+        for limit in [0, 1] {
+            assert!(
+                matches!(super::select_candidates(&owner,&index,&heads,set,limit,MaterializationBudget::rows(256)), Err(error) if error==expected)
+            );
         }
     }
 }

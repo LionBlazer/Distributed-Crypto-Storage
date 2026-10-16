@@ -285,7 +285,7 @@ fn prepare_statement(tokens: Vec<String>, number: usize) -> Result<SqlStatement,
         if previous.is_some_and(|previous| {
             (previous.bytes().next_back().is_some_and(word)
                 && token.bytes().next().is_some_and(word))
-                || (matches!(previous, "<" | ">") && token == "=")
+                || (matches!(previous, "<" | ">" | "!") && matches!(token.as_str(), "=" | ">"))
         }) {
             sql.push(' ');
         }
@@ -348,10 +348,12 @@ fn tokenize(source: &str) -> Result<Vec<Vec<String>>, ScriptError> {
                 cursor += 1;
             }
             statement.push(source[start..cursor].to_ascii_uppercase());
-        } else if b"(),*+=<>".contains(&bytes[cursor]) {
+        } else if b"(),*+=<>!-".contains(&bytes[cursor]) {
             let start = cursor;
             cursor += 1;
-            if matches!(bytes[start], b'<' | b'>') && bytes.get(cursor) == Some(&b'=') {
+            if (matches!(bytes[start], b'<' | b'>' | b'!') && bytes.get(cursor) == Some(&b'='))
+                || (bytes[start] == b'<' && bytes.get(cursor) == Some(&b'>'))
+            {
                 cursor += 1;
             }
             statement.push(source[start..cursor].to_string());
@@ -545,6 +547,9 @@ mod tests {
             "SELECT * FROM records FOR UPDATE",
             "SELECT * FROM records WHERE age < = 18",
             "SELECT * FROM records WHERE age > = 18",
+            "SELECT * FROM records WHERE age < > 18",
+            "SELECT * FROM records WHERE age ! = 18",
+            "SELECT * FROM records WHERE age IN(7,NULL) OR amount=1",
             "DELETE FROM records",
             "CREATE TABLE customers (id INT)",
             "INSERT INTO records VALUES (18,20),(256,30)",
@@ -556,6 +561,18 @@ mod tests {
             .unwrap_err();
             assert_eq!(error.failed_statement, 3, "{unsupported}");
             assert!(error.completed.is_empty());
+        }
+    }
+
+    #[test]
+    fn boolean_script_preserves_signed_bounds_null_semantics_and_compound_tokens() {
+        let script = SqlScript::parse("SELECT * FROM records WHERE age<>-1 AND NOT(age IN(7,NULL)) OR age!=+42; UPDATE records SET amount=amount+0 WHERE NOT(age BETWEEN NULL AND 10);").unwrap();
+        assert_eq!(script.statement_count(), 2);
+        for statement in script.statements() {
+            let SqlStatement::Query { sql, plan } = statement else {
+                panic!("query expected")
+            };
+            assert_eq!(sql_plan::parse_sql(sql).unwrap(), *plan);
         }
     }
 

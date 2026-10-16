@@ -1,6 +1,6 @@
-use crate::{
-    Column, Comparison, Error, MAX_SQL_BYTES, Predicate, Projection, QueryPlan, RowValues,
-};
+mod predicate;
+
+use crate::{Column, Error, MAX_SQL_BYTES, Projection, QueryPlan, RowValues};
 
 /// Parses the supported fixed-schema grammar, consuming the entire input.
 /// No SQL clause is silently discarded or evaluated in plaintext as a fallback.
@@ -9,7 +9,11 @@ pub fn parse_sql(sql: &str) -> Result<QueryPlan, Error> {
         return Err(Error::InvalidInput("SQL exceeds 4096 bytes".into()));
     }
     let tokens = tokenize(sql)?;
-    let mut parser = Parser { tokens, index: 0 };
+    let mut parser = Parser {
+        tokens,
+        index: 0,
+        predicate_budget: 0,
+    };
     let plan = if parser.take("SELECT") {
         parser.select()?
     } else if parser.take("INSERT") {
@@ -54,7 +58,7 @@ pub fn parse_sql(sql: &str) -> Result<QueryPlan, Error> {
 }
 
 // A deliberately small lexical grammar; unsupported punctuation, comments, quoted
-// identifiers, expressions and aliases fail explicitly rather than being ignored.
+// identifiers, arithmetic expressions and aliases fail explicitly rather than being ignored.
 fn tokenize(sql: &str) -> Result<Vec<String>, Error> {
     let bytes = sql.as_bytes();
     let mut tokens = Vec::new();
@@ -71,15 +75,17 @@ fn tokenize(sql: &str) -> Result<Vec<String>, Error> {
                 index += 1;
             }
             tokens.push(sql[start..index].to_ascii_uppercase());
-        } else if matches!(byte, b'<' | b'>') {
-            let length = if bytes.get(index + 1) == Some(&b'=') {
+        } else if matches!(byte, b'<' | b'>' | b'!') {
+            let length = if bytes.get(index + 1) == Some(&b'=')
+                || (byte == b'<' && bytes.get(index + 1) == Some(&b'>'))
+            {
                 2
             } else {
                 1
             };
             tokens.push(sql[index..index + length].into());
             index += length;
-        } else if b"(),*+=;".contains(&byte) {
+        } else if b"(),*+=;-".contains(&byte) {
             tokens.push((byte as char).to_string());
             index += 1;
         } else {
@@ -92,6 +98,7 @@ fn tokenize(sql: &str) -> Result<Vec<String>, Error> {
 struct Parser {
     tokens: Vec<String>,
     index: usize,
+    predicate_budget: usize,
 }
 
 impl Parser {
@@ -198,43 +205,10 @@ impl Parser {
         self.index += 1;
         Ok(value)
     }
-
-    fn predicate(&mut self) -> Result<Predicate, Error> {
-        if !self.take("WHERE") {
-            return Ok(Predicate::default());
-        }
-        self.expect("AGE")?;
-        if self.take("BETWEEN") {
-            let threshold = self.number("age must be in 0..=255")?;
-            self.expect("AND")?;
-            return Ok(Predicate {
-                comparison: Comparison::Between {
-                    upper: self.number("age must be in 0..=255")?,
-                },
-                threshold,
-            });
-        }
-        let comparison = if self.take(">=") {
-            Comparison::AtLeast
-        } else if self.take("<=") {
-            Comparison::AtMost
-        } else if self.take("<") {
-            Comparison::LessThan
-        } else if self.take(">") {
-            Comparison::GreaterThan
-        } else {
-            self.expect("=")?;
-            Comparison::Equal
-        };
-        Ok(Predicate {
-            comparison,
-            threshold: self.number("age must be in 0..=255")?,
-        })
-    }
 }
 
 fn unsupported(reason: &str) -> Error {
     Error::UnsupportedSql(format!(
-        "{reason}. Supported: SELECT *, age, amount, COUNT(*), SUM(amount), or COUNT(*), SUM(amount) FROM records; INSERT INTO records (age, amount) VALUES (A, N) [, (A, N) ...]; UPDATE records SET amount = amount + N. Optional read/update WHERE age =, <, <=, >, >= N or age BETWEEN lower AND upper. Row SELECT allows a non-negative LIMIT; execution resource budgets are checked by the executor."
+        "{reason}. Supported: SELECT *, age, amount, COUNT(*), SUM(amount), or COUNT(*), SUM(amount) FROM records; INSERT INTO records (age, amount) VALUES (A, N) [, (A, N) ...]; UPDATE records SET amount = amount + N. Optional read/update WHERE combines age comparisons, [NOT] BETWEEN, [NOT] IN, IS [NOT] NULL and TRUE/FALSE/NULL using AND/OR/NOT and parentheses. Comparison integer literals fit i64; NULL uses SQL three-valued logic. Row SELECT allows a non-negative LIMIT; execution resource budgets are checked by the executor."
     ))
 }

@@ -2,7 +2,7 @@
 #![cfg(feature = "bfv-experiment")]
 use bfv_query_core::{PublicSetup, PublicUpdateEvaluator};
 use compact_query::{
-    AgeRange, Error, PlainRow,
+    AgeSet256, Error, PlainRow,
     bfv::{Owner, POLYNOMIAL_AGGREGATE_CAPACITY},
 };
 use compact_store::Limits;
@@ -26,7 +26,7 @@ fn complete_authenticated_extreme_sources_have_genuine_aggregate_evidence_and_re
     let prepared = owner
         .prepare_provable_aggregate(
             &table,
-            Some(AgeRange::equal(18)),
+            AgeSet256::equal(18),
             POLYNOMIAL_AGGREGATE_CAPACITY,
             limits,
         )
@@ -68,7 +68,7 @@ fn complete_authenticated_extreme_sources_have_genuine_aggregate_evidence_and_re
     let second = owner
         .prepare_provable_aggregate(
             &table,
-            Some(AgeRange::equal(18)),
+            AgeSet256::equal(18),
             POLYNOMIAL_AGGREGATE_CAPACITY,
             limits,
         )
@@ -111,7 +111,7 @@ fn an_empty_complete_selection_has_encrypted_zero_count_and_sql_null_sum() {
             limits,
         )
         .unwrap();
-    for predicate in [None, Some(AgeRange::equal(7))] {
+    for predicate in [AgeSet256::empty(), AgeSet256::equal(7)] {
         let prepared = owner
             .prepare_provable_aggregate(&table, predicate, 256, limits)
             .unwrap();
@@ -157,7 +157,7 @@ fn equal_final_answers_from_different_band_sources_cannot_exchange_genuine_proof
     let first = owner
         .prepare_provable_aggregate(
             &table,
-            Some(AgeRange::equal(18)),
+            AgeSet256::equal(18),
             POLYNOMIAL_AGGREGATE_CAPACITY,
             limits,
         )
@@ -165,7 +165,7 @@ fn equal_final_answers_from_different_band_sources_cannot_exchange_genuine_proof
     let second = owner
         .prepare_provable_aggregate(
             &table,
-            Some(AgeRange::equal(7)),
+            AgeSet256::equal(7),
             POLYNOMIAL_AGGREGATE_CAPACITY,
             limits,
         )
@@ -207,11 +207,11 @@ fn complete_aggregate_selection_refuses_overflow_without_widening_row_or_identit
     let table = owner.seal(&rows, 256, limits).unwrap();
     for (predicate, budget, expected) in [
         (
-            Some(AgeRange::equal(18)),
+            AgeSet256::equal(18),
             usize::MAX,
             POLYNOMIAL_AGGREGATE_CAPACITY,
         ),
-        (Some(AgeRange::equal(18)), 255, 255),
+        (AgeSet256::equal(18), 255, 255),
     ] {
         assert!(
             matches!(owner.prepare_provable_aggregate(&table, predicate, budget, limits), Err(Error::SelectionBudget { selected: 2561, budget }) if budget == expected)
@@ -220,7 +220,7 @@ fn complete_aggregate_selection_refuses_overflow_without_widening_row_or_identit
     assert!(matches!(
         owner.prepare_provable_select(
             &table,
-            Some(AgeRange::equal(18)),
+            AgeSet256::equal(18),
             bfv_query_core::RowProjection::AgeAmount,
             usize::MAX,
             limits
@@ -231,7 +231,7 @@ fn complete_aggregate_selection_refuses_overflow_without_widening_row_or_identit
         })
     ));
     assert!(matches!(
-        owner.prepare_provable_update(&table, Some(AgeRange::equal(18)), 1, usize::MAX, limits),
+        owner.prepare_provable_update(&table, AgeSet256::equal(18), 1, usize::MAX, limits),
         Err(Error::SelectionBudget {
             selected: 2561,
             budget: 256
@@ -246,7 +246,7 @@ fn complete_aggregate_selection_refuses_overflow_without_widening_row_or_identit
     ));
     // Even a false predicate still checks the authenticated index/data binding.
     let empty = owner
-        .prepare_provable_aggregate(&table, Some(AgeRange::equal(7)), usize::MAX, limits)
+        .prepare_provable_aggregate(&table, AgeSet256::equal(7), usize::MAX, limits)
         .unwrap();
     assert!(!empty.request().is_empty());
 }

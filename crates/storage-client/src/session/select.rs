@@ -83,10 +83,7 @@ impl Session {
         let prepared = {
             let index = IndexPrefix(&image);
             let source = ReadView::new(heads.clone(), image.data(), &index)?;
-            let predicate = predicate.age_range().map(|range| AgeRange {
-                lower: range.lower,
-                upper: range.upper,
-            });
+            let predicate = compact_query::AgeSet256::from_bytes(predicate.age_mask());
             match limit {
                 Some(limit) => self
                     .data

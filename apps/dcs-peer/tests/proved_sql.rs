@@ -2,6 +2,8 @@
 //! The explicitly easy work target is a public test contract, never a production default.
 #[path = "../../../experiments/combined-sql/aggregate_fixture.rs"]
 mod aggregate_measurement;
+#[path = "support/boolean_predicates.rs"]
+mod boolean_predicates;
 #[path = "support/mutation_cancellation.rs"]
 mod mutation_cancellation;
 #[path = "support/rpc_observation.rs"]

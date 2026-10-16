@@ -3,6 +3,7 @@
 //! Historical experiment outputs are unverified; explicit proved BFV methods check
 //! genuine arithmetic evidence and complete authenticated input selection.
 #![forbid(unsafe_code)]
+mod age_set;
 #[cfg(feature = "bfv-experiment")]
 pub mod bfv;
 #[cfg(feature = "bfv-experiment")]
@@ -12,6 +13,7 @@ mod evaluator;
 mod identity;
 mod index;
 mod read;
+pub use age_set::AgeSet256;
 pub use identity::{RowId, RowIds, RowReference, RowReferences, TableId};
 pub use read::{PageSource, ReadHeads, ReadRequirements};
 #[cfg(feature = "bfv-experiment")]
@@ -111,6 +113,7 @@ impl AgeRange {
             upper: age,
         }
     }
+    #[cfg(feature = "tfhe-backend")]
     pub(crate) fn contains(self, age: u8) -> bool {
         age >= self.lower && age <= self.upper
     }

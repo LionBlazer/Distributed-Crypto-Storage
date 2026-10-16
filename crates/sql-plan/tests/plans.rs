@@ -21,19 +21,15 @@ fn unsupported_clauses_and_extra_statements_are_never_ignored() {
         "SELECT COUNT(*), SUM(amount) FROM other",
         "SELECT COUNT(*), SUM(amount) FROM records LIMIT 1",
         "SELECT COUNT(*), SUM(amount) FROM records ORDER BY age",
-        "SELECT COUNT(*), SUM(amount) FROM records WHERE age >= 18 OR age = 7",
         "SELECT COUNT(*), SUM(amount) FROM records; UPDATE records SET amount = amount + 1",
         "UPDATE records SET amount = 5",
         "UPDATE records SET amount = amount + 5, age = 18",
         "UPDATE records SET amount = amount + 5 -- ignored?",
         "SELECT COUNT(*), SUM(amount) FROM records;;",
-        "SELECT COUNT(*), SUM(amount) FROM records WHERE age <> 18",
         "SELECT COUNT(*), SUM(amount) FROM records WHERE age < = 18",
         "SELECT COUNT(*), SUM(amount) FROM records WHERE age BETWEEN 18 42",
         "SELECT COUNT(*), SUM(amount) FROM records WHERE age BETWEEN 18 AND",
         "SELECT COUNT(*), SUM(amount) FROM records WHERE age BETWEEN 18 OR 42",
-        "SELECT COUNT(*), SUM(amount) FROM records WHERE age BETWEEN 18 AND 42 AND age = 19",
-        "SELECT COUNT(*), SUM(amount) FROM records WHERE age <= 18 AND age > 0",
         "SELECT COUNT(*), SUM(amount) FROM records WHERE age = 1e2",
         "SELECT age, age FROM records",
         "SELECT age, amount, age FROM records",
@@ -97,11 +93,6 @@ fn row_projections_and_limits_have_explicit_plans_and_requested_column_order() {
 #[test]
 fn sql_values_must_fit_the_encrypted_column_types() {
     for sql in [
-        "SELECT COUNT(*), SUM(amount) FROM records WHERE age = 256",
-        "SELECT COUNT(*), SUM(amount) FROM records WHERE age = -1",
-        "SELECT COUNT(*), SUM(amount) FROM records WHERE age < 256",
-        "SELECT COUNT(*), SUM(amount) FROM records WHERE age BETWEEN 0 AND 256",
-        "SELECT COUNT(*), SUM(amount) FROM records WHERE age BETWEEN -1 AND 18",
         "UPDATE records SET amount = amount + 65536",
         "UPDATE records SET amount = amount + 1.5",
     ] {
@@ -138,13 +129,14 @@ fn age_comparisons_normalize_exact_endpoints_without_unsigned_wrap() {
             panic!("expected aggregate for {sql}");
         };
 
-        assert_eq!(
-            predicate
-                .age_range()
-                .map(|range| (range.lower, range.upper)),
-            bounds,
-            "{sql}"
-        );
+        let expected: Vec<u8> = bounds
+            .map(|(lower, upper)| (lower..=upper).collect())
+            .unwrap_or_default();
+        let mask = predicate.age_mask();
+        let actual: Vec<u8> = (0..=u8::MAX)
+            .filter(|age| mask[usize::from(*age) / 8] & (1 << (*age % 8)) != 0)
+            .collect();
+        assert_eq!(actual, expected, "{sql}");
     }
 }
 

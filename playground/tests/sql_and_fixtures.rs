@@ -76,3 +76,13 @@ fn invalid_fixture_values_or_resource_limits_are_rejected() {
     assert!(parse_rows(&" ".repeat(16385)).is_err());
     assert!(sample_rows(MAX_LAB_ROWS + 1).is_err());
 }
+
+#[test]
+fn historical_lab_rejects_discontinuous_predicates_before_row_materialization() {
+    // No database is present: the domain capability error must precede any data access.
+    let mut lab = fhe_playground::LabEngine::default();
+    let error = lab
+        .execute("SELECT * FROM records WHERE age=7 OR age=99")
+        .unwrap_err();
+    assert!(error.to_string().contains("historical laboratory"));
+}

@@ -435,6 +435,26 @@ pub(super) fn synchronize_peers(
     Ok(())
 }
 
+/// Range-only historical BFV experiments cannot execute a discontinuous SQL set.
+pub(super) fn admitted_range(plan: &QueryPlan) -> Result<Option<AgeRange>, LabError> {
+    let predicate = match plan {
+        QueryPlan::Insert { .. } => return Ok(None),
+        QueryPlan::Select { predicate, .. }
+        | QueryPlan::Aggregate { predicate }
+        | QueryPlan::Count { predicate }
+        | QueryPlan::Sum { predicate }
+        | QueryPlan::AddAmount { predicate, .. } => predicate,
+    };
+    let mask = compact_query::AgeSet256::from_bytes(predicate.age_mask());
+    let ages: Vec<_> = mask.ages().collect();
+    let Some((&lower, &upper)) = ages.first().zip(ages.last()) else {
+        return Ok(None);
+    };
+    if ages.len() != usize::from(upper) - usize::from(lower) + 1 {
+        return Err(LabError::UnsupportedSql("The historical laboratory accepts only contiguous age sets; the live process-backed Session supports proved boolean predicates".into()));
+    }
+    Ok(Some(AgeRange { lower, upper }))
+}
 pub(super) fn execute(
     db: &Database,
     plan: QueryPlan,
@@ -452,16 +472,11 @@ pub(super) fn execute(
         return insert(db, replicas, &incoming, progress);
     }
     if let QueryPlan::Select {
-        predicate,
-        projection,
-        limit,
+        projection, limit, ..
     } = plan
     {
         let mut selected = Vec::new();
-        if let Some(range) = predicate.age_range().map(|range| AgeRange {
-            lower: range.lower,
-            upper: range.upper,
-        }) {
+        if let Some(range) = admitted_range(&plan)? {
             for shard in &replicas.shards {
                 let executor = shard
                     .executor(db)
@@ -491,18 +506,13 @@ pub(super) fn execute(
         }
         return Ok((project_rows(selected, projection, limit), None));
     }
-    let (predicate, delta) = match plan {
-        QueryPlan::Aggregate { predicate }
-        | QueryPlan::Count { predicate }
-        | QueryPlan::Sum { predicate } => (predicate, None),
-        QueryPlan::AddAmount { predicate, delta } => (predicate, Some(delta)),
+    let delta = match plan {
+        QueryPlan::Aggregate { .. } | QueryPlan::Count { .. } | QueryPlan::Sum { .. } => None,
+        QueryPlan::AddAmount { delta, .. } => Some(delta),
         QueryPlan::Select { .. } => unreachable!("row reads returned above"),
         QueryPlan::Insert { .. } => unreachable!("insert returned above"),
     };
-    let Some(range) = predicate.age_range().map(|range| AgeRange {
-        lower: range.lower,
-        upper: range.upper,
-    }) else {
+    let Some(range) = admitted_range(&plan)? else {
         return Ok((
             if delta.is_some() {
                 QueryOutcome::Updated { committed: true }

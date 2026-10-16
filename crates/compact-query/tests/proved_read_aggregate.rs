@@ -2,7 +2,7 @@
 #![cfg(feature = "bfv-experiment")]
 use bfv_query_core::{PublicSetup, PublicUpdateEvaluator};
 use compact_query::{
-    AgeRange, Error, PageSource, PlainRow, ReadHeads, ReadView, TableId,
+    AgeSet256, Error, PageSource, PlainRow, ReadHeads, ReadView, TableId,
     bfv::{Owner, POLYNOMIAL_AGGREGATE_CAPACITY},
 };
 use compact_store::{Commitment, Limits, LookupResponse, VerifiedPage};
@@ -79,7 +79,7 @@ fn million_row_posting_prefix_completes_the_same_checked_aggregate_without_the_i
         let prepared = owner
             .prepare_provable_aggregate_from_source(
                 &view,
-                Some(AgeRange::equal(42)),
+                AgeSet256::equal(42),
                 POLYNOMIAL_AGGREGATE_CAPACITY,
                 limits,
             )
@@ -170,7 +170,7 @@ fn aggregate_completion_rechecks_table_identity_each_head_and_exact_checked_stat
     ];
     for alternative in alternatives {
         let prepared = owner
-            .prepare_provable_aggregate_from_source(&view, Some(AgeRange::equal(18)), 300, limits)
+            .prepare_provable_aggregate_from_source(&view, AgeSet256::equal(18), 300, limits)
             .unwrap();
         let generated = bfv_query_proof::prove(
             &public
@@ -206,7 +206,7 @@ fn aggregate_completion_rechecks_table_identity_each_head_and_exact_checked_stat
         ));
     }
     let prepared = owner
-        .prepare_provable_aggregate_from_source(&view, Some(AgeRange::equal(18)), 300, limits)
+        .prepare_provable_aggregate_from_source(&view, AgeSet256::equal(18), 300, limits)
         .unwrap();
     let generated = bfv_query_proof::prove(
         &public
@@ -218,7 +218,7 @@ fn aggregate_completion_rechecks_table_identity_each_head_and_exact_checked_stat
         .check_aggregate_proof_for_heads(&heads, &prepared, generated.output(), generated.proof())
         .unwrap();
     let second = owner
-        .prepare_provable_aggregate_from_source(&view, Some(AgeRange::equal(18)), 300, limits)
+        .prepare_provable_aggregate_from_source(&view, AgeSet256::equal(18), 300, limits)
         .unwrap();
     assert!(matches!(
         owner.complete_checked_aggregate_for_heads(&heads, second, generated.output(), checked),
@@ -258,7 +258,7 @@ fn static_aggregate_rejects_incomplete_postings_and_budget_before_encrypting_an_
     assert!(matches!(
         owner.prepare_provable_aggregate_from_source(
             &view,
-            Some(AgeRange::equal(255)),
+            AgeSet256::equal(255),
             usize::MAX,
             limits
         ),
@@ -276,7 +276,7 @@ fn static_aggregate_rejects_incomplete_postings_and_budget_before_encrypting_an_
     .unwrap();
     let alias_view = ReadView::new(alias, table.snapshot(), &prefix).unwrap();
     assert!(matches!(
-        owner.prepare_provable_aggregate_from_source(&alias_view, None, 2560, limits),
+        owner.prepare_provable_aggregate_from_source(&alias_view, AgeSet256::empty(), 2560, limits),
         Err(Error::WrongVersion)
     ));
     let smaller = owner
@@ -297,7 +297,7 @@ fn static_aggregate_rejects_incomplete_postings_and_budget_before_encrypting_an_
     let view = ReadView::new(smaller.read_heads(), smaller.snapshot(), &prefix).unwrap();
     assert!(
         owner
-            .prepare_provable_aggregate_from_source(&view, Some(AgeRange::equal(255)), 2560, limits)
+            .prepare_provable_aggregate_from_source(&view, AgeSet256::equal(255), 2560, limits)
             .is_err()
     );
     assert_eq!(

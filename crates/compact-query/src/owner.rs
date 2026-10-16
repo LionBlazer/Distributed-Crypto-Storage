@@ -93,7 +93,7 @@ impl Owner {
                     &self.store,
                     &table.index,
                     &table.read_heads(),
-                    range,
+                    crate::AgeSet256::try_from(range)?,
                     index::MaterializationBudget::rows(budget),
                     &mut index_response_bytes,
                 )?

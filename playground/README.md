@@ -278,3 +278,10 @@ therefore rejects without launching a child or rewriting that workspace. This
 manager creates unique process roots; it has no existing-workspace reopen API,
 persisted owner-credential file or bootstrap JSON file (bootstrap uses stdin).
 See the [custody namespace contract](../docs/salted-custody-objects.md).
+
+The live process-backed fixed-table SQL path accepts bounded boolean age WHERE
+conditions through storage-client Session and genuine FHE/proof operations. Its
+32-byte compiled condition remains owner-side. The historical local LabEngine
+range-only experiment rejects discontinuous conditions before materializing rows;
+it is not a live fallback. Typed nullable catalogs retain their separate predicate
+contract. See [client ownership and limits](../crates/storage-client/README.md).

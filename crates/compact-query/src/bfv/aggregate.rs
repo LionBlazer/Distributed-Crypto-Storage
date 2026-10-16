@@ -41,7 +41,7 @@ impl Owner {
     pub fn prepare_provable_aggregate(
         &self,
         table: &Table,
-        predicate: Option<AgeRange>,
+        predicate: AgeSet256,
         budget: usize,
         limits: Limits,
     ) -> Result<PreparedProvableAggregate> {
@@ -52,7 +52,7 @@ impl Owner {
     pub fn prepare_provable_aggregate_from_source(
         &self,
         source: &crate::ReadView<'_>,
-        predicate: Option<AgeRange>,
+        predicate: AgeSet256,
         budget: usize,
         limits: Limits,
     ) -> Result<PreparedProvableAggregate> {

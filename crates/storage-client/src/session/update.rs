@@ -60,10 +60,7 @@ impl Session {
                 (remote, UpdateSource::Static(image))
             }
         };
-        let predicate = predicate.age_range().map(|range| AgeRange {
-            lower: range.lower,
-            upper: range.upper,
-        });
+        let predicate = compact_query::AgeSet256::from_bytes(predicate.age_mask());
         let prepared = match &source {
             UpdateSource::Full(table) => self.data.owner.prepare_provable_update(
                 table,

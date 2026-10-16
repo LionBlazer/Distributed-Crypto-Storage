@@ -103,7 +103,7 @@ impl Owner {
     pub fn prepare_provable_update(
         &self,
         table: &Table,
-        predicate: Option<AgeRange>,
+        predicate: AgeSet256,
         delta: u16,
         budget: usize,
         limits: Limits,
@@ -123,7 +123,7 @@ impl Owner {
     pub fn prepare_provable_update_from_source(
         &self,
         source: &ReadView<'_>,
-        predicate: Option<AgeRange>,
+        predicate: AgeSet256,
         delta: u16,
         budget: usize,
         limits: Limits,

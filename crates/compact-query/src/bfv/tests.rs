@@ -42,7 +42,7 @@ fn limited_select_validates_all_candidate_pages_once_and_rejects_discarded_wrong
         let prepared = owner
             .prepare_provable_select_limited_from_source(
                 &source,
-                Some(AgeRange::equal(42)),
+                AgeSet256::equal(42),
                 RowProjection::Amount,
                 limit,
                 256,
@@ -61,7 +61,7 @@ fn limited_select_validates_all_candidate_pages_once_and_rejects_discarded_wrong
         let source =
             crate::ReadView::new(table.read_heads(), &counted, table.encrypted_index()).unwrap();
         assert!(matches!(owner.prepare_provable_select_limited_from_source(
-            &source, Some(AgeRange::equal(42)), RowProjection::Amount, limit, 256, limits,
+            &source, AgeSet256::equal(42), RowProjection::Amount, limit, 256, limits,
         ), Err(Error::Codec(message)) if message == "Candidate page unavailable"));
         assert_eq!(*counted.pages.borrow(), (0..18).collect::<Vec<_>>());
     }
@@ -81,7 +81,7 @@ fn limited_select_validates_all_candidate_pages_once_and_rejects_discarded_wrong
         assert!(matches!(
             owner.prepare_provable_select_limited_from_source(
                 &table.read_view(),
-                Some(AgeRange::equal(42)),
+                AgeSet256::equal(42),
                 RowProjection::Amount,
                 limit,
                 256,

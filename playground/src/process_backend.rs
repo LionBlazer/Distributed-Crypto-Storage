@@ -1571,6 +1571,74 @@ mod tests {
 
     #[test]
     #[ignore = "starts owned peer daemons; build dcs-peer and set DCS_PEER_BIN"]
+    fn boolean_scripts_preflight_every_statement_and_use_real_proved_process_results() {
+        let mut backend = ProcessBackend::new().unwrap();
+        backend
+            .import(DatabaseDraft {
+                name: "boolean-script".into(),
+                rows: vec![
+                    compact_query::PlainRow {
+                        age: 7,
+                        amount: 255,
+                    },
+                    compact_query::PlainRow { age: 18, amount: 1 },
+                    compact_query::PlainRow {
+                        age: 99,
+                        amount: 256,
+                    },
+                ],
+                peers: vec![default_peer_config(1), default_peer_config(2)],
+            })
+            .unwrap();
+        let initial = backend.database.as_ref().unwrap().version();
+        let error = backend
+            .execute_sql(
+                1,
+                "UPDATE records SET amount=amount+1; SELECT * FROM records WHERE TRUE OR amount=1;",
+            )
+            .unwrap_err();
+        assert!(error.to_string().contains("Statement 2"));
+        assert_eq!(backend.database.as_ref().unwrap().version(), initial);
+        backend.traffic.lock().unwrap().clear();
+
+        let result = backend.execute_sql(1,"SELECT amount,age FROM records WHERE age IN(7,99,NULL); UPDATE records SET amount=amount+1 WHERE age=7 OR age IN(7,99); SELECT * FROM records WHERE age IN(7,99); SELECT COUNT(*),SUM(amount) FROM records WHERE age NOT IN(7,NULL);").unwrap();
+
+        let storage_client::StatementResult::Executed(VerifiedResult::Selected {
+            ref rows, ..
+        }) = result.statements[0].result
+        else {
+            panic!("proved projection expected")
+        };
+        assert_eq!(rows, &[vec![255, 7], vec![256, 99]]);
+        assert!(matches!(
+            result.statements[1].result,
+            storage_client::StatementResult::Executed(VerifiedResult::Updated {
+                affected_rows: 2,
+                ..
+            })
+        ));
+        let storage_client::StatementResult::Executed(VerifiedResult::Selected {
+            ref rows, ..
+        }) = result.statements[2].result
+        else {
+            panic!("proved updated rows expected")
+        };
+        assert_eq!(rows, &[vec![7, 256], vec![99, 257]]);
+        assert!(matches!(
+            result.statements[3].result,
+            storage_client::StatementResult::Executed(VerifiedResult::Aggregated {
+                count: 0,
+                sum: None,
+                ..
+            })
+        ));
+        assert!(backend.traffic.lock().unwrap().iter().any(
+            |event| event.operation == "fhe-proof" && event.packet.kind == PacketKind::Response
+        ));
+    }
+
+    #[test]
+    #[ignore = "starts owned peer daemons; build dcs-peer and set DCS_PEER_BIN"]
     fn validated_import_creates_real_ciphertext_and_never_replaces_an_existing_database() {
         let mut backend = ProcessBackend::new().unwrap();
 

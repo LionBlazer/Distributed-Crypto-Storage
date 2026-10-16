@@ -1,7 +1,7 @@
 //! Designated-client composition of complete authenticated selection and real FHE proofs.
 //! Agreement/freshness and publication belong to the network client, not this module.
 use super::*;
-use crate::{check_schema, index, random_id, storage};
+use crate::{index, random_id, storage};
 use bfv_core::QueryContext;
 
 pub struct VerifiedSelection {
@@ -43,27 +43,12 @@ impl Owner {
     pub(super) fn proof_selection_read(
         &self,
         source: &crate::ReadView<'_>,
-        predicate: Option<AgeRange>,
+        predicate: AgeSet256,
         budget: index::MaterializationBudget,
         limits: Limits,
     ) -> Result<ExactSelection> {
-        let heads = source.heads();
-        match predicate {
-            Some(range) => self.select_exact_read(source, range, budget, limits),
-            // None is the SQL planner's schema-proven constant-false predicate.
-            // It examines no stored field and is not a substitute for filtering data.
-            None => {
-                check_schema(heads.data())?;
-                index::check_binding(&self.store, source.index, heads)?;
-                Ok(ExactSelection {
-                    data_head: heads.data().clone(),
-                    index_head: heads.index().clone(),
-                    ordinals: vec![],
-                    fields: vec![],
-                    pages: BTreeMap::new(),
-                })
-            }
-        }
+        // Even an empty SQL TRUE set authenticates schema, BOTH heads and TableId.
+        self.select_exact_read(source, predicate, budget, limits)
     }
 
     /// Complete owner-built index authentication precedes encryption of original rows.
@@ -71,7 +56,7 @@ impl Owner {
     pub fn prepare_provable_select(
         &self,
         table: &Table,
-        predicate: Option<AgeRange>,
+        predicate: AgeSet256,
         projection: RowProjection,
         budget: usize,
         limits: Limits,
@@ -89,7 +74,7 @@ impl Owner {
     pub fn prepare_provable_select_from_source(
         &self,
         source: &crate::ReadView<'_>,
-        predicate: Option<AgeRange>,
+        predicate: AgeSet256,
         projection: RowProjection,
         budget: usize,
         limits: Limits,
@@ -111,17 +96,14 @@ impl Owner {
     pub fn prepare_provable_select_limited_from_source(
         &self,
         source: &crate::ReadView<'_>,
-        predicate: Option<AgeRange>,
+        predicate: AgeSet256,
         projection: RowProjection,
         limit: usize,
         budget: usize,
         limits: Limits,
     ) -> Result<PreparedSelect> {
         let budget = index::MaterializationBudget::rows(budget);
-        let selection = match predicate {
-            Some(range) => self.select_limited_read(source, range, limit, budget, limits)?,
-            None => self.proof_selection_read(source, None, budget, limits)?,
-        };
+        let selection = self.select_limited_read(source, predicate, limit, budget, limits)?;
         self.prepare_selected(source, selection, projection)
     }
 

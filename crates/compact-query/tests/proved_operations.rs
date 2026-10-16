@@ -6,17 +6,18 @@ use bfv_query_proof::{GeneratedOperation, Operation, prove};
 use compact_query::bfv::{
     Evaluator, Owner, PreparedSelect, PreparedUpdate, RowProjection, SelectedRow,
 };
-use compact_query::{AgeRange, Error, PlainRow, Table};
+use compact_query::{AgeRange, AgeSet256, Error, PlainRow, Table};
 use compact_store::Limits;
 
 fn row(age: u8, amount: u16) -> PlainRow {
     PlainRow { age, amount }
 }
-fn range_all() -> Option<AgeRange> {
-    Some(AgeRange {
+fn range_all() -> AgeSet256 {
+    AgeSet256::try_from(AgeRange {
         lower: 0,
         upper: 255,
     })
+    .unwrap()
 }
 fn encrypted_images(table: &Table) -> (Vec<u8>, Vec<u8>) {
     (table.snapshot().encode(), table.encrypted_index().encode())
@@ -156,7 +157,7 @@ fn proved_select_covers_complete_postings_across_pages_and_keeps_empty_count_enc
     let prepared = owner
         .prepare_provable_select(
             &table,
-            Some(AgeRange::equal(18)),
+            AgeSet256::equal(18),
             RowProjection::Amount,
             256,
             limits,
@@ -185,7 +186,7 @@ fn proved_select_covers_complete_postings_across_pages_and_keeps_empty_count_enc
     assert!(matches!(
         owner.prepare_provable_select(
             &table,
-            Some(AgeRange::equal(18)),
+            AgeSet256::equal(18),
             RowProjection::Amount,
             241,
             limits
@@ -198,7 +199,7 @@ fn proved_select_covers_complete_postings_across_pages_and_keeps_empty_count_enc
 
     // Neither an authenticated absent bucket nor a schema-proven false predicate
     // places private match bits/counts in the public projection polynomial.
-    for predicate in [Some(AgeRange::equal(99)), None] {
+    for predicate in [AgeSet256::equal(99), AgeSet256::empty()] {
         let prepared = owner
             .prepare_provable_select(&table, predicate, RowProjection::Amount, 256, limits)
             .unwrap();
@@ -338,7 +339,7 @@ fn proved_update_writes_decoded_carries_but_global_overflow_publishes_neither_im
     let original_ids = owner.row_references(&table, &[0, 1, 2]).unwrap();
     let sizes = (table.canonical_data_bytes(), table.encrypted_index_bytes());
     let prepared = owner
-        .prepare_provable_update(&table, Some(AgeRange::equal(42)), 1, 256, limits)
+        .prepare_provable_update(&table, AgeSet256::equal(42), 1, 256, limits)
         .unwrap();
     let generated = prove_update(&public, &prepared);
 
@@ -392,7 +393,7 @@ fn proved_update_writes_decoded_carries_but_global_overflow_publishes_neither_im
         );
     }
     let prepared = owner
-        .prepare_provable_update(&staged, Some(AgeRange::equal(42)), 0, 256, limits)
+        .prepare_provable_update(&staged, AgeSet256::equal(42), 0, 256, limits)
         .unwrap();
     let generated = prove_update(&public, &prepared);
     let unchanged = owner
@@ -816,7 +817,7 @@ fn a_real_posting_prefix_and_full_snapshot_share_complete_select_and_genuine_pro
         let prepared = owner
             .prepare_provable_select_from_source(
                 view,
-                Some(AgeRange::equal(18)),
+                AgeSet256::equal(18),
                 RowProjection::Amount,
                 256,
                 limits,
@@ -931,4 +932,83 @@ fn checked_select_rechecks_logical_table_and_each_current_head_before_decrypting
         ),
         Err(Error::WrongVersion)
     ));
+}
+
+#[test]
+fn disjoint_rows_keep_real_proof_binding_to_the_exact_selection() {
+    let limits = Limits::default();
+    let (owner, peer) = Owner::generate([96; 16]).unwrap();
+    let public = public_evaluator(&peer);
+    let table = owner
+        .seal(
+            &[
+                row(7, 255),
+                row(18, 1),
+                row(99, 256),
+                row(42, 2),
+                row(7, 65535),
+            ],
+            2,
+            limits,
+        )
+        .unwrap();
+    let original = encrypted_images(&table);
+    let mut bytes = AgeSet256::equal(7).to_bytes();
+    bytes[99 / 8] |= 1 << (99 % 8);
+    let prepared = owner
+        .prepare_provable_select(
+            &table,
+            AgeSet256::from_bytes(bytes),
+            RowProjection::Amount,
+            256,
+            limits,
+        )
+        .unwrap();
+    let (_, generated) = prove_select(&public, &prepared);
+    let mut other_bytes = AgeSet256::equal(7).to_bytes();
+    other_bytes[18 / 8] |= 1 << (18 % 8);
+    let other = owner
+        .prepare_provable_select(
+            &table,
+            AgeSet256::from_bytes(other_bytes),
+            RowProjection::Amount,
+            256,
+            limits,
+        )
+        .unwrap();
+    assert_eq!(other.selected_rows(), prepared.selected_rows());
+    assert!(
+        owner
+            .check_select_proof(
+                &table.read_heads(),
+                &other,
+                generated.output(),
+                generated.proof()
+            )
+            .is_err()
+    );
+    let actual = owner
+        .complete_proved_select(&table, prepared, generated.output(), generated.proof())
+        .unwrap();
+    assert_eq!(
+        actual.rows(),
+        &[
+            SelectedRow {
+                ordinal: 0,
+                age: None,
+                amount: Some(255)
+            },
+            SelectedRow {
+                ordinal: 2,
+                age: None,
+                amount: Some(256)
+            },
+            SelectedRow {
+                ordinal: 4,
+                age: None,
+                amount: Some(65535)
+            }
+        ]
+    );
+    assert_eq!(encrypted_images(&table), original);
 }

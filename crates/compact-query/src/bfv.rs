@@ -1,6 +1,6 @@
 //! Explicit owner-online exact-index BFV operations. No FullScan/coarse shortcut exists here.
 //! Input authentication and owner-local UPDATE checking do not prove malicious peer arithmetic.
-use crate::{AgeRange, AppliedUpdate, Error, PlainRow, Result, Table};
+use crate::{AgeRange, AgeSet256, AppliedUpdate, Error, PlainRow, Result, Table};
 use bfv_query_core as bfv_core;
 use compact_store::{Commitment, Limits};
 use std::{collections::BTreeMap, sync::Arc};

@@ -294,16 +294,20 @@ impl Owner {
         budget: index::MaterializationBudget,
         limits: Limits,
     ) -> Result<ExactSelection> {
-        self.select_exact_read(&table.read_view(), predicate, budget, limits)
+        self.select_exact_read(
+            &table.read_view(),
+            AgeSet256::try_from(predicate)?,
+            budget,
+            limits,
+        )
     }
     pub(super) fn select_exact_read(
         &self,
         source: &crate::ReadView<'_>,
-        predicate: AgeRange,
+        predicate: AgeSet256,
         budget: index::MaterializationBudget,
         limits: Limits,
     ) -> Result<ExactSelection> {
-        predicate.validate()?;
         let heads = source.heads();
         check_schema(heads.data())?;
         let ordinals = index::select(&self.store, source.index, heads, predicate, budget, &mut 0)?;
@@ -354,7 +358,7 @@ impl Owner {
     pub(super) fn select_limited_read(
         &self,
         source: &crate::ReadView<'_>,
-        predicate: AgeRange,
+        predicate: AgeSet256,
         limit: usize,
         budget: index::MaterializationBudget,
         limits: Limits,
