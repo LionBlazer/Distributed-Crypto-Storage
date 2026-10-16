@@ -464,3 +464,60 @@ fixed prefix. It exposes no raw siblings or mutable bytes. Owner reissue still
 requires an independently supplied exact head, owner AEAD authentication and
 format-specific bounds. This accessor grants no full-object custody, SQL
 completeness, authorization or freshness.
+
+## Opt-in chunk I/O feasibility fixture
+
+The ignored owning test
+`store::chunk_io_feasibility::million_row_chunk_io_reconstructs_and_audits_after_exact_delta_reuse_and_base_gc`
+is a PUBLIC NONSECRET filesystem candidate, not a live storage backend. It uses
+real CSTORE AEAD/Merkle images with the existing million-row custody geometry and
+actual `Store::put_delta` reconstruction. Its generic encrypted index payload is
+not a semantically valid compact-query Table, and it measures no SQL/FHE result.
+The owner decrypts every final data page and checks the complete public byte vector.
+No key/export API, production storage path, wire, Status or quota contract changes.
+
+Run it explicitly with Rust 1.99 in an isolated target after coordinating other
+heavy jobs. This command is a reproduction recipe, not an executed measurement:
+
+```powershell
+$env:CARGO_BUILD_JOBS = '2'
+$env:RAYON_NUM_THREADS = '2'
+$env:DCS_CHUNK_IO_FEASIBILITY = '1'
+cargo test --release --locked --offline -p peer-runtime --lib store::chunk_io_feasibility::million_row_chunk_io_reconstructs_and_audits_after_exact_delta_reuse_and_base_gc -- --ignored --exact --nocapture --test-threads=1
+```
+
+The fixture creates a fresh `dcs-public-chunk-io-<pid>-<time>` directory in the OS
+temporary directory and prints its path before input preparation. It retains all
+nonsecret artifacts, including on failure; it never deletes another run directory.
+Prepare at least 512 MiB free for its retained file contents, plus filesystem
+allocation/metadata overhead. The bounded geometry is not a peak-RAM guarantee.
+
+Both single-file and chunk writers call the unchanged `objects::write_disk`.
+Their write intervals include serialization, actual writes and successful file
+syncs. Read intervals include actual complete reads, both canonical image audits,
+exact object/head checks and byte comparison with inputs prepared outside timing.
+Final owner decryption is outside those intervals. OS caches are uncontrolled;
+these are neither cold-disk timings nor complete accepted SQL latency samples.
+`CHUNK_IO_SAMPLE` records every interval, including the expected corrupted-tail
+rejection. Counters describe explicit Rust data/manifest file opens, read/write
+calls and bytes, successful `sync_all`/unlink calls, and exact reused payload bytes;
+they are not kernel syscall tracing or NTFS allocated-space measurements.
+
+Source geometry predicts 574 raw 64-KiB chunks (last 52,474 bytes), 574 payload
+opens plus one manifest open on a complete read, and 574 chunk syncs plus one
+manifest sync for an initial Full/Copy. This particular real Delta changes chunks
+0 and 48, so the candidate must create exactly two chunks and sync its new manifest.
+These are source-derived counts, not measured speedups. No audit is cached across
+rereads: only a freshly read and fully audited immutable base permits byte-for-byte
+reuse during that one write.
+
+The test-only manifest uses the pinned serializer and must match its owned expected
+bytes exactly; it has no accepting persistent parser or production reopen contract.
+Retirement writes only through the manifest's retained original creation handle
+inside that fresh owned fixture. The ordering exercise syncs that handle before
+unlinking the base manifest and its two unshared chunks, then rereads/audits and
+owner-decrypts the complete surviving target. It does not establish hostile local
+namespace/hardlink race protection, arbitrary power-loss recovery, production GC,
+quota accounting, or feasibility of an unbounded file population.
+The [single observed I/O report](../../experiments/storage-io/README.md) retains
+all intervals, initial Full/Copy regressions and the limited fresh-directory scope.
