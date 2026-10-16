@@ -56,3 +56,31 @@ metadata. `tests/proved_faults.rs` checks damaged/missing replicas and unauthori
 administration/invalid publication. Fixtures are explicitly public; credentials and owner keys are
 fresh and stay in memory. Child handles own cleanup; no unrelated process is
 inspected or stopped. Generated ciphertext stays under ignored `.local/`.
+
+For a separate full-UPDATE RPC cost observation, set `DCS_TEST_RPC_PROFILE=1`
+when running the existing genuine process scenario:
+
+```powershell
+$env:RAYON_NUM_THREADS = '8'
+$env:DCS_TEST_PEER_THREADS = '8'
+$env:DCS_TEST_RPC_PROFILE = '1'
+cargo test --release --locked -p dcs-peer --test proved_sql proved_select_insert_update_survive_a_process_loss_and_journal_restart -- --exact --nocapture --test-threads=1
+```
+
+The test-only recorder attaches the existing public `RpcActivity` and `Trace`
+callbacks and records only the UPDATE envelope. It retains at most 4,096 metadata
+events and reports an explicit `truncated` flag. `rpc_observation=` JSON lines
+contain peer ordinals, request IDs, operation names, monotonic offsets, actual
+application-frame byte counts, elapsed time and success/failure. They contain no
+payload, row, SQL, proof or credential. Output is emitted after the UPDATE; the
+fixture's existing public SQL timing labels and all correctness assertions remain
+unchanged. Unset the flag for ordinary latency samples.
+
+Completed RPC elapsed time begins before wire serialization. Subtracting it from
+the callback offset reconstructs an approximate start. Request-sent and reply-read
+markers divide the call into encode/connect/write, combined peer/wire/read, and
+response-decoding tail. These combined phases do not isolate peer STARK or disk
+sync time. Gaps without a client RPC include local proof verification, staging and
+request construction. Concurrent RPC intervals must be merged before attributing
+wall time; summed RPC elapsed time can exceed the critical path. This observation
+adds no daemon or library instrumentation and no timing-based pass/fail threshold.

@@ -1,5 +1,8 @@
 //! Actual independently identified OS processes, ciphertext custody, STARK and work journal.
 //! The explicitly easy work target is a public test contract, never a production default.
+#[path = "support/rpc_observation.rs"]
+mod rpc_observation;
+
 use compact_query::PlainRow;
 use peer_runtime::{Bootstrap, Connector, Endpoint, Identity, RemotePeer, Request, Response};
 use rcgen::{CertificateParams, ExtendedKeyUsagePurpose, KeyPair, KeyUsagePurpose};
@@ -155,8 +158,13 @@ fn proved_select_insert_update_survive_a_process_loss_and_journal_restart() {
     let connector = Connector::permissionless(&owner).unwrap();
     let mut a = Process::start(owner.fingerprint(), 1, None);
     let b = Process::start(owner.fingerprint(), 2, None);
-    let pa = a.participant(1, &connector);
-    let pb = b.participant(2, &connector);
+    let observation = rpc_observation::RpcRecorder::optional();
+    let mut pa = a.participant(1, &connector);
+    let mut pb = b.participant(2, &connector);
+    if let Some(observation) = &observation {
+        pa = observation.attach(pa);
+        pb = observation.attach(pb);
+    }
     let started = Instant::now();
     let mut database = Session::create(
         "proved".into(),
@@ -205,6 +213,9 @@ fn proved_select_insert_update_survive_a_process_loss_and_journal_restart() {
     let inserted = database.shards();
     assert_ne!(original[0].data_head, inserted[0].data_head);
     assert_eq!(original[1].data_head, inserted[1].data_head);
+    if let Some(observation) = &observation {
+        observation.start();
+    }
     assert!(matches!(
         execute(
             &mut database,
@@ -215,6 +226,9 @@ fn proved_select_insert_update_survive_a_process_loss_and_journal_restart() {
             ..
         }
     ));
+    if let Some(observation) = &observation {
+        observation.finish();
+    }
     assert_eq!(
         rows(execute(
             &mut database,
