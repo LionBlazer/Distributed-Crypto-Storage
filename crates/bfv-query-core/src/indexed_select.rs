@@ -392,28 +392,10 @@ pub(super) fn circuit_request(
     keyset_id: [u8; 32],
     wire: &[u8],
 ) -> Result<Vec<u8>> {
-    use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom};
     let request = checked_exact_request(geometry, keyset_id, wire)?;
     let rows = checked_ciphertext(&request.rows, parameters)?;
     let mask = public_projection(parameters, request.projection)?;
-    // Upstream exposes a plaintext-to-polynomial conversion before its NTT step.
-    // This is the same public polynomial used by upstream Ciphertext * Plaintext.
-    let mut poly = Poly::try_convert_from(
-        &mask,
-        parameters.context_at_level(0).map_err(backend)?,
-        true,
-        Representation::PowerBasis,
-    )
-    .map_err(backend)?;
-    poly.change_representation(Representation::Ntt);
-    let values = Vec::<u64>::from(&poly);
-    let repeated: Vec<_> = values.iter().chain(&values).copied().collect();
-    bfv_product_circuit::encode_request(
-        Sha256::digest(wire).into(),
-        &canonical::coefficients(&rows),
-        &repeated,
-    )
-    .map_err(backend)
+    canonical::public_product_request(parameters, wire, &rows, &mask)
 }
 
 pub(super) fn restore_circuit_output(

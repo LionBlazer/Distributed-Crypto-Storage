@@ -82,6 +82,14 @@ carry/overflow cases. The original query ID, complete data/index heads, geometry
 keyset remain bound through the original request digest. An opaque bound head is
 not evidence that peers agreed on it or that it is current.
 
+The private `canonical::public_product_request` owns the shared level-zero
+two-component NTT product representation for row projection, byte projection and
+coefficient aggregation. It checks both ciphertext polynomial contexts, converts
+the caller-derived public plaintext, preserves every modulus/coefficient and binds
+the complete original request bytes. Each operation retains its encoding, public
+mask/kernel packing and request metadata checks; proof acceptance remains external.
+This adapter retains no requests, rows, keys or proof results.
+
 The indexed SELECT operation freshly encrypts original age/amount lanes and an
 encrypted projection/active mask. The public-only peer performs one ciphertext
 multiplication and relinearization; it returns encrypted projected lanes and presence
