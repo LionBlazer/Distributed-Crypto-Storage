@@ -26,8 +26,9 @@ with checked client-side limb/shard completion and SQL NULL for empty SUM.
 They currently admit at most 2560 matching rows per shard using ten 256-row bands
 and the unchanged 256-term public kernel; row and mutation limits remain 256.
 Excess rejects without a partial result. Q2/R2 requires application domain v3 and
-rejects old journals/wires without migration; the arithmetic profile is unchanged;
-general typed aggregation remains open. Typed imported catalogs provide
+rejects old journals/wires without migration; the arithmetic profile is unchanged.
+The [Q2 process record](proved-aggregate-bands.md) reports 5119/5120-row full-query
+samples; general typed aggregation remains open. Typed imported catalogs provide
 immutable single-table SELECT with authenticated owner-private indices and proved
 BFV byte projection. Unsupported operators reject before execution. Neither path
 implements general transactions, DELETE, JOIN or SQL row locks.

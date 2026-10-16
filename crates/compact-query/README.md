@@ -251,9 +251,9 @@ There is no public arbitrary-age mutation or peer-built untrusted index API.
 
 The table limit is 1,000,000 rows. MAX_ROWS is a distinct hard limit of 256 selected
 rows for row operations and the legacy TFHE paths below (proved Q2 aggregates have
-the separate 2560-row budget described above), checked from authenticated counts or the full-scan count
-before any FHE pad encryption. A lower caller budget is honored. SelectionBudget
-returns the full selected count and effective budget; it never truncates a group.
+the separate 2560-row budget described above), checked from authenticated counts
+or the full-scan count before any FHE pad encryption. A lower caller budget is
+honored. SelectionBudget returns the full selected count and effective budget; it never truncates a group.
 Private outputs use an encrypted bit and u16 sum for exactly one selected row,
 and ten-bit COUNT plus 24-bit SUM otherwise. Owner-facing values remain u32;
 the largest SUM is 256 * 65535 = 16,776,960. Conditional zero selection uses

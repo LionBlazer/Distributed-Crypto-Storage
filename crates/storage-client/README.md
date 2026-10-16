@@ -116,7 +116,9 @@ a full-residue product proof. Row SELECT and mutation limits remain 256. Only ch
 encrypted partial results are decrypted and combined with checked u64 arithmetic;
 empty COUNT is zero and empty SUM is NULL. `VerifiedResult::Aggregated` records
 the requested projection and fresh confirmed head. Typed imported catalogs remain
-immutable and their aggregate syntax remains unsupported.
+immutable and their aggregate syntax remains unsupported. The [Q2 real-process
+record](../../docs/proved-aggregate-bands.md) gives the exact 5119/5120-row fixture,
+three full-query samples, artifact hashes and remaining limits.
 
 `SqlScript::parse(sql)` validates a bounded script before any network operation.
 It supports ordinary comments, the exact non-null unsigned `records` schema,
