@@ -172,3 +172,60 @@ pub(crate) fn grow_checked(
         index,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_index_rebind_after_data_staging_preserves_both_original_images() {
+        let owner = Owner::generate([63; 16]).unwrap();
+        let limits = Limits::default();
+        let rows = vec![PlainRow { age: 7, amount: 11 }; 9];
+        let mut table = seal(&owner, &rows, 4, limits).unwrap();
+        let index_head = table.index_commitment().clone();
+        let first = table
+            .index
+            .lookup(0, index::index_limits())
+            .unwrap()
+            .verify(&index_head, 0, index::index_limits())
+            .unwrap();
+        let mut bad_binding = owner.decrypt(&first).unwrap().as_bytes().to_vec();
+        // Valid owner AEAD/root, but the private header names another data root.
+        bad_binding[80] ^= 1;
+        owner
+            .replace_page(
+                &mut table.index,
+                &index_head,
+                0,
+                &bad_binding,
+                index::index_limits(),
+            )
+            .unwrap();
+        let data_head = table.commitment().clone();
+        let index_head = table.index_commitment().clone();
+        let original_data = table.snapshot().encode();
+        let original_index = table.encrypted_index().encode();
+        let replacement = Zeroizing::new(vec![0; 4 * ROW_BYTES as usize]);
+        let pages = BTreeMap::from([(0, replacement)]);
+
+        assert!(
+            replace_amount_pages(&owner, &table, &data_head, &index_head, &pages, limits).is_err()
+        );
+
+        assert_eq!(table.commitment(), &data_head);
+        assert_eq!(table.index_commitment(), &index_head);
+        assert_eq!(table.snapshot().encode(), original_data);
+        assert_eq!(table.encrypted_index().encode(), original_index);
+        let page = table
+            .data
+            .lookup(0, limits)
+            .unwrap()
+            .verify(&data_head, 0, limits)
+            .unwrap();
+        assert_eq!(
+            owner.decrypt(&page).unwrap().as_bytes(),
+            [7, 11, 0].repeat(4)
+        );
+    }
+}

@@ -15,6 +15,8 @@ The later [complete LIMIT measurement](LIMIT-MEASUREMENTS.md) covers a million
 matching rows with a bounded proved prefix on the combined PostgreSQL/Delta source.
 The [authenticated-candidate comparison](CANDIDATE-MEASUREMENTS.md) measures the
 subsequent writeback refactor without changing custody, wire or proof checks.
+The [shared-packet record](SHARED-PACKETS-MEASUREMENTS.md) retains both ownership
+experiments, including the regression, final timings and separate memory observations.
 
 ## Full accepted operations
 
