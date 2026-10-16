@@ -357,3 +357,16 @@ workspace Clippy, formatting, architecture and requirements-mirror checks passed
 The native three-test measurement additionally passed the same genuine network
 acceptance and pending-recovery contracts. Historical unverified diagnostics remain
 separate and cannot convert to checked arithmetic evidence.
+
+### Readiness-listener measurements (2026-10-16)
+
+The separate [complete observation record](../experiments/update-cost/MEASUREMENTS.md)
+compares the same genuine process fixture and unchanged profile-v3 kernels before
+and after replacing only the peer listener executable. Matched metadata-gated
+UPDATE medians were 601.070 and 420.317 ms. Three additional unprofiled after runs
+observed UPDATE 413.826–428.950 ms and INSERT 257.643–268.714 ms; complete 512-row
+COUNT/SUM took 189.859–197.914 ms. All correctness, proof, freshness, durable-write
+and restart assertions passed. The record includes every ordinary SELECT,
+intentional failure latency, binary hashes, reproduction and the incomplete
+separate RSS sample. These small local fixtures establish neither a general
+500-ms SQL guarantee nor a production resource bound.

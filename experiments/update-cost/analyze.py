@@ -1,6 +1,7 @@
 """Analyze bounded metadata from the opt-in genuine UPDATE process fixture."""
 import argparse
 import json
+import math
 from collections import defaultdict
 from pathlib import Path
 
@@ -29,8 +30,7 @@ def load_records(log):
     if len(summaries) != 1:
         raise ValueError("expected one complete UPDATE observation envelope")
     summary = summaries[0]
-    if summary["truncated"] or summary["event_count"] != len(records) - 1:
-        raise ValueError("incomplete or truncated observation cannot explain a full query")
+    validate_envelope(summary, records)
     return summary, records
 
 
@@ -57,24 +57,92 @@ def local_gaps(rpcs, elapsed_ms):
     return sorted(gaps, key=lambda gap: gap["duration_ms"], reverse=True)[:10]
 
 
-def analyze(summary, records):
-    activity, rpcs, by_operation = {}, [], defaultdict(list)
+def nonnegative_number(value, field):
+    if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+        raise ValueError(f"{field} must be finite and nonnegative")
+    return value
+
+
+def nonnegative_integer(value, field):
+    if type(value) is not int or value < 0:
+        raise ValueError(f"{field} must be a nonnegative integer")
+    return value
+
+
+def validate_envelope(summary, records):
+    if [record for record in records if record["event"] == "summary"] != [summary]:
+        raise ValueError("expected one complete UPDATE observation envelope")
+    nonnegative_number(summary["elapsed_ms"], "UPDATE elapsed_ms")
+    count = nonnegative_integer(summary["event_count"], "event_count")
+    if (summary["truncated"] is not False or summary["event_limit"] != MAX_EVENTS
+            or count > MAX_EVENTS or count != len(records) - 1):
+        raise ValueError("incomplete or truncated observation cannot explain a full query")
+
+
+def checked_rpcs(summary, records):
+    validate_envelope(summary, records)
+    activity, complete = {}, {}
     for record in records:
-        if record["event"] == "activity":
-            key = (record["peer"], record["request_id"])
-            activity.setdefault(key, {})[record["phase"]] = record["time_ms"]
-    for record in records:
-        if record["event"] != "complete":
+        event = record["event"]
+        if event == "summary":
             continue
+        if event not in ("activity", "complete"):
+            raise ValueError("unknown observation event")
+        key = tuple(nonnegative_integer(record[field], field) for field in ("peer", "request_id"))
+        if not isinstance(record["operation"], str) or not record["operation"]:
+            raise ValueError("RPC operation must be a nonempty string")
+        time = nonnegative_number(record["time_ms"], "RPC time_ms")
+        if time > summary["elapsed_ms"]:
+            raise ValueError("RPC lies outside the UPDATE envelope")
+        if event == "activity":
+            phase = record["phase"]
+            if phase not in ("request_sent", "reply_received"):
+                raise ValueError("unknown RPC activity phase")
+            phases = activity.setdefault(key, {})
+            if phase in phases:
+                raise ValueError("duplicate RPC activity phase")
+            nonnegative_integer(record["application_bytes"], "application_bytes")
+            phases[phase] = record
+        else:
+            if key in complete:
+                raise ValueError("duplicate RPC completion")
+            complete[key] = record
+    if activity.keys() - complete.keys():
+        raise ValueError("RPC activity has no completion")
+
+    rpcs = []
+    for key, record in complete.items():
         rpc = dict(record)
-        phases = activity.get((rpc["peer"], rpc["request_id"]), {})
-        start, end = rpc["approx_start_ms"], rpc["time_ms"]
-        sent, received = phases.get("request_sent"), phases.get("reply_received")
-        rpc["encode_connect_write_ms"] = max(0.0, sent - start) if sent is not None else None
-        rpc["sent_to_received_ms"] = (max(0.0, received - sent)
+        start, end = nonnegative_number(rpc["approx_start_ms"], "RPC start"), rpc["time_ms"]
+        nonnegative_number(rpc["elapsed_ms"], "RPC elapsed_ms")
+        if start > end or rpc["elapsed_ms"] > end or type(rpc["succeeded"]) is not bool:
+            raise ValueError("invalid RPC interval or success marker")
+        phases = activity.get(key, {})
+        if rpc["succeeded"] and set(phases) != {"request_sent", "reply_received"}:
+            raise ValueError("successful RPC requires sent and received frames")
+        previous = start
+        for phase, field in (("request_sent", "application_request_bytes"),
+                             ("reply_received", "application_response_bytes")):
+            size = nonnegative_integer(rpc[field], field)
+            if phase in phases:
+                frame = phases[phase]
+                if (frame["operation"] != rpc["operation"] or frame["application_bytes"] != size
+                        or not previous <= frame["time_ms"] <= end):
+                    raise ValueError("RPC frame order, operation or byte count disagrees with Trace")
+                previous = frame["time_ms"]
+        sent = phases.get("request_sent", {}).get("time_ms")
+        received = phases.get("reply_received", {}).get("time_ms")
+        rpc["encode_connect_write_ms"] = sent - start if sent is not None else None
+        rpc["sent_to_received_ms"] = (received - sent
                                       if sent is not None and received is not None else None)
-        rpc["decode_tail_ms"] = max(0.0, end - received) if received is not None else None
+        rpc["decode_tail_ms"] = end - received if received is not None else None
         rpcs.append(rpc)
+    return rpcs
+
+
+def analyze(summary, records):
+    rpcs, by_operation = checked_rpcs(summary, records), defaultdict(list)
+    for rpc in rpcs:
         by_operation[rpc["operation"]].append(rpc)
 
     operations = []
