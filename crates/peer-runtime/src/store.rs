@@ -7,6 +7,23 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod candidate;
+use candidate::Candidate;
+
+/// Full physical read, canonical object hash and both snapshot roots checked.
+/// Only read_verified constructs this request-local, immutable custody capability.
+pub(crate) struct AuditedBundle {
+    object: [u8; 32],
+    bundle: Bundle,
+    data: EncryptedSnapshot,
+    index: EncryptedSnapshot,
+}
+impl AuditedBundle {
+    pub(crate) fn into_images(self) -> ([u8; 32], EncryptedSnapshot, EncryptedSnapshot) {
+        (self.object, self.data, self.index)
+    }
+}
+
 pub(crate) struct Store {
     directory: PathBuf,
     _lock: File,
@@ -50,18 +67,25 @@ fn decode_images(bundle: &Bundle) -> Result<(EncryptedSnapshot, EncryptedSnapsho
 }
 fn validate(bundle: &Bundle, stored: u64) -> Result<ObjectInfo, RemoteError> {
     let (data, _) = decode_images(bundle)?;
+    object_info(bundle, stored, bundle.id(), data.commitment())
+}
+fn object_info(
+    bundle: &Bundle,
+    stored: u64,
+    object: [u8; 32],
+    data: &Commitment,
+) -> Result<ObjectInfo, RemoteError> {
     Ok(ObjectInfo {
         available: true,
-        id: bundle.id(),
+        id: object,
         stored_bytes: stored,
         data_bytes: bundle.data.len() as u64,
         index_bytes: bundle.index.len() as u64,
         logical_bytes: data
-            .commitment()
             .layout()
             .logical_bytes()
             .map_err(|_| RemoteError::Integrity)? as u64,
-        rows: data.commitment().layout().row_count,
+        rows: data.layout().row_count,
     })
 }
 impl Store {
@@ -277,22 +301,21 @@ impl Store {
             }
             return Ok(existing);
         }
-        let (_, data, index) = self.read_verified(request.base_object())?;
-        let (old_data, old_index) = request.old_heads();
-        if data.commitment() != old_data || index.commitment() != old_index {
-            return Err(RemoteError::Integrity);
-        }
-        let bundle = request
-            .reconstruct(data, index, verified)
+        let base = self.read_verified(request.base_object())?;
+        let reconstructed = request
+            .reconstruct(base, verified)
             .map_err(|_| RemoteError::Integrity)?;
-        // The ordinary complete candidate audit, object identity, quota, FSYNC,
-        // atomic rename and exact-object idempotence remain the admission path.
-        self.put(bundle)
+        self.persist(Candidate::from_reconstructed(reconstructed)?)
     }
 
     pub(crate) fn put(&mut self, bundle: Bundle) -> Result<ObjectInfo, RemoteError> {
-        let bytes = encode(&bundle).map_err(error)?;
-        let info = validate(&bundle, bytes.len() as u64)?;
+        self.persist(Candidate::full(bundle)?)
+    }
+
+    // The only durable admission route consumes an immutable fully checked
+    // candidate. No raw Bundle, advisory metadata or revalidation flag is accepted.
+    fn persist(&mut self, candidate: Candidate) -> Result<ObjectInfo, RemoteError> {
+        let info = candidate.info();
         if let Some(existing) = self.objects.get(&info.id).cloned() {
             self.get(&info.id)?;
             return Ok(existing);
@@ -311,7 +334,7 @@ impl Store {
                 .create_new(true)
                 .write(true)
                 .open(&pending)?;
-            file.write_all(&bytes)?;
+            file.write_all(candidate.bytes())?;
             file.sync_all()?;
             drop(file);
             fs::rename(&pending, self.directory.join(filename(&info.id)))
@@ -322,11 +345,11 @@ impl Store {
         }
         result?;
         self.heads
-            .entry(head_pair_id(&bundle.data_head, &bundle.index_head))
+            .entry(head_pair_id(candidate.heads().0, candidate.heads().1))
             .or_default()
             .insert(info.id);
         self.objects.insert(info.id, info.clone());
-        Ok(info)
+        Ok(info.clone())
     }
     pub(crate) fn get_version(
         &mut self,
@@ -353,28 +376,25 @@ impl Store {
         Err(RemoteError::NotFound)
     }
     pub(crate) fn get(&mut self, id: &[u8; 32]) -> Result<Bundle, RemoteError> {
-        self.read_verified(id).map(|(bundle, _, _)| bundle)
+        self.read_verified(id).map(|audited| audited.bundle)
     }
     pub(crate) fn get_pages(
         &mut self,
         request: crate::PageBatchRequest,
     ) -> Result<crate::PageBatch, RemoteError> {
-        let (_, data, index) = self.read_verified(request.object())?;
+        let AuditedBundle { data, index, .. } = self.read_verified(request.object())?;
         crate::PageBatch::from_snapshots(request, &data, &index).map_err(|_| RemoteError::Integrity)
     }
     pub(crate) fn get_read_image(
         &mut self,
         request: crate::ReadImageRequest,
     ) -> Result<crate::ReadImage, RemoteError> {
-        let (_, data, index) = self.read_verified(request.object())?;
+        let AuditedBundle { data, index, .. } = self.read_verified(request.object())?;
         crate::ReadImage::from_snapshots(request, data, &index).map_err(|_| RemoteError::Integrity)
     }
     // Every route audits the complete physical bundle, including unrequested
     // bytes in both images. Cached names/status never establish custody.
-    fn read_verified(
-        &mut self,
-        id: &[u8; 32],
-    ) -> Result<(Bundle, EncryptedSnapshot, EncryptedSnapshot), RemoteError> {
+    fn read_verified(&mut self, id: &[u8; 32]) -> Result<AuditedBundle, RemoteError> {
         if !self.objects.contains_key(id) {
             return Err(RemoteError::NotFound);
         }
@@ -385,7 +405,12 @@ impl Store {
                 return Err(RemoteError::Integrity);
             }
             let (data, index) = decode_images(&bundle)?;
-            Ok((bundle, data, index))
+            Ok(AuditedBundle {
+                object: *id,
+                bundle,
+                data,
+                index,
+            })
         })();
         if result.is_err() {
             self.invalid.insert(*id);
@@ -422,25 +447,12 @@ fn read_bounded(path: &Path) -> io::Result<Vec<u8>> {
 }
 
 #[cfg(test)]
+pub(crate) mod test_support;
+
+#[cfg(test)]
 mod tests {
+    use super::test_support::Directory;
     use super::*;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    struct Directory(PathBuf);
-    impl Directory {
-        fn new() -> Self {
-            static NEXT: AtomicU64 = AtomicU64::new(0);
-            Self(std::env::temp_dir().join(format!(
-                "dcs-runtime-store-{}-{}",
-                std::process::id(),
-                NEXT.fetch_add(1, Ordering::Relaxed)
-            )))
-        }
-    }
-    impl Drop for Directory {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
     fn bundle() -> Bundle {
         let owner = compact_store::Owner::generate([1; 16]).unwrap();
         let snapshot = owner
@@ -866,5 +878,45 @@ mod tests {
         assert_eq!(store.get(&base.id()).unwrap(), base);
         assert_eq!(store.objects.len(), 2);
         assert!(!directory.0.join("write.pending").exists());
+    }
+    #[test]
+    fn raw_full_store_cannot_bypass_either_image_audit_through_candidate_admission() {
+        let (_, original, _) = delta_fixture();
+        for corruption in 0..6 {
+            let directory = Directory::new();
+            let mut store = Store::open(&directory.0, 16 * 1024 * 1024).unwrap();
+            let mut hostile = original.clone();
+            match corruption {
+                0 => *hostile.data.last_mut().unwrap() ^= 1,
+                1 => *hostile.index.last_mut().unwrap() ^= 1,
+                2 => {
+                    hostile.data_head.pop();
+                }
+                3 => {
+                    hostile.index_head.pop();
+                }
+                4 => hostile.data.push(0),
+                _ => {
+                    // The first page revision cannot exceed its exact image head.
+                    hostile.index[compact_store::MANIFEST_BYTES..compact_store::MANIFEST_BYTES + 8]
+                        .copy_from_slice(&u64::MAX.to_le_bytes());
+                }
+            }
+
+            assert!(
+                matches!(store.put(hostile), Err(RemoteError::Integrity)),
+                "corruption {corruption}"
+            );
+
+            assert!(store.objects.is_empty());
+            assert!(!directory.0.join("write.pending").exists());
+            assert!(!fs::read_dir(&directory.0).unwrap().any(|entry| {
+                entry
+                    .unwrap()
+                    .path()
+                    .extension()
+                    .is_some_and(|extension| extension == "bundle")
+            }));
+        }
     }
 }

@@ -153,11 +153,25 @@ Only the configured TLS owner may upload a delta. On first write, the store
 audits the **whole physical base**, including unrequested pages and its complete
 immutable hash, verifies replacement membership against the new heads, applies
 the checked pages to both audited snapshots and requires their complete new roots
-and canonical bundle hash. Ordinary full candidate validation, full-object quota,
+and canonical bundle hash. Complete target validation, full-object quota,
 file sync and atomic rename still apply. The original base stays intact until
 normal journal GC. Lost-ACK replay fully audits an already stored exact target,
 even after normal base collection; a corrupt target never receives a cached ACK.
 No metadata-only custody proof, sidecar, FHE bypass or sparse disk-I/O claim is added.
+
+The private store admission boundary uses three request-local, non-cloneable
+capabilities. Only a complete physical read plus object-hash and both-root checks
+constructs `AuditedBundle`. Delta reconstruction consumes it and verified new
+pages into sealed `ReconstructedDelta` after both complete new roots match.
+Private `Candidate` consumes that result, rechecks both exact heads and hashes
+the complete canonical Bundle once before encoding immutable disk bytes. The ID
+still hashes four big-endian-length-prefixed parts; it is not a disk-byte hash.
+The full-upload factory retains its ordinary raw-bundle audit. Shared persistence
+accepts only this immutable candidate and preserves quota, sync, rename and map
+registration. It does not reparse images already fully authenticated by that
+construction. No validation flag, mutable prevalidated Bundle, persistent cache,
+public API, format or cryptographic profile is added. Existing-target replay still
+verifies requested new pages and fully reads/authenticates the physical target.
 
 The runtime does not choose recipient or privacy policy. A consumer must freeze
 known holders and other candidates before query computation; mode may depend only

@@ -113,6 +113,32 @@ pub(crate) struct VerifiedReplacementPages {
     data: Vec<VerifiedPage>,
     index: Vec<VerifiedPage>,
 }
+/// Sealed complete target derived only from an audited physical base and all
+/// verified replacements. It grants custody admission, not SQL authorization.
+pub(crate) struct ReconstructedDelta {
+    expected: ObjectVersion,
+    data: EncryptedSnapshot,
+    index: EncryptedSnapshot,
+}
+impl ReconstructedDelta {
+    pub(crate) fn into_images(
+        self,
+    ) -> (
+        [u8; 32],
+        Commitment,
+        Commitment,
+        EncryptedSnapshot,
+        EncryptedSnapshot,
+    ) {
+        (
+            self.expected.object,
+            self.expected.data,
+            self.expected.index,
+            self.data,
+            self.index,
+        )
+    }
+}
 impl StoreDeltaRequest {
     pub fn new(
         base_object: [u8; 32],
@@ -201,9 +227,6 @@ impl StoreDeltaRequest {
     pub fn request_bytes(&self) -> usize {
         self.request_bytes
     }
-    pub(crate) fn old_heads(&self) -> (&Commitment, &Commitment) {
-        (&self.binding.base.data, &self.binding.base.index)
-    }
     pub(crate) fn new_heads(&self) -> (&Commitment, &Commitment) {
         (&self.binding.next.data, &self.binding.next.index)
     }
@@ -228,10 +251,13 @@ impl StoreDeltaRequest {
     }
     pub(crate) fn reconstruct(
         self,
-        data: EncryptedSnapshot,
-        index: EncryptedSnapshot,
+        base: crate::store::AuditedBundle,
         verified: VerifiedReplacementPages,
-    ) -> Result<Bundle> {
+    ) -> Result<ReconstructedDelta> {
+        let (object, data, index) = base.into_images();
+        if object != self.binding.base.object {
+            return Err(PageError::BindingMismatch);
+        }
         let data = data.apply_verified_replacements(
             &self.binding.base.data,
             &self.binding.next.data,
@@ -244,17 +270,14 @@ impl StoreDeltaRequest {
             verified.index,
             custody_limits(),
         )?;
-        let bundle = Bundle {
-            data_head: self.binding.next.data.encode().to_vec(),
-            index_head: self.binding.next.index.encode().to_vec(),
-            data: data.encode(),
-            index: index.encode(),
-        };
-        if bundle.id() != self.binding.next.object {
-            return Err(PageError::BindingMismatch);
-        }
-        Ok(bundle)
+        let VersionBinding { next, .. } = *self.binding;
+        Ok(ReconstructedDelta {
+            expected: next,
+            data,
+            index,
+        })
     }
+
     fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(self.request_bytes - REQUEST_ENVELOPE_BYTES);
         bytes.extend_from_slice(MAGIC);

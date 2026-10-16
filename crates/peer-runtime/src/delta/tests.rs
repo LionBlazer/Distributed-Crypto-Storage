@@ -1,4 +1,5 @@
 use super::*;
+use crate::store::{Store, test_support::Directory};
 use crate::wire::{self, Request, WireRequest};
 use compact_store::{Layout, Limits, Owner};
 
@@ -9,6 +10,17 @@ fn bundle(data: &EncryptedSnapshot, index: &EncryptedSnapshot) -> Bundle {
         data: data.encode(),
         index: index.encode(),
     }
+}
+fn reconstruct(
+    data: EncryptedSnapshot,
+    index: EncryptedSnapshot,
+    delta: StoreDeltaRequest,
+) -> std::result::Result<Bundle, crate::RemoteError> {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0, 128 * 1024 * 1024).unwrap();
+    store.put(bundle(&data, &index))?;
+    let stored = store.put_delta(delta)?;
+    store.get(&stored.id)
 }
 fn fixture(
     count: usize,
@@ -118,8 +130,7 @@ fn one_two_64_256_and_257_replacements_have_identical_complete_wire_lengths() {
         let Request::StoreDelta(delta) = decoded.request else {
             panic!("exact delta request")
         };
-        let checked = delta.verify_pages().unwrap();
-        assert_eq!(delta.reconstruct(data, index, checked).unwrap(), next);
+        assert_eq!(reconstruct(data, index, delta).unwrap(), next);
     }
 }
 #[test]
@@ -211,8 +222,7 @@ fn actual_million_row_images_have_the_pinned_public_footprint_and_full_request_g
     .unwrap();
     assert_eq!(actual_delta.len(), 1_188_143);
     assert_eq!(actual_full.len(), 37_604_542);
-    let checked = delta.verify_pages().unwrap();
-    assert_eq!(delta.reconstruct(data, index, checked).unwrap(), next);
+    assert_eq!(reconstruct(data, index, delta).unwrap(), next);
 }
 #[test]
 fn conservative_limits_bound_is_below_32mib_and_small_geometry_chooses_full() {
@@ -257,7 +267,7 @@ fn conservative_limits_bound_is_below_32mib_and_small_geometry_chooses_full() {
 fn noncanonical_padding_lengths_counts_addresses_and_unbounded_serde_lengths_reject() {
     let (_, _, _, delta) = fixture(2);
     let correct = delta.encode();
-    for mutation in 0..8 {
+    for mutation in 0..12 {
         let mut bad = correct.clone();
         match mutation {
             0 => *bad.last_mut().unwrap() = 1,
@@ -269,7 +279,11 @@ fn noncanonical_padding_lengths_counts_addresses_and_unbounded_serde_lengths_rej
             4 => bad[8..10].copy_from_slice(&2_u16.to_le_bytes()),
             5 => bad[522..524].copy_from_slice(&258_u16.to_le_bytes()),
             6 => bad[HEADER_BYTES] = 2,
-            _ => bad[HEADER_BYTES + 1..HEADER_BYTES + 9].copy_from_slice(&u64::MAX.to_le_bytes()),
+            7 => bad[HEADER_BYTES + 1..HEADER_BYTES + 9].copy_from_slice(&u64::MAX.to_le_bytes()),
+            8 => bad[298 + 56..298 + 64].copy_from_slice(&2_u64.to_le_bytes()),
+            9 => bad[410 + 56..410 + 64].copy_from_slice(&0_u64.to_le_bytes()),
+            10 => bad[298 + 72..298 + 80].copy_from_slice(&u64::MAX.to_le_bytes()),
+            _ => bad[298 + 8] ^= 1,
         }
         assert!(
             StoreDeltaRequest::decode(&bad).is_err(),
@@ -287,24 +301,14 @@ fn omitted_pages_tampered_membership_and_wrong_full_object_identity_never_recons
     let mut omitted = delta.clone();
     omitted.pages.pop();
     let omitted = StoreDeltaRequest::decode(&omitted.encode()).unwrap();
-    let checked = omitted.verify_pages().unwrap();
-    assert!(
-        omitted
-            .reconstruct(data.clone(), index.clone(), checked)
-            .is_err()
-    );
+    assert!(reconstruct(data.clone(), index.clone(), omitted).is_err());
     let mut tampered = delta.encode();
     tampered[HEADER_BYTES + 13 + 16 + 32] ^= 1;
     let tampered = StoreDeltaRequest::decode(&tampered).unwrap();
     assert!(tampered.verify_pages().is_err());
     let mut wrong = delta.clone();
     wrong.binding.next.object[0] ^= 1;
-    let checked = wrong.verify_pages().unwrap();
-    assert!(
-        wrong
-            .reconstruct(data.clone(), index.clone(), checked)
-            .is_err()
-    );
+    assert!(reconstruct(data.clone(), index.clone(), wrong).is_err());
     let mut duplicate = delta.clone();
     duplicate.pages[1] = duplicate.pages[0].clone();
     assert!(StoreDeltaRequest::decode(&duplicate.encode()).is_err());
@@ -312,4 +316,62 @@ fn omitted_pages_tampered_membership_and_wrong_full_object_identity_never_recons
     wrong_head.binding.base.object[0] ^= 1;
     // Base object custody is checked by Store; the codec cannot establish it.
     assert_ne!(wrong_head.base_object(), &bundle(&data, &index).id());
+}
+
+#[test]
+fn full_and_reconstructed_admission_preserve_exact_disk_bytes_and_all_custody_metadata() {
+    for count in [1, 2, 64, 256, 257] {
+        let (data, index, next, delta) = fixture(count);
+        let delta_directory = Directory::new();
+        let full_directory = Directory::new();
+        let mut delta_store = Store::open(&delta_directory.0, 128 * 1024 * 1024).unwrap();
+        let mut full_store = Store::open(&full_directory.0, 128 * 1024 * 1024).unwrap();
+        delta_store.put(bundle(&data, &index)).unwrap();
+
+        let reconstructed = delta_store.put_delta(delta).unwrap();
+        let ordinary = full_store.put(next.clone()).unwrap();
+
+        let describe = |info: &crate::ObjectInfo| {
+            (
+                info.id,
+                info.available,
+                info.stored_bytes,
+                info.data_bytes,
+                info.index_bytes,
+                info.logical_bytes,
+                info.rows,
+            )
+        };
+        assert_eq!(
+            describe(&reconstructed),
+            describe(&ordinary),
+            "count {count}"
+        );
+        let filename = next
+            .id()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+            + ".bundle";
+        let delta_bytes = std::fs::read(delta_directory.0.join(&filename)).unwrap();
+        let full_bytes = std::fs::read(full_directory.0.join(&filename)).unwrap();
+        assert_eq!(delta_bytes, wire::encode(&next).unwrap());
+        assert_eq!(delta_bytes, full_bytes, "count {count}");
+        assert_eq!(delta_store.get(&reconstructed.id).unwrap(), next);
+        assert_eq!(full_store.get(&ordinary.id).unwrap(), next);
+    }
+}
+
+#[test]
+fn disk_serialization_hash_is_not_the_admissible_legacy_bundle_object_identity() {
+    use sha2::{Digest, Sha256};
+    let (data, index, next, mut delta) = fixture(2);
+    let disk_hash: [u8; 32] = Sha256::digest(wire::encode(&next).unwrap()).into();
+    assert_ne!(disk_hash, next.id());
+    delta.binding.next.object = disk_hash;
+
+    assert!(matches!(
+        reconstruct(data, index, delta),
+        Err(crate::RemoteError::Integrity)
+    ));
 }

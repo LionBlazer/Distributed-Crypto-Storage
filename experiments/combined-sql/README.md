@@ -13,6 +13,8 @@ The [Q2 combined recheck](#q2-page-custody-and-collection-recheck),
 source and artifact identities separately from this original record.
 The later [complete LIMIT measurement](LIMIT-MEASUREMENTS.md) covers a million
 matching rows with a bounded proved prefix on the combined PostgreSQL/Delta source.
+The [authenticated-candidate comparison](CANDIDATE-MEASUREMENTS.md) measures the
+subsequent writeback refactor without changing custody, wire or proof checks.
 
 ## Full accepted operations
 
