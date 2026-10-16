@@ -8,6 +8,9 @@ pub(crate) use layout::PACKED_WIDTH;
 #[cfg(test)]
 mod canonical_tests;
 mod commitment;
+pub(crate) mod factorized;
+#[cfg(test)]
+mod factorized_tests;
 mod fixture;
 #[cfg(test)]
 mod packed_tests;
@@ -34,6 +37,7 @@ pub(super) enum Relation {
     Bytes,
     CanonicalIndex,
     PackedCanonicalIndex,
+    FactorizedPackedCanonicalIndex,
     StateCertificate,
 }
 impl Relation {
@@ -42,11 +46,22 @@ impl Relation {
             Self::Bytes => crate::primitive::Kind::PairOpening,
             Self::CanonicalIndex => crate::primitive::Kind::CanonicalIndexOpening,
             Self::PackedCanonicalIndex => crate::primitive::Kind::PackedCanonicalIndexOpening,
+            Self::FactorizedPackedCanonicalIndex => {
+                crate::primitive::Kind::FactorizedPackedCanonicalIndexOpening
+            }
             Self::StateCertificate => crate::primitive::Kind::StateCertificate,
         }
     }
     fn packed(self) -> bool {
-        matches!(self, Self::PackedCanonicalIndex | Self::StateCertificate)
+        matches!(
+            self,
+            Self::PackedCanonicalIndex
+                | Self::FactorizedPackedCanonicalIndex
+                | Self::StateCertificate
+        )
+    }
+    fn factorized(self) -> bool {
+        matches!(self, Self::FactorizedPackedCanonicalIndex)
     }
     fn is_canonical(self) -> bool {
         !matches!(self, Self::Bytes)
@@ -55,7 +70,9 @@ impl Relation {
         match self {
             Self::Bytes => air::WIDTH,
             Self::CanonicalIndex => canonical::WIDTH,
-            Self::PackedCanonicalIndex | Self::StateCertificate => layout::PACKED_WIDTH,
+            Self::PackedCanonicalIndex
+            | Self::FactorizedPackedCanonicalIndex
+            | Self::StateCertificate => layout::PACKED_WIDTH,
         }
     }
 }
@@ -265,6 +282,9 @@ pub(crate) fn canonical_gate(mode: &str) -> Result<(), crate::backend::Error> {
 pub(crate) fn packed_canonical_gate(mode: &str) -> Result<(), crate::backend::Error> {
     gate_relation(mode, Relation::PackedCanonicalIndex)
 }
+pub(crate) fn factorized_canonical_gate(mode: &str) -> Result<(), crate::backend::Error> {
+    gate_relation(mode, Relation::FactorizedPackedCanonicalIndex)
+}
 fn gate_relation(mode: &str, relation: Relation) -> Result<(), crate::backend::Error> {
     use crate::backend::{Backend, Error};
     use std::time::Instant;
@@ -272,6 +292,7 @@ fn gate_relation(mode: &str, relation: Relation) -> Result<(), crate::backend::E
         Relation::Bytes => fixture::fixture()?,
         Relation::CanonicalIndex => fixture::canonical_fixture()?,
         Relation::PackedCanonicalIndex => fixture::packed_canonical_fixture()?,
+        Relation::FactorizedPackedCanonicalIndex => fixture::factorized_canonical_fixture()?,
         Relation::StateCertificate => return Err(Error::Shape),
     };
     crate::security(
@@ -280,11 +301,22 @@ fn gate_relation(mode: &str, relation: Relation) -> Result<(), crate::backend::E
             Relation::Bytes => "fixed-four-row-pair",
             Relation::CanonicalIndex => "canonical-four-row-index",
             Relation::PackedCanonicalIndex => "packed-canonical-four-row-index",
+            Relation::FactorizedPackedCanonicalIndex => {
+                "factorized-packed-canonical-four-row-index"
+            }
             Relation::StateCertificate => return Err(Error::Shape),
         },
     )?;
+    let (periodics, periodic_bytes) = if relation.factorized() {
+        (factorized::COLUMNS, factorized::PAYLOAD_BYTES)
+    } else {
+        (512, 2_097_152)
+    };
     println!(
-        "{{\"stage\":\"candidate_geometry\",\"public_values\":691,\"periodic_columns\":512,\"periodic_payload_bytes\":2097152,\"periodic_lde_payload_estimate_bytes\":33554432,\"declared_degree_bound\":5,\"private_plaintext_bytes\":2348,\"cha_jobs\":42,\"mac_blocks\":163}}"
+        "{{\"stage\":\"candidate_geometry\",\"public_values\":691,\"periodic_columns\":{},\"periodic_payload_bytes\":{},\"periodic_lde_payload_estimate_bytes\":{},\"declared_degree_bound\":5,\"private_plaintext_bytes\":2348,\"cha_jobs\":42,\"mac_blocks\":163}}",
+        periodics,
+        periodic_bytes,
+        periodics * 8192 * std::mem::size_of::<crate::backend::Val>()
     );
     if mode == "prove" {
         let backend = Backend::new(&statement)?;
@@ -298,6 +330,9 @@ fn gate_relation(mode: &str, relation: Relation) -> Result<(), crate::backend::E
             Relation::CanonicalIndex => "verified_experimental_canonical_index_opening",
             Relation::PackedCanonicalIndex => {
                 "verified_experimental_packed_canonical_index_opening"
+            }
+            Relation::FactorizedPackedCanonicalIndex => {
+                "verified_experimental_factorized_packed_canonical_index_opening"
             }
             Relation::StateCertificate => return Err(Error::Shape),
         };

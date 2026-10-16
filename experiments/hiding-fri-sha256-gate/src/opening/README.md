@@ -285,3 +285,22 @@ source verification and exact expected state. Both new numerical reports passed
 with bounds 128/128; genuine cold/warm CLI proofs and all 97 tests passed. The
 [validation record](../../VERSION-STATE-VALIDATION.md) describes exact timing,
 capacity and sampled-memory scopes. Agreement and freshness remain external.
+
+## Factorized public-periodic source profile
+
+The distinct `factorized-packed-canonical-index-opening` profile uses 32 low
+columns of period 32 and 16 high columns of period 512, expanding
+`low[r%32] * high[r/32]` to the original 512 row selectors. `factorized.rs`
+owns public constants/profile encoding; `OpeningAir` shares the original
+packed evaluator and per-instance public OnceLock; `factorized_tests.rs`
+owns equivalence and genuine/rebuilt proof cases. Existing profiles,
+Selection/State and SelectedEncoding keep their original basis and guards.
+
+Actual SDK inference is degree 5 with 16 quotient chunks and both 128-bit model
+floors. All 121 serial tests passed. The
+[validation record](../../FACTORIZED-PERIODICS-VALIDATION.md) preserves exact
+proofs, security, binary identities and observed memory/timer scopes.
+It reports lower memory and slower outer/verification intervals, establishing
+no speedup or 500-ms target. No SDK fork, custom verifier, new witness columns,
+private cache, production acceptance, formation or lock/finality guarantee
+is introduced. Fixtures remain explicitly PUBLIC NONSECRET.

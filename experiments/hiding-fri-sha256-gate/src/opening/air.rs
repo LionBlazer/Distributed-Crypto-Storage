@@ -366,10 +366,20 @@ impl BaseAir<Val> for OpeningAir {
         (0..self.source.relation.width()).collect()
     }
     fn num_periodic_columns(&self) -> usize {
-        TRACE_HEIGHT
+        if self.source.relation.factorized() {
+            super::factorized::COLUMNS
+        } else {
+            TRACE_HEIGHT
+        }
     }
     fn periodic_columns(&self) -> Cow<'_, [Vec<Val>]> {
-        Cow::Borrowed(self.public_schedule.get_or_init(schedule::columns))
+        Cow::Borrowed(self.public_schedule.get_or_init(|| {
+            if self.source.relation.factorized() {
+                super::factorized::columns()
+            } else {
+                schedule::columns()
+            }
+        }))
     }
     // Upper bound only; actual selector-aware inference is a separate gate.
     fn max_constraint_degree(&self) -> Option<usize> {
@@ -384,8 +394,11 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for OpeningAir {
         for (actual, expected) in public.into_iter().zip(self.values) {
             builder.assert_eq(actual, expected);
         }
-        let selectors: [AB::Expr; TRACE_HEIGHT] =
-            core::array::from_fn(|r| builder.periodic_values()[r].into());
+        let selectors: [AB::Expr; TRACE_HEIGHT] = if self.source.relation.factorized() {
+            super::factorized::selectors(builder.periodic_values())
+        } else {
+            core::array::from_fn(|r| builder.periodic_values()[r].into())
+        };
         let main = builder.main();
         let row = main.current_slice();
         let next = main.next_slice();

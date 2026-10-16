@@ -257,3 +257,13 @@ and all 114 serial tests passed. The [validation record](SELECTED-ENCODING-VALID
 describes exact provenance, measured composite timings and sampled resources.
 Ciphertext formation, peer-only computation, production SQL acceptance and the
 500 ms target remain open. Earlier reports retain their original scope.
+
+## Factorized periodic-basis source candidate
+
+The [opening module](src/opening/README.md#factorized-public-periodic-source-profile)
+adds one distinct packed profile with 48 public periodic columns instead of 512,
+while sharing the existing packed evaluator and schedule. All fifteen numerical
+reports, six observed genuine proofs and all 121 serial tests passed. The
+[validation record](FACTORIZED-PERIODICS-VALIDATION.md) reports lower observed
+source memory together with a slower outer interval and verification; it
+establishes no speedup. Existing consumers retain their original profiles.

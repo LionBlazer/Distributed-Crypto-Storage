@@ -55,6 +55,9 @@ pub(crate) fn canonical_fixture() -> Result<(Statement, Witness), Error> {
 pub(crate) fn packed_canonical_fixture() -> Result<(Statement, Witness), Error> {
     canonical_fixture_relation(Relation::PackedCanonicalIndex)
 }
+pub(crate) fn factorized_canonical_fixture() -> Result<(Statement, Witness), Error> {
+    canonical_fixture_relation(Relation::FactorizedPackedCanonicalIndex)
+}
 fn canonical_fixture_relation(relation: Relation) -> Result<(Statement, Witness), Error> {
     let key = core::array::from_fn(|i| i as u8); // PUBLIC NONSECRET fixture key.
     let mut key_rng = StdRng::try_from_rng(&mut SysRng).map_err(|_| Error::Randomness)?;
@@ -111,16 +114,17 @@ pub(super) fn from_suffix(
         Relation::Bytes => {
             Statement::checked(images, expected, request, encode_digest(ckey), [0; 32])?
         }
-        Relation::CanonicalIndex | Relation::PackedCanonicalIndex | Relation::StateCertificate => {
-            Statement::checked_relation(
-                relation,
-                images,
-                expected,
-                request,
-                encode_digest(ckey),
-                [0; 32],
-            )?
-        }
+        Relation::CanonicalIndex
+        | Relation::PackedCanonicalIndex
+        | Relation::FactorizedPackedCanonicalIndex
+        | Relation::StateCertificate => Statement::checked_relation(
+            relation,
+            images,
+            expected,
+            request,
+            encode_digest(ckey),
+            [0; 32],
+        )?,
     };
     if relation == Relation::StateCertificate {
         statement.request = super::state::version_tag(&statement);

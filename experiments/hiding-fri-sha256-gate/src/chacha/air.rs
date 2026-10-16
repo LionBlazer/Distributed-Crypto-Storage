@@ -167,6 +167,7 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for ChaChaAir {
             | Kind::CanonicalIndexOpening
             | Kind::SelectionOpening
             | Kind::PackedCanonicalIndexOpening
+            | Kind::FactorizedPackedCanonicalIndexOpening
             | Kind::StateCertificate
             | Kind::VersionSelection
             | Kind::SelectedEncoding => {

@@ -143,6 +143,7 @@ pub(crate) fn reference_output(statement: &Statement) -> [u32; WORDS] {
         | Kind::CanonicalIndexOpening
         | Kind::SelectionOpening
         | Kind::PackedCanonicalIndexOpening
+        | Kind::FactorizedPackedCanonicalIndexOpening
         | Kind::StateCertificate
         | Kind::VersionSelection
         | Kind::SelectedEncoding => {

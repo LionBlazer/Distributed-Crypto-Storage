@@ -20,6 +20,7 @@ pub(crate) enum Kind {
     CanonicalIndexOpening,
     SelectionOpening,
     PackedCanonicalIndexOpening,
+    FactorizedPackedCanonicalIndexOpening,
     StateCertificate,
     VersionSelection,
     SelectedEncoding,
@@ -37,6 +38,9 @@ impl Kind {
             Self::CanonicalIndexOpening => "canonical-index-opening",
             Self::SelectionOpening => "selection-opening",
             Self::PackedCanonicalIndexOpening => "packed-canonical-index-opening",
+            Self::FactorizedPackedCanonicalIndexOpening => {
+                "factorized-packed-canonical-index-opening"
+            }
             Self::StateCertificate => "state-certificate",
             Self::VersionSelection => "version-selection",
             Self::SelectedEncoding => "selected-encoding",

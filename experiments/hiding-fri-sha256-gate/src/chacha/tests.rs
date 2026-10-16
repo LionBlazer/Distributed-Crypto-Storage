@@ -282,6 +282,7 @@ fn claimed_output(statement: &Statement, trace: &RowMajorMatrix<Val>) -> [u32; W
         | Kind::CanonicalIndexOpening
         | Kind::SelectionOpening
         | Kind::PackedCanonicalIndexOpening
+        | Kind::FactorizedPackedCanonicalIndexOpening
         | Kind::StateCertificate
         | Kind::VersionSelection
         | Kind::SelectedEncoding => {
