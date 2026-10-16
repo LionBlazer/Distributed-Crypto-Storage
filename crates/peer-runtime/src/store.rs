@@ -488,6 +488,9 @@ fn read_bounded(path: &Path) -> io::Result<Vec<u8>> {
 pub(crate) mod test_support;
 
 #[cfg(test)]
+mod chunk_io_feasibility;
+
+#[cfg(test)]
 mod tests {
     use super::test_support::Directory;
     use super::*;
