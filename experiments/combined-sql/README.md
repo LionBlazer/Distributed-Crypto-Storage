@@ -39,6 +39,8 @@ The [parallel audit comparison](PARALLEL-AUDIT-MEASUREMENTS.md) records bounded 
 hashing, mixed UPDATE samples and complete physical checks without a general latency claim.
 The [owner-audit comparison](OWNER-AUDIT-MEASUREMENTS.md) records owner CPU opt-in,
 three-pair timings with overlapping ranges and paired regressions.
+The [received-version comparison](RECEIVED-VERSION-MEASUREMENTS.md) retains the
+next ownership stage's full-operation samples and its remaining 500-ms gap.
 
 ## Full accepted operations
 
