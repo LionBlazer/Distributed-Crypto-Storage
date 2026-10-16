@@ -24,6 +24,9 @@ waiters, detect deadlocks or recover a crashed SQL session.
 Current `JobVerifier` proves BFV arithmetic and exact job/head binding. Private
 AEAD/index-to-FHE preparation and completeness remain the designated owner's
 responsibility; a public encrypted-candidate/control relation does not yet exist.
+The [private source-proof research contract](private-lock-source-proof.md) specifies
+that missing relation, key/semantic anchors and a ZK candidate's privacy/cost gates;
+it supplies neither an implemented proof nor a selected finality protocol.
 
 ## One conditional research candidate
 
