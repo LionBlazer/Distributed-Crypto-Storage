@@ -111,6 +111,53 @@ recovery observation, separate from ordinary no-failure latency. The samples do
 not estimate tails or larger typed tables. Raw logs and `measurements.json` are
 under ignored `.local/readiness-runs/20261016-031300-584-after/`.
 
+## Combined atomic-INSERT contract recheck
+
+After integrating atomic literal INSERT batches, the complete new application was
+measured again at `0619807a01df1dfe2a6dfc427762d5a9bf010ff8`. This uses INSERT wire
+version 3 and proved-job application commitment version 2; those changes reject
+the previous application's journal policy. Both owner and peer were rebuilt from
+the combined source. This is a new full-scenario observation, not another matched
+listener-only comparison. The fixture still times a single-row INSERT; its timing
+does not measure a 256-row batch.
+
+The same native owner, two actual peer processes, eight threads per process,
+unchanged profile-v3 SIMD kernels, test work/confirmation policy and fixtures above
+were used. Three fresh mutation scenarios and three 512-row aggregate scenarios
+all passed. Builds and database setup were outside the query timers. No RPC or
+memory monitor, other build or proof test ran in this timing window. The separately
+packaged portable application and both actual-peer script scenarios also passed;
+portable execution was not the source of these native timings.
+
+| Complete operation | Minimum ms | Median ms | Maximum ms |
+| --- | ---: | ---: | ---: |
+| `SELECT * FROM records` | 190.118 | 190.184 | 197.155 |
+| `SELECT amount, age FROM records WHERE age >= 18 LIMIT 1` | 187.542 | 194.435 | 205.417 |
+| `INSERT INTO records VALUES (21, 255)` | 253.950 | 266.008 | 270.928 |
+| `UPDATE records SET amount = amount + 1 WHERE age >= 18` | 410.977 | 420.161 | 421.218 |
+| `SELECT * FROM records WHERE age >= 18`, after writes | 229.572 | 244.558 | 253.346 |
+| `SELECT age FROM records WHERE age > 255`, after restart | 250.007 | 253.715 | 254.377 |
+| 512 rows: `SELECT COUNT(*), SUM(amount) FROM records` | 190.186 | 192.062 | 200.803 |
+| 512 rows: `SELECT COUNT(*) FROM records WHERE age >= 18` | 192.491 | 193.331 | 198.927 |
+| 512 rows: `SELECT SUM(amount) FROM records WHERE age = 7` | 186.925 | 192.976 | 198.668 |
+| 512 rows: `SELECT COUNT(*) FROM records WHERE age > 255` | 190.370 | 196.566 | 201.586 |
+| 512 rows: `SELECT SUM(amount) FROM records WHERE age < 7` | 188.396 | 190.349 | 196.042 |
+
+The deliberate stopped-peer read remained 2306.290 / 2308.083 / 2308.288 ms. These
+observations establish neither a 500-ms failure-recovery bound nor a tail, WAN,
+larger-table or complete PostgreSQL latency guarantee. They include real proof
+verification, authorization, freshness and durable mutation confirmation.
+
+The native test executable `proved_sql-007699ff40f823e7.exe` had SHA256
+`F3DD883134E8146F0AEF54DA40803439C0E35967B4FAC82F87BE7E0AE5A55F3B`;
+`dcs-peer.exe` had SHA256
+`42C318A4E4A61BF7043844B7D7407587992106E6919F0F5A55082CE1068AC7DF`.
+Both kernel hashes equal the unchanged hashes in the artifact table above.
+The six unprofiled logs, all 36 individual query timers and artifact identities
+remain in ignored `.local/combined-sql-runs/20261016-033710-864/measurements.json`
+and adjacent logs. Reproduction uses the same two exact test names and environment
+below, with this rebuilt matching owner/peer pair and `DCS_TEST_RPC_PROFILE` unset.
+
 ## Separate, incomplete memory observation
 
 One additional full mutation/failure/restart scenario passed under concurrent
