@@ -76,7 +76,7 @@ impl VerifiedControl {
 
 fn request_digest(request: &[u8]) -> Digest {
     let mut hash = Sha256::new();
-    hash.update(b"dcs/transaction-state/verified-request/v1");
+    hash.update(b"dcs/transaction-state/verified-request/v2");
     hash.update(request);
     hash.finalize().into()
 }
@@ -92,7 +92,7 @@ pub struct MetadataVerifier {
 impl MetadataVerifier {
     pub fn new(context: Context, metadata_shard: u64) -> Self {
         let mut hash = Sha256::new();
-        hash.update(b"dcs/transaction-state/metadata-application/v1");
+        hash.update(b"dcs/transaction-state/metadata-application/v2");
         hash.update(context.network);
         hash.update(context.database);
         hash.update(context.profile.commitment());
@@ -113,7 +113,7 @@ impl MetadataVerifier {
         let committed = state.commitment()?;
         let head = |component: u8, root: Digest, count: u32| {
             let mut bytes = [0; version_journal::HEAD_BYTES];
-            bytes[..8].copy_from_slice(b"DCSTXH01");
+            bytes[..8].copy_from_slice(b"DCSTXH02");
             bytes[8..24].copy_from_slice(&self.context.database);
             bytes[24] = component;
             bytes[32..40].copy_from_slice(&committed.revision.to_le_bytes());

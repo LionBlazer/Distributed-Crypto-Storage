@@ -121,10 +121,15 @@ public control state: four lock modes, atomic acquisition, WAIT/NOWAIT outcomes,
 SKIP LOCKED selection with LIMIT/OFFSET, savepoint upgrades/rollback/release,
 non-reused transaction IDs and revision/sequence replay guards. Its metadata-only
 journal adapter verifies real controller signatures and exact old-state witnesses,
-while the journal verifies owner authorization, work and ancestry. Twenty-three
-owning tests exercise these rules, actual journal publication, durable reopen,
-forged control/data transitions and reorganization. Live SQL locking remains
-unimplemented; metadata outcomes are not encrypted SQL results or final lock grants.
+while the journal verifies owner authorization, work and ancestry. Active/Failed
+frame state adds authenticated failure, immediate release to the current savepoint
+cut, rollback recovery and actual Abort on failed Commit.
+All state, intent, head and authorization namespaces are v2; v1 rejects without
+migration. Thirty-seven owning tests exercise these rules, actual journal
+publication, durable reopen, forged control/data transitions and reorganization.
+The [failure validation](transaction-failure.md) records the executed boundary.
+Live SQL locking remains unimplemented; metadata outcomes are not encrypted SQL
+results or final lock grants.
 
 The remaining integration boundaries are:
 

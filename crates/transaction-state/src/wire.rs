@@ -89,7 +89,7 @@ impl<'a> Reader<'a> {
 
 pub(crate) fn profile_commitment(profile: Profile) -> Digest {
     let mut hash = Sha256::new();
-    hash.update(b"dcs/transaction-state/profile/v1");
+    hash.update(b"dcs/transaction-state/profile/v2");
     for value in [
         profile.max_transactions,
         profile.max_locks,
@@ -147,7 +147,7 @@ fn row_read(reader: &mut Reader<'_>) -> Result<RowKey> {
 
 pub(crate) fn encode_state(state: &State) -> Result<Vec<u8>> {
     let mut writer = Writer::new(state.context.profile.max_state_bytes as usize);
-    writer.put(b"DCSTXS01")?;
+    writer.put(b"DCSTXS02")?;
     context_write(&mut writer, state.context)?;
     writer.wide(state.revision)?;
     writer.wide(state.last_transaction)?;
@@ -157,6 +157,10 @@ pub(crate) fn encode_state(state: &State) -> Result<Vec<u8>> {
         writer.put(&tx.controller.0)?;
         writer.wide(tx.next_sequence)?;
         writer.put(&tx.snapshot)?;
+        writer.byte(match tx.status {
+            TransactionStatus::Active => 0,
+            TransactionStatus::Failed => 1,
+        })?;
         writer.number(tx.savepoints.len() as u32)?;
         for point in &tx.savepoints {
             writer.put(&point.name)?;
@@ -173,13 +177,13 @@ pub(crate) fn encode_state(state: &State) -> Result<Vec<u8>> {
 pub(crate) fn decode_state(bytes: &[u8], context: Context) -> Result<State> {
     context.profile.validate()?;
     let mut reader = Reader::new(bytes, context.profile.max_state_bytes as usize)?;
-    if reader.array::<8>()? != *b"DCSTXS01" {
+    if reader.array::<8>()? != *b"DCSTXS02" {
         return Err(Error::InvalidEncoding);
     }
     context_read(&mut reader, context)?;
     let revision = reader.wide()?;
     let last_transaction = reader.wide()?;
-    let count = reader.count(context.profile.max_transactions, 88)?;
+    let count = reader.count(context.profile.max_transactions, 89)?;
     let mut transactions = BTreeMap::new();
     let mut previous = 0;
     let mut total_events = 0;
@@ -192,6 +196,11 @@ pub(crate) fn decode_state(bytes: &[u8], context: Context) -> Result<State> {
         let controller = ControllerId(reader.array()?);
         let next_sequence = reader.wide()?;
         let snapshot = reader.array()?;
+        let status = match reader.byte()? {
+            0 => TransactionStatus::Active,
+            1 => TransactionStatus::Failed,
+            _ => return Err(Error::InvalidEncoding),
+        };
         let points = reader.count(context.profile.max_savepoints_per_transaction, 36)?;
         let mut savepoints = Vec::with_capacity(points);
         for _ in 0..points {
@@ -215,6 +224,7 @@ pub(crate) fn decode_state(bytes: &[u8], context: Context) -> Result<State> {
                 controller,
                 next_sequence,
                 snapshot,
+                status,
                 events,
                 savepoints,
             },
@@ -232,13 +242,13 @@ pub(crate) fn decode_state(bytes: &[u8], context: Context) -> Result<State> {
 pub(crate) fn state_commitment(state: &State) -> Result<Commitment> {
     let image = state.encode()?;
     let mut hash = Sha256::new();
-    hash.update(b"dcs/transaction-state/state/v1");
+    hash.update(b"dcs/transaction-state/state/v2");
     hash.update(&image);
     let transactions = hash.finalize().into();
     let held = state.lock_table();
     let holder_count: usize = held.values().map(BTreeMap::len).sum();
     let mut hash = Sha256::new();
-    hash.update(b"dcs/transaction-state/locks/v1");
+    hash.update(b"dcs/transaction-state/locks/v2");
     hash.update(state.context.network);
     hash.update(state.context.database);
     hash.update(state.context.profile.commitment());
@@ -268,6 +278,7 @@ pub(crate) fn validate_command(command: &Command, profile: Profile) -> Result<()
         | Action::RollbackTo { .. }
         | Action::Release { .. } => 32,
         Action::End { .. } => 1,
+        Action::FailCurrent => 0,
         Action::Acquire {
             candidates, limit, ..
         } => {
@@ -294,7 +305,7 @@ fn unsigned_intent(intent: &Intent, context: Context) -> Result<Vec<u8>> {
     context.profile.validate()?;
     validate_command(&intent.command, context.profile)?;
     let mut writer = Writer::new(context.profile.max_command_bytes as usize - 64);
-    writer.put(b"DCSTXI01")?;
+    writer.put(b"DCSTXI02")?;
     context_write(&mut writer, context)?;
     for bytes in [
         &intent.genesis,
@@ -342,6 +353,7 @@ fn unsigned_intent(intent: &Intent, context: Context) -> Result<Vec<u8>> {
                 row_write(&mut writer, *row)?;
             }
         }
+        Action::FailCurrent => writer.byte(6)?,
         Action::Savepoint { name } => {
             writer.byte(2)?;
             writer.put(name)?;
@@ -366,7 +378,7 @@ fn unsigned_intent(intent: &Intent, context: Context) -> Result<Vec<u8>> {
 }
 pub(crate) fn intent_message(intent: &Intent, context: Context) -> Result<Digest> {
     let mut hash = Sha256::new();
-    hash.update(b"dcs/transaction-state/controller-authorization/v1");
+    hash.update(b"dcs/transaction-state/controller-authorization/v2");
     hash.update(unsigned_intent(intent, context)?);
     Ok(hash.finalize().into())
 }
@@ -378,7 +390,7 @@ pub(crate) fn encode_intent(signed: &SignedIntent, context: Context) -> Result<V
 pub(crate) fn decode_intent(bytes: &[u8], context: Context) -> Result<SignedIntent> {
     context.profile.validate()?;
     let mut reader = Reader::new(bytes, context.profile.max_command_bytes as usize)?;
-    if reader.array::<8>()? != *b"DCSTXI01" {
+    if reader.array::<8>()? != *b"DCSTXI02" {
         return Err(Error::InvalidEncoding);
     }
     context_read(&mut reader, context)?;
@@ -436,6 +448,7 @@ pub(crate) fn decode_intent(bytes: &[u8], context: Context) -> Result<SignedInte
                 _ => return Err(Error::InvalidEncoding),
             },
         },
+        6 => Action::FailCurrent,
         _ => return Err(Error::InvalidEncoding),
     };
     let signature = reader.array()?;

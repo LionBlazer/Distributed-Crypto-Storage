@@ -119,6 +119,13 @@ pub enum WaitPolicy {
     SkipLocked,
 }
 
+/// Whether the current transaction/subtransaction frame can accept work.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransactionStatus {
+    Active,
+    Failed,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Completion {
     Commit,
@@ -140,6 +147,9 @@ pub enum Action {
         offset: u32,
         limit: Option<u32>,
     },
+    /// Authenticated voluntary failure of the current frame. This is control
+    /// intent, not evidence that a SQL statement failed or encrypted data rolled back.
+    FailCurrent,
     Savepoint {
         name: SavepointName,
     },
@@ -150,7 +160,8 @@ pub enum Action {
         name: SavepointName,
     },
     /// Ends control ownership. Encrypted data commit/rollback needs the separate
-    /// composite SQL transition, not this metadata-only operation.
+    /// composite SQL transition, not this metadata-only operation. A failed frame
+    /// always produces `Outcome::Ended(Completion::Abort)`, even for Commit intent.
     End {
         completion: Completion,
     },
@@ -199,6 +210,7 @@ pub struct Selection {
 pub enum Outcome {
     Began(TransactionId),
     Acquired(Selection),
+    Failed,
     Savepoint,
     RolledBackTo,
     Released,
@@ -215,6 +227,7 @@ pub struct TransactionInfo {
     pub controller: ControllerId,
     pub next_sequence: u64,
     pub snapshot: Digest,
+    pub status: TransactionStatus,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -238,6 +251,7 @@ pub enum Error {
     WrongController,
     CounterExhausted,
     UnknownSavepoint,
+    TransactionFailed,
     InvalidCommand,
     InvalidState,
     InvalidSignature,

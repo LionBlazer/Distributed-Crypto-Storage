@@ -1,6 +1,7 @@
 //! Genuine signed metadata transitions, real work, independent state witnesses
 //! and durable journal I/O. No test adapter accepts an unproved SQL transition.
 use ed25519_dalek::{Signer, SigningKey};
+use sha2::{Digest as _, Sha256};
 use transaction_state::*;
 use version_journal::{
     AuthorizedTransition, Body, DurableJournal, Freshness, Genesis, HeadPair, Header, Journal,
@@ -722,4 +723,361 @@ fn durable_metadata_reopens_and_rejected_witness_cannot_change_file_or_head() {
         begun.update.new
     );
     drop(reopened);
+}
+
+#[test]
+fn failure_intent_requires_controller_authorization_and_cannot_be_rebased_or_replayed() {
+    let fixture = Fixture::new();
+    let mut journal = Journal::new(fixture.genesis.clone()).unwrap();
+    let root = journal.genesis_id();
+    let state = State::new(fixture.context);
+    let signed = fixture.signed(
+        &journal,
+        root,
+        &state,
+        TransactionId(1),
+        &fixture.controller,
+        Action::Begin { snapshot: [9; 32] },
+    );
+    let begun = fixture.verifier.prepare(&state, &signed).unwrap();
+    let parent = append(
+        &mut journal,
+        root,
+        &fixture.body(root, &begun),
+        &fixture.verifier,
+    );
+    let signed = fixture.signed(
+        &journal,
+        parent,
+        &begun.state,
+        TransactionId(1),
+        &fixture.controller,
+        Action::FailCurrent,
+    );
+    let encoded = signed.encode(fixture.context).unwrap();
+    let mut legacy_hash = Sha256::new();
+    legacy_hash.update(b"dcs/transaction-state/controller-authorization/v1");
+    legacy_hash.update(&encoded[..encoded.len() - 64]);
+    let mut legacy_domain = signed.clone();
+    legacy_domain.signature = fixture.controller.sign(&legacy_hash.finalize()).to_bytes();
+    assert!(matches!(
+        legacy_domain.verify(fixture.context),
+        Err(Error::InvalidSignature)
+    ));
+    let mut tampered = signed.clone();
+    tampered.intent.command.action = Action::End {
+        completion: Completion::Abort,
+    };
+    assert!(matches!(
+        fixture.verifier.prepare(&begun.state, &tampered),
+        Err(Error::InvalidSignature)
+    ));
+    let other = key();
+    let wrong = fixture.signed(
+        &journal,
+        parent,
+        &begun.state,
+        TransactionId(1),
+        &other,
+        Action::FailCurrent,
+    );
+    assert!(matches!(
+        fixture.verifier.prepare(&begun.state, &wrong),
+        Err(Error::WrongController)
+    ));
+
+    let failed = fixture.verifier.prepare(&begun.state, &signed).unwrap();
+    let block = append(
+        &mut journal,
+        parent,
+        &fixture.body(parent, &failed),
+        &fixture.verifier,
+    );
+
+    assert_eq!(failed.outcome, Outcome::Failed);
+    assert_eq!(
+        failed.state.transaction(TransactionId(1)).unwrap().status,
+        TransactionStatus::Failed
+    );
+    assert!(matches!(
+        fixture.verifier.prepare(&failed.state, &signed),
+        Err(Error::StaleRevision)
+    ));
+    let mut rebased = signed.clone();
+    rebased.intent.parent = block;
+    rebased.intent.command.expected_revision = failed.state.revision();
+    rebased.intent.command.sequence = failed
+        .state
+        .transaction(TransactionId(1))
+        .unwrap()
+        .next_sequence;
+    assert!(matches!(
+        fixture.verifier.prepare(&failed.state, &rebased),
+        Err(Error::InvalidSignature)
+    ));
+    let end = fixture.signed(
+        &journal,
+        block,
+        &failed.state,
+        TransactionId(1),
+        &fixture.controller,
+        Action::End {
+            completion: Completion::Commit,
+        },
+    );
+    let ended = fixture.verifier.prepare(&failed.state, &end).unwrap();
+    assert_eq!(ended.outcome, Outcome::Ended(Completion::Abort));
+    append(
+        &mut journal,
+        block,
+        &fixture.body(block, &ended),
+        &fixture.verifier,
+    );
+    assert_eq!(ended.state.transaction(TransactionId(1)), None);
+}
+
+#[test]
+fn valid_status_substitution_legacy_namespaces_and_added_data_updates_cannot_publish_failure() {
+    let fixture = Fixture::new();
+    let mut journal = Journal::new(fixture.genesis.clone()).unwrap();
+    let root = journal.genesis_id();
+    let state = State::new(fixture.context);
+    let signed = fixture.signed(
+        &journal,
+        root,
+        &state,
+        TransactionId(1),
+        &fixture.controller,
+        Action::Begin { snapshot: [9; 32] },
+    );
+    let begun = fixture.verifier.prepare(&state, &signed).unwrap();
+    let parent = append(
+        &mut journal,
+        root,
+        &fixture.body(root, &begun),
+        &fixture.verifier,
+    );
+    let signed = fixture.signed(
+        &journal,
+        parent,
+        &begun.state,
+        TransactionId(1),
+        &fixture.controller,
+        Action::FailCurrent,
+    );
+    let prepared = fixture.verifier.prepare(&begun.state, &signed).unwrap();
+    let before = journal.best_validated();
+    for mutation in 0..4 {
+        let Body::Transition(mut bad) = fixture.body(parent, &prepared) else {
+            unreachable!()
+        };
+        match mutation {
+            0 => {
+                // A canonical Failed image is still the WRONG exact old-state witness.
+                bad.proof[108 + 8 + 32 + 8 + 32] = 1;
+                assert_eq!(
+                    State::decode(&bad.proof, fixture.context)
+                        .unwrap()
+                        .transaction(TransactionId(1))
+                        .unwrap()
+                        .status,
+                    TransactionStatus::Failed
+                );
+            }
+            1 => bad.updates.push(ShardUpdate {
+                id: 9,
+                old: fixture.genesis.initial_shards[1].heads,
+                new: HeadPair {
+                    data: [10; 112],
+                    index: [11; 112],
+                },
+            }),
+            2 => bad.updates[0].old.data[..8].copy_from_slice(b"DCSTXH01"),
+            3 => bad.request[..8].copy_from_slice(b"DCSTXI01"),
+            _ => unreachable!(),
+        }
+        // Keep genuine outer owner authorization: metadata semantics must reject.
+        bad.sign(root, &fixture.owner);
+        let body = Body::Transition(bad);
+        if mutation == 2 {
+            // The journal rejects a wrong old head before mining or metadata verification.
+            assert!(matches!(
+                journal.candidate(parent, &body, 1002),
+                Err(version_journal::Error::InvalidTransition)
+            ));
+        } else {
+            let mut header = journal.candidate(parent, &body, 1002).unwrap();
+            header.mine(100_000).unwrap();
+            let bytes = body.encode(journal.profile()).unwrap();
+            assert!(matches!(
+                journal.import_block(header, &bytes, 2000, &fixture.verifier),
+                Err(version_journal::Error::RejectedComputationProof)
+            ));
+        }
+        assert_eq!(journal.best_validated(), before);
+        assert_eq!(
+            journal.validated_shards(before).unwrap()[0].heads,
+            begun.update.new
+        );
+    }
+}
+
+#[test]
+fn durable_failed_frame_replays_as_failed_and_rollback_to_recovers_the_authenticated_cut() {
+    let fixture = Fixture::new();
+    let path = std::env::temp_dir().join(format!(
+        "dcs-failed-frame-{}-{}.bin",
+        std::process::id(),
+        u128::from_le_bytes({
+            let mut bytes = [0; 16];
+            getrandom::getrandom(&mut bytes).unwrap();
+            bytes
+        })
+    ));
+    let mut cleanup = OwnedFile(None);
+    let mut durable = DurableJournal::create(&path, fixture.genesis.clone(), [72; 32]).unwrap();
+    cleanup.0 = Some(path.clone());
+    let mut parent = durable.journal().genesis_id();
+    let mut state = State::new(fixture.context);
+    let second = RowKey {
+        row: [19; 32],
+        ..row()
+    };
+    for action in [
+        Action::Begin { snapshot: [9; 32] },
+        Action::Acquire {
+            candidates: vec![row()],
+            mode: LockMode::KeyShare,
+            wait: WaitPolicy::NoWait,
+            offset: 0,
+            limit: None,
+        },
+        Action::Savepoint { name: [12; 32] },
+        Action::Acquire {
+            candidates: vec![row(), second],
+            mode: LockMode::NoKeyUpdate,
+            wait: WaitPolicy::NoWait,
+            offset: 0,
+            limit: None,
+        },
+        Action::FailCurrent,
+    ] {
+        let signed = fixture.signed(
+            durable.journal(),
+            parent,
+            &state,
+            TransactionId(1),
+            &fixture.controller,
+            action,
+        );
+        let prepared = fixture.verifier.prepare(&state, &signed).unwrap();
+        let body = fixture.body(parent, &prepared);
+        let (header, bytes) = mined(durable.journal(), parent, &body, &fixture.verifier);
+        parent = header.id();
+        durable
+            .append_block(header, &bytes, 2000, &fixture.verifier)
+            .unwrap();
+        state = prepared.state;
+    }
+    let failed_block = parent;
+    let (header, bytes) = mined(durable.journal(), parent, &Body::Empty, &fixture.verifier);
+    durable
+        .append_block(header, &bytes, 2000, &fixture.verifier)
+        .unwrap();
+    let confirmed = durable
+        .journal()
+        .resolve(Freshness::LatestConfirmed)
+        .unwrap();
+    assert_eq!(confirmed.block, failed_block);
+    let failed_heads = fixture.verifier.heads(&state).unwrap();
+    drop(durable);
+
+    let mut reopened = DurableJournal::open(
+        &path,
+        fixture.genesis.clone(),
+        [72; 32],
+        2000,
+        &fixture.verifier,
+    )
+    .unwrap();
+
+    assert_eq!(
+        reopened
+            .journal()
+            .shards(confirmed, Freshness::Exact(confirmed))
+            .unwrap()[0]
+            .heads,
+        failed_heads
+    );
+    // Recover through the actual persisted, revalidated control witness and intent.
+    let Body::Transition(persisted) = Body::decode(
+        reopened.journal().body(failed_block).unwrap(),
+        reopened.journal().profile(),
+    )
+    .unwrap() else {
+        unreachable!()
+    };
+    let signed = SignedIntent::decode(&persisted.request, fixture.context).unwrap();
+    signed.verify(fixture.context).unwrap();
+    let previous = State::decode(&persisted.proof, fixture.context).unwrap();
+    let failed = previous
+        .transition(signed.intent.controller, &signed.intent.command)
+        .unwrap()
+        .state;
+    assert_eq!(failed, state);
+    assert_eq!(
+        failed.transaction(TransactionId(1)).unwrap().status,
+        TransactionStatus::Failed
+    );
+    assert_eq!(
+        failed.held_mode(TransactionId(1), row()),
+        Some(LockMode::KeyShare)
+    );
+    assert_eq!(failed.held_mode(TransactionId(1), second), None);
+    let parent = reopened.journal().best_validated().block;
+    let signed = fixture.signed(
+        reopened.journal(),
+        parent,
+        &failed,
+        TransactionId(1),
+        &fixture.controller,
+        Action::RollbackTo { name: [12; 32] },
+    );
+    let recovered = fixture.verifier.prepare(&failed, &signed).unwrap();
+    let body = fixture.body(parent, &recovered);
+    let (header, bytes) = mined(reopened.journal(), parent, &body, &fixture.verifier);
+    reopened
+        .append_block(header, &bytes, 2000, &fixture.verifier)
+        .unwrap();
+    assert_eq!(
+        recovered
+            .state
+            .transaction(TransactionId(1))
+            .unwrap()
+            .status,
+        TransactionStatus::Active
+    );
+    assert_eq!(
+        recovered.state.held_mode(TransactionId(1), row()),
+        Some(LockMode::KeyShare)
+    );
+    let expected = fixture.verifier.heads(&recovered.state).unwrap();
+    drop(reopened);
+    let final_reopen = DurableJournal::open(
+        &path,
+        fixture.genesis.clone(),
+        [72; 32],
+        2000,
+        &fixture.verifier,
+    )
+    .unwrap();
+    assert_eq!(
+        final_reopen
+            .journal()
+            .validated_shards(final_reopen.journal().best_validated())
+            .unwrap()[0]
+            .heads,
+        expected
+    );
+    drop(final_reopen);
 }

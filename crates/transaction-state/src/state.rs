@@ -16,6 +16,7 @@ pub(crate) struct Transaction {
     pub controller: ControllerId,
     pub next_sequence: u64,
     pub snapshot: Digest,
+    pub status: TransactionStatus,
     pub events: Vec<LockEvent>,
     pub savepoints: Vec<Savepoint>,
 }
@@ -45,6 +46,7 @@ impl State {
     pub fn revision(&self) -> u64 {
         self.revision
     }
+    /// Unfinished control records, including failed frames awaiting recovery/end.
     pub fn active_transactions(&self) -> usize {
         self.transactions.len()
     }
@@ -59,6 +61,7 @@ impl State {
             controller: tx.controller,
             next_sequence: tx.next_sequence,
             snapshot: tx.snapshot,
+            status: tx.status,
         })
     }
     pub fn held_mode(&self, id: TransactionId, row: RowKey) -> Option<LockMode> {
@@ -117,6 +120,7 @@ impl State {
                     controller: actor,
                     next_sequence: 1,
                     snapshot,
+                    status: TransactionStatus::Active,
                     events: Vec::new(),
                     savepoints: Vec::new(),
                 },
@@ -132,6 +136,14 @@ impl State {
             }
             if tx.next_sequence != command.sequence {
                 return Err(Error::WrongSequence);
+            }
+            if tx.status == TransactionStatus::Failed
+                && !matches!(
+                    command.action,
+                    Action::RollbackTo { .. } | Action::End { .. }
+                )
+            {
+                return Err(Error::TransactionFailed);
             }
             if !matches!(command.action, Action::End { .. }) {
                 tx.next_sequence = tx
@@ -212,6 +224,12 @@ impl State {
                     }
                     Outcome::Acquired(Selection { selected, skipped })
                 }
+                Action::FailCurrent => {
+                    let cut = tx.savepoints.last().map_or(0, |point| point.events);
+                    tx.events.truncate(cut);
+                    tx.status = TransactionStatus::Failed;
+                    Outcome::Failed
+                }
                 Action::Savepoint { name } => {
                     if tx.savepoints.len()
                         >= self.context.profile.max_savepoints_per_transaction as usize
@@ -232,6 +250,7 @@ impl State {
                         .ok_or(Error::UnknownSavepoint)?;
                     tx.events.truncate(tx.savepoints[point].events);
                     tx.savepoints.truncate(point + 1);
+                    tx.status = TransactionStatus::Active;
                     Outcome::RolledBackTo
                 }
                 Action::Release { name } => {
@@ -244,8 +263,13 @@ impl State {
                     Outcome::Released
                 }
                 Action::End { completion } => {
+                    let actual = if tx.status == TransactionStatus::Failed {
+                        Completion::Abort
+                    } else {
+                        *completion
+                    };
                     next.transactions.remove(&command.transaction);
-                    Outcome::Ended(*completion)
+                    Outcome::Ended(actual)
                 }
                 Action::Begin { .. } => unreachable!(),
             }
@@ -302,6 +326,11 @@ impl State {
                     .savepoints
                     .windows(2)
                     .any(|points| points[0].events > points[1].events)
+            {
+                return Err(Error::InvalidState);
+            }
+            if tx.status == TransactionStatus::Failed
+                && tx.events.len() != tx.savepoints.last().map_or(0, |point| point.events)
             {
                 return Err(Error::InvalidState);
             }
