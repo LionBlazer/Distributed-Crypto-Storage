@@ -13,6 +13,7 @@ serde_json.workspace = true
 zeroize = "1"
 
 [dev-dependencies]
+bfv-query-core = { path = "../../crates/bfv-query-core" }
 compact-query = { path = "../../crates/compact-query", default-features = false, features = ["bfv-experiment"] }
 compact-store = { path = "../../crates/compact-store" }
 storage-client = { path = "../../crates/storage-client" }

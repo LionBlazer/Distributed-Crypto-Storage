@@ -335,7 +335,7 @@ impl Owner {
         let answer = self
             .key
             .decrypt_indexed_insert_unverified_for_experiment(prepared.pending, &response)?;
-        if answer.rows.len() != prepared.selection.ordinals.len() + 1
+        if answer.rows.len() != prepared.selection.ordinals.len() + prepared.incoming.len()
             || answer
                 .rows
                 .iter()
@@ -357,6 +357,7 @@ impl Owner {
             table,
             &prepared.selection.data_head,
             &prepared.selection.index_head,
+            prepared.incoming.len(),
             &rows,
             limits,
         )?;

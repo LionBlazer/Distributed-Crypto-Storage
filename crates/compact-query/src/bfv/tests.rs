@@ -741,7 +741,7 @@ fn genuine_insert_grows_actual_ciphertext_and_index_with_monotonic_heads_and_zer
         let old_index = table.index_commitment().clone();
         let old = table.snapshot().encode();
         let prepared = owner
-            .prepare_insert_for_experiment(&table, incoming, 256, Limits::default())
+            .prepare_insert_for_experiment(&table, &[incoming], 256, Limits::default())
             .unwrap();
         let evaluated = peer.evaluate_indexed_insert(prepared.request()).unwrap();
         assert_eq!(evaluated.stats.ciphertext_additions, 1);
@@ -806,7 +806,7 @@ fn in_bounds_wrong_inserted_relation_never_authorizes_any_compact_write() {
     let mut table = owner.seal(&[row(18, 255)], 1, Limits::default()).unwrap();
     let before = (table.snapshot().encode(), table.index.encode());
     let prepared = owner
-        .prepare_insert_for_experiment(&table, row(42, 256), 256, Limits::default())
+        .prepare_insert_for_experiment(&table, &[row(42, 256)], 256, Limits::default())
         .unwrap();
     // Test-only wrong relation, with identical public binding and real encrypted peer append.
     // The core's public addition-forgery test independently shows such in-bounds values are not proven.
@@ -815,11 +815,11 @@ fn in_bounds_wrong_inserted_relation_never_authorizes_any_compact_write() {
         .prepare_indexed_insert_for_experiment(
             prepared.pending.context().clone(),
             &prepared.selection.fields,
-            bfv_core::SelectedField {
+            &[bfv_core::SelectedField {
                 age: 43,
                 amount: 256,
                 active: true,
-            },
+            }],
         )
         .unwrap();
     let wrong = peer.evaluate_indexed_insert(&wrong.request).unwrap();
@@ -844,11 +844,11 @@ fn pending_insert_rejects_either_changed_head_and_wrong_owner_without_mutation()
     let mut table = owner.seal(&[row(18, 255)], 1, Limits::default()).unwrap();
     assert!(
         other
-            .prepare_insert_for_experiment(&table, row(42, 1), 256, Limits::default())
+            .prepare_insert_for_experiment(&table, &[row(42, 1)], 256, Limits::default())
             .is_err()
     );
     let first = owner
-        .prepare_insert_for_experiment(&table, row(42, 1), 256, Limits::default())
+        .prepare_insert_for_experiment(&table, &[row(42, 1)], 256, Limits::default())
         .unwrap();
     let output = peer.evaluate_indexed_insert(first.request()).unwrap();
     let verified = table
@@ -883,11 +883,11 @@ fn pending_insert_rejects_either_changed_head_and_wrong_owner_without_mutation()
     );
     assert_eq!((table.snapshot().encode(), table.index.encode()), before);
     let first = owner
-        .prepare_insert_for_experiment(&table, row(42, 1), 256, Limits::default())
+        .prepare_insert_for_experiment(&table, &[row(42, 1)], 256, Limits::default())
         .unwrap();
     let first_output = peer.evaluate_indexed_insert(first.request()).unwrap();
     let second = owner
-        .prepare_insert_for_experiment(&table, row(7, 2), 256, Limits::default())
+        .prepare_insert_for_experiment(&table, &[row(7, 2)], 256, Limits::default())
         .unwrap();
     let output = peer.evaluate_indexed_insert(second.request()).unwrap();
     owner

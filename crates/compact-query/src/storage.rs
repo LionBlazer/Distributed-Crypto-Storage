@@ -99,13 +99,21 @@ pub(crate) fn grow_checked(
     table: &Table,
     expected_data: &Commitment,
     expected_index: &Commitment,
+    incoming_count: usize,
     rows: &[PlainRow],
     limits: Limits,
 ) -> Result<Table> {
     if table.commitment() != expected_data || table.index_commitment() != expected_index {
         return Err(Error::WrongVersion);
     }
-    if rows.len() as u64 != expected_data.layout().row_count + 1 {
+    if incoming_count == 0
+        || rows.len() > crate::MAX_ROWS
+        || expected_data
+            .layout()
+            .row_count
+            .checked_add(incoming_count as u64)
+            != Some(rows.len() as u64)
+    {
         return Err(Error::InvalidOutput);
     }
     let mut bytes = Zeroizing::new(Vec::with_capacity(rows.len() * ROW_BYTES as usize));

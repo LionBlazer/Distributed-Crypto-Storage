@@ -128,7 +128,7 @@ fn proved_insert_stages_larger_encrypted_images_and_a_subsequent_proved_select_r
     let old_data = table.commitment().clone();
     let old_index = table.index_commitment().clone();
     let prepared = owner
-        .prepare_insert_for_experiment(&table, row(42, 256), 256, limits)
+        .prepare_insert_for_experiment(&table, &[row(42, 256)], 256, limits)
         .unwrap();
     let input = public.insert_circuit_request(prepared.request()).unwrap();
     let generated = prove(&input).unwrap();
@@ -403,7 +403,7 @@ fn checked_mutation_evidence_is_bound_to_its_pending_request_even_between_two_ad
         .check_update_proof(&table, &prepared, generated.output(), generated.proof())
         .unwrap();
     let incoming = owner
-        .prepare_insert_for_experiment(&table, row(21, 12), 256, limits)
+        .prepare_insert_for_experiment(&table, &[row(21, 12)], 256, limits)
         .unwrap();
     // UPDATE and INSERT both use the same Addition proof primitive. Their exact
     // authenticated requests, rather than an operation-name check, distinguish them.
@@ -429,7 +429,7 @@ fn checked_mutation_evidence_is_bound_to_its_pending_request_even_between_two_ad
     );
     assert_eq!(encrypted_images(&table), images);
     let prepared = owner
-        .prepare_insert_for_experiment(&table, row(21, 12), 256, limits)
+        .prepare_insert_for_experiment(&table, &[row(21, 12)], 256, limits)
         .unwrap();
     let generated = prove(&public.insert_circuit_request(prepared.request()).unwrap()).unwrap();
     assert!(matches!(
@@ -450,4 +450,79 @@ fn checked_mutation_evidence_is_bound_to_its_pending_request_even_between_two_ad
         row(21, 12)
     );
     assert_eq!(encrypted_images(&table), images);
+}
+
+#[test]
+fn a_whole_batch_requires_one_exact_proof_and_stages_all_rows_once() {
+    let limits = Limits::default();
+    let (owner, peer) = Owner::generate([77; 16]).unwrap();
+    let evaluator = public_evaluator(&peer);
+    let original = vec![row(18, 255); 254];
+    let table = owner.seal(&original, 17, limits).unwrap();
+    let before = encrypted_images(&table);
+    assert!(
+        owner
+            .prepare_insert_for_experiment(&table, &[], 256, limits)
+            .is_err()
+    );
+    assert!(
+        owner
+            .prepare_insert_for_experiment(&table, &[row(1, 1); 3], 256, limits)
+            .is_err()
+    );
+    let incoming = [row(42, 256), row(7, 65535)];
+    let prepared = owner
+        .prepare_insert_for_experiment(&table, &incoming, 256, limits)
+        .unwrap();
+    let input = evaluator
+        .insert_circuit_request(prepared.request())
+        .unwrap();
+    let proved = prove(&input).unwrap();
+    let mut tampered = proved.output().to_vec();
+    *tampered.last_mut().unwrap() ^= 1;
+    assert!(
+        owner
+            .check_insert_proof(&table, &prepared, &tampered, proved.proof())
+            .is_err()
+    );
+    assert!(
+        owner
+            .check_insert_proof(&table, &prepared, proved.output(), &[])
+            .is_err()
+    );
+    let wrong_version = owner.seal(&original, 17, limits).unwrap();
+    assert!(matches!(
+        owner.check_insert_proof(&wrong_version, &prepared, proved.output(), proved.proof()),
+        Err(Error::WrongVersion)
+    ));
+    let checked = owner
+        .check_insert_proof(&table, &prepared, proved.output(), proved.proof())
+        .unwrap();
+    let staged = owner
+        .stage_checked_insert(&table, prepared, proved.output(), checked, limits)
+        .unwrap();
+    assert_eq!(encrypted_images(&table), before);
+    assert_eq!(
+        staged.commitment().revision(),
+        table.commitment().revision() + 1
+    );
+    assert_eq!(staged.commitment().layout().row_count, 256);
+    assert_eq!(
+        owner
+            .decrypt_row_for_experiment(&staged, 253, limits)
+            .unwrap(),
+        original[253]
+    );
+    assert_eq!(
+        owner
+            .decrypt_row_for_experiment(&staged, 254, limits)
+            .unwrap(),
+        incoming[0]
+    );
+    assert_eq!(
+        owner
+            .decrypt_row_for_experiment(&staged, 255, limits)
+            .unwrap(),
+        incoming[1]
+    );
 }

@@ -6,8 +6,9 @@ use std::fmt;
 use version_journal::HeadRef;
 
 pub const MAX_SCRIPT_BYTES: usize = 64 * 1024;
-/// Multi-row INSERTs count once per row: every row requires its actual proof.
 pub const MAX_SCRIPT_STATEMENTS: usize = 256;
+/// Bound literal input independently of statement count and backend capacity.
+pub const MAX_SCRIPT_INSERTED_ROWS: usize = 256;
 
 #[derive(Clone, Debug)]
 pub enum SqlStatement {
@@ -24,7 +25,6 @@ pub enum SqlStatement {
 #[derive(Clone, Debug)]
 pub struct SqlScript {
     statements: Vec<SqlStatement>,
-    source_statements: Vec<usize>,
 }
 
 #[derive(Debug)]
@@ -40,7 +40,7 @@ pub enum StatementResult {
 
 #[derive(Debug)]
 pub struct StatementOutcome {
-    /// One-based source statement number; multi-row INSERT outcomes share it.
+    /// One-based source statement number; one INSERT batch produces one outcome.
     pub statement: usize,
     pub result: StatementResult,
 }
@@ -82,6 +82,8 @@ impl std::error::Error for ScriptError {
 
 impl SqlScript {
     /// Fully validate all syntax and proof-supported operations before network I/O.
+    /// Each INSERT remains one statement; at most 256 literal rows may be supplied
+    /// across all INSERT batches, independently of the 256-statement limit.
     /// Ordinary comments are accepted; executable/nested comments, strings,
     /// unsupported schema/types, transactions and locking clauses reject explicitly.
     pub fn parse(source: &str) -> Result<Self, ScriptError> {
@@ -91,21 +93,31 @@ impl SqlScript {
         let token_statements = tokenize(source)?;
         let mut script = Self {
             statements: Vec::new(),
-            source_statements: Vec::new(),
         };
+        let mut inserted_rows = 0;
         for (index, tokens) in token_statements.into_iter().enumerate() {
             let statement = index + 1;
-            let operations = prepare_statement(tokens, statement)?;
-            if script.statements.len() + operations.len() > MAX_SCRIPT_STATEMENTS {
+            if statement > MAX_SCRIPT_STATEMENTS {
                 return Err(invalid(
                     statement,
-                    "SQL script exceeds 256 operations after expanding multi-row INSERTs",
+                    "SQL script exceeds 256 source statements",
                 ));
             }
-            script
-                .source_statements
-                .extend(std::iter::repeat_n(statement, operations.len()));
-            script.statements.extend(operations);
+            let operation = prepare_statement(tokens, statement)?;
+            if let SqlStatement::Query {
+                plan: QueryPlan::Insert { rows },
+                ..
+            } = &operation
+            {
+                inserted_rows += rows.len();
+                if inserted_rows > MAX_SCRIPT_INSERTED_ROWS {
+                    return Err(invalid(
+                        statement,
+                        "SQL script exceeds the 256 inserted-row input limit",
+                    ));
+                }
+            }
+            script.statements.push(operation);
         }
         if script.statements.is_empty() {
             return Err(invalid(1, "SQL script is empty"));
@@ -124,16 +136,14 @@ impl SqlScript {
     pub fn inserted_rows(&self) -> usize {
         self.statements
             .iter()
-            .filter(|statement| {
-                matches!(
-                    statement,
-                    SqlStatement::Query {
-                        plan: QueryPlan::Insert { .. },
-                        ..
-                    }
-                )
+            .map(|statement| match statement {
+                SqlStatement::Query {
+                    plan: QueryPlan::Insert { rows },
+                    ..
+                } => rows.len(),
+                _ => 0,
             })
-            .count()
+            .sum()
     }
 
     pub fn has_create(&self) -> bool {
@@ -154,13 +164,14 @@ impl SqlScript {
         self.check_table_lifecycle(session.is_some())?;
         let mut create_empty = Some(create_empty);
         let mut completed = Vec::new();
-        for (statement, source) in self.statements.iter().zip(&self.source_statements) {
+        for (index, statement) in self.statements.iter().enumerate() {
+            let source = index + 1;
             let result = match statement {
                 SqlStatement::CreateTable { .. } => {
                     let created = session.is_none();
                     if created {
                         let bootstrap = create_empty.take().ok_or_else(|| ScriptError {
-                            failed_statement: *source,
+                            failed_statement: source,
                             completed: std::mem::take(&mut completed),
                             source: Error::InvalidInput("Missing empty database creator".into()),
                         })?;
@@ -168,7 +179,7 @@ impl SqlScript {
                             Ok(database) => *session = Some(database),
                             Err(error) => {
                                 return Err(ScriptError {
-                                    failed_statement: *source,
+                                    failed_statement: source,
                                     completed,
                                     source: error,
                                 });
@@ -188,12 +199,12 @@ impl SqlScript {
             };
             match result {
                 Ok(result) => completed.push(StatementOutcome {
-                    statement: *source,
+                    statement: source,
                     result,
                 }),
                 Err(source_error) => {
                     return Err(ScriptError {
-                        failed_statement: *source,
+                        failed_statement: source,
                         completed,
                         source: source_error,
                     });
@@ -206,12 +217,13 @@ impl SqlScript {
     }
 
     fn check_table_lifecycle(&self, mut exists: bool) -> Result<(), ScriptError> {
-        for (statement, source) in self.statements.iter().zip(&self.source_statements) {
+        for (index, statement) in self.statements.iter().enumerate() {
+            let source = index + 1;
             match statement {
                 SqlStatement::CreateTable { if_not_exists } => {
                     if exists && !if_not_exists {
                         return Err(invalid(
-                            *source,
+                            source,
                             "Table records already exists; use CREATE TABLE IF NOT EXISTS to preserve it",
                         ));
                     }
@@ -219,7 +231,7 @@ impl SqlScript {
                 }
                 SqlStatement::Query { .. } if !exists => {
                     return Err(invalid(
-                        *source,
+                        source,
                         "No database/table exists; run CREATE TABLE IF NOT EXISTS records (age TINYINT UNSIGNED NOT NULL, amount SMALLINT UNSIGNED NOT NULL) first",
                     ));
                 }
@@ -238,7 +250,7 @@ fn invalid(statement: usize, message: impl Into<String>) -> ScriptError {
     }
 }
 
-fn prepare_statement(tokens: Vec<String>, number: usize) -> Result<Vec<SqlStatement>, ScriptError> {
+fn prepare_statement(tokens: Vec<String>, number: usize) -> Result<SqlStatement, ScriptError> {
     if tokens.first().is_some_and(|token| token == "CREATE") {
         let mut expected = vec!["CREATE", "TABLE"];
         let if_not_exists = tokens.get(2).is_some_and(|token| token == "IF");
@@ -255,7 +267,7 @@ fn prepare_statement(tokens: Vec<String>, number: usize) -> Result<Vec<SqlStatem
                 "Supported DDL is CREATE TABLE [IF NOT EXISTS] records (age TINYINT UNSIGNED NOT NULL, amount SMALLINT UNSIGNED NOT NULL); other tables, types, nullable columns and constraints are not implemented",
             ));
         }
-        return Ok(vec![SqlStatement::CreateTable { if_not_exists }]);
+        return Ok(SqlStatement::CreateTable { if_not_exists });
     }
     if tokens.windows(2).any(|pair| pair == ["FOR", "UPDATE"]) {
         return Err(invalid(
@@ -263,56 +275,24 @@ fn prepare_statement(tokens: Vec<String>, number: usize) -> Result<Vec<SqlStatem
             "SELECT FOR UPDATE requires transactions and row locking, which are not implemented; the locking clause cannot be ignored",
         ));
     }
-    if tokens.first().is_some_and(|token| token == "INSERT") {
-        // Expand only the literal VALUES grammar. Each generated single-row SQL
-        // is validated by sql-plan and then executes through its actual FHE proof.
-        if let Some(values) = tokens.iter().position(|token| token == "VALUES") {
-            let prefix = &tokens[..=values];
-            let mut cursor = values + 1;
-            let mut operations = Vec::new();
-            loop {
-                let start = cursor;
-                if tokens.get(cursor).map(String::as_str) != Some("(") {
-                    return Err(invalid(
-                        number,
-                        "INSERT VALUES expects a literal (age, amount) tuple",
-                    ));
-                }
-                cursor += 1;
-                while cursor < tokens.len() && tokens[cursor] != ")" {
-                    cursor += 1;
-                }
-                if cursor == tokens.len() {
-                    return Err(invalid(number, "INSERT VALUES tuple is not closed"));
-                }
-                cursor += 1;
-                let sql = prefix
-                    .iter()
-                    .chain(&tokens[start..cursor])
-                    .map(String::as_str)
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                operations.push(prepare_query(sql, number)?);
-                if operations.len() > MAX_SCRIPT_STATEMENTS {
-                    return Err(invalid(
-                        number,
-                        "INSERT exceeds the 256-operation script limit",
-                    ));
-                }
-                if cursor == tokens.len() {
-                    return Ok(operations);
-                }
-                if tokens[cursor] != "," {
-                    return Err(invalid(
-                        number,
-                        "Extra clauses after INSERT VALUES are unsupported",
-                    ));
-                }
-                cursor += 1;
-            }
+    // Keep lexical boundaries without inflating punctuation-heavy batches beyond
+    // sql-plan's statement-byte limit. Separated comparison symbols must not turn
+    // malformed `< =` or `> =` into a supported compound operator.
+    let mut sql = String::new();
+    let mut previous: Option<&str> = None;
+    let word = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
+    for token in &tokens {
+        if previous.is_some_and(|previous| {
+            (previous.bytes().next_back().is_some_and(word)
+                && token.bytes().next().is_some_and(word))
+                || (matches!(previous, "<" | ">") && token == "=")
+        }) {
+            sql.push(' ');
         }
+        sql.push_str(token);
+        previous = Some(token);
     }
-    Ok(vec![prepare_query(tokens.join(" "), number)?])
+    prepare_query(sql, number)
 }
 
 fn prepare_query(sql: String, number: usize) -> Result<SqlStatement, ScriptError> {
@@ -419,20 +399,116 @@ mod tests {
     fn comments_and_multi_row_insert_preserve_every_literal_and_source_statement() {
         let script = SqlScript::parse(&format!("-- client input\n{CREATE}; /* two rows */ INSERT INTO records(age,amount) VALUES(18,20),(42,30); SELECT amount FROM records;")).unwrap();
         assert_eq!(script.inserted_rows(), 2);
-        assert_eq!(script.statement_count(), 4);
-        assert_eq!(script.source_statements, [1, 2, 2, 3]);
-        let values: Vec<_> = script
-            .statements()
-            .iter()
-            .filter_map(|statement| match statement {
-                SqlStatement::Query {
-                    plan: QueryPlan::Insert { row },
-                    ..
-                } => Some((row.age, row.amount)),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(values, [(18, 20), (42, 30)]);
+        assert_eq!(script.statement_count(), 3);
+        let SqlStatement::Query { sql, plan } = &script.statements()[1] else {
+            panic!("one INSERT statement expected");
+        };
+        assert_eq!(
+            plan,
+            &QueryPlan::Insert {
+                rows: vec![
+                    sql_plan::RowValues {
+                        age: 18,
+                        amount: 20
+                    },
+                    sql_plan::RowValues {
+                        age: 42,
+                        amount: 30
+                    },
+                ],
+            }
+        );
+        assert_eq!(sql_plan::parse_sql(sql).unwrap(), *plan);
+        assert!(matches!(
+            script.statements()[2],
+            SqlStatement::Query {
+                plan: QueryPlan::Select { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn malformed_later_tuple_rejects_the_whole_script_before_creation() {
+        for tuple in ["(256,30)", "(42,65536)", "(42)", "(42,30", "", "SELECT"] {
+            let error = SqlScript::parse(&format!(
+                "{CREATE}; INSERT INTO records VALUES(18,20),{tuple}; SELECT * FROM records"
+            ))
+            .unwrap_err();
+
+            assert_eq!(error.failed_statement, 2, "{tuple}");
+            assert!(error.completed.is_empty(), "{tuple}");
+        }
+    }
+
+    #[test]
+    fn inserted_row_budget_counts_all_batches_independently_of_statement_count() {
+        let half_batch = std::iter::repeat_n("(18,20)", MAX_SCRIPT_INSERTED_ROWS / 2)
+            .collect::<Vec<_>>()
+            .join(",");
+        let source = format!(
+            "INSERT INTO records VALUES {half_batch}; INSERT INTO records VALUES {half_batch}"
+        );
+        let script = SqlScript::parse(&source).unwrap();
+
+        assert_eq!(script.statement_count(), 2);
+        assert_eq!(script.inserted_rows(), MAX_SCRIPT_INSERTED_ROWS);
+
+        let error =
+            SqlScript::parse(&format!("{source}; INSERT INTO records VALUES (1,1)")).unwrap_err();
+        assert_eq!(error.failed_statement, 3);
+        assert!(error.completed.is_empty());
+        assert!(error.to_string().contains("inserted-row input limit"));
+
+        let oversized_batch = std::iter::repeat_n("(1,1)", MAX_SCRIPT_INSERTED_ROWS + 1)
+            .collect::<Vec<_>>()
+            .join(",");
+        let error =
+            SqlScript::parse(&format!("INSERT INTO records VALUES {oversized_batch}")).unwrap_err();
+        assert_eq!(error.failed_statement, 1);
+        assert!(error.completed.is_empty());
+        assert!(error.to_string().contains("inserted-row input limit"));
+    }
+
+    #[test]
+    fn maximum_literal_batch_fits_the_statement_byte_limit_without_token_space_inflation() {
+        let tuples = std::iter::repeat_n("(255,65535)", MAX_SCRIPT_INSERTED_ROWS)
+            .collect::<Vec<_>>()
+            .join(",");
+        let source = format!("INSERT INTO records VALUES {tuples}");
+        assert!(source.len() < sql_plan::MAX_SQL_BYTES);
+
+        let script = SqlScript::parse(&source).unwrap();
+
+        assert_eq!(script.statement_count(), 1);
+        assert_eq!(script.inserted_rows(), MAX_SCRIPT_INSERTED_ROWS);
+        let SqlStatement::Query { plan, .. } = &script.statements()[0] else {
+            panic!("one INSERT batch expected");
+        };
+        assert_eq!(
+            plan,
+            &QueryPlan::Insert {
+                rows: vec![
+                    sql_plan::RowValues {
+                        age: 255,
+                        amount: 65535
+                    };
+                    MAX_SCRIPT_INSERTED_ROWS
+                ],
+            },
+        );
+    }
+
+    #[test]
+    fn statement_budget_counts_source_statements_including_an_unterminated_last_one() {
+        let source = "SELECT * FROM records;".repeat(MAX_SCRIPT_STATEMENTS);
+        let script = SqlScript::parse(&source).unwrap();
+        assert_eq!(script.statement_count(), MAX_SCRIPT_STATEMENTS);
+        assert_eq!(script.inserted_rows(), 0);
+
+        let error = SqlScript::parse(&format!("{source}SELECT * FROM records")).unwrap_err();
+        assert_eq!(error.failed_statement, MAX_SCRIPT_STATEMENTS + 1);
+        assert!(error.completed.is_empty());
     }
 
     #[test]
@@ -467,9 +543,12 @@ mod tests {
         for unsupported in [
             "SELECT AVG(amount) FROM records",
             "SELECT * FROM records FOR UPDATE",
+            "SELECT * FROM records WHERE age < = 18",
+            "SELECT * FROM records WHERE age > = 18",
             "DELETE FROM records",
             "CREATE TABLE customers (id INT)",
             "INSERT INTO records VALUES (18,20),(256,30)",
+            "INSERT INTO records VALUES (18,20),(2 55,30)",
         ] {
             let error = SqlScript::parse(&format!(
                 "{CREATE}; INSERT INTO records VALUES(18,20); {unsupported};"
@@ -482,9 +561,15 @@ mod tests {
 
     #[test]
     fn missing_table_and_duplicate_create_never_call_the_creator() {
-        for source in [
-            "SELECT * FROM records".to_string(),
-            format!("{CREATE}; {}", CREATE.replace("IF NOT EXISTS ", "")),
+        for (source, failed_statement) in [
+            ("SELECT * FROM records".to_string(), 1),
+            (
+                format!(
+                    "{CREATE}; INSERT INTO records VALUES (18,20),(42,30); {}",
+                    CREATE.replace("IF NOT EXISTS ", "")
+                ),
+                3,
+            ),
         ] {
             let mut session = None;
             let script = SqlScript::parse(&source).unwrap();
@@ -493,6 +578,7 @@ mod tests {
                 .unwrap_err();
             assert!(session.is_none());
             assert!(error.completed.is_empty());
+            assert_eq!(error.failed_statement, failed_statement);
         }
     }
 

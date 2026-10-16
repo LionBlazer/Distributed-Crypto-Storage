@@ -144,6 +144,12 @@ impl PublicUpdateEvaluator {
         indexed_insert::circuit_request(&self.parameters, self.geometry, self.keyset_id, request)
     }
 
+    /// Validates the exact batch request and both original ciphertexts before
+    /// exposing public counts. This neither accepts arithmetic nor proves freshness.
+    pub fn insert_metadata(&self, request: &[u8]) -> Result<InsertMetadata> {
+        indexed_insert::metadata(&self.parameters, self.geometry, self.keyset_id, request)
+    }
+
     /// Representation conversion only. Verify a proof before consuming this result.
     pub fn restore_insert_circuit_output(&self, request: &[u8], output: &[u8]) -> Result<Vec<u8>> {
         indexed_insert::restore_circuit_output(

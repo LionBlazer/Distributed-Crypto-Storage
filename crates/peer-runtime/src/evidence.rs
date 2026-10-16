@@ -17,6 +17,9 @@ pub const MAX_JOBS: usize = 32;
 pub const MAX_JOB_BYTES: usize = 2 * 1024 * 1024;
 const VERIFIED_PROOF_CACHE_ENTRIES: usize = 128;
 
+#[cfg(test)]
+mod batch_tests;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MutationJob {
     pub shard: u64,
@@ -195,11 +198,10 @@ impl MutationManifest {
                 Err(invalid())
             }
             Operation::Insert
-                if self.jobs.len() != 1
-                    || !self
-                        .previous_shards
-                        .iter()
-                        .any(|s| s.id == self.jobs[0].shard) =>
+                if self
+                    .jobs
+                    .iter()
+                    .any(|job| !self.previous_shards.iter().any(|s| s.id == job.shard)) =>
             {
                 Err(invalid())
             }
@@ -268,7 +270,7 @@ impl JobVerifier {
         let evaluator =
             Arc::new(PublicUpdateEvaluator::from_parameters(&parameters).map_err(crypto)?);
         let mut application = Sha256::new();
-        application.update(b"dcs/peer-runtime/proved-job-application/v1");
+        application.update(b"dcs/peer-runtime/proved-job-application/v2");
         application.update((bytes.len() as u64).to_le_bytes());
         application.update(&bytes);
         application.update(bfv_query_proof::PROOF_PROFILE_ID);
@@ -380,16 +382,24 @@ impl TransitionVerifier for JobVerifier {
             if !manifest.jobs.iter().any(|job| job.shard == update.id) {
                 return Err(bad);
             }
-            check_head_change(
-                update.old,
-                update.new,
-                manifest.operation,
-                statement.database,
-            )
-            .map_err(|_| bad.clone())?;
+            if manifest.operation == Operation::Update {
+                check_head_change(
+                    update.old,
+                    update.new,
+                    manifest.operation,
+                    statement.database,
+                    None,
+                )
+                .map_err(|_| bad.clone())?;
+            }
         }
         if manifest.operation == Operation::Insert
-            && (statement.updates.len() != 1 || statement.updates[0].id != manifest.jobs[0].shard)
+            && (statement.updates.len() != manifest.jobs.len()
+                || statement
+                    .updates
+                    .iter()
+                    .zip(&manifest.jobs)
+                    .any(|(update, job)| update.id != job.shard))
         {
             return Err(bad);
         }
@@ -399,10 +409,30 @@ impl TransitionVerifier for JobVerifier {
                 .iter()
                 .find(|s| s.id == job.shard)
                 .ok_or_else(|| bad.clone())?;
-            let context = self
-                .evaluator
-                .request_context(&job.request)
+            let context = if manifest.operation == Operation::Insert {
+                let metadata = self
+                    .evaluator
+                    .insert_metadata(&job.request)
+                    .map_err(|_| bad.clone())?;
+                let update = statement
+                    .updates
+                    .iter()
+                    .find(|update| update.id == job.shard)
+                    .ok_or_else(|| bad.clone())?;
+                check_head_change(
+                    update.old,
+                    update.new,
+                    manifest.operation,
+                    statement.database,
+                    Some((metadata.existing_rows, metadata.incoming_rows)),
+                )
                 .map_err(|_| bad.clone())?;
+                metadata.context
+            } else {
+                self.evaluator
+                    .request_context(&job.request)
+                    .map_err(|_| bad.clone())?
+            };
             if context.data_head() != old.heads.data || context.index_head() != old.heads.index {
                 return Err(bad);
             }
@@ -420,6 +450,7 @@ fn check_head_change(
     new: HeadPair,
     operation: Operation,
     database: [u8; 16],
+    insert_counts: Option<(usize, usize)>,
 ) -> Result<(), RemoteError> {
     for (before, after, data) in [(old.data, new.data, true), (old.index, new.index, false)] {
         let old = Commitment::decode(&before, crate::store::custody_limits()).map_err(crypto)?;
@@ -437,11 +468,15 @@ fn check_head_change(
         if operation == Operation::Update && old.layout() != new.layout() {
             return Err(RemoteError::Integrity);
         }
-        if operation == Operation::Insert
-            && data
-            && old.layout().row_count.checked_add(1) != Some(new.layout().row_count)
-        {
-            return Err(RemoteError::Integrity);
+        if operation == Operation::Insert && data {
+            let (existing, incoming) = insert_counts.ok_or(RemoteError::Integrity)?;
+            if old.layout().row_count != existing as u64
+                || incoming == 0
+                || old.layout().row_count.checked_add(incoming as u64)
+                    != Some(new.layout().row_count)
+            {
+                return Err(RemoteError::Integrity);
+            }
         }
         if operation == Operation::Insert
             && !data
@@ -503,12 +538,13 @@ mod tests {
         assert!(omitted.encode().is_err());
     }
     #[test]
-    fn insert_manifest_contains_exactly_one_existing_shard_job() {
+    fn insert_manifest_accepts_only_unique_ordered_existing_shard_jobs() {
         let mut manifest = manifest();
         manifest.operation = Operation::Insert;
+        assert!(MutationManifest::decode(&manifest.encode().unwrap()).is_ok());
+        manifest.jobs[1].shard = manifest.jobs[0].shard;
         assert!(manifest.encode().is_err());
         manifest.jobs.pop();
-        assert!(MutationManifest::decode(&manifest.encode().unwrap()).is_ok());
         manifest.jobs[0].shard = 99;
         assert!(manifest.encode().is_err());
     }

@@ -16,6 +16,274 @@ use std::{
 use storage_client::{Participant, Session, VerifiedResult};
 use version_journal::{ProtocolProfile, Target};
 
+#[test]
+fn one_batch_fills_a254_row_shard_once_and_a255_row_shard_rejects_without_store() {
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let peer = Process::start(owner.fingerprint(), 1, None);
+    let participant = peer.participant(1, &connector);
+    for existing in [255usize, 254] {
+        let mut session = Session::create(
+            format!("batch-{existing}"),
+            &vec![
+                PlainRow {
+                    age: 18,
+                    amount: 255
+                };
+                existing
+            ],
+            vec![participant.clone()],
+            test_contract(),
+        )
+        .unwrap();
+        let initial = session.version();
+        let old = session.shards().remove(0);
+        let objects = participant.remote.status().unwrap().objects.len();
+        let result = session.execute("INSERT INTO records(age,amount) VALUES(42,256),(7,65535)");
+        if existing == 255 {
+            assert!(result.is_err());
+            assert_eq!(session.version(), initial);
+            assert_eq!(session.rows(), 255);
+            assert_eq!(participant.remote.status().unwrap().objects.len(), objects);
+            assert_eq!(session.shards()[0].data_head, old.data_head);
+            assert!(session.resume_pending().unwrap().is_none());
+        } else {
+            let VerifiedResult::Inserted { count, version } = result.unwrap() else {
+                panic!("Missing batch result")
+            };
+            assert_eq!(count, 2);
+            assert_eq!(
+                version.height,
+                initial.height + 1 + u64::from(test_contract().confirmation_depth),
+                "One VALUES statement publishes one transition"
+            );
+            assert_eq!(
+                session.shards()[0].data_head.revision(),
+                old.data_head.revision() + 1
+            );
+            assert_eq!(session.rows(), 256);
+            let actual = rows(session.execute("SELECT * FROM records").unwrap());
+            assert_eq!(&actual[254..], &[vec![42, 256], vec![7, 65535]]);
+        }
+    }
+}
+
+#[test]
+fn a_cancelled_later_batch_proof_leaves_all_shards_unpublished_and_retry_is_one_commit() {
+    use peer_runtime::{ActivityPhase, RpcActivity};
+    use std::sync::{
+        Arc, Condvar, Mutex,
+        atomic::{AtomicBool, Ordering},
+    };
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let a = Process::start(owner.fingerprint(), 1, None);
+    let b = Process::start(owner.fingerprint(), 2, None);
+    let control = peer_transport::RequestControl::default();
+    let observed = Arc::new((Mutex::new((false, false)), Condvar::new()));
+    let armed = Arc::new(AtomicBool::new(false));
+    let first_gate = observed.clone();
+    let first_armed = armed.clone();
+    let activity_a: Arc<dyn Fn(RpcActivity) + Send + Sync> = Arc::new(move |event| {
+        if first_armed.load(Ordering::SeqCst)
+            && event.operation == "fhe-proof"
+            && event.phase == ActivityPhase::ReplyReceived
+        {
+            first_gate.0.lock().unwrap().0 = true;
+            first_gate.1.notify_all();
+        }
+    });
+    let second_gate = observed.clone();
+    let second_armed = armed.clone();
+    let requests = control.clone();
+    let activity_b: Arc<dyn Fn(RpcActivity) + Send + Sync> = Arc::new(move |event| {
+        if second_armed.load(Ordering::SeqCst)
+            && event.operation == "fhe-proof"
+            && event.phase == ActivityPhase::RequestSent
+        {
+            let state = second_gate.0.lock().unwrap();
+            let (mut state, timeout) = second_gate
+                .1
+                .wait_timeout_while(state, Duration::from_secs(5), |state| !state.0)
+                .unwrap();
+            state.1 |= timeout.timed_out() && !state.0;
+            requests.cancel();
+            second_armed.store(false, Ordering::SeqCst);
+        }
+    });
+    let raw_a = a.participant(1, &connector);
+    let raw_b = b.participant(2, &connector);
+    let mut pa = raw_a.clone();
+    let mut pb = raw_b.clone();
+    pa.remote = pa
+        .remote
+        .with_activity(activity_a)
+        .with_control(control.clone());
+    pb.remote = pb
+        .remote
+        .with_activity(activity_b)
+        .with_control(control.clone());
+    let mut session = Session::create(
+        "batch-cancel".into(),
+        &vec![
+            PlainRow {
+                age: 18,
+                amount: 20
+            };
+            510
+        ],
+        vec![pa, pb],
+        test_contract(),
+    )
+    .unwrap();
+    let initial = session.version();
+    let before_a = raw_a.remote.status().unwrap().objects.len();
+    let before_b = raw_b.remote.status().unwrap().objects.len();
+    let scope = control.begin().unwrap();
+    armed.store(true, Ordering::SeqCst);
+    let result = session.execute("INSERT INTO records VALUES(42,256),(7,65535)");
+    assert!(
+        matches!(result, Err(storage_client::Error::Transport(error)) if error.kind() == std::io::ErrorKind::Interrupted)
+    );
+    assert_eq!(*observed.0.lock().unwrap(), (true, false));
+    assert_eq!(session.version(), initial);
+    assert_eq!(session.rows(), 510);
+    assert_eq!(raw_a.remote.status().unwrap().objects.len(), before_a);
+    assert_eq!(raw_b.remote.status().unwrap().objects.len(), before_b);
+    drop(scope);
+    assert!(session.resume_pending().unwrap().is_none());
+    let result = session
+        .execute("INSERT INTO records VALUES(42,256),(7,65535)")
+        .unwrap();
+    assert!(
+        matches!(result, VerifiedResult::Inserted { count:2, version } if version.height == initial.height + 1 + u64::from(test_contract().confirmation_depth))
+    );
+    assert!(
+        session
+            .shards()
+            .iter()
+            .all(|shard| shard.data_head.revision() == 1)
+    );
+    let actual = rows(session.execute("SELECT * FROM records").unwrap());
+    assert_eq!(actual.len(), 512);
+    assert_eq!(actual[510], vec![42, 256]);
+    assert_eq!(actual[511], vec![7, 65535]);
+}
+
+#[test]
+fn immutable_mutation_profile_rejection_never_stores_or_creates_a_sticky_pending_batch() {
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    for limit in 0..4 {
+        let a = Process::start(owner.fingerprint(), 1, None);
+        let b = Process::start(owner.fingerprint(), 2, None);
+        let pa = a.participant(1, &connector);
+        let pb = b.participant(2, &connector);
+        let mut profile = test_contract();
+        match limit {
+            0 => profile.max_updates = 1,
+            1 => profile.max_request_bytes = 1,
+            2 => profile.max_proof_bytes = 1,
+            3 => {
+                profile.max_body_bytes = 1024;
+                profile.max_request_bytes = 1024;
+                profile.max_proof_bytes = 1024;
+            }
+            _ => unreachable!(),
+        }
+        let source = if limit == 0 {
+            vec![
+                PlainRow {
+                    age: 18,
+                    amount: 20
+                };
+                510
+            ]
+        } else {
+            vec![]
+        };
+        let mut session = Session::create(
+            format!("batch-profile-{limit}"),
+            &source,
+            vec![pa.clone(), pb.clone()],
+            profile,
+        )
+        .unwrap();
+        let initial = session.version();
+        let before_a = pa.remote.status().unwrap().objects.len();
+        let before_b = pb.remote.status().unwrap().objects.len();
+        let error = session
+            .execute("INSERT INTO records VALUES(18,20),(42,30)")
+            .unwrap_err();
+        assert!(!matches!(
+            error,
+            storage_client::Error::PendingMutation { .. }
+        ));
+        assert_eq!(session.version(), initial);
+        assert_eq!(pa.remote.status().unwrap().objects.len(), before_a);
+        assert_eq!(pb.remote.status().unwrap().objects.len(), before_b);
+        assert!(session.resume_pending().unwrap().is_none());
+        assert_eq!(
+            rows(session.execute("SELECT * FROM records").unwrap()).len(),
+            source.len()
+        );
+    }
+}
+
+#[test]
+fn a_real_peer_rejects_initializing_an_old_application_policy_with_the_new_insert_contract() {
+    let owner = identity();
+    let connector = Connector::permissionless(&owner).unwrap();
+    let process = Process::start(owner.fingerprint(), 1, None);
+    let participant = process.participant(1, &connector);
+    let session = Session::create(
+        "policy-version".into(),
+        &[],
+        vec![participant.clone()],
+        test_contract(),
+    )
+    .unwrap();
+    let (_, setup) = bfv_query_core::Owner::generate(bfv_query_core::Geometry::Rows256).unwrap();
+    let descriptor = setup.update_parameters().unwrap();
+    let descriptor_bytes = descriptor.to_bytes().unwrap();
+    let mut previous = b"dcs/peer-runtime/proved-job-application/v1".to_vec();
+    previous.extend_from_slice(&(descriptor_bytes.len() as u64).to_le_bytes());
+    previous.extend_from_slice(&descriptor_bytes);
+    previous.extend_from_slice(&bfv_query_proof::PROOF_PROFILE_ID);
+    let Response::Setup(setup_id) = participant
+        .remote
+        .call(Request::InstallSetup(setup.to_bytes().unwrap()))
+        .unwrap()
+    else {
+        panic!("Missing setup acknowledgement")
+    };
+    let mut genesis = session.genesis().clone();
+    genesis.network_id[0] ^= 1;
+    genesis.application_commitment = version_journal::hash(&previous);
+    let before = participant.remote.status().unwrap().journal_bytes;
+    let rejected = participant
+        .remote
+        .call(Request::InitJournal {
+            genesis: genesis.encode().unwrap(),
+            setup: setup_id,
+        })
+        .err()
+        .expect("An old policy must be rejected before journal creation");
+    assert!(matches!(
+        rejected
+            .get_ref()
+            .and_then(|error| error.downcast_ref::<peer_runtime::RemoteError>()),
+        Some(peer_runtime::RemoteError::Integrity)
+    ));
+    assert_eq!(participant.remote.status().unwrap().journal_bytes, before);
+    genesis.application_commitment = peer_runtime::evidence::JobVerifier::new(descriptor)
+        .unwrap()
+        .application_commitment();
+    assert!(
+        matches!(participant.remote.call(Request::InitJournal { genesis:genesis.encode().unwrap(),setup:setup_id }).unwrap(), Response::JournalReady(id) if id == genesis.id().unwrap())
+    );
+}
+
 fn identity() -> Identity {
     let mut params = CertificateParams::new(vec!["dcs-peer".into()]).unwrap();
     params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
@@ -385,7 +653,7 @@ fn interrupted_confirmation_resumes_the_original_write_without_applying_it_twice
     )
     .unwrap();
     for (index, sql) in [
-        "INSERT INTO records VALUES (42,30)",
+        "INSERT INTO records VALUES (42,30),(7,65534)",
         "UPDATE records SET amount=amount+1",
     ]
     .into_iter()
@@ -399,6 +667,13 @@ fn interrupted_confirmation_resumes_the_original_write_without_applying_it_twice
             "{error}"
         );
         assert_eq!(database.version().state_root, before.state_root);
+        let storage_client::Error::PendingMutation { query_binding, .. } = &error else {
+            unreachable!()
+        };
+        let again = database.execute(sql).unwrap_err();
+        assert!(
+            matches!(again, storage_client::Error::PendingMutation { query_binding: same, .. } if same == *query_binding)
+        );
         assert!(
             matches!(
                 database.execute("SELECT * FROM records"),
@@ -416,23 +691,23 @@ fn interrupted_confirmation_resumes_the_original_write_without_applying_it_twice
             database.execute(sql).unwrap()
         };
         if index == 0 {
-            assert!(matches!(result, VerifiedResult::Inserted { count: 1, .. }));
+            assert!(matches!(result, VerifiedResult::Inserted { count: 2, .. }));
         } else {
             assert!(matches!(
                 result,
                 VerifiedResult::Updated {
-                    changed_rows: 2,
+                    changed_rows: 3,
                     ..
                 }
             ));
         }
         assert!(database.resume_pending().unwrap().is_none());
-        assert_eq!(database.rows(), 2);
+        assert_eq!(database.rows(), 3);
         assert_eq!(database.shards()[0].data_head.revision(), index as u64 + 1);
     }
     assert_eq!(
         rows(execute(&mut database, "SELECT * FROM records")),
-        vec![vec![18, 21], vec![42, 31]]
+        vec![vec![18, 21], vec![42, 31], vec![7, 65535]]
     );
 }
 

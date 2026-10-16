@@ -1,5 +1,5 @@
 use super::*;
-use crate::proof::{ProofJob, ProofRequests};
+use crate::proof::ProofRequests;
 use sql_plan::QueryPlan;
 
 impl Session {
@@ -19,15 +19,15 @@ impl Session {
         }
         let plan = sql_plan::parse_sql(sql)?;
         let initial = self.synchronize()?;
-        match plan {
+        match &plan {
             QueryPlan::Aggregate { predicate } => {
-                return self.execute_aggregate(initial, predicate, AggregateProjection::CountSum);
+                return self.execute_aggregate(initial, *predicate, AggregateProjection::CountSum);
             }
             QueryPlan::Count { predicate } => {
-                return self.execute_aggregate(initial, predicate, AggregateProjection::Count);
+                return self.execute_aggregate(initial, *predicate, AggregateProjection::Count);
             }
             QueryPlan::Sum { predicate } => {
-                return self.execute_aggregate(initial, predicate, AggregateProjection::Sum);
+                return self.execute_aggregate(initial, *predicate, AggregateProjection::Sum);
             }
             _ => {}
         }
@@ -35,9 +35,9 @@ impl Session {
             predicate,
             projection,
             limit,
-        } = plan
+        } = &plan
         {
-            return self.execute_select(initial, predicate, projection, limit);
+            return self.execute_select(initial, *predicate, *projection, *limit);
         }
         let requests = ProofRequests::default();
         let before: Vec<_> = self
@@ -53,9 +53,10 @@ impl Session {
         let mut jobs = Vec::new();
         let mut proofs = Vec::new();
         let mut changed_rows = 0;
-        match plan {
+        let mut inserted_rows = 0;
+        match &plan {
             QueryPlan::AddAmount { predicate, delta } => {
-                for staged in self.prepare_update_shards(predicate, delta, &requests)? {
+                for staged in self.prepare_update_shards(*predicate, *delta, &requests)? {
                     changed_rows += staged.changed_rows;
                     if let Some(table) = staged.table {
                         stages.push((staged.slot, table));
@@ -64,55 +65,13 @@ impl Session {
                     proofs.push(staged.proof);
                 }
             }
-            QueryPlan::Insert { row } => {
-                let slot = self
-                    .data
-                    .shards
-                    .iter()
-                    .enumerate()
-                    .min_by_key(|(_, s)| (s.info.rows, s.info.id))
-                    .unwrap()
-                    .0;
-                let shard = &self.data.shards[slot];
-                let (remote, table) = self.fetch_online(shard)?;
-                let prepared = self.data.owner.prepare_insert_for_experiment(
-                    &table,
-                    PlainRow {
-                        age: row.age,
-                        amount: row.amount,
-                    },
-                    256,
-                    Limits::default(),
-                )?;
-                let request = prepared.request().to_vec();
-                let (reply, checked) = requests.request(
-                    &remote,
-                    &shard.peers,
-                    ProofJob {
-                        object: shard.info.object,
-                        setup: self.data.setup_id,
-                        operation: Operation::Insert,
-                        ciphertext: &request,
-                    },
-                    |reply| {
-                        self.verifier
-                            .check_job(Operation::Insert, &request, reply)
-                            .map_err(protocol)
-                    },
-                )?;
-                let next = self.data.owner.stage_checked_insert(
-                    &table,
-                    prepared,
-                    &reply.output,
-                    checked,
-                    Limits::default(),
-                )?;
-                stages.push((slot, next));
-                jobs.push(MutationJob {
-                    shard: shard.info.id,
-                    request,
-                });
-                proofs.push(reply);
+            QueryPlan::Insert { rows } => {
+                for staged in self.prepare_insert_shards(rows, &requests)? {
+                    stages.push((staged.slot, staged.table));
+                    jobs.push(staged.job);
+                    proofs.push(staged.proof);
+                }
+                inserted_rows = rows.len();
             }
             _ => unreachable!("unsupported proof operations rejected before execution"),
         }
@@ -129,7 +88,7 @@ impl Session {
             return Err(protocol("An unconfirmed state conflicts with this update"));
         }
         let mut updates = Vec::new();
-        let mut published = Vec::new();
+        let mut bundles = Vec::new();
         for (slot, table) in stages {
             let old = &self.data.shards[slot];
             let bundle = Bundle {
@@ -138,6 +97,53 @@ impl Session {
                 data: table.snapshot().encode(),
                 index: table.encrypted_index().encode(),
             };
+            let new = HeadPair {
+                data: table.commitment().encode(),
+                index: table.index_commitment().encode(),
+            };
+            updates.push(ShardUpdate {
+                id: old.info.id,
+                old: heads(&old.info),
+                new,
+            });
+            bundles.push((slot, bundle, new));
+        }
+        let operation = if matches!(plan, QueryPlan::Insert { .. }) {
+            Operation::Insert
+        } else {
+            Operation::Update
+        };
+        let mut query_salt = [0; 32];
+        getrandom::getrandom(&mut query_salt).map_err(protocol)?;
+        let mut query_identity = query_salt.to_vec();
+        query_identity.extend_from_slice(sql.as_bytes());
+        let query_binding = version_journal::hash(&query_identity);
+        query_salt.fill(0);
+        query_identity.fill(0);
+        let manifest = MutationManifest {
+            query_binding,
+            operation,
+            previous_shards: before,
+            jobs,
+        };
+        let evidence = MutationEvidence { jobs: proofs };
+        let unsigned = Body::Transition(AuthorizedTransition {
+            parent: parent.block,
+            request: manifest.encode().map_err(protocol)?,
+            updates,
+            proof: evidence.encode().map_err(protocol)?,
+            owner_signature: [0; 64],
+        });
+        // All immutable wire/profile budgets must pass before the first Store,
+        // signature or pending record. A deterministic local rejection cannot
+        // become an ambiguous write that blocks every later operation.
+        unsigned.encode(self.journal.profile()).map_err(protocol)?;
+        let Body::Transition(mut transition) = unsigned else {
+            unreachable!("the exact unsigned mutation was constructed above");
+        };
+        let mut published = Vec::new();
+        for (slot, bundle, new) in bundles {
+            let old = &self.data.shards[slot];
             let object = bundle.id();
             let mut candidates = old.peers.clone();
             for participant in &self.participants {
@@ -161,15 +167,6 @@ impl Session {
             if holders.is_empty() {
                 return Err(Error::UnavailableShard(old.info.id));
             }
-            let new = HeadPair {
-                data: table.commitment().encode(),
-                index: table.index_commitment().encode(),
-            };
-            updates.push(ShardUpdate {
-                id: old.info.id,
-                old: heads(&old.info),
-                new,
-            });
             published.push(StoredMutation {
                 slot,
                 object,
@@ -177,37 +174,13 @@ impl Session {
                 holders,
             });
         }
-        let operation = if matches!(plan, QueryPlan::Insert { .. }) {
-            Operation::Insert
-        } else {
-            Operation::Update
-        };
-        let mut query_salt = [0; 32];
-        getrandom::getrandom(&mut query_salt).map_err(protocol)?;
-        let mut query_identity = query_salt.to_vec();
-        query_identity.extend_from_slice(sql.as_bytes());
-        let query_binding = version_journal::hash(&query_identity);
-        query_salt.fill(0);
-        query_identity.fill(0);
-        let manifest = MutationManifest {
-            query_binding,
-            operation,
-            previous_shards: before,
-            jobs,
-        };
-        let evidence = MutationEvidence { jobs: proofs };
-        let mut transition = AuthorizedTransition {
-            parent: parent.block,
-            request: manifest.encode().map_err(protocol)?,
-            updates,
-            proof: evidence.encode().map_err(protocol)?,
-            owner_signature: [0; 64],
-        };
         // Authorization is issued only AFTER complete selection, STARK checks,
         // decryption/overflow checks and construction of the exact new ciphertext.
         transition.sign(self.journal.genesis_id(), &self.signer);
         let outcome = match plan {
-            QueryPlan::Insert { .. } => MutationOutcome::Inserted { count: 1 },
+            QueryPlan::Insert { .. } => MutationOutcome::Inserted {
+                count: inserted_rows,
+            },
             QueryPlan::AddAmount { .. } => MutationOutcome::Updated { changed_rows },
             _ => unreachable!(),
         };

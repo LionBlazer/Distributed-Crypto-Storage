@@ -41,13 +41,24 @@ pub enum Error {
     InvalidSchema,
     InvalidIndex,
     DuplicateAddress,
-    SelectionBudget { selected: usize, budget: usize },
+    SelectionBudget {
+        selected: usize,
+        budget: usize,
+    },
+    InvalidInsertSize {
+        existing: u64,
+        incoming: usize,
+        maximum: usize,
+    },
     WrongVersion,
     WrongDomain,
     WrongQuery,
     InvalidOutput,
     ComputationProof(String),
-    WorkerBudget { requested: usize, maximum: usize },
+    WorkerBudget {
+        requested: usize,
+        maximum: usize,
+    },
     WireLimit,
     Codec(String),
     Randomness,
@@ -68,6 +79,12 @@ impl From<compact_store::Error> for Error {
 pub struct PlainRow {
     pub age: u8,
     pub amount: u16,
+}
+impl zeroize::Zeroize for PlainRow {
+    fn zeroize(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.age);
+        zeroize::Zeroize::zeroize(&mut self.amount);
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AgeRange {

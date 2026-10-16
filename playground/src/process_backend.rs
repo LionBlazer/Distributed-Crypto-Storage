@@ -1319,16 +1319,22 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(changed.statements.len(), 4);
-        for outcome in &changed.statements[..2] {
-            assert!(matches!(
-                outcome.result,
-                storage_client::StatementResult::Executed(VerifiedResult::Inserted { count: 1, version })
-                    if version.height > initial.height
-            ));
-        }
+        assert_eq!(changed.statements.len(), 3);
+        assert_eq!(
+            changed
+                .statements
+                .iter()
+                .map(|outcome| outcome.statement)
+                .collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
         assert!(matches!(
-            changed.statements[2].result,
+            changed.statements[0].result,
+            storage_client::StatementResult::Executed(VerifiedResult::Inserted { count: 2, version })
+                if version.height > initial.height
+        ));
+        assert!(matches!(
+            changed.statements[1].result,
             storage_client::StatementResult::Executed(VerifiedResult::Updated {
                 changed_rows: 1,
                 ..
@@ -1338,7 +1344,7 @@ mod tests {
             ref rows,
             version: written,
             ..
-        }) = changed.statements[3].result
+        }) = changed.statements[2].result
         else {
             panic!("The final script statement must return verified updated rows");
         };
@@ -1392,26 +1398,32 @@ mod tests {
             .map(|shard| (shard.object, shard.data_head, shard.index_head))
             .collect();
 
-        let unsupported = backend
-            .execute_sql(
-                1,
+        for (sql, message) in [
+            (
                 "UPDATE records SET amount = amount + 1; SELECT * FROM records FOR UPDATE;",
-            )
-            .unwrap_err();
+                "row locking",
+            ),
+            (
+                "INSERT INTO records VALUES (7,9),(256,1); SELECT * FROM records;",
+                "age must be in 0..=255",
+            ),
+        ] {
+            let unsupported = backend.execute_sql(1, sql).unwrap_err();
 
-        assert!(unsupported.to_string().contains("row locking"));
-        assert_eq!(backend.database.as_ref().unwrap().version(), initial);
-        assert_eq!(
-            backend
-                .database
-                .as_ref()
-                .unwrap()
-                .shards()
-                .into_iter()
-                .map(|shard| (shard.object, shard.data_head, shard.index_head))
-                .collect::<Vec<_>>(),
-            heads
-        );
+            assert!(unsupported.to_string().contains(message));
+            assert_eq!(backend.database.as_ref().unwrap().version(), initial);
+            assert_eq!(
+                backend
+                    .database
+                    .as_ref()
+                    .unwrap()
+                    .shards()
+                    .into_iter()
+                    .map(|shard| (shard.object, shard.data_head, shard.index_head))
+                    .collect::<Vec<_>>(),
+                heads
+            );
+        }
 
         let failed = backend
             .execute_sql(

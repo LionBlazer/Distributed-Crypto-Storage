@@ -12,8 +12,8 @@ pub mod relational;
 mod script;
 mod session;
 pub use script::{
-    MAX_SCRIPT_BYTES, MAX_SCRIPT_STATEMENTS, ScriptError, ScriptResult, SqlScript, SqlStatement,
-    StatementOutcome, StatementResult,
+    MAX_SCRIPT_BYTES, MAX_SCRIPT_INSERTED_ROWS, MAX_SCRIPT_STATEMENTS, ScriptError, ScriptResult,
+    SqlScript, SqlStatement, StatementOutcome, StatementResult,
 };
 pub use session::{AggregateProjection, Session, VerifiedResult};
 
@@ -274,7 +274,7 @@ impl Database {
         };
         for shard in shards {
             let (peer, table) = self.fetch(shard)?;
-            let (operation, ciphertext) = match plan {
+            let (operation, ciphertext) = match &plan {
                 QueryPlan::Select {
                     predicate,
                     projection,
@@ -327,19 +327,24 @@ impl Database {
                             lower: range.lower,
                             upper: range.upper,
                         },
-                        delta,
+                        *delta,
                         256,
                         Limits::default(),
                     )?;
                     (Operation::Update, prepared.request().to_vec())
                 }
-                QueryPlan::Insert { row } => {
+                QueryPlan::Insert { rows } => {
+                    let incoming = zeroize::Zeroizing::new(
+                        rows.iter()
+                            .map(|row| PlainRow {
+                                age: row.age,
+                                amount: row.amount,
+                            })
+                            .collect::<Vec<_>>(),
+                    );
                     let prepared = self.owner.prepare_insert_for_experiment(
                         &table,
-                        PlainRow {
-                            age: row.age,
-                            amount: row.amount,
-                        },
+                        &incoming,
                         256,
                         Limits::default(),
                     )?;
