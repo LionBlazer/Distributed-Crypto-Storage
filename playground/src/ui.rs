@@ -600,6 +600,7 @@ impl Playground {
                         outcome.as_ref().ok().and_then(Outcome::query),
                         Some(
                             QueryOutcome::Aggregate { .. }
+                                | QueryOutcome::Aggregated { .. }
                                 | QueryOutcome::Count { .. }
                                 | QueryOutcome::Sum { .. }
                                 | QueryOutcome::Selected { .. }
@@ -934,6 +935,14 @@ impl Playground {
                         return;
                     }
                     match record.outcome.as_ref().ok().and_then(Outcome::query) {
+                        Some(QueryOutcome::Aggregated { columns, values }) => {
+                            if let Some(Outcome::VerifiedQuery { version, .. }) = record.outcome.as_ref().ok().map(Outcome::terminal) {
+                                ui.label(RichText::new(format!("Encrypted aggregate · verified · v{}", version.height)).small().color(GREEN));
+                            }
+                            let headings: Vec<_> = columns.iter().map(String::as_str).collect();
+                            let cells: Vec<_> = values.iter().map(|value| value.map_or_else(|| "NULL".into(), |value| value.to_string())).collect();
+                            result_table(ui, &headings, &[cells]);
+                        }
                         Some(QueryOutcome::Aggregate { count, sum, .. }) => {
                             result_table(ui, &["COUNT(*)", "SUM(amount)"], &[vec![*count, *sum]]);
                         }
@@ -968,7 +977,7 @@ impl Playground {
     }
 }
 
-fn result_table(ui: &mut egui::Ui, columns: &[&str], rows: &[Vec<u32>]) {
+fn result_table(ui: &mut egui::Ui, columns: &[&str], rows: &[Vec<impl std::fmt::Display>]) {
     egui::Grid::new("query-result-table")
         .striped(true)
         .min_col_width(80.0)
@@ -1064,6 +1073,16 @@ fn outcome_summary(outcome: &Outcome) -> (String, Color32) {
         );
     }
     match outcome.query() {
+        Some(QueryOutcome::Aggregated { .. }) => {
+            if let Outcome::VerifiedQuery { version, .. } = outcome.terminal() {
+                (
+                    format!("Aggregate verified · confirmed v{}", version.height),
+                    GREEN,
+                )
+            } else {
+                ("Aggregate result · unverified".into(), MUTED)
+            }
+        }
         Some(QueryOutcome::Updated { committed: false }) => {
             ("Rejected: amount overflow; no changes".into(), AMBER)
         }

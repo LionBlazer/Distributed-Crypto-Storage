@@ -11,10 +11,14 @@ larger workload and tail-latency contract remain to be established.
 ## Current execution boundary
 
 The fixed-schema `storage-client::Session` accepts genuine proved row SELECT,
-one-row INSERT and additive amount UPDATE. Typed imported catalogs provide
+COUNT/SUM, one-row INSERT and additive amount UPDATE. Aggregates perform an
+encrypted coefficient convolution under the existing full-residue product proof,
+with checked client-side limb/shard completion and SQL NULL for empty SUM.
+They currently admit at most 256 matching rows per shard and reject excess;
+general typed aggregation remains open. Typed imported catalogs provide
 immutable single-table SELECT with authenticated owner-private indices and proved
 BFV byte projection. Unsupported operators reject before execution. Neither path
-implements general transactions, DELETE, JOIN, aggregates or SQL row locks.
+implements general transactions, DELETE, JOIN or SQL row locks.
 Parsing syntax or preserving imported stored programs does not execute them.
 
 Current public proofs attest full BFV addition and public-polynomial products.
@@ -83,7 +87,7 @@ No such substitution is authorized by this implementation contract.
 ## Remaining SQL operators
 
 Typed DML/DDL and constraints require authenticated catalog changes and actual
-computation/transition circuits. Aggregation, joins, grouping, expressions, SQL
+computation/transition circuits. General typed aggregation, joins, grouping, expressions, SQL
 NULL semantics, set operations, subqueries, CTEs, windows and stored programs need
 their own typed plans, encrypted execution and completeness relations. Extend
 execution and its adversarial boundary tests together; unsupported syntax remains

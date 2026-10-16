@@ -356,7 +356,7 @@ pub(crate) fn circuit_request(
         Operation::Insert => evaluator.insert_circuit_request(request),
         Operation::Update => evaluator.circuit_request(request),
         Operation::ByteSelect => evaluator.byte_select_circuit_request(request),
-        Operation::Aggregate => return Err(invalid()),
+        Operation::Aggregate => evaluator.aggregate_circuit_request(request),
     }
     .map_err(crypto)
 }

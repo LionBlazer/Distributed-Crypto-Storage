@@ -56,8 +56,11 @@ single-row INSERT and amount addition on `age: u8, amount: u16`; it is not an ar
 database. Row projection uses actual BFV encrypted masking. The client authenticates
 complete private index selection, verifies exact peer arithmetic, then rechecks the
 confirmed version. INSERT/UPDATE publish actual compact ciphertext only after all
-proof/overflow checks and durable journal confirmation. Parsed COUNT/SUM remain
-unsupported by the verified path and reject explicitly.
+proof/overflow checks and durable journal confirmation. COUNT(*), SUM(amount) and
+their combined projection also use genuine encrypted convolution with full-residue
+proofs. Empty COUNT is zero and empty SUM is SQL NULL. The fixed-schema path admits
+at most 256 matching rows per shard, authenticates complete owner-online selection
+and checks the confirmed version; it does not provide public AEAD-to-FHE linkage.
 The GUI uses the BFV
 exact-index backend, shared public evaluation keys and compact encrypted pages.
 Complete authenticated index selection precedes fresh FHE; unsupported budgets

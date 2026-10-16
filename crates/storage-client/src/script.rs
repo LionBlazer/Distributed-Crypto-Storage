@@ -321,15 +321,6 @@ fn prepare_query(sql: String, number: usize) -> Result<SqlStatement, ScriptError
         completed: Vec::new(),
         source: source.into(),
     })?;
-    if matches!(
-        plan,
-        QueryPlan::Aggregate { .. } | QueryPlan::Count { .. } | QueryPlan::Sum { .. }
-    ) {
-        return Err(invalid(
-            number,
-            "COUNT/SUM computation proofs are not implemented",
-        ));
-    }
     Ok(SqlStatement::Query { sql, plan })
 }
 
@@ -445,9 +436,36 @@ mod tests {
     }
 
     #[test]
+    fn aggregate_statements_are_planned_without_a_plaintext_fallback() {
+        let script = SqlScript::parse("SELECT COUNT(*) FROM records; SELECT SUM(amount) FROM records; SELECT COUNT(*), SUM(amount) FROM records WHERE age >= 18;").unwrap();
+        assert_eq!(script.statements().len(), 3);
+        assert!(matches!(
+            script.statements()[0],
+            SqlStatement::Query {
+                plan: QueryPlan::Count { .. },
+                ..
+            }
+        ));
+        assert!(matches!(
+            script.statements()[1],
+            SqlStatement::Query {
+                plan: QueryPlan::Sum { .. },
+                ..
+            }
+        ));
+        assert!(matches!(
+            script.statements()[2],
+            SqlStatement::Query {
+                plan: QueryPlan::Aggregate { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn unsupported_later_statement_rejects_the_entire_plan_before_creation() {
         for unsupported in [
-            "SELECT COUNT(*) FROM records",
+            "SELECT AVG(amount) FROM records",
             "SELECT * FROM records FOR UPDATE",
             "DELETE FROM records",
             "CREATE TABLE customers (id INT)",

@@ -4,6 +4,10 @@ mod canonical;
 mod exact_index;
 mod indexed_insert;
 mod indexed_select;
+mod polynomial_aggregate;
+pub use polynomial_aggregate::{
+    PendingPolynomialAggregate, PreparedPolynomialAggregate, UnverifiedPolynomialAggregate,
+};
 mod typed_projection;
 pub use indexed_insert::{
     EvaluatedIndexedInsert, IndexedInsertStats, InsertedRow, PendingIndexedInsert,

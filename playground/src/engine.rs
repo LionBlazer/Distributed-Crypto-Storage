@@ -161,6 +161,11 @@ pub struct PeerAggregate {
 }
 #[derive(Clone, Debug)]
 pub enum QueryOutcome {
+    /// Nullable wide scalar display cells; assurance belongs to the outer result.
+    Aggregated {
+        columns: Vec<String>,
+        values: Vec<Option<u64>>,
+    },
     Aggregate {
         count: u32,
         sum: u32,

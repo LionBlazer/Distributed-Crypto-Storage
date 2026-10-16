@@ -64,9 +64,12 @@ diagnostic `Evaluate` route, whose response remains `UnverifiedCiphertext`.
 `Prove` checks that the stored object matches both original request heads, converts
 the actual ciphertext request to the canonical circuit and runs `bfv_query_proof`.
 `ProofReply` contains the complete canonical encrypted output and serialized genuine
-STARK. Supported proved operations are exact-index `SELECT`, `INSERT` and additive
-`UPDATE`, plus schema-independent `ByteSelect` over bounded encrypted byte chunks;
-aggregate proofs are explicitly unsupported here. `ByteSelect` carries its own
+STARK. Supported proved operations are exact-index `SELECT`, `INSERT`, additive
+`UPDATE`, coefficient-packed `Aggregate`, and schema-independent `ByteSelect` over
+bounded encrypted byte chunks. The proved aggregate accepts only the new
+`BFVPAGQ1` coefficient layout and fixed 256-term public convolution; the historical
+rotation-based aggregate remains an explicitly unverified diagnostic. Neither
+read-only operation is permitted in a mutation manifest. `ByteSelect` carries its own
 schema/query/table/page binding and uses the same full-residue public-mask product
 proof. The caller authenticates complete page/row coverage and checks the exact
 trusted request before completing the encrypted result. The service enforces the

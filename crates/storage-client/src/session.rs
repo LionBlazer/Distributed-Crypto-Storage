@@ -10,6 +10,7 @@ use version_journal::{
     AuthorizedTransition, Body, Freshness, Genesis, HeadPair, HeadRef, Header, Journal,
     ProtocolProfile, ShardState, ShardUpdate,
 };
+mod aggregate;
 mod agreement;
 mod execution;
 mod pending;
@@ -21,6 +22,12 @@ use pending::{MutationOutcome, PendingMutation, StoredMutation};
 /// Successful results carry the independently checked confirmed version.
 #[derive(Debug)]
 pub enum VerifiedResult {
+    Aggregated {
+        projection: AggregateProjection,
+        count: u64,
+        sum: Option<u64>,
+        version: HeadRef,
+    },
     Selected {
         columns: Vec<sql_plan::Column>,
         rows: Vec<Vec<u32>>,
@@ -34,6 +41,13 @@ pub enum VerifiedResult {
         count: usize,
         version: HeadRef,
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AggregateProjection {
+    Count,
+    Sum,
+    CountSum,
 }
 
 /// Owns the write authorization key and the designated-client FHE/AEAD authority.

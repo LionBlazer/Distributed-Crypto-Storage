@@ -77,8 +77,12 @@ unseen newer state exists.
 The initial logical shard set is fixed. Adding infrastructure holders does not add
 votes. Copies on the local machine share its failure domain. Independent placement,
 automatic distributed repair, storage proofs, owner key recovery, arbitrary schemas,
-DELETE, joins and general transactions remain open. COUNT/SUM parse but lack the
-required proof circuit and are explicitly rejected by the live verified path.
+DELETE, joins and general transactions remain open. The fixed-schema verified
+Session now supports COUNT/SUM through genuine encrypted coefficient convolution
+under the existing product proof, complete selection and final freshness checks.
+Each shard currently admits at most 256 matching rows; excess rejects explicitly.
+Empty COUNT is zero and empty SUM is SQL NULL. Typed imported catalog aggregates
+remain unsupported.
 
 ## Cost and optimization
 
@@ -212,6 +216,37 @@ remaining operator, transaction, lock-state and finality work. No SQL locking
 behavior is supplied by the internal RPC queue.
 
 ## Reproduction and module ownership
+
+### Genuine COUNT/SUM over 512 rows (2026-10-16)
+
+The fixed-schema Session now authenticates complete per-shard selections, encrypts
+the original amount byte limbs and one presence coefficient per row, and asks the
+peer for a polynomial convolution. The existing full-residue product STARK proves
+that encrypted operation. Client completion combines only checked decrypted partial
+limbs and shard totals; it does not supply a precomputed plaintext aggregate.
+Every selected shard and the final agreed-head/freshness check remain mandatory.
+The current admission bound is 256 matching rows per shard, with explicit rejection.
+
+Three quiet runs used 512 public test rows: one shard has 256 amounts of 65,535,
+the other 256 amounts of one. The expected count is 512 and sum is 16,777,216.
+Native owner and AVX-512 peers each used eight Rayon threads, profile v3. No builds,
+other proof tests or memory monitor ran during these samples. Individual query
+timers exclude session creation and include proof verification and freshness:
+
+| Complete operation | Range, ms | Median, ms |
+| --- | ---: | ---: |
+| COUNT and SUM across both full shards | 218–238 | 227 |
+| COUNT with one empty and one nonempty shard | 216–247 | 227 |
+| SUM with one empty and one nonempty shard | 218–227 | 227 |
+| COUNT over an empty complete selection | 216–260 | 227 |
+| SUM over an empty complete selection, returning NULL | 226–260 | 228 |
+
+All 15 measured operations and result assertions passed. These concrete queries
+met 500 ms in the observed runs; they do not establish production tail latency,
+larger matching groups, typed catalog aggregates or general PostgreSQL support.
+Source-operand, real-proof tamper/rebinding, source-version, missing-shard, script
+and nullable GUI tests also passed. The NULL display retains u64 values without
+narrowing and receives verified status only from an accepted network result.
 
 ### Polynomial lanes and bounded UPDATE preparation (2026-10-16)
 
