@@ -23,7 +23,15 @@ fn supported_original_requests_expose_exact_query_and_both_heads_after_full_shap
         .prepare_indexed_insert_for_experiment(context.clone(), &fields, &[fields[0]])
         .unwrap();
 
-    for request in [&update.request, &select.request, &insert.request] {
+    let aggregate = owner
+        .prepare_polynomial_aggregate(context.clone(), &fields)
+        .unwrap();
+    for request in [
+        &update.request,
+        &select.request,
+        &insert.request,
+        &aggregate.request,
+    ] {
         let actual = peer.request_context(request).unwrap();
 
         assert_eq!(actual, context);

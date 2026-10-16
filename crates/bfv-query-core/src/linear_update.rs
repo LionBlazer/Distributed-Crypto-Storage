@@ -107,7 +107,7 @@ impl PublicUpdateEvaluator {
             Some(b"BFVBYSQ1") => {
                 typed_projection::request_context(&self.parameters, self.keyset_id, request)
             }
-            Some(b"BFVPAGQ1") if self.geometry == Geometry::Rows256 => {
+            Some(b"BFVPAGQ2") if self.geometry == Geometry::Rows256 => {
                 polynomial_aggregate::request_context(&self.parameters, self.keyset_id, request)
             }
             _ => Err(Error::InvalidShape),

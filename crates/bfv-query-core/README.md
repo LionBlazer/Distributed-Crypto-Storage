@@ -28,20 +28,35 @@ plaintext values. Complete authenticated indexed selection, schema semantics,
 chunk coverage, authorization and fresh agreed state belong to the storage client.
 The byte kernel does not prove arbitrary SQL comparisons or hide access patterns.
 
-`Owner::prepare_polynomial_aggregate` packs original selected amount low bytes at
-coefficients 0..255, high bytes at 256..511 and one presence marker per row at
-512..767, using `Encoding::poly`. The fixed public polynomial `1+x+...+x^255`
-produces low sum, high sum and count at coefficients 255, 511 and 767. No source
-aggregate is calculated by the owner. The product degree is at most 1022, below
-8192, and every output coefficient is at most 65280, below the unchanged plaintext
-modulus 114689. Unsigned decoding preserves sums above half the modulus. Geometry
-is Rows256, original selection is at most 256 rows and request/response decoding is
-capped at two MiB. `aggregate_circuit_request` independently constructs the exact
-full-residue public-polynomial statement; `restore_aggregate_circuit_output`
-restores its encrypted result only. A separate genuine proof consumer must check
-the statement before `decrypt_polynomial_aggregate_unverified`. This contract uses
-no rotations and leaves complete selection, source authentication and freshness
-to its caller. The older exact-index rotation experiment remains unverified.
+`Owner::prepare_polynomial_aggregate` uses the strict Q2/R2 coefficient layout:
+low bytes at `[0,2560)`, high bytes at `[2560,5120)` and one presence marker per
+original selected row at `[5120,7680)`. The unchanged public polynomial
+`1+x+...+x^255` produces ten independent 256-row band sums at each field's
+`(band+1)*256-1` endpoints. No source aggregate is calculated by the owner.
+`POLYNOMIAL_AGGREGATE_CAPACITY` is 2560; the separate row/mutation limit remains 256.
+The product has degree at most 7934, below 8192, and each coefficient is at most
+65280, below the unchanged plaintext modulus 114689. Unsigned decoding checks all
+band counts/limb bounds, the full cardinality-only coefficient envelope, the exact
+presence suffix and zero tail `[7935,8192)`. It combines actual decrypted band
+values with checked arithmetic (maximum sum 167,769,600), rather than returning
+retained source cardinality as the answer. Empty sources still encrypt zero.
+
+The existing Rows256 setup, FHE parameters, full-residue product proof profile
+and kernel ABI are unchanged. Q1/R1 and version 1 reject; no migration is supplied.
+The exported `POLYNOMIAL_AGGREGATE_SEMANTICS_ID` identifies this accepted operation
+language separately from the cryptographic profile. Request/response decoding
+remains capped at two MiB. `aggregate_circuit_request` independently constructs
+the exact full-residue public-polynomial statement; `restore_aggregate_circuit_output`
+restores its encrypted result only. A genuine proof consumer must check the exact
+statement before `decrypt_polynomial_aggregate_unverified`. This uses no rotations
+and leaves complete selection, source authentication and freshness to its caller.
+The older exact-index rotation experiment remains unverified.
+
+One packed input remains 8192 u64 coefficients (64 KiB before encryption), one
+ciphertext and one proof per shard. Increasing occupied support does not increase
+the public kernel's L1 norm of 256 or introduce negacyclic/plaintext wrap. This
+algebraic bound is not a new security or noise-profile approval; genuine maximum
+source and partial-band decryption/proof tests cover the implemented parameter set.
 
 Owner owns the only secret key; PublicSetup contains only original parameters,
 relinearization and rotation keys; PeerEvaluator restores public material only.

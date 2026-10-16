@@ -326,13 +326,27 @@ impl PostingReader<'_> {
     }
 }
 
+/// Construction chooses an operation's hard materialization ceiling; callers
+/// cannot pass an arbitrary larger limit into authenticated posting traversal.
+#[derive(Clone, Copy)]
+pub(crate) struct MaterializationBudget(usize);
+impl MaterializationBudget {
+    pub(crate) fn rows(requested: usize) -> Self {
+        Self(requested.min(crate::MAX_ROWS))
+    }
+    #[cfg(feature = "bfv-experiment")]
+    pub(crate) fn aggregate(requested: usize) -> Self {
+        Self(requested.min(bfv_query_core::POLYNOMIAL_AGGREGATE_CAPACITY))
+    }
+}
+
 pub(crate) fn select(
     owner: &compact_store::Owner,
     index: &EncryptedSnapshot,
     head: &Commitment,
     table_id: &TableId,
     range: AgeRange,
-    budget: usize,
+    budget: MaterializationBudget,
     transferred: &mut usize,
 ) -> Result<Vec<u64>> {
     range.validate()?;
@@ -342,7 +356,7 @@ pub(crate) fn select(
         .try_fold(0_usize, |sum, count| {
             sum.checked_add(*count as usize).ok_or(Error::InvalidIndex)
         })?;
-    let budget = budget.min(crate::MAX_ROWS);
+    let budget = budget.0;
     if selected > budget {
         return Err(Error::SelectionBudget { selected, budget });
     }

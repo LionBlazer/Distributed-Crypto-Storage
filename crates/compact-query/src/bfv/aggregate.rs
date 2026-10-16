@@ -6,11 +6,18 @@ use bfv_query_proof::{CheckedOperation, Operation};
 pub struct PreparedProvableAggregate {
     request: Vec<u8>,
     pending: bfv_core::PendingPolynomialAggregate,
-    selection: ExactSelection,
+    data_head: Commitment,
+    index_head: Commitment,
 }
 impl PreparedProvableAggregate {
     pub fn request(&self) -> &[u8] {
         &self.request
+    }
+    fn ensure_current(&self, table: &Table) -> Result<()> {
+        if table.commitment() != &self.data_head || table.index_commitment() != &self.index_head {
+            return Err(Error::WrongVersion);
+        }
+        Ok(())
     }
 }
 
@@ -39,8 +46,12 @@ impl Owner {
         budget: usize,
         limits: Limits,
     ) -> Result<PreparedProvableAggregate> {
-        let selection =
-            self.proof_selection(table, predicate, budget.min(crate::MAX_ROWS), limits)?;
+        let selection = self.proof_selection(
+            table,
+            predicate,
+            crate::index::MaterializationBudget::aggregate(budget),
+            limits,
+        )?;
         let context = bfv_core::QueryContext::new(
             crate::random_id()?,
             selection.data_head.encode(),
@@ -49,13 +60,19 @@ impl Owner {
         let prepared = self
             .key
             .prepare_polynomial_aggregate(context, &selection.fields)?;
+        let data_head = selection.data_head.clone();
+        let index_head = selection.index_head.clone();
+        // Source plaintext is needed only for encrypting the genuine input, never
+        // for computing the answer or retaining an aggregate retry capability.
+        drop(selection);
         Ok(PreparedProvableAggregate {
             request: prepared.request,
             pending: prepared.pending,
-            selection,
+            data_head,
+            index_head,
         })
     }
-    /// Retains the pending source on a bad replica so another real executor can be tried.
+    /// Retains the encrypted request and pending capability after a bad replica response.
     pub fn check_aggregate_proof(
         &self,
         table: &Table,
@@ -63,7 +80,7 @@ impl Owner {
         output: &[u8],
         proof: &[u8],
     ) -> Result<CheckedOperation> {
-        current(table, &prepared.selection)?;
+        prepared.ensure_current(table)?;
         let input = self.linear.aggregate_circuit_request(prepared.request())?;
         bfv_query_proof::verify(&input, output, proof)
             .map_err(|error| Error::ComputationProof(error.to_string()))
@@ -75,7 +92,7 @@ impl Owner {
         output: &[u8],
         evidence: CheckedOperation,
     ) -> Result<VerifiedAggregate> {
-        current(table, &prepared.selection)?;
+        prepared.ensure_current(table)?;
         let input = self.linear.aggregate_circuit_request(prepared.request())?;
         if evidence.operation() != Operation::PublicPolynomialProduct
             || !evidence.matches_statement(&input, output)

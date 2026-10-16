@@ -113,6 +113,26 @@ fn plaintext(owner: &compact_store::Owner, index: &EncryptedSnapshot) -> Vec<u8>
     bytes
 }
 
+fn select(
+    owner: &compact_store::Owner,
+    index: &EncryptedSnapshot,
+    head: &Commitment,
+    table_id: &TableId,
+    range: AgeRange,
+    budget: usize,
+    transferred: &mut usize,
+) -> Result<Vec<u64>> {
+    super::select(
+        owner,
+        index,
+        head,
+        table_id,
+        range,
+        MaterializationBudget::rows(budget),
+        transferred,
+    )
+}
+
 fn selected(
     owner: &compact_store::Owner,
     index: &EncryptedSnapshot,
@@ -855,4 +875,47 @@ fn partitions_share_one_logical_table_and_private_reorder_preserves_authenticate
     let actual = references(&owner, &rebuilt, &[0, 1], &mut 0).unwrap();
     assert_eq!(actual.rows()[0].row_id(), left_refs.rows()[1].row_id());
     assert_eq!(actual.rows()[1].row_id(), left_refs.rows()[0].row_id());
+}
+
+#[cfg(feature = "bfv-experiment")]
+#[test]
+fn aggregate_capacity_is_separate_and_preflight_rejects_before_posting_traversal() {
+    let owner = compact_store::Owner::generate([85; 16]).unwrap();
+    for count in [2560usize, 2561] {
+        let rows = vec![PlainRow { age: 42, amount: 1 }; count];
+        let data = seal_data(&owner, &rows);
+        let index = build(&owner, &rows, data.commitment()).unwrap();
+        for (budget, ceiling) in [
+            (MaterializationBudget::rows(usize::MAX), MAX_ROWS),
+            (MaterializationBudget::aggregate(0), 0),
+            (MaterializationBudget::aggregate(256), 256),
+            (MaterializationBudget::aggregate(usize::MAX), 2560),
+        ] {
+            let mut transferred = 0;
+            let result = super::select(
+                &owner,
+                &index,
+                data.commitment(),
+                &table_id(),
+                AgeRange::equal(42),
+                budget,
+                &mut transferred,
+            );
+            if count > ceiling {
+                assert_eq!(
+                    result,
+                    Err(Error::SelectionBudget {
+                        selected: count,
+                        budget: ceiling
+                    })
+                );
+                assert_eq!(
+                    transferred,
+                    index.lookup(0, index_limits()).unwrap().encoded_len()
+                );
+            } else {
+                assert_eq!(result.unwrap(), (0..count as u64).collect::<Vec<_>>());
+            }
+        }
+    }
 }

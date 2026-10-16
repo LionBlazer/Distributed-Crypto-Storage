@@ -95,7 +95,7 @@ impl Owner {
                     table.commitment(),
                     table.table_id(),
                     range,
-                    budget,
+                    index::MaterializationBudget::rows(budget),
                     &mut index_response_bytes,
                 )?
             }

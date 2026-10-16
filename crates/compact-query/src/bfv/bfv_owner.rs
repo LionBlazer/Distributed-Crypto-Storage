@@ -99,7 +99,7 @@ impl Owner {
                 lower: 0,
                 upper: 255,
             },
-            budget,
+            index::MaterializationBudget::rows(budget),
             limits,
         )?;
         let context = QueryContext::new(
@@ -202,7 +202,12 @@ impl Owner {
         budget: usize,
         limits: Limits,
     ) -> Result<PreparedSelect> {
-        let selection = self.select_exact(table, predicate, budget, limits)?;
+        let selection = self.select_exact(
+            table,
+            predicate,
+            index::MaterializationBudget::rows(budget),
+            limits,
+        )?;
         let context = QueryContext::new(
             random_id()?,
             selection.data_head.encode(),
@@ -257,7 +262,7 @@ impl Owner {
         &self,
         table: &Table,
         predicate: AgeRange,
-        budget: usize,
+        budget: index::MaterializationBudget,
         limits: Limits,
     ) -> Result<ExactSelection> {
         predicate.validate()?;
@@ -268,7 +273,7 @@ impl Owner {
             table.commitment(),
             table.table_id(),
             predicate,
-            budget.min(MAX_ROWS),
+            budget,
             &mut 0,
         )?;
         // Capacity is known before any plaintext fields exist; never grow/copy their allocation.
@@ -318,7 +323,12 @@ impl Owner {
         budget: usize,
         limits: Limits,
     ) -> Result<PreparedAggregate> {
-        let selection = self.select_exact(table, predicate, budget, limits)?;
+        let selection = self.select_exact(
+            table,
+            predicate,
+            index::MaterializationBudget::rows(budget),
+            limits,
+        )?;
         let context = QueryContext::new(
             random_id()?,
             selection.data_head.encode(),
@@ -353,7 +363,12 @@ impl Owner {
         budget: usize,
         limits: Limits,
     ) -> Result<PreparedUpdate> {
-        let selection = self.select_exact(table, predicate, budget, limits)?;
+        let selection = self.select_exact(
+            table,
+            predicate,
+            index::MaterializationBudget::rows(budget),
+            limits,
+        )?;
         let context = QueryContext::new(
             random_id()?,
             selection.data_head.encode(),

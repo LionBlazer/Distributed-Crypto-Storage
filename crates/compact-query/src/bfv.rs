@@ -13,8 +13,8 @@ pub use aggregate::{PreparedProvableAggregate, VerifiedAggregate};
 pub use verified::{VerifiedSelection, VerifiedUpdate};
 
 pub use bfv_core::{
-    EvaluationStats, IndexedUpdateStats, ParameterProfile, ProofStatus, PublicSetupBytes,
-    RowProjection, UnverifiedAggregate,
+    EvaluationStats, IndexedUpdateStats, POLYNOMIAL_AGGREGATE_CAPACITY, ParameterProfile,
+    ProofStatus, PublicSetupBytes, RowProjection, UnverifiedAggregate,
 };
 
 /// Owns compact AEAD authority and the only BFV secret. No Clone, Debug or secret export.

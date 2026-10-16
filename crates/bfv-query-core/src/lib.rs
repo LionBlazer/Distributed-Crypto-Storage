@@ -6,7 +6,8 @@ mod indexed_insert;
 mod indexed_select;
 mod polynomial_aggregate;
 pub use polynomial_aggregate::{
-    PendingPolynomialAggregate, PreparedPolynomialAggregate, UnverifiedPolynomialAggregate,
+    POLYNOMIAL_AGGREGATE_CAPACITY, POLYNOMIAL_AGGREGATE_SEMANTICS_ID, PendingPolynomialAggregate,
+    PreparedPolynomialAggregate, UnverifiedPolynomialAggregate,
 };
 mod typed_projection;
 pub use indexed_insert::{

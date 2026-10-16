@@ -21,7 +21,7 @@ impl Session {
                     lower: range.lower,
                     upper: range.upper,
                 }),
-                256,
+                backend::POLYNOMIAL_AGGREGATE_CAPACITY,
                 Limits::default(),
             )?;
             let (reply, checked) = requests.request(

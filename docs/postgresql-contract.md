@@ -23,7 +23,10 @@ It preflights shard capacity and immutable protocol frame/update budgets; this
 statement atomicity does not provide general transactions. Aggregates perform an
 encrypted coefficient convolution under the existing full-residue product proof,
 with checked client-side limb/shard completion and SQL NULL for empty SUM.
-They currently admit at most 256 matching rows per shard and reject excess;
+They currently admit at most 2560 matching rows per shard using ten 256-row bands
+and the unchanged 256-term public kernel; row and mutation limits remain 256.
+Excess rejects without a partial result. Q2/R2 requires application domain v3 and
+rejects old journals/wires without migration; the arithmetic profile is unchanged;
 general typed aggregation remains open. Typed imported catalogs provide
 immutable single-table SELECT with authenticated owner-private indices and proved
 BFV byte projection. Unsupported operators reject before execution. Neither path
