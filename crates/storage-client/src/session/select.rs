@@ -3,7 +3,6 @@ use crate::proof::{ProofJob, ProofRequests};
 use sql_plan::{Predicate, Projection};
 
 type ShardRows = Vec<(u64, Vec<u32>)>;
-const SELECT_WORKERS: usize = 2;
 
 impl Session {
     pub(super) fn execute_select(
@@ -14,35 +13,10 @@ impl Session {
         limit: Option<usize>,
     ) -> Result<VerifiedResult> {
         let requests = ProofRequests::default();
-        let mut selected = Vec::new();
-        let session = &*self;
-        // Keep owner temporary data and proof verification bounded independently
-        // of participant count. Each peer still admits only one heavy operation.
-        for first in (0..self.data.shards.len()).step_by(SELECT_WORKERS) {
-            let completed = std::thread::scope(|scope| {
-                let mut workers = Vec::new();
-                let requests = &requests;
-                for slot in first..(first + SELECT_WORKERS).min(session.data.shards.len()) {
-                    workers.push(
-                        std::thread::Builder::new()
-                            .name("dcs-select-shard".into())
-                            .spawn_scoped(scope, move || {
-                                session.select_shard(slot, predicate, projection, requests)
-                            })?,
-                    );
-                }
-                // Join every worker before propagating an error; no detached
-                // query activity or partial result survives a failed batch.
-                let completed: Vec<_> = workers.into_iter().map(|worker| worker.join()).collect();
-                completed
-                    .into_iter()
-                    .map(|result| result.map_err(|_| protocol("SELECT worker failed"))?)
-                    .collect::<Result<Vec<_>>>()
-            })?;
-            for rows in completed {
-                selected.extend(rows);
-            }
-        }
+        let completed = shards::run(self.data.shards.len(), |slot| {
+            self.select_shard(slot, predicate, projection, &requests)
+        })?;
+        let mut selected: ShardRows = completed.into_iter().flatten().collect();
         let version = self.finish_read(initial)?;
         selected.sort_by_key(|(ordinal, _)| *ordinal);
         let mut rows: Vec<_> = selected.into_iter().map(|(_, row)| row).collect();
