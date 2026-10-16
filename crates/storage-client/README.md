@@ -234,8 +234,8 @@ An interrupted proof RPC ends proof preparation for a new mutation immediately,
 without trying an uncancelled holder. This boundary applies independently of the
 read scheduler's optional memory of unavailable executors. All workers still join
 and no newly staged mutation is stored or authorized after that preparation error.
-This does not redefine cancellation in other mutation phases or discard an already
-authorized pending mutation; its exact publication/recovery contract remains below.
+An already authorized pending mutation retains its exact publication/recovery
+contract below; cancellation never rolls back a durable remote write.
 Authorization, complete manifest coverage, old/new head rules, work and freshness
 remain outside the arithmetic cache and are always checked. Actual holders
 acknowledge storage.
@@ -272,14 +272,16 @@ Known unexpected successful RPC variants remain successes for Trace and endpoint
 failure memory, but cannot become imported versions. Store/Delta/Copy, holder
 credit, pending transition identity and proof/freshness acceptance are unchanged.
 
-This ownership change preserves the existing synchronization policy difference:
-`synchronize_using(Some(Requests))` uses the read scheduler's Busy retry and returns
-Interrupted immediately. `synchronize_using(None)` directly calls FetchVersion
-without Busy retry, and its journal/version holder loops can continue after an
-Interrupted error. Those conditional checks in `session/agreement.rs` are a
-separate cancellation follow-up; this change does not claim universal immediate
-cancellation in mutation synchronization. No latency or RAM improvement is
-established by the ownership change alone.
+The read scheduler retains its bounded Busy retry. Mutation synchronization still
+calls FetchVersion directly without Busy retry. Both paths return Interrupted
+immediately from journal synchronization and changed-head imports, before marking
+an endpoint unavailable, trying another holder or publishing staged shard metadata.
+Mining and pending publication also stop at an interrupted response without trying
+another miner or publisher. A prior durable publication acknowledgement does not
+clear the retained block when a later reply is interrupted: retry publishes that
+same block. A lost Mined reply has not been validated by the owner and may require
+bounded mining again for the same signed transition, not necessarily the same
+header. These changes establish no latency or RAM improvement.
 
 `VerifiedResult::Updated::affected_rows` counts the complete matched selection,
 including values unchanged by `amount = amount + 0`, following PostgreSQL's
@@ -295,6 +297,15 @@ statement and includes its stable query identity and submitted head when known.
 retrying identical SQL does the same. Different SQL is blocked until resolution.
 Recovery never runs INSERT/addition again or silently changes the authorized parent.
 A reorganized pending write remains explicit rather than being automatically replayed.
+Before acceptance, cancellation retains the original pending identity and any known
+submitted head. Its error remains `Error::PendingMutation`, with the transport
+cancellation in its reason. The acceptance boundary follows confirmation, final
+synchronization and the required full-image owner checks, when the pending record
+is taken. Subsequent holder refresh and journal collection remain best effort;
+this boundary does not promise universal late cancellation or remote rollback.
+Actual two-peer tests cancel after journal, full-version, mined and publication
+replies, assert no later request is sent in that cancelled attempt, then recover
+the original write without new SQL preparation, FHE proof or Store.
 
 `inspect_rows` is an explicit owner editor operation over actual ciphertext, never
 a SQL answer source. `copy_shard` transfers from a surviving process; copies cannot

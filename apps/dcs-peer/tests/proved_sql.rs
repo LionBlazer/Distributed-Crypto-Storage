@@ -14,6 +14,8 @@ mod rpc_observation;
 mod static_aggregate;
 #[path = "support/static_update.rs"]
 mod static_update;
+#[path = "support/synchronization_cancellation.rs"]
+mod synchronization_cancellation;
 #[path = "support/typed_sql.rs"]
 mod typed_sql;
 

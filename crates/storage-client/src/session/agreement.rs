@@ -37,8 +37,7 @@ impl Session {
                     Some(requests) => requests.call(&participant.remote, None, request),
                     None => call_bounded(&participant.remote, request),
                 };
-                if requests.is_some()
-                    && let Err(error) = &response
+                if let Err(error) = &response
                     && error.kind() == io::ErrorKind::Interrupted
                 {
                     return Err(Error::Transport(response.err().unwrap()));
@@ -114,8 +113,7 @@ impl Session {
                         .remote
                         .fetch_version(&state.heads.data, &state.heads.index),
                 };
-                if requests.is_some()
-                    && let Err(error) = &response
+                if let Err(error) = &response
                     && error.kind() == io::ErrorKind::Interrupted
                 {
                     return Err(Error::Transport(response.err().unwrap()));
@@ -195,6 +193,9 @@ impl Session {
                     mined = Some(block);
                     break;
                 }
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                    return Err(Error::Transport(error));
+                }
                 _ => continue,
             }
         }
@@ -241,9 +242,18 @@ impl Session {
             }
             // Publication is idempotent by the exact block hash. Connectivity is
             // not counted as votes or proof; the client validates all work itself.
-            if matches!(call_bounded(&participant.remote, || Request::PublishBlock { network, header: block.header.clone(), body: block.body.clone() }), Ok(Response::JournalAccepted(accepted)) if accepted == id)
-            {
-                persisted = true;
+            match call_bounded(&participant.remote, || Request::PublishBlock {
+                network,
+                header: block.header.clone(),
+                body: block.body.clone(),
+            }) {
+                Ok(Response::JournalAccepted(accepted)) if accepted == id => persisted = true,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                    // A prior acknowledgement or this lost reply can already
+                    // be durable. Retain the exact block for idempotent retry.
+                    return Err(Error::Transport(error));
+                }
+                _ => {}
             }
         }
         if !persisted {
