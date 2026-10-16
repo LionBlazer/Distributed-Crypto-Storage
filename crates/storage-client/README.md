@@ -26,9 +26,15 @@ Each table is a distinct bounded ciphertext shard, replicated on two peers when
 available. All tables share one owner key authority and public BFV setup.
 
 `select(sql)` supports actual table/column names, projections, typed comparisons,
-AND/OR/NOT, IN/BETWEEN, NULL predicates, ORDER BY and TOP/LIMIT. Result ordering
+AND/OR/NOT, IN/BETWEEN, NULL predicates, ORDER BY and row windows. Result ordering
 uses PostgreSQL's ASC NULLS LAST / DESC NULLS FIRST defaults, accepts explicit
-NULLS FIRST/LAST per key and applies LIMIT after that complete ordering. Complete
+NULLS FIRST/LAST per key and applies OFFSET before LIMIT/FETCH after complete
+filtering and ordering. LIMIT ALL/NULL is unbounded, a NULL offset is zero, and
+FETCH FIRST/NEXT defaults to one row. FETCH WITH TIES includes the last selected
+row's full ORDER BY peer group (including NULL peers and fixed-CHAR comparison),
+without restoring skipped rows or using physical ordinals as tie-breaking keys.
+Counts are nonnegative bigint literals; arbitrary count expressions and parameters
+remain unsupported. TOP remains the existing import-adapter limit spelling. Complete
 per-column private postings are authenticated against the agreed index head; equality/range
 selection uses binary bounds over sorted postings. This is the existing explicit
 owner-online, visible-access index model, not a claim of a secret predicate circuit.
@@ -83,7 +89,9 @@ The 8,191-byte BFV block size is not a row limit: arbitrary-width cells and tabl
 stream over multiple blocks. Current resource budgets are 8 MiB per encoded table
 and per encrypted-index plaintext, the caller's `profile.max_shards` table count,
 one million result cells and 32 MiB projected output. Budgets reject explicitly;
-no rows are truncated except an explicit SQL TOP/LIMIT. The full source/index
+no rows are truncated except an explicit SQL row window. WITH TIES can exceed its
+nominal count, so all ordinary result/source resource limits still apply to the
+expanded selection. The full source/index
 snapshot is fetched as ciphertext; only selected data pages are decrypted.
 
 Typed imported catalogs are currently immutable. INSERT/UPDATE/DELETE, joins,

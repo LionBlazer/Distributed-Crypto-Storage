@@ -23,9 +23,17 @@ the owner at import validation. Unsupported statements and expressions fail the
 import before publication instead of silently dropping data or constraints.
 
 `plan_select_schemas` and `plan_select` bind single-table projections, comparisons,
-AND/OR/NOT, IN, BETWEEN, IS NULL, ORDER BY and TOP/LIMIT to actual column indices.
+AND/OR/NOT, IN, BETWEEN, IS NULL and ORDER BY to actual column indices.
 ORDER BY resolves PostgreSQL's default NULL placement (ASC NULLS LAST and DESC
 NULLS FIRST) and explicit NULLS FIRST/LAST separately for every ordering column.
+`SelectPlan::window` describes pagination after filtering and ordering: OFFSET,
+LIMIT (including ALL/NULL) and FETCH FIRST/NEXT ... ROW/ROWS ONLY or WITH TIES.
+OFFSET and LIMIT/FETCH may appear in either order; a NULL offset is zero and an
+omitted FETCH count is one. WITH TIES requires ORDER BY, extends the last selected
+row's complete ordering-key peer group and never restores skipped rows. Row counts
+are nonnegative SQL bigint literals fitting the host's usize; arbitrary expressions
+and parameters are not implemented. Parenthesized literals are accepted. Existing
+SQL Server TOP input remains a limit spelling and cannot combine with LIMIT/FETCH.
 They produce an AST, never an answer. Joins, aggregates, stored programs, row locks
 and mutation plans are rejected here until their separate execution/proof paths
 exist. `compare_values` uses case-sensitive Unicode ordinal text ordering, preserving

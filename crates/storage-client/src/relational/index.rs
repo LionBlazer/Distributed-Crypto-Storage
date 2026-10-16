@@ -192,51 +192,65 @@ impl PrivateIndex {
     }
 
     pub(super) fn select(&self, plan: &SelectPlan) -> Result<Vec<usize>> {
+        if plan.window.with_ties && plan.order_by.is_empty() {
+            return Err(invalid("FETCH WITH TIES requires ORDER BY"));
+        }
         let mut rows: Vec<_> = match &plan.predicate {
             Some(expr) => self.matching(expr, false)?.into_iter().collect(),
             None => (0..self.cells.len()).collect(),
         };
-        if !plan.order_by.is_empty() {
-            let mut ordered = Vec::new();
-            for order in &plan.order_by {
-                let mut by_row = vec![&Value::Null; self.cells.len()];
-                for posting in &self.columns[order.column] {
-                    for row in &posting.rows {
-                        by_row[*row] = &posting.value;
-                    }
+        let mut ordered = Vec::new();
+        for order in &plan.order_by {
+            let mut by_row = vec![&Value::Null; self.cells.len()];
+            for posting in &self.columns[order.column] {
+                for row in &posting.rows {
+                    by_row[*row] = &posting.value;
                 }
-                ordered.push(by_row);
             }
-            rows.sort_by(|left, right| {
-                for (i, order) in plan.order_by.iter().enumerate() {
-                    let a = ordered[i][*left];
-                    let b = ordered[i][*right];
-                    let cmp = match (a, b) {
-                        (Value::Null, Value::Null) => Ordering::Equal,
-                        (Value::Null, _) if order.nulls_first => Ordering::Less,
-                        (Value::Null, _) => Ordering::Greater,
-                        (_, Value::Null) if order.nulls_first => Ordering::Greater,
-                        (_, Value::Null) => Ordering::Less,
-                        _ => {
-                            let cmp = compare_typed_values(
-                                &self.schema.columns[order.column].data_type,
-                                a,
-                                b,
-                            )
-                            .expect("validated same-typed complete index");
-                            if order.descending { cmp.reverse() } else { cmp }
-                        }
-                    };
-                    if cmp != Ordering::Equal {
-                        return cmp;
+            ordered.push(by_row);
+        }
+        // The physical ordinal makes otherwise equal rows deterministic, but
+        // it must not split SQL peer groups when extending FETCH WITH TIES.
+        let compare_keys = |left: usize, right: usize| {
+            for (i, order) in plan.order_by.iter().enumerate() {
+                let a = ordered[i][left];
+                let b = ordered[i][right];
+                let cmp = match (a, b) {
+                    (Value::Null, Value::Null) => Ordering::Equal,
+                    (Value::Null, _) if order.nulls_first => Ordering::Less,
+                    (Value::Null, _) => Ordering::Greater,
+                    (_, Value::Null) if order.nulls_first => Ordering::Greater,
+                    (_, Value::Null) => Ordering::Less,
+                    _ => {
+                        let cmp = compare_typed_values(
+                            &self.schema.columns[order.column].data_type,
+                            a,
+                            b,
+                        )
+                        .expect("validated same-typed complete index");
+                        if order.descending { cmp.reverse() } else { cmp }
                     }
+                };
+                if cmp != Ordering::Equal {
+                    return cmp;
                 }
-                left.cmp(right)
-            });
+            }
+            Ordering::Equal
+        };
+        if !plan.order_by.is_empty() {
+            rows.sort_by(|left, right| compare_keys(*left, *right).then(left.cmp(right)));
         }
-        if let Some(limit) = plan.limit {
-            rows.truncate(limit);
+        let start = plan.window.offset.min(rows.len());
+        let mut end = plan.window.limit.map_or(rows.len(), |limit| {
+            start.saturating_add(limit).min(rows.len())
+        });
+        if plan.window.with_ties && end > start {
+            while end < rows.len() && compare_keys(rows[end - 1], rows[end]) == Ordering::Equal {
+                end += 1;
+            }
         }
+        rows.truncate(end);
+        rows.drain(..start);
         Ok(rows)
     }
 }
@@ -286,6 +300,11 @@ mod tests {
             ("WHERE fixed = 'a' ORDER BY id", vec![0, 1, 2]),
             ("WHERE fixed > 'a'", vec![4]),
             ("ORDER BY fixed, id", vec![0, 1, 2, 4, 3]),
+            ("ORDER BY fixed FETCH FIRST ROW WITH TIES", vec![0, 1, 2]),
+            (
+                "ORDER BY fixed OFFSET 1 FETCH NEXT ROW WITH TIES",
+                vec![1, 2],
+            ),
             ("ORDER BY variable", vec![1, 4, 0, 2, 3]),
         ] {
             let sql = format!("SELECT id FROM labels {tail}");

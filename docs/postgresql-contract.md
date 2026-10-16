@@ -36,6 +36,14 @@ Parsing syntax or preserving imported stored programs does not execute them.
 Typed SELECT ordering follows PostgreSQL's ASC NULLS LAST / DESC NULLS FIRST
 defaults and explicit NULLS FIRST/LAST per key, before applying LIMIT. See
 [sorting rows](https://www.postgresql.org/docs/18/queries-order.html).
+Typed SELECT also implements OFFSET and LIMIT ALL/NULL, plus FETCH FIRST/NEXT
+... ROW/ROWS ONLY or WITH TIES using nonnegative bigint literal counts.
+Pagination applies after complete authenticated filtering/ordering. WITH TIES
+extends the last selected row's complete ordering-key peer group, including NULLs;
+it requires ORDER BY and never restores rows removed by OFFSET. Empty windows
+still require a genuine encrypted-result proof and final freshness check. General
+count expressions/parameters and live locks remain unsupported. See the
+[LIMIT/FETCH contract](https://www.postgresql.org/docs/18/sql-select.html#SQL-LIMIT).
 
 Typed comparison preserves trailing spaces for variable VARCHAR/NVARCHAR/text and
 ignores only trailing U+0020 for fixed CHAR/NCHAR. Predicates, ordering before LIMIT,

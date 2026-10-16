@@ -36,13 +36,22 @@ pub struct OrderBy {
     /// Resolved independently of direction: PostgreSQL defaults to DESC's value.
     pub nulls_first: bool,
 }
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RowWindow {
+    /// Rows skipped after filtering and ordering, before counting the result.
+    pub offset: usize,
+    /// None means unbounded (LIMIT ALL/NULL or a NULL FETCH count).
+    pub limit: Option<usize>,
+    /// Extend a nonempty limit to the last row's ORDER BY peers, excluding OFFSET.
+    pub with_ties: bool,
+}
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SelectPlan {
     pub table: usize,
     pub projection: Vec<usize>,
     pub predicate: Option<Expr>,
     pub order_by: Vec<OrderBy>,
-    pub limit: Option<usize>,
+    pub window: RowWindow,
 }
 
 pub fn plan_select(database: &ImportedDatabase, sql: &str) -> Result<SelectPlan, Error> {
@@ -60,7 +69,7 @@ pub fn plan_select_schemas(schemas: &[TableSchema], sql: &str) -> Result<SelectP
     let mut limit = None;
     if parser.eat_word("TOP") {
         let parens = parser.eat_symbol('(');
-        limit = Some(positive_limit(&mut parser)?);
+        limit = Some(nonnegative_count(&mut parser)?);
         if parens {
             parser.expect_symbol(')')?;
         }
@@ -85,7 +94,7 @@ pub fn plan_select_schemas(schemas: &[TableSchema], sql: &str) -> Result<SelectP
     crate::validate_schema(schema)?;
     let alias = if parser.eat_word("AS")
         || matches!(parser.peek(), Some(TokenKind::Quoted(_)))
-        || matches!(parser.peek(),Some(TokenKind::Word(word)) if !["WHERE","ORDER","LIMIT"].iter().any(|keyword|word.eq_ignore_ascii_case(keyword)))
+        || matches!(parser.peek(),Some(TokenKind::Word(word)) if !["WHERE","ORDER","LIMIT","OFFSET","FETCH"].iter().any(|keyword|word.eq_ignore_ascii_case(keyword)))
     {
         Some(parser.ident()?)
     } else {
@@ -142,12 +151,7 @@ pub fn plan_select_schemas(schemas: &[TableSchema], sql: &str) -> Result<SelectP
             }
         }
     }
-    if parser.eat_word("LIMIT") {
-        if limit.is_some() {
-            return Err(Error::new("cannot combine TOP and LIMIT"));
-        }
-        limit = Some(positive_limit(&mut parser)?);
-    }
+    let window = row_window(&mut parser, limit, !order_by.is_empty())?;
     parser.eat_symbol(';');
     if !parser.done() {
         return Err(Error::new(format!(
@@ -160,15 +164,98 @@ pub fn plan_select_schemas(schemas: &[TableSchema], sql: &str) -> Result<SelectP
         projection,
         predicate,
         order_by,
-        limit,
+        window,
     })
 }
 
-fn positive_limit(parser: &mut Parser<'_>) -> Result<usize, Error> {
+fn nonnegative_count(parser: &mut Parser<'_>) -> Result<usize, Error> {
     parser
         .number()?
-        .parse::<usize>()
-        .map_err(|_| Error::new("TOP/LIMIT must be a nonnegative integer"))
+        .parse::<i64>()
+        .ok()
+        .and_then(|value| usize::try_from(value).ok())
+        .ok_or_else(|| {
+            Error::new("row count must be a nonnegative integer fitting SQL bigint and usize")
+        })
+}
+fn nullable_count(parser: &mut Parser<'_>) -> Result<Option<usize>, Error> {
+    let parens = parser.eat_symbol('(');
+    let count = if parser.eat_word("NULL") {
+        None
+    } else {
+        Some(nonnegative_count(parser)?)
+    };
+    if parens {
+        parser.expect_symbol(')')?;
+    }
+    Ok(count)
+}
+fn row_window(
+    parser: &mut Parser<'_>,
+    top: Option<usize>,
+    ordered: bool,
+) -> Result<RowWindow, Error> {
+    let mut window = RowWindow {
+        limit: top,
+        ..RowWindow::default()
+    };
+    let mut limited = top.is_some();
+    let mut offset = false;
+    // PostgreSQL accepts OFFSET before or after either LIMIT or FETCH. Keep
+    // occurrence flags separate from NULL/unbounded values to reject duplicates.
+    loop {
+        if parser.eat_word("LIMIT") {
+            if limited {
+                return Err(Error::new("duplicate or conflicting TOP/LIMIT/FETCH"));
+            }
+            limited = true;
+            window.limit = if parser.eat_word("ALL") {
+                None
+            } else {
+                nullable_count(parser)?
+            };
+        } else if parser.eat_word("OFFSET") {
+            if offset {
+                return Err(Error::new("duplicate OFFSET"));
+            }
+            offset = true;
+            window.offset = nullable_count(parser)?.unwrap_or(0);
+            if !parser.eat_word("ROW") {
+                parser.eat_word("ROWS");
+            }
+        } else if parser.eat_word("FETCH") {
+            if limited {
+                return Err(Error::new("duplicate or conflicting TOP/LIMIT/FETCH"));
+            }
+            limited = true;
+            if !parser.eat_word("FIRST") {
+                parser.expect_word("NEXT")?;
+            }
+            window.limit = if parser
+                .peek()
+                .is_some_and(|token| token.word_is("ROW") || token.word_is("ROWS"))
+            {
+                Some(1)
+            } else {
+                nullable_count(parser)?
+            };
+            if !parser.eat_word("ROW") {
+                parser.expect_word("ROWS")?;
+            }
+            if parser.eat_word("WITH") {
+                parser.expect_word("TIES")?;
+                window.with_ties = true;
+            } else {
+                parser.expect_word("ONLY")?;
+            }
+        } else {
+            break;
+        }
+    }
+    if window.with_ties && !ordered {
+        return Err(Error::new("FETCH WITH TIES requires ORDER BY"));
+    }
+    Ok(window)
 }
 struct ColumnRef {
     qualifier: Option<String>,
@@ -367,6 +454,102 @@ mod tests {
     use super::*;
     use crate::import_database_dump;
     #[test]
+    fn row_windows_bind_null_defaults_offsets_and_fetch_peer_groups() {
+        let database =
+            import_database_dump("CREATE TABLE ranks (id INT NOT NULL);", Default::default())
+                .unwrap();
+        for (clause, offset, limit, with_ties) in [
+            ("", 0, None, false),
+            ("OFFSET 3", 3, None, false),
+            ("LIMIT ALL OFFSET 3 ROWS", 3, None, false),
+            ("OFFSET NULL ROW LIMIT NULL", 0, None, false),
+            ("LIMIT (2) OFFSET (+3)", 3, Some(2), false),
+            ("OFFSET -0 LIMIT +2", 0, Some(2), false),
+            ("FETCH FIRST ROW ONLY", 0, Some(1), false),
+            ("FETCH NEXT ROWS ONLY OFFSET 3", 3, Some(1), false),
+            ("OFFSET 3 ROWS FETCH NEXT 2 ROWS ONLY", 3, Some(2), false),
+            (
+                "FETCH FIRST (2) ROWS WITH TIES OFFSET (3)",
+                3,
+                Some(2),
+                true,
+            ),
+            ("FETCH FIRST NULL ROWS WITH TIES", 0, None, true),
+            ("FETCH FIRST 0 ROWS WITH TIES", 0, Some(0), true),
+            (
+                "LIMIT 9223372036854775807 OFFSET 9223372036854775807",
+                i64::MAX as usize,
+                Some(i64::MAX as usize),
+                false,
+            ),
+        ] {
+            let sql = format!("SELECT id FROM ranks ORDER BY id {clause};");
+            assert_eq!(
+                plan_select(&database, &sql).unwrap().window,
+                RowWindow {
+                    offset,
+                    limit,
+                    with_ties
+                },
+                "{sql}"
+            );
+        }
+    }
+
+    #[test]
+    fn incomplete_duplicate_or_out_of_range_row_windows_reject_without_a_plan() {
+        let database =
+            import_database_dump("CREATE TABLE ranks (id INT NOT NULL);", Default::default())
+                .unwrap();
+        for clause in [
+            "LIMIT",
+            "LIMIT -1",
+            "LIMIT 1.5",
+            "LIMIT 9223372036854775808",
+            "LIMIT ALL LIMIT 1",
+            "LIMIT NULL FETCH FIRST ROW ONLY",
+            "OFFSET",
+            "OFFSET -1",
+            "OFFSET ALL",
+            "OFFSET 9223372036854775808",
+            "OFFSET NULL OFFSET 1",
+            "OFFSET 1 ROW ROWS",
+            "OFFSET 1 + 1",
+            "FETCH",
+            "FETCH ROW ONLY",
+            "FETCH FIRST",
+            "FETCH FIRST 2 ONLY",
+            "FETCH FIRST 2 ROWS",
+            "FETCH FIRST -1 ROWS ONLY",
+            "FETCH FIRST 9223372036854775808 ROWS ONLY",
+            "FETCH NEXT ALL ROWS ONLY",
+            "FETCH FIRST ROW WITH",
+            "FETCH FIRST ROW WITH TIES FETCH NEXT ROW ONLY",
+            "FETCH FIRST ROW ONLY LIMIT ALL",
+            "LIMIT 1 OFFSET 2 WHERE id = 1",
+            "LIMIT 1; SELECT id FROM ranks",
+            "FETCH FIRST ROW ONLY FOR UPDATE SKIP LOCKED",
+        ] {
+            assert!(
+                plan_select(
+                    &database,
+                    &format!("SELECT id FROM ranks ORDER BY id {clause}")
+                )
+                .is_err(),
+                "{clause}"
+            );
+        }
+        assert!(
+            plan_select(&database, "SELECT id FROM ranks FETCH FIRST ROW WITH TIES")
+                .unwrap_err()
+                .message
+                .contains("requires ORDER BY")
+        );
+        assert!(plan_select(&database, "SELECT TOP 1 id FROM ranks FETCH FIRST ROW ONLY").is_err());
+        assert!(plan_select(&database, "SELECT TOP 1 id FROM ranks LIMIT NULL").is_err());
+    }
+
+    #[test]
     fn comparison_text_literals_do_not_inherit_the_columns_storage_width() {
         for sql_type in ["VARCHAR(1)", "NVARCHAR(1)", "CHAR(1)", "NCHAR(1)"] {
             let source = format!("CREATE TABLE labels (label {sql_type});");
@@ -399,7 +582,7 @@ mod tests {
         let database=import_database_dump("CREATE TABLE [Products] ([ProductID] int NOT NULL,[ProductName] nvarchar(40) NOT NULL,[UnitPrice] money NULL);",Default::default()).unwrap();
         let plan=plan_select(&database,"SELECT TOP (20) ProductName, UnitPrice FROM dbo.Products WHERE UnitPrice BETWEEN 10 AND 20 OR ProductID IN (1, 2) ORDER BY UnitPrice DESC;").unwrap();
         assert_eq!(plan.projection, vec![1, 2]);
-        assert_eq!(plan.limit, Some(20));
+        assert_eq!(plan.window.limit, Some(20));
         assert_eq!(
             plan.order_by,
             vec![OrderBy {
