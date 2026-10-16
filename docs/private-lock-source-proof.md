@@ -146,6 +146,12 @@ pins source/artifact identities, security reports and limited process observatio
 Public fixtures do not establish witness secrecy or private-source composition.
 SHA chaining/padding, AEAD, authenticated index/control semantics and BFV input
 formation remain unimplemented; this gate supplies no SQL acceptance API.
+The same standalone workspace now validates full HChaCha20/ChaCha20 constraints
+with public RFC/draft fixtures and a shared private backend. Its separate
+[primitive validation record](../experiments/hiding-fri-sha256-gate/PRIMITIVES-VALIDATION.md)
+pins current security reports, genuine proofs, nineteen passing tests and sparse
+memory observations. It adds no owner-key import/export, AEAD relation or network
+accepting path; public-fixture success does not establish private-witness secrecy.
 
 [Greco's pinned artifact](https://github.com/privacy-ethereum/greco/blob/df72c14c02d5d85f189f087feaab109e7fc1b4f1/README.md)
 implements BFV input-formation proofs on Halo2. At N8192, four 55-bit moduli,

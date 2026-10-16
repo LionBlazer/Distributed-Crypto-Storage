@@ -2,7 +2,10 @@ use p3_field::PrimeCharacteristicRing;
 use p3_sha256_air::SHA256_IV;
 use sha2::{Digest, Sha256};
 
+use crate::air::CompressionAir;
 use crate::backend::{Val, profile_digest};
+use crate::primitive::{Kind, PrimitiveAir, PrimitiveStatement};
+use p3_matrix::dense::RowMajorMatrix;
 
 pub(crate) const COMPRESSION_WORDS: usize = 32;
 pub(crate) const ID_WORDS: usize = 8;
@@ -33,7 +36,7 @@ impl Statement {
     pub(crate) fn identity(&self) -> [u8; 32] {
         let mut hash = Sha256::new();
         hash.update(b"dcs/experiment/hiding-sha256-statement/v1");
-        hash.update(profile_digest());
+        hash.update(profile_digest(Kind::Sha256));
         hash.update(self.request);
         for word in self.block.iter().chain(&self.state).chain(&self.output) {
             hash.update(word.to_be_bytes());
@@ -69,6 +72,21 @@ impl Statement {
         input[..16].copy_from_slice(&self.block);
         input[16..].copy_from_slice(&self.state);
         input
+    }
+}
+
+impl PrimitiveStatement for Statement {
+    fn kind(&self) -> Kind {
+        Kind::Sha256
+    }
+    fn air(&self) -> PrimitiveAir {
+        PrimitiveAir::Sha256(CompressionAir::new(self))
+    }
+    fn trace(&self) -> RowMajorMatrix<Val> {
+        CompressionAir::trace(self)
+    }
+    fn public_values(&self) -> Vec<Val> {
+        Statement::public_values(self)
     }
 }
 

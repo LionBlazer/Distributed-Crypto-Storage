@@ -1,5 +1,5 @@
 [package]
-name = "hiding-fri-sha256-gate"
+name = "hiding-fri-source-primitives"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
@@ -9,6 +9,7 @@ publish = false
 [workspace]
 
 [dependencies]
+chacha20 = { version = "=0.9.1", features = ["zeroize"] }
 p3-air = "=0.8.0"
 p3-challenger = "=0.8.0"
 p3-commit = "=0.8.0"

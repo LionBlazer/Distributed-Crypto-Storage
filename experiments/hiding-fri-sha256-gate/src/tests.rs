@@ -13,6 +13,7 @@ use crate::backend::{
     self, AllocationEstimate, Backend, Challenge, Error, PROOF_DEGREE_BITS, RANDOM_CODEWORDS,
     TRACE_HEIGHT, Val,
 };
+use crate::primitive::PrimitiveStatement;
 use crate::statement::{Statement, reference_output};
 
 #[test]
@@ -48,7 +49,7 @@ fn public_compression_matches_independent_oracle_at_word_boundaries() {
 fn final_wrapper_uses_both_security_bounds_and_explicit_public_shape() {
     let statement = Statement::fixture();
     let air = CompressionAir::new(&statement);
-    let (parameters, report) = backend::analyze(&air).unwrap();
+    let (parameters, report) = backend::analyze(&statement.air()).unwrap();
     report.require_target().unwrap();
     assert_eq!(BaseAir::<Val>::width(&air), 7728);
     assert_eq!(BaseAir::<Val>::preprocessed_width(&air), 0);
@@ -302,7 +303,7 @@ fn cloned_configuration_forks_the_mask_and_salt_streams() {
 
 #[test]
 fn allocation_estimates_name_only_the_arrays_they_actually_count() {
-    let estimate = AllocationEstimate::fixed();
+    let estimate = AllocationEstimate::for_width(NUM_SHA256_COLS);
     assert_eq!(estimate.trace_bytes, 31_653_888);
     assert_eq!(estimate.masked_trace_bytes, 63_348_736);
     assert_eq!(estimate.main_lde_bytes, 506_789_888);

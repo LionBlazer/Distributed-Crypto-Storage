@@ -1,3 +1,4 @@
+use p3_air::BaseAir;
 use p3_challenger::DuplexChallenger;
 use p3_commit::ExtensionMmcs;
 use p3_dft::Radix2DitParallel;
@@ -16,8 +17,8 @@ use rand::SeedableRng;
 use rand::rngs::{StdRng, SysRng};
 use sha2::{Digest, Sha256};
 
-use crate::air::CompressionAir;
-use crate::statement::Statement;
+use crate::chacha;
+use crate::primitive::{Kind, PrimitiveAir, PrimitiveStatement};
 
 pub(crate) type Val = Goldilocks;
 type Perm = Poseidon2Goldilocks<12>;
@@ -79,17 +80,14 @@ pub(crate) struct AllocationEstimate {
     pub(crate) main_lde_bytes: usize,
 }
 impl AllocationEstimate {
-    pub(crate) fn fixed() -> Self {
+    pub(crate) fn for_width(width: usize) -> Self {
         let element_bytes = core::mem::size_of::<Val>();
         Self {
-            trace_bytes: TRACE_HEIGHT * NUM_SHA256_COLS * element_bytes,
-            masked_trace_bytes: 2
-                * TRACE_HEIGHT
-                * (NUM_SHA256_COLS + RANDOM_CODEWORDS)
-                * element_bytes,
+            trace_bytes: TRACE_HEIGHT * width * element_bytes,
+            masked_trace_bytes: 2 * TRACE_HEIGHT * (width + RANDOM_CODEWORDS) * element_bytes,
             main_lde_bytes: (2 << LOG_BLOWUP)
                 * TRACE_HEIGHT
-                * (NUM_SHA256_COLS + RANDOM_CODEWORDS)
+                * (width + RANDOM_CODEWORDS)
                 * element_bytes,
         }
     }
@@ -128,14 +126,49 @@ impl SecurityReport {
     }
 }
 
-pub(crate) fn profile_digest() -> [u8; 32] {
+pub(crate) fn profile_digest(kind: Kind) -> [u8; 32] {
     let mut hash = Sha256::new();
-    hash.update(b"dcs/experiment/hiding-sha256-profile/v1");
+    hash.update(b"dcs/experiment/hiding-source-primitive-profile/v1");
     hash.update(b"p3-0.8.0/a21e3ed42905040ad49c519e402f018381c12d0c");
     hash.update(b"Goldilocks/Poseidon2-12/rate8/digest4/cap0/arity2");
-    hash.update(b"SHA256-compression/one-public-case/repeat512/u32-big-endian");
+    hash.update(kind.name());
+    let (width, opening_points) = match kind {
+        Kind::Sha256 => {
+            hash.update(b"SHA256-compression/one-public-case/repeat512/u32-big-endian");
+            (NUM_SHA256_COLS, 1)
+        }
+        Kind::HChaCha20 | Kind::ChaCha20 => {
+            hash.update(b"ChaCha20/20rounds/80quarter-rounds/u32-little-endian/bit-carry-v1");
+            hash.update(b"input-constants-fixed/state512-next-columns/full-width-next-opening");
+            hash.update(b"HChaCha-extract0..4,12..16-no-feedforward/ChaCha-feedforward16");
+            for value in chacha::SCHEDULE
+                .into_iter()
+                .flatten()
+                .chain(chacha::HCHACHA_OUTPUT)
+                .chain([
+                    16,
+                    12,
+                    8,
+                    7,
+                    chacha::QUARTER_ROUNDS,
+                    chacha::air::PERIODIC_COLUMNS,
+                ])
+            {
+                hash.update((value as u64).to_le_bytes());
+            }
+            for word in chacha::CONSTANTS {
+                hash.update(word.to_le_bytes());
+            }
+            for row in 0..TRACE_HEIGHT {
+                for step in 0..chacha::SCHEDULE.len() {
+                    hash.update([u8::from(row < chacha::QUARTER_ROUNDS && row % 8 == step)]);
+                }
+            }
+            (chacha::air::WIDTH, 2)
+        }
+    };
     hash.update(b"rand0.10.3/StdRng/independent-OS-seeds");
-    hash.update(b"no-preprocessing/no-next-row/no-grinding/final-poly-log0/fri-arity-log1");
+    hash.update(b"no-preprocessing/no-grinding/final-poly-log0/fri-arity-log1");
     for value in [
         TRACE_LOG_HEIGHT,
         LOG_BLOWUP,
@@ -145,7 +178,8 @@ pub(crate) fn profile_digest() -> [u8; 32] {
         SALT_ELEMENTS,
         SECURITY_BITS,
         MODULUS_BITS,
-        NUM_SHA256_COLS,
+        width,
+        opening_points,
     ] {
         hash.update((value as u64).to_le_bytes());
     }
@@ -203,9 +237,7 @@ pub(crate) fn contract_pcs(random_codewords: usize) -> Result<Pcs, Error> {
     new_pcs(random_codewords)
 }
 
-pub(crate) fn analyze(
-    air: &CompressionAir,
-) -> Result<(StarkSecurityParams, SecurityReport), Error> {
+pub(crate) fn analyze(air: &PrimitiveAir) -> Result<(StarkSecurityParams, SecurityReport), Error> {
     // No trace, LDE, Merkle tree or witness is allocated for this calculation.
     let fri = FriParameters {
         log_blowup: LOG_BLOWUP,
@@ -217,8 +249,13 @@ pub(crate) fn analyze(
         query_proof_of_work_bits: 0,
         mmcs: (),
     };
-    // This AIR has one opening point per main column and no preprocessing.
-    if TRACE_HEIGHT < 2 * (QUERIES + EXTENSION_DEGREE) || RANDOM_CODEWORDS < EXTENSION_DEGREE {
+    // SDK 0.8 opens the complete width at both points whenever any next-row
+    // column is read. The returned security report must count that full shape.
+    let opening_points = 1 + usize::from(!air.main_next_row_columns().is_empty());
+    if air.preprocessed_width() != 0
+        || TRACE_HEIGHT < 2 * (QUERIES + EXTENSION_DEGREE * opening_points)
+        || RANDOM_CODEWORDS < EXTENSION_DEGREE
+    {
         return Err(Error::HidingBudget);
     }
     let parameters = StarkSecurityParams::from_air::<Val, Challenge, _>(
@@ -228,7 +265,7 @@ pub(crate) fn analyze(
         TwoAdicMultiplicativeCoset::new(Val::ONE, TRACE_LOG_HEIGHT).unwrap(),
         MODULUS_BITS,
         SECURITY_BITS,
-        1,
+        opening_points,
         OpeningShape::hiding(RANDOM_CODEWORDS),
         fri.grinding_sites(),
     );
@@ -240,32 +277,51 @@ pub(crate) struct Backend {
     pub(crate) config: Config,
     pub(crate) parameters: StarkSecurityParams,
     pub(crate) report: SecurityReport,
+    kind: Kind,
+    width: usize,
+    next_row: bool,
 }
 impl Backend {
-    pub(crate) fn new(statement: &Statement) -> Result<Self, Error> {
-        let (parameters, report) = analyze(&CompressionAir::new(statement))?;
+    pub(crate) fn new(statement: &impl PrimitiveStatement) -> Result<Self, Error> {
+        let air = statement.air();
+        let (parameters, report) = analyze(&air)?;
         let report = report.require_target()?;
         Ok(Self {
             config: config()?,
             parameters,
             report,
+            kind: statement.kind(),
+            width: air.width(),
+            next_row: !air.main_next_row_columns().is_empty(),
         })
     }
 
-    pub(crate) fn prove(&self, statement: &Statement) -> Result<Proof<Config>, Error> {
+    pub(crate) fn prove(
+        &self,
+        statement: &impl PrimitiveStatement,
+    ) -> Result<Proof<Config>, Error> {
+        if statement.kind() != self.kind {
+            return Err(Error::Shape);
+        }
         prove(
             &self.config,
-            &CompressionAir::new(statement),
-            CompressionAir::trace(statement),
+            &statement.air(),
+            statement.trace(),
             &statement.public_values(),
         )
         .map_err(|_| Error::Proving)
     }
 
-    pub(crate) fn verify(&self, statement: &Statement, proof: &Proof<Config>) -> Result<(), Error> {
-        if proof.degree_bits != PROOF_DEGREE_BITS
-            || proof.opened_values.trace_local.len() != NUM_SHA256_COLS
-            || proof.opened_values.trace_next.is_some()
+    pub(crate) fn verify(
+        &self,
+        statement: &impl PrimitiveStatement,
+        proof: &Proof<Config>,
+    ) -> Result<(), Error> {
+        if statement.kind() != self.kind
+            || proof.degree_bits != PROOF_DEGREE_BITS
+            || proof.opened_values.trace_local.len() != self.width
+            || proof.opened_values.trace_next.as_ref().map(Vec::len)
+                != self.next_row.then_some(self.width)
             || proof.opened_values.preprocessed.is_some()
             || proof.commitments.random.is_none()
             || proof.opened_values.random.is_none()
@@ -281,7 +337,7 @@ impl Backend {
         .require_target()?;
         verify(
             &self.config,
-            &CompressionAir::new(statement),
+            &statement.air(),
             proof,
             &statement.public_values(),
         )
