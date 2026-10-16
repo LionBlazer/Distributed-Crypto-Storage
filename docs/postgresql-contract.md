@@ -24,7 +24,14 @@ statement atomicity does not provide general transactions. Aggregates perform an
 encrypted coefficient convolution under the existing full-residue product proof,
 with checked client-side limb/shard completion and SQL NULL for empty SUM.
 They currently admit at most 2560 matching rows per shard using ten 256-row bands
-and the unchanged 256-term public kernel; row and mutation limits remain 256.
+and the unchanged 256-term public kernel. Fixed row SELECT with explicit LIMIT
+validates all matching postings and original rows, then proves at most 256 retained
+rows per shard. Its prefix length is `min(local matches, SQL limit)`, never a silent
+clamp; larger prefixes reject. Proved shard prefixes merge in stable global ordinal
+order before the final LIMIT. LIMIT0 still validates the complete matching source
+and requires genuine proof and final freshness. Without LIMIT the complete matching
+set must fit 256 rows; mutations retain their 256-row boundary. Full source validation
+remains O(matches), with the unchanged static ReadImage footprint.
 Excess rejects without a partial result. Q2/R2 requires application domain v3 and
 rejects old journals/wires without migration; the arithmetic profile is unchanged.
 The [Q2 process record](proved-aggregate-bands.md) reports 5119/5120-row full-query

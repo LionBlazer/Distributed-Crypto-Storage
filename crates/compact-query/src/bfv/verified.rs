@@ -147,6 +147,37 @@ impl Owner {
             index::MaterializationBudget::rows(budget),
             limits,
         )?;
+        self.prepare_selected(source, selection, projection)
+    }
+
+    /// Validates the complete matching source in O(matches), plus a bounded bitmap
+    /// scan of O(table rows / 64), then encrypts only its first `limit` rows in ordinal
+    /// order. There is no early stop in source validation.
+    /// The retained prefix must fit both the caller budget and the 256-row FHE geometry;
+    /// a larger explicit limit is never silently clamped. Network privacy is source-owned.
+    pub fn prepare_provable_select_limited_from_source(
+        &self,
+        source: &crate::ReadView<'_>,
+        predicate: Option<AgeRange>,
+        projection: RowProjection,
+        limit: usize,
+        budget: usize,
+        limits: Limits,
+    ) -> Result<PreparedSelect> {
+        let budget = index::MaterializationBudget::rows(budget);
+        let selection = match predicate {
+            Some(range) => self.select_limited_read(source, range, limit, budget, limits)?,
+            None => self.proof_selection_read(source, None, budget, limits)?,
+        };
+        self.prepare_selected(source, selection, projection)
+    }
+
+    fn prepare_selected(
+        &self,
+        source: &crate::ReadView<'_>,
+        selection: ExactSelection,
+        projection: RowProjection,
+    ) -> Result<PreparedSelect> {
         let context = QueryContext::new(
             random_id()?,
             selection.data_head.encode(),
