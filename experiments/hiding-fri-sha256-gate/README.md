@@ -372,3 +372,12 @@ source prerequisite before the child. Its actual W1082/PV104/T512 layout,
 see the [validation record](PRIVATE-REGISTRY-BOOTSTRAP-VALIDATION.md).
 Owner enrollment authorization, post-genesis registration/freshness, live grants
 and peer-only FHE execution remain separate obligations.
+
+## Canonical private proof transport
+
+The [private proof wire](src/opening/proof_wire/README.md) transports both complete
+SDK proofs for Source+Bootstrap or cold Source+Locking. Both real emitters and fresh
+decoding/verification passed, with no receipt/cache shortcut. The
+[validation record](PRIVATE-PROOF-WIRE-VALIDATION.md) separates 263 discovered cases
+from 15 executed leaf cases plus shared decoder/contract checks. This adds no
+Journal admission, owner/controller authority, agreed freshness or live SQL grant.

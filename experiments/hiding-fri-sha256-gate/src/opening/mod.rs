@@ -19,6 +19,7 @@ pub(crate) mod locking;
 #[cfg(test)]
 mod packed_tests;
 mod poseidon;
+mod proof_wire;
 pub(crate) mod registry_bootstrap;
 pub(crate) mod schedule;
 pub(crate) mod selection;

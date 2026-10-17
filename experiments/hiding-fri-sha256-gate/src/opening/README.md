@@ -377,3 +377,12 @@ AIR constants. Actual release/Clippy, 24 numerical modes, 85 affected tests and
 genuine source/child proofs passed; see the
 [validation record](../../PRIVATE-REGISTRY-BOOTSTRAP-VALIDATION.md). Earlier profiles
 and reports retain their original scope.
+
+## Bounded private control proof transport
+
+[proof_wire](proof_wire/README.md) serializes the original linked SDK Source and
+control proofs, retaining random openings, salts and authentication data. Owning
+Bootstrap/Locking wrappers reconstruct only proposed outputs from independent
+Expected, then bounded-decode and verify the real Source-first pair. See the
+[validation record](../../PRIVATE-PROOF-WIRE-VALIDATION.md). Expected authority and
+Journal lineage remain external; no production acceptance rule changed.

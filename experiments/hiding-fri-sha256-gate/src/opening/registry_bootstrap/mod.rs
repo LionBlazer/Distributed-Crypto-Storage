@@ -4,6 +4,7 @@ pub(in crate::opening) mod statement;
 #[cfg(test)]
 mod tests;
 pub(in crate::opening) mod trace;
+pub(in crate::opening) mod wire;
 use crate::backend::{Backend, Config, Error, Val};
 use crate::opening::{
     Relation, commitment, fixture as source_fixture, locking::statement as registry,
@@ -144,4 +145,9 @@ pub(crate) fn gate(mode: &str) -> Result<(), Error> {
         );
     }
     Ok(())
+}
+
+/// Independent wire gate; the original proof/profile/CLI behavior is unchanged.
+pub(crate) fn wire_gate(mode: &str) -> Result<(), Error> {
+    wire::gate(mode)
 }

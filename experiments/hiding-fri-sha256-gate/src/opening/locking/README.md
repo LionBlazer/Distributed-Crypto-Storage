@@ -225,3 +225,13 @@ into historical authority, fresh agreement or a live lock grant.
 
 The [validation record](../../../PRIVATE-REGISTRY-BOOTSTRAP-VALIDATION.md) records
 real source/initialization proofs, 12 new tests and 73 affected regression tests.
+
+## Cold proof wire
+
+[wire.rs](wire.rs) owns complete CanonicalIndex Source+Locking encoding and fresh
+bounded decoding/verification, including all three returned/owned/new roots.
+It has no StateLease or cache-ID transport. The
+[wire module](../proof_wire/README.md) and
+[validation record](../../../PRIVATE-PROOF-WIRE-VALIDATION.md) describe actual sizes,
+foreign/structural/cryptographic rejection and resource observations. The returned
+experimental Statement is not a writer capability, durable receipt or live grant.

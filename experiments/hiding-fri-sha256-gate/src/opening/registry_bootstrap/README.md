@@ -89,3 +89,12 @@ The experiment does not authenticate that signature, controller entitlement,
 network membership, fresh agreement, persistence, writer fences or rollback.
 C_enroll must be independently supplied rather than chosen from the submitted
 witness. No StateLease branch or production accepting API is added.
+
+## Actual proof wire
+
+[wire.rs](wire.rs) transports the complete original Source+Bootstrap proofs and
+proposed registry digest; independently expected source/genesis/parent/enrollment
+never come from that frame. Fresh bounded decode and real Source-first verification
+passed; see the [wire module](../proof_wire/README.md) and
+[validation record](../../../PRIVATE-PROOF-WIRE-VALIDATION.md). Post-genesis owner
+authorization, Journal publication and fresh agreement remain separate obligations.
