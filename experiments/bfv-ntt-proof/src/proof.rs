@@ -93,17 +93,14 @@ pub(crate) fn statement(
     let (air, mut values) = prepare(input, output, auxiliary)
         .map_err(|_| Error::Statement)?
         .into_parts();
-    let air = backend::BoundAir(air);
-    if !air.is_prepared() {
+    let air = backend::BoundAir::new(air);
+    if !air.inner().is_prepared() {
         return Err(Error::Preprocessing);
     }
     // The exact consumer profile is in the transcript as well as the frame.
-    for word in backend::profile_digest(input.direction(), input.basis())
-        .as_chunks::<4>()
-        .0
-    {
-        values.push(Val::from_u32(u32::from_le_bytes(*word)));
-    }
+    values.extend(bfv_arithmetic_stark::profile_words(
+        backend::profile_digest(input.direction(), input.basis()),
+    ));
     Ok((air, values))
 }
 

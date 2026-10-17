@@ -80,7 +80,9 @@ copies/splits public values into the exact layout. It does not reduce r_i, multi
 coefficients, divide by q, perform an NTT or run key switching. Height 8192, mandatory
 zero main width 1, public digest words 32 and preprocessing widths 55/365 are fixed.
 Analytically Embed has 26 constraints/degree 1 and AccumulateAndAdd 61/degree 2; actual
-SDK analysis/security/resources remain pending. `ArithmeticAir::shape` lacks
+SDK analysis and process measurements belong to the
+[validated consumer](../../experiments/bfv-relinearization-proof/VALIDATION.md).
+`ArithmeticAir::shape` lacks
 preprocessing and is analysis-only. Consumers must require prepared data and an
 actual matrix before proof setup. Aux/Prepared is never a computation proof.
 
@@ -116,6 +118,7 @@ cargo test --release --locked -p bfv-relinearization-circuit --all-features -- -
 ```
 
 These checks establish public arithmetic and actual AIR constraint rejection;
-they do not establish upstream SDK parity or genuine serialized proofs. A separate
-consumer owns those gates. Source certificates, key
+the [separate consumer](../../experiments/bfv-relinearization-proof/VALIDATION.md)
+also passes actual SDK parity and genuine serialized proof gates for both roles.
+These remain individual public stages. Source certificates, key
 consistency/authority, fresh agreement, writer fences and complete SQL remain open.

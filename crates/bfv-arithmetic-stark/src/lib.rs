@@ -1,6 +1,9 @@
 //! Fixed public arithmetic STARK configuration; callers retain proof and role ownership.
 #![forbid(unsafe_code)]
 
+mod profile_air;
+pub use profile_air::{PROFILE_WORDS, ProfileAir, profile_words};
+
 use p3_air::{Air, symbolic::SymbolicAirBuilder};
 use p3_challenger::DuplexChallenger;
 use p3_commit::ExtensionMmcs;

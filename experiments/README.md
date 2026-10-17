@@ -25,6 +25,11 @@ in ignored `.local/`, not in the library source tree.
   components for each fixed Q5/P5 modulus. Its [validation](bfv-tensor-proof/VALIDATION.md)
   covers upstream polynomial parity, ten genuine serialized stages, hostile
   proofs and regression of the shared RNS/NTT backend.
+- [bfv-relinearization-proof](bfv-relinearization-proof/README.md) proves complete
+  Q5 embedding and five-term key accumulation stages. Its
+  [validation](bfv-relinearization-proof/VALIDATION.md) covers actual SDK parity,
+  proofs on an encrypted product, both genuine stages and regression of the shared
+  profile wrapper. Full key provenance and linked relinearization remain open.
 - [source-primitive and opening gates](hiding-fri-sha256-gate/README.md) share an
   experimental private hiding-FRI backend. Genuine primitive proofs extend to a
   bounded private CSTORE opening and the

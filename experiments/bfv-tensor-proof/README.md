@@ -8,6 +8,14 @@ validation passed all 14 owning tests, actual SDK parity across all ten bases,
 all ten genuine serialized proofs and two measured CLI examples. See the
 [validation report](VALIDATION.md) for the exact scope and observations.
 
+
+The new `BoundAir` alias uses the shared `ProfileAir` declaration/delegation wrapper.
+The consumer still owns the exact profile digest, 32+8 public-value order,
+prepared-data admission, role/shape checks and independent preprocessing key.
+The [wrapper regression](../bfv-relinearization-proof/VALIDATION.md) passes all
+14 owning tests, including all ten genuine stages, and preserves all ten actual
+security reports exactly. Earlier measurements retain their recorded scope.
+
 ## Ownership
 
 | Direct project dependency | Responsibility |

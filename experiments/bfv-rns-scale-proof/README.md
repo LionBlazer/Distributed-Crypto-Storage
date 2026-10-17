@@ -11,6 +11,14 @@ Status: validated arithmetic experiment. Native compilation, strict all-target
 Clippy, all 14 owning tests, both complete SDK parity oracles, and two serialized
 stage proofs passed. See [validation and measurements](VALIDATION.md).
 
+
+The new `BoundAir` alias uses the shared `ProfileAir` declaration/delegation wrapper.
+The consumer still owns the exact profile digest, 32+8 public-value order,
+prepared-data admission, role/shape checks and independent preprocessing key.
+The [wrapper regression](../bfv-relinearization-proof/VALIDATION.md) passes all
+14 owning tests and preserves both actual security reports exactly. Earlier
+measurements retain their recorded scope.
+
 | Dependency | Responsibility |
 | --- | --- |
 | [bfv-scale-circuit](../../crates/bfv-scale-circuit/README.md) | Fixed-role codecs, integer scaling, public certificate ranges and exact shared AIR |

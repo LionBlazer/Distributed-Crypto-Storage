@@ -3,62 +3,11 @@ use crate::Error;
 pub(crate) use bfv_arithmetic_stark::{Config, Val};
 pub use bfv_arithmetic_stark::{HEIGHT, LOG_HEIGHT};
 use bfv_tensor_circuit::{Basis, plonky3::TensorAir};
-use p3_air::{Air, AirBuilder, BaseAir, BoundaryPublic};
-use p3_matrix::dense::RowMajorMatrix;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::borrow::Cow;
 
-/// Only appends consumer-profile public words; all arithmetic stays in TensorAir.
-pub(crate) struct BoundAir(pub(crate) TensorAir);
-impl BoundAir {
-    pub(crate) fn is_prepared(&self) -> bool {
-        self.0.is_prepared()
-    }
-}
-impl BaseAir<Val> for BoundAir {
-    fn width(&self) -> usize {
-        self.0.width()
-    }
-    fn preprocessed_width(&self) -> usize {
-        self.0.preprocessed_width()
-    }
-    fn preprocessed_trace(&self) -> Option<RowMajorMatrix<Val>> {
-        self.0.preprocessed_trace()
-    }
-    fn main_next_row_columns(&self) -> Vec<usize> {
-        self.0.main_next_row_columns()
-    }
-    fn preprocessed_next_row_columns(&self) -> Vec<usize> {
-        self.0.preprocessed_next_row_columns()
-    }
-    fn num_public_values(&self) -> usize {
-        self.0.num_public_values() + 8
-    }
-    fn num_constraints(&self) -> Option<usize> {
-        self.0.num_constraints()
-    }
-    fn max_constraint_degree(&self) -> Option<usize> {
-        self.0.max_constraint_degree()
-    }
-    fn num_periodic_columns(&self) -> usize {
-        self.0.num_periodic_columns()
-    }
-    fn periodic_columns(&self) -> Cow<'_, [Vec<Val>]> {
-        self.0.periodic_columns()
-    }
-    fn public_boundary_io(&self) -> &[BoundaryPublic] {
-        self.0.public_boundary_io()
-    }
-    fn assumes_boolean_trace(&self) -> bool {
-        self.0.assumes_boolean_trace()
-    }
-}
-impl<AB: AirBuilder<F = Val>> Air<AB> for BoundAir {
-    fn eval(&self, builder: &mut AB) {
-        self.0.eval(builder);
-    }
-}
+/// Fixed profile suffix only; role and preparation checks stay in this consumer.
+pub(crate) type BoundAir = bfv_arithmetic_stark::ProfileAir<TensorAir>;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SecurityReport {
@@ -111,7 +60,7 @@ pub fn profile_digest(basis: Basis) -> [u8; 32] {
 }
 /// Actual symbolic analysis only: no matrix, arithmetic, trace, setup or proof.
 pub fn analyze(basis: Basis) -> Result<SecurityReport, Error> {
-    let (_, report) = config(&BoundAir(TensorAir::shape(basis)), basis)?;
+    let (_, report) = config(&BoundAir::new(TensorAir::shape(basis)), basis)?;
     Ok(report)
 }
 pub(crate) fn config(air: &BoundAir, basis: Basis) -> Result<(Config, SecurityReport), Error> {

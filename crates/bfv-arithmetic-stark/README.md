@@ -1,9 +1,10 @@
 # Fixed arithmetic STARK backend
 
 This library owns the identical linked Plonky3 configuration shared by the public
-RNS-scaling, native-NTT and tensor proof experiments. It removes duplicate
+RNS-scaling, native-NTT, tensor and relinearization proof experiments. It removes duplicate
 configuration and security-floor code while consumers retain their operation
-contracts. The extraction and all three consumers have passed native validation.
+contracts. Native validation covers the fixed configuration and the shared
+`ProfileAir` delegation wrapper across all four consumers.
 
 | Direct project dependency | Responsibility |
 | --- | --- |
@@ -25,7 +26,17 @@ multiplicity from the AIR, rejects Boolean/boundary assumptions, and returns
 pinned SDK's symbolic-analysis prerequisites. This path creates no trace or public
 preprocessing commitment and does not evaluate the caller's arithmetic operation.
 
-Consumers own their role wrappers and profile/domain bytes, report serialization,
+`ProfileAir<A>::new(inner)` preserves the inner evaluator and all pinned `BaseAir`
+metadata, including overridable periodic methods, Boolean/boundary declarations,
+current/next openings and preprocessing. It only declares eight additional public
+values; `inner()` keeps preparation and role-specific checks with the consumer.
+`PROFILE_WORDS` is fixed at eight. `profile_words(profile32)` encodes that caller-owned
+digest as the existing eight little-endian u32 words. Consumers append the words
+after their unchanged arithmetic public prefix (currently 32 then 8). The SDK
+observes the entire verifier-owned public vector in its transcript. The wrapper
+adds no arithmetic assertion, profile choice, prepared-data check or accepting token.
+
+Consumers own their role checks and profile/domain bytes, report serialization,
 errors, frame/decoder limits, canonical public inputs, preparation, independent
 verifier key, proof generation/verification and lifecycle. The pure arithmetic
 circuit libraries do not depend on this backend. Existing RNS and NTT profile
@@ -33,10 +44,12 @@ bytes, numeric report fields/order, codecs, caps and acceptance behavior stay wi
 those consumers. Configuration metadata is not proof evidence or a composed
 128-bit security, privacy, whole-process resource or SQL correctness guarantee.
 
-The owning rejection example covers an AIR that requires a Boolean-trace
-assumption. Complete arithmetic, security-report, genuine serialized proof and
-hostile-proof examples remain at each consumer boundary. Native validation passed
-all 44 owning tests across this library and the three consumers, all four strict
-Clippy checks, and all 32 actual SDK security analyses. All 22 prior RNS/NTT numeric
-reports are unchanged. See the [validation report](../../experiments/bfv-tensor-proof/VALIDATION.md)
+The two owning tests cover rejection of a Boolean-trace assumption and complete
+metadata forwarding, including explicit periodic overrides, unchanged boundary
+indices and exact suffix ordering. Arithmetic, security-report, genuine serialized
+proof and hostile-proof examples remain at each consumer boundary. Native
+validation passed all 61 owning tests across this library and four consumers,
+all five strict Clippy checks, and all 34 actual SDK security analyses. All 32
+preceding RNS/NTT/tensor report dictionaries are unchanged. See the
+[validation report](../../experiments/bfv-relinearization-proof/VALIDATION.md)
 for reproduction, scope, resource observations and retained evidence.

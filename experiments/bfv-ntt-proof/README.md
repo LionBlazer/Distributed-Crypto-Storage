@@ -11,6 +11,14 @@ Status: validated arithmetic experiment. Strict Clippy, actual SDK parity and
 security analysis for all 20 fixed cases, all 15 owning tests and four measured
 CLI proof/verification examples passed. See [validation and measurements](VALIDATION.md).
 
+
+The new `BoundAir` alias uses the shared `ProfileAir` declaration/delegation wrapper.
+The consumer still owns the exact profile digest, 32+8 public-value order,
+prepared-data admission, role/shape checks and independent preprocessing key.
+The [wrapper regression](../bfv-relinearization-proof/VALIDATION.md) passes all
+15 owning tests, including all 20 genuine stages, and preserves all 20 actual
+security reports exactly. Earlier measurements retain their recorded scope.
+
 | Dependency | Role |
 | --- | --- |
 | [bfv-ntt-circuit](../../crates/bfv-ntt-circuit/README.md) | Fixed native roots/routing, full intermediate certificate, canonical codec and optional public AIR |
