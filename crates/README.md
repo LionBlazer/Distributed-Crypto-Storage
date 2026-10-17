@@ -13,13 +13,14 @@ executables. The root Cargo default members select this layer only.
 | [relational-types](relational-types/README.md) | Owner-side typed schema, lossless SQL dump validation and SELECT plans | None |
 | [sql-plan](sql-plan/README.md) | Parse the supported SQL subset into typed plans | None |
 | [compact-store](compact-store/README.md) | Owner keys, encrypted pages and authenticated version roots | None |
-| [bfv-linear-circuit](bfv-linear-circuit/README.md) | Canonical full-residue BFV addition relation for proof consumers | None |
+| [bfv-fixed-geometry](bfv-fixed-geometry/README.md) | Shared unchanged level-zero BFV degree and ordered Q5/P5 parameter contract | None |
+| [bfv-linear-circuit](bfv-linear-circuit/README.md) | Canonical full-residue BFV addition relation for proof consumers | bfv-fixed-geometry |
 | [bfv-product-circuit](bfv-product-circuit/README.md) | Canonical full-residue BFV public-polynomial product | bfv-linear-circuit |
-| [bfv-scale-circuit](bfv-scale-circuit/README.md) | Canonical full-8192 public RNS scaling and optional limb AIR | bfv-linear-circuit |
+| [bfv-scale-circuit](bfv-scale-circuit/README.md) | Canonical full-8192 public RNS scaling and optional limb AIR | bfv-fixed-geometry |
 | [bfv-query-proof](bfv-query-proof/README.md) | Bounded genuine arithmetic STARKs and independent verification | bfv-linear-circuit, bfv-product-circuit, bounded-postcard, proof-acceleration; bfv-query-core in tests |
 | [bounded-postcard](bounded-postcard/README.md) | Bounded generic Postcard decoding with caller-owned container budgets | None |
 | [proof-acceleration](proof-acceleration/README.md) | Shared fixed-profile ABI and startup CPU/OS kernel selection | None |
-| [bfv-query-core](bfv-query-core/README.md) | Separate owner/evaluator FHE roles and bounded wire inputs | bfv-linear-circuit, bfv-product-circuit |
+| [bfv-query-core](bfv-query-core/README.md) | Separate owner/evaluator FHE roles and bounded wire inputs | bfv-fixed-geometry, bfv-linear-circuit, bfv-product-circuit |
 | [compact-query](compact-query/README.md) | Complete private selection and proof-first FHE query/write lifecycle | compact-store; optional bfv-query-core, bfv-query-proof |
 | [version-journal](version-journal/README.md) | Bounded cumulative-work forks, authorization, freshness and durable metadata | None |
 | [transaction-state](transaction-state/README.md) | Bounded public transaction/row-lock control state, signed intents and metadata-only witnesses | version-journal |

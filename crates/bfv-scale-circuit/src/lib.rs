@@ -15,27 +15,7 @@ pub use codec::{
 pub use constants::{CoefficientConstants, SignedMagnitude, constants, profile_digest};
 pub use math::evaluate_with_certificate;
 
-pub use bfv_linear_circuit::{DEGREE, MODULI};
-pub const PLAINTEXT: u64 = 114689;
-pub const AUXILIARY_MODULI: [u64; 5] = [
-    4611686018427322369,
-    4611686018427289601,
-    4611686018426454017,
-    4611686018426257409,
-    4611686018425815041,
-];
-pub const EXTENDED_MODULI: [u64; 10] = [
-    MODULI[0],
-    MODULI[1],
-    MODULI[2],
-    MODULI[3],
-    MODULI[4],
-    AUXILIARY_MODULI[0],
-    AUXILIARY_MODULI[1],
-    AUXILIARY_MODULI[2],
-    AUXILIARY_MODULI[3],
-    AUXILIARY_MODULI[4],
-];
+pub use bfv_fixed_geometry::{AUXILIARY_MODULI, DEGREE, EXTENDED_MODULI, MODULI, PLAINTEXT};
 pub const AUXILIARY_ROW_BYTES: usize = 315;
 pub const CARRIES: usize = 56;
 pub(crate) const BASE: i128 = 1 << 16;

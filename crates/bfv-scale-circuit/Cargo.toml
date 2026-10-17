@@ -10,7 +10,7 @@ default = []
 plonky3 = ["dep:p3-air", "dep:p3-field", "dep:p3-matrix", "dep:p3-goldilocks"]
 
 [dependencies]
-bfv-linear-circuit = { path = "../bfv-linear-circuit" }
+bfv-fixed-geometry = { path = "../bfv-fixed-geometry" }
 ethnum = "=1.5.3"
 num-bigint = "=0.4.8"
 num-traits = "=0.2.19"

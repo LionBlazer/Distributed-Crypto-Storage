@@ -2,16 +2,7 @@
 //! This is arithmetic to be proved by a separate proof system, never a proof by itself.
 #![forbid(unsafe_code)]
 
-/// The unchanged encryption ring degree used by bfv-query-core.
-pub const DEGREE: usize = 8192;
-/// The unchanged, ordered level-zero coefficient modulus basis.
-pub const MODULI: [u64; 5] = [
-    8796092858369,
-    8796092792833,
-    17592186028033,
-    17592185438209,
-    17592184717313,
-];
+pub use bfv_fixed_geometry::{DEGREE, MODULI};
 /// Two ciphertext components, then modulus-major and coefficient-major order.
 pub const COEFFICIENTS: usize = 2 * MODULI.len() * DEGREE;
 const HEADER_BYTES: usize = 8 + 32;

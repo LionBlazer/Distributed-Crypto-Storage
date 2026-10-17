@@ -7,6 +7,7 @@ publish = false
 
 
 [dependencies]
+bfv-fixed-geometry = { path = "../bfv-fixed-geometry" }
 bfv-linear-circuit = { path = "../bfv-linear-circuit" }
 bfv-product-circuit = { path = "../bfv-product-circuit" }
 fhe = "=0.1.1"

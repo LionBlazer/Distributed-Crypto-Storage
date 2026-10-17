@@ -31,7 +31,7 @@ pub use indexed_update::{
 };
 pub use linear_update::{PublicUpdateEvaluator, PublicUpdateParameters};
 
-use bfv_linear_circuit::{DEGREE, MODULI};
+use bfv_fixed_geometry::{DEGREE, MODULI, PLAINTEXT};
 use bincode::Options;
 use fhe::bfv::{
     BfvParameters, BfvParametersBuilder, Ciphertext, Encoding, EvaluationKeyBuilder, Plaintext,
@@ -53,7 +53,6 @@ pub const HEAD_BYTES: usize = 112;
 pub const MAX_ROWS: usize = 256;
 pub const MAX_WIRE_BYTES: u64 = 64 * 1024 * 1024;
 const VERSION: u16 = 1;
-const PLAINTEXT: u64 = 114_689;
 
 #[derive(Debug)]
 pub enum Error {

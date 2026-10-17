@@ -14,8 +14,10 @@ plaintext/key/noise scalers.
 versioned framing. `constants` derives immutable fixed SDK-compatible parameters
 once with num-bigint/num-traits. `math` independently evaluates every coefficient
 with ethnum U256/I256 and builds public arithmetic auxiliaries. SHA-256 binds exact
-bytes and profile. The normal pure dependency `bfv-linear-circuit` owns the shared
-DEGREE and original Q5 constants; this module re-exports those exact constants.
+bytes and profile. The normal pure dependency
+[bfv-fixed-geometry](../bfv-fixed-geometry/README.md) owns the shared degree,
+plaintext modulus and ordered Q5/P5 bases; this module re-exports those exact
+constants with their original names and values.
 
 The explicit optional `plonky3` feature enables the four pinned P3 AIR/field/matrix/
 Goldilocks adapters. Default math/codecs expose no P3 or Goldilocks types. The

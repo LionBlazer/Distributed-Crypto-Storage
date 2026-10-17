@@ -5,6 +5,10 @@ Experimental owner-online exact BFV roles, extracted from the frozen
 cryptographic implementation; product adapters depend on this crate and never on
 that historical experiment. No production security or query-proof claim follows.
 
+The direct [bfv-fixed-geometry](../bfv-fixed-geometry/README.md) dependency owns
+the unchanged degree, plaintext modulus and coefficient bases. The linear and
+product circuit dependencies own their respective canonical arithmetic contracts.
+
 The schema-neutral byte projection path is independent of the historical
 `age/amount` layout. `Owner::prepare_byte_select` encrypts original encoded bytes
 and binds an opaque schema/table/query/chunk/catalog digest plus both storage

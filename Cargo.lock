@@ -203,8 +203,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
+name = "bfv-fixed-geometry"
+version = "0.1.0"
+
+[[package]]
 name = "bfv-linear-circuit"
 version = "0.1.0"
+dependencies = [
+ "bfv-fixed-geometry",
+]
 
 [[package]]
 name = "bfv-product-circuit"
@@ -217,6 +224,7 @@ dependencies = [
 name = "bfv-query-core"
 version = "0.1.0"
 dependencies = [
+ "bfv-fixed-geometry",
  "bfv-linear-circuit",
  "bfv-product-circuit",
  "bincode",
@@ -260,7 +268,7 @@ dependencies = [
 name = "bfv-scale-circuit"
 version = "0.1.0"
 dependencies = [
- "bfv-linear-circuit",
+ "bfv-fixed-geometry",
  "ethnum",
  "num-bigint 0.4.8",
  "num-traits",

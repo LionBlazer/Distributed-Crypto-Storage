@@ -6,3 +6,4 @@ rust-version = "1.91.1"
 publish = false
 
 [dependencies]
+bfv-fixed-geometry = { path = "../bfv-fixed-geometry" }

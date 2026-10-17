@@ -94,8 +94,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
+name = "bfv-fixed-geometry"
+version = "0.1.0"
+
+[[package]]
 name = "bfv-linear-circuit"
 version = "0.1.0"
+dependencies = [
+ "bfv-fixed-geometry",
+]
 
 [[package]]
 name = "bfv-product-circuit"
@@ -108,6 +115,7 @@ dependencies = [
 name = "bfv-query-core"
 version = "0.1.0"
 dependencies = [
+ "bfv-fixed-geometry",
  "bfv-linear-circuit",
  "bfv-product-circuit",
  "bincode",
@@ -126,6 +134,7 @@ version = "0.1.0"
 dependencies = [
  "bfv-linear-circuit",
  "bfv-product-circuit",
+ "bounded-postcard",
  "p3-air",
  "p3-challenger",
  "p3-commit",
@@ -175,6 +184,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
 dependencies = [
  "generic-array",
+]
+
+[[package]]
+name = "bounded-postcard"
+version = "0.1.0"
+dependencies = [
+ "postcard",
+ "serde",
 ]
 
 [[package]]

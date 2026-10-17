@@ -67,14 +67,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "bfv-fixed-geometry"
+version = "0.1.0"
+
+[[package]]
 name = "bfv-linear-circuit"
 version = "0.1.0"
+dependencies = [
+ "bfv-fixed-geometry",
+]
+
+[[package]]
+name = "bfv-product-circuit"
+version = "0.1.0"
+dependencies = [
+ "bfv-linear-circuit",
+]
 
 [[package]]
 name = "bfv-query-core"
 version = "0.1.0"
 dependencies = [
+ "bfv-fixed-geometry",
  "bfv-linear-circuit",
+ "bfv-product-circuit",
  "bincode",
  "fhe",
  "fhe-math",
@@ -83,6 +99,31 @@ dependencies = [
  "serde",
  "sha2",
  "zeroize",
+]
+
+[[package]]
+name = "bfv-query-proof"
+version = "0.1.0"
+dependencies = [
+ "bfv-linear-circuit",
+ "bfv-product-circuit",
+ "bounded-postcard",
+ "p3-air",
+ "p3-challenger",
+ "p3-commit",
+ "p3-dft",
+ "p3-field",
+ "p3-fri",
+ "p3-goldilocks",
+ "p3-matrix",
+ "p3-maybe-rayon",
+ "p3-merkle-tree",
+ "p3-symmetric",
+ "p3-uni-stark",
+ "postcard",
+ "proof-acceleration",
+ "serde",
+ "sha2",
 ]
 
 [[package]]
@@ -107,6 +148,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
 dependencies = [
  "generic-array",
+]
+
+[[package]]
+name = "bounded-postcard"
+version = "0.1.0"
+dependencies = [
+ "postcard",
+ "serde",
 ]
 
 [[package]]
@@ -193,6 +242,7 @@ name = "compact-query"
 version = "0.1.0"
 dependencies = [
  "bfv-query-core",
+ "bfv-query-proof",
  "bincode",
  "compact-store",
  "getrandom 0.2.17",
@@ -492,6 +542,16 @@ name = "libc"
 version = "0.2.190"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce5d3ddc6d3fa000eb1536d85e147bfe31aacaba692ed6a876f95cb7c855be78"
+
+[[package]]
+name = "libloading"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
+dependencies = [
+ "cfg-if",
+ "windows-link",
+]
 
 [[package]]
 name = "libm"
@@ -956,6 +1016,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "proof-acceleration"
+version = "0.1.0"
+dependencies = [
+ "libloading",
+]
+
+[[package]]
 name = "prost"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1355,6 +1422,12 @@ checksum = "b67efb37e106e55ce722a510d6b5f9c17f083e5fc79afc2badeb12cc313d9487"
 dependencies = [
  "wit-bindgen",
 ]
+
+[[package]]
+name = "windows-link"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
 
 [[package]]
 name = "wit-bindgen"

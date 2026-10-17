@@ -83,6 +83,7 @@ object; this optimization does not establish sparse disk I/O or private PIR.
 | [relational-types](crates/relational-types/README.md) | Typed multi-table dump import, canonical value codec and schema-bound SELECT planning |
 | [compact-query](crates/compact-query/README.md) | Complete index selection, fresh FHE projections/aggregates and checked compact updates; explicit BFV backend plus retained legacy TFHE module |
 | [bfv-query-core](crates/bfv-query-core/README.md) | Reusable owner/public-peer BFV arithmetic and wire contracts; no storage or GUI dependency |
+| [bfv-fixed-geometry](crates/bfv-fixed-geometry/README.md) | Shared unchanged BFV degree, plaintext modulus and ordered Q5/P5 bases |
 | [bfv-linear-circuit](crates/bfv-linear-circuit/README.md) | Canonical full-residue BFV addition statement for proof consumers |
 | [bfv-product-circuit](crates/bfv-product-circuit/README.md) | Canonical full-residue BFV public-polynomial product |
 | [bfv-scale-circuit](crates/bfv-scale-circuit/README.md) | Full-8192 public RNS extension/downscale arithmetic, canonical certificates and optional AIR |

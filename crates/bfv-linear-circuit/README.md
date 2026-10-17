@@ -1,6 +1,6 @@
 # Canonical BFV addition circuit
 
-This dependency-free library owns the fixed, level-zero BFV ciphertext-addition
+This library owns the fixed, level-zero BFV ciphertext-addition
 relation for the unchanged N8192, five-prime Q218 profile. It adds all residues of
 both ciphertext components in NTT representation, with canonical range checks.
 It is ordinary homomorphic ciphertext addition, not a new cryptographic primitive.
@@ -12,7 +12,9 @@ never row plaintext or a secret key. Shapes are fixed independently of selected
 row count: 1,310,760 input bytes and 655,400 output bytes. These transient buffers
 are not the compact persistent database format.
 
-The direct project dependency count is zero. [bfv-query-core](../bfv-query-core/README.md)
+Its only dependency, [bfv-fixed-geometry](../bfv-fixed-geometry/README.md), owns the
+unchanged ring degree and ordered coefficient moduli. This library re-exports
+`DEGREE` and `MODULI` with their original values. [bfv-query-core](../bfv-query-core/README.md)
 converts actual upstream ciphertexts to/from this representation and tests equality
 with the upstream BFV operator. A proof-system consumer can compile this small
 relation without constructing general-purpose BFV parameter/key-switch contexts.
