@@ -22,9 +22,18 @@ fn run() -> Result<(), Error> {
     if !(2..=3).contains(&arguments.len()) || !matches!(arguments[0].as_str(), "security" | "prove")
     {
         eprintln!(
-            "usage: hiding-fri-source-primitives <security|prove> <sha256|hchacha20|chacha20|poly1305-raw|poly1305-padded|pair-opening|canonical-index-opening|selection-opening|packed-canonical-index-opening|factorized-packed-canonical-index-opening|state-certificate|version-selection|selected-encoding|locking-selection|version-locking-selection|bfv-key-transform|bfv-basis-convolution|bfv-local-formation|bfv-lock-returned-formation|lock-returned-encoding|version-lock-returned-encoding> [empty: Poly1305 security only]"
+            "usage: hiding-fri-source-primitives <security|prove> <sha256|hchacha20|chacha20|poly1305-raw|poly1305-padded|pair-opening|canonical-index-opening|selection-opening|packed-canonical-index-opening|factorized-packed-canonical-index-opening|state-certificate|version-selection|selected-encoding|locking-selection|version-locking-selection|bfv-key-transform|bfv-basis-convolution|bfv-local-formation|bfv-lock-returned-formation|lock-returned-encoding|version-lock-returned-encoding|certified-projection-job> [empty: Poly1305 security only]; prove certified-projection-job <absolute-dcs-peer-exe>"
         );
         return Err(Error::Shape);
+    }
+    if arguments[1] == "certified-projection-job" {
+        if arguments.len() != 3 || arguments[0] != "prove" {
+            return Err(Error::Shape);
+        }
+        return opening::locking::formation::job::gate(
+            &arguments[0],
+            std::path::Path::new(&arguments[2]),
+        );
     }
     let empty = arguments.len() == 3;
     if empty

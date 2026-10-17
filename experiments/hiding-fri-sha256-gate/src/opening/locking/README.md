@@ -193,9 +193,23 @@ values feed every coefficient; OFFSET-owned rows do not become RETURNED.
 [Returned formation](formation/README.md) binds that exact C_enc to the complete
 actual ciphertext and shared Key/five-Basis/local integer relations.
 
-Compile/strict Clippy, 23 numeric calls, three owning oracles and three genuine CLI
-proof compositions and the full 235-case suite passed. The [validation report](../../../LOCK-RETURNED-BFV-VALIDATION.md)
+At the returned-formation baseline `c46817d`, compilation/strict Clippy, 23 numeric
+calls, three owning oracles, three genuine CLI compositions and all 235 tests passed. The [validation report](../../../LOCK-RETURNED-BFV-VALIDATION.md)
 separates the two encoder timers from normal formation's complete composition.
 No projected SQL output, column ACL, live grant, writer fence, controller authority
 or fresh decentralized agreement is inferred. Existing closed Blocked/selected
 PostgreSQL scope remains the published contract.
+
+
+## Client compiler opening for the experimental public-product job
+
+`sql::CompiledLockPlan::bind_returned` uses the existing 144-field plan commitment
+kernel with client-owned selected transaction metadata, TableId and plan salt. It
+requires the independently expected `C_plan` and seals the exact typed producer,
+request32 and public projection; a supplied root alone cannot claim compiler
+provenance. It does not authenticate the controller or agreed head. The
+[certified projection job](formation/job/README.md) consumes that capability only
+after real prerequisite proofs. Its public projection remains visible; all live
+SQL/finality/writer boundaries above remain unchanged. Six new cases, four
+existing controls and the independent-process CLI passed; see the
+[validation record](../../../CERTIFIED-PROJECTION-JOB-VALIDATION.md) for scope.

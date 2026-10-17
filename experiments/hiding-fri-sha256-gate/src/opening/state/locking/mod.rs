@@ -1,6 +1,8 @@
 //! Query-specific private locking over an ACTUALLY admitted version certificate.
 //! The lease is the source authority; this module has no direct accepting path.
 #[cfg(test)]
+mod certified_job_tests;
+#[cfg(test)]
 mod returned_encoding_tests;
 #[cfg(test)]
 mod returned_formation_tests;

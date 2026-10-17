@@ -95,7 +95,12 @@ pub(in crate::opening) fn fixture() -> Result<Fixture, Error> {
     let plan = super::sql::CompiledLockPlan::fresh(
         "SELECT amount FROM records WHERE age>=128 OFFSET 1 LIMIT 1 FOR UPDATE SKIP LOCKED",
     )?;
-    let (mut expected, source, mut lock) = super::sql_fixture(&plan)?;
+    fixture_for_compiled(&plan)
+}
+pub(in crate::opening) fn fixture_for_compiled(
+    plan: &super::sql::CompiledLockPlan,
+) -> Result<Fixture, Error> {
+    let (mut expected, source, mut lock) = super::sql_fixture(plan)?;
     lock.old.tx[1].held[0] = 4;
     expected.old = crate::opening::commitment::digest(&super::statement::registry_fields(
         &expected,

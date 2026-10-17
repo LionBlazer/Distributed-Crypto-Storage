@@ -77,3 +77,18 @@ BFV ciphertext formation, noise entropy, same authorized decryption key,
 SelectedEncoding linkage, peer FHE query execution, complete SQL, lock fencing,
 fresh agreement nor finality follows from this module. Reasonable latency and
 whole-process resources remain empirical requirements.
+
+
+## Nonsecret client fixture setup capability
+
+`public_fixture_with_setup` optionally builds the full public setup from the SAME
+actual upstream fixture key used for encryption. The opaque `PublicFixtureClient`
+retains that nonsecret client key and exposes only public setup and explicitly
+unverified canonical-product decryption for client test completion. It exports no
+key bytes/reference/callback. Existing fixture paths omit this extra setup work.
+This fixture helper serves the [certified projection job](../locking/formation/job/README.md);
+its honest fixture equality is not a production proof of setup/key authorization
+or evaluation-key consistency.
+
+The six new owning cases and independent-process CLI passed real proof and client
+completion checks; see the [validation record](../../../CERTIFIED-PROJECTION-JOB-VALIDATION.md).

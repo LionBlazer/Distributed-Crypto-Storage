@@ -1,4 +1,5 @@
 //! Successful private lock originals -> actual full8192 BFV formation, no live grant.
+pub(crate) mod job;
 pub(in crate::opening) mod statement;
 #[cfg(test)]
 mod tests;

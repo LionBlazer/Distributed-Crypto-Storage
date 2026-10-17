@@ -107,3 +107,63 @@ impl CompiledLockPlan {
         Expected::checked(source, genesis, parent, old, plan)
     }
 }
+
+/// Client-only provenance: exact compiler plan opens an ALREADY independently
+/// expected C_plan under the SAME full canonical/certified returned producer.
+/// It authenticates no external controller, key or fresh/final agreed head.
+pub(in crate::opening) struct BoundCompiledLockQuery {
+    producer: super::encoding::statement::Expected,
+    request: [u8; 32],
+    projection: bfv_query_core::RowProjection,
+}
+impl BoundCompiledLockQuery {
+    pub(in crate::opening) fn require_returned(
+        &self,
+        producer: &super::encoding::statement::Expected,
+    ) -> Result<(), Error> {
+        self.producer.require_same(producer)
+    }
+    pub(in crate::opening) fn request(&self) -> [u8; 32] {
+        self.request
+    }
+    pub(in crate::opening) fn projection(&self) -> bfv_query_core::RowProjection {
+        self.projection
+    }
+}
+impl CompiledLockPlan {
+    pub(in crate::opening) fn bind_returned(
+        &self,
+        producer: &super::encoding::statement::Expected,
+        opening: &super::statement::PlanOpening,
+    ) -> Result<BoundCompiledLockQuery, Error> {
+        producer.require_same(producer)?;
+        let raw = producer.lock();
+        if *raw.expected.request() != self.request
+            || opening.transaction == 0
+            || opening.controller == [0; 32]
+            || opening.sequence == 0
+            || opening.sequence == u32::MAX
+            || opening.revision == u32::MAX
+        {
+            return Err(Error::Shape);
+        }
+        // Actor index is not a plan-hash field. The actual Lock AIR proves that
+        // these selected actor fields belong to its complete private registry.
+        let plan = self.plan(opening.table, 0)?;
+        let fields = super::statement::plan_fields_opening(&raw.expected, &plan, opening);
+        if crate::opening::commitment::digest(&fields) != raw.expected.plan {
+            return Err(Error::Shape);
+        }
+        let projection = match self.projection {
+            Projection::Age => bfv_query_core::RowProjection::Age,
+            Projection::Amount => bfv_query_core::RowProjection::Amount,
+            Projection::AgeAmount => bfv_query_core::RowProjection::AgeAmount,
+            Projection::AmountAge => return Err(Error::Shape),
+        };
+        Ok(BoundCompiledLockQuery {
+            producer: producer.clone(),
+            request: self.request,
+            projection,
+        })
+    }
+}

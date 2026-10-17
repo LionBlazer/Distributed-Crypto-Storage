@@ -239,26 +239,53 @@ pub(in crate::opening) fn registry_fields(
     assert_eq!(out.len(), 112);
     out
 }
+/// Client-owned commitment opening, not controller authorization or a registry.
+pub(in crate::opening) struct PlanOpening {
+    pub(in crate::opening) table: [u8; 32],
+    pub(in crate::opening) transaction: u32,
+    pub(in crate::opening) controller: [u8; 32],
+    pub(in crate::opening) sequence: u32,
+    pub(in crate::opening) revision: u32,
+    pub(in crate::opening) salt: [Val; 4],
+}
 pub(in crate::opening) fn plan_fields(e: &Expected, w: &Witness) -> Vec<Val> {
     let tx = &w.old.tx[usize::from(w.plan.actor)];
+    plan_fields_opening(
+        e,
+        &w.plan,
+        &PlanOpening {
+            table: w.plan.table,
+            transaction: tx.id,
+            controller: tx.controller,
+            sequence: tx.sequence,
+            revision: w.old.revision,
+            salt: w.salts[2],
+        },
+    )
+}
+pub(in crate::opening) fn plan_fields_opening(
+    e: &Expected,
+    plan: &super::trace::Plan,
+    opening: &PlanOpening,
+) -> Vec<Val> {
     let mut out: Vec<_> = source::words(e.plan_domain())
         .chain([Val::ONE])
         .chain(context(e))
         .chain(e.old)
-        .chain(source::words(&w.plan.table))
-        .chain(source::words(&w.plan.mask))
-        .chain([Val::from_u32(tx.id)])
-        .chain(source::words(&tx.controller))
+        .chain(source::words(&opening.table))
+        .chain(source::words(&plan.mask))
+        .chain([Val::from_u32(opening.transaction)])
+        .chain(source::words(&opening.controller))
         .chain([
-            Val::from_u32(tx.sequence),
-            Val::from_u32(w.old.revision),
-            Val::from_u8(w.plan.mode),
-            Val::from_u8(w.plan.wait),
-            Val::from_u8(w.plan.offset),
-            Val::from_u8(w.plan.limit),
-            Val::from_u8(w.plan.projection),
+            Val::from_u32(opening.sequence),
+            Val::from_u32(opening.revision),
+            Val::from_u8(plan.mode),
+            Val::from_u8(plan.wait),
+            Val::from_u8(plan.offset),
+            Val::from_u8(plan.limit),
+            Val::from_u8(plan.projection),
         ])
-        .chain(w.salts[2])
+        .chain(opening.salt)
         .collect();
     out.extend([Val::ZERO; 3]);
     assert_eq!(out.len(), 144);

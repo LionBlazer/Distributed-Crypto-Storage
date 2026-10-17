@@ -149,6 +149,80 @@ pub(in crate::opening) fn public_fixture_from_original(
     key_salts: [[Val; 4]; 2],
     basis: usize,
 ) -> Result<(Statement, Witness, KeyWitness), Error> {
+    let (statement, witness, key, _) = build_public_fixture(
+        input,
+        output_salt,
+        key_salts,
+        basis,
+        FixturePublicMaterial::Omitted,
+    )?;
+    Ok((statement, witness, key))
+}
+// Fixture construction request only, never a proof/authority flag.
+enum FixturePublicMaterial {
+    Omitted,
+    Rows16,
+}
+/// Only this explicitly nonsecret fixture owns its client key. No key bytes,
+/// references, import/export or key callback are exposed to the peer/job module.
+pub(in crate::opening) struct PublicFixtureClient {
+    key: fhe::bfv::SecretKey,
+    parameters: std::sync::Arc<fhe::bfv::BfvParameters>,
+    setup: bfv_query_core::PublicSetup,
+}
+impl PublicFixtureClient {
+    pub(in crate::opening) fn setup(&self) -> &bfv_query_core::PublicSetup {
+        &self.setup
+    }
+    /// Client fixture completion ONLY. Caller must first check the exact BFV proof;
+    /// this decoder itself never establishes source/computation/SQL acceptance.
+    pub(in crate::opening) fn decrypt_product_unverified(
+        &self,
+        output: &[u8],
+    ) -> Result<Vec<u64>, Error> {
+        use fhe::bfv::{Ciphertext, Encoding};
+        use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom};
+        use fhe_traits::{FheDecoder, FheDecrypter};
+        let (_, coefficients) =
+            bfv_product_circuit::decode_output(output).map_err(|_| Error::Shape)?;
+        let context = self
+            .parameters
+            .context_at_level(0)
+            .map_err(|_| Error::Shape)?;
+        let polys = coefficients
+            .as_chunks::<{ 5 * N }>()
+            .0
+            .iter()
+            .map(|row| Poly::try_convert_from(row.to_vec(), context, true, Representation::Ntt))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| Error::Shape)?;
+        let ct = Ciphertext::new(polys, &self.parameters).map_err(|_| Error::Shape)?;
+        let pt = self.key.try_decrypt(&ct).map_err(|_| Error::Shape)?;
+        Vec::<u64>::try_decode(&pt, Encoding::simd()).map_err(|_| Error::Shape)
+    }
+}
+pub(in crate::opening) fn public_fixture_with_setup(
+    input: PublicFixtureInput,
+    output_salt: [Val; 4],
+    key_salts: [[Val; 4]; 2],
+    basis: usize,
+) -> Result<(Statement, Witness, KeyWitness, PublicFixtureClient), Error> {
+    let (s, w, key, client) = build_public_fixture(
+        input,
+        output_salt,
+        key_salts,
+        basis,
+        FixturePublicMaterial::Rows16,
+    )?;
+    Ok((s, w, key, client.ok_or(Error::Shape)?))
+}
+fn build_public_fixture(
+    input: PublicFixtureInput,
+    output_salt: [Val; 4],
+    key_salts: [[Val; 4]; 2],
+    basis: usize,
+    material: FixturePublicMaterial,
+) -> Result<(Statement, Witness, KeyWitness, Option<PublicFixtureClient>), Error> {
     use fhe::bfv::{Ciphertext, Encoding, Plaintext, SecretKey};
     use fhe_traits::{
         DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
@@ -211,7 +285,39 @@ pub(in crate::opening) fn public_fixture_from_original(
     )?;
     let witness = Witness::new(&key_witness, output_salt);
     let statement = witness.statement(expected);
-    Ok((statement, witness, key_witness))
+    let client = match material {
+        FixturePublicMaterial::Omitted => None,
+        FixturePublicMaterial::Rows16 => {
+            use fhe::bfv::{EvaluationKeyBuilder, RelinearizationKey};
+            let relin = RelinearizationKey::new(&key, &mut rand09::rng())
+                .map_err(|_| Error::Shape)?
+                .to_bytes();
+            let mut builder = EvaluationKeyBuilder::new(&key).map_err(|_| Error::Shape)?;
+            for shift in [1, 2, 4, 8, 16, 32, 64] {
+                builder
+                    .enable_column_rotation(shift)
+                    .map_err(|_| Error::Shape)?;
+            }
+            let rotations = builder
+                .build(&mut rand09::rng())
+                .map_err(|_| Error::Shape)?
+                .to_bytes();
+            drop(builder);
+            let setup = bfv_query_core::PublicSetup::from_public_material(
+                bfv_query_core::Geometry::Rows16,
+                &par.to_bytes(),
+                &relin,
+                &rotations,
+            )
+            .map_err(|_| Error::Shape)?;
+            Some(PublicFixtureClient {
+                key,
+                parameters: par,
+                setup,
+            })
+        }
+    };
+    Ok((statement, witness, key_witness, client))
 }
 pub(crate) fn gate(mode: &str) -> Result<(), Error> {
     if mode == "security" {

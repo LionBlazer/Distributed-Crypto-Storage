@@ -88,6 +88,9 @@ impl Expected {
             Producer::Certified { statement, .. } => statement.source(),
         }
     }
+    pub(in crate::opening) fn require_same(&self, expected: &Self) -> Result<(), Error> {
+        self.same(expected)
+    }
     fn same(&self, expected: &Self) -> Result<(), Error> {
         self.validate()?;
         expected.validate()?;

@@ -339,9 +339,25 @@ five-Basis prerequisites. Typed producer/profile bindings keep both new Kinds
 separate from old Selection88/SelectedEncoding/LocalFormation.
 
 Release/test compilation, strict Clippy, all 23 trace-free numeric calls, three
-owning oracles and three genuine CLI compositions passed. The full 235-case suite passed on that same source;
+owning oracles and three genuine CLI compositions passed. The returned-formation baseline at `c46817d` passed its full 235-case suite;
 see the [validation record](LOCK-RETURNED-BFV-VALIDATION.md) for exact
 scope, two preserved compile failures, times and sampled resources. This is an
 owner-local witness experiment; it adds no peer-only SQL execution, authority,
 fresh agreement, writer fence, projected answer or live network/lock acceptance.
 Earlier validation reports retain their original scopes.
+
+
+## Validated experimental certified public projection job
+
+The [certified projection job](src/opening/locking/formation/job/README.md) connects
+real returned-formation admission to the existing ciphertext-only BFV product
+proof and an independently running TLS `dcs-peer`. A sealed client compiler opening
+binds the public projection to the same private `C_plan`.
+
+Release/test compilation, strict Clippy, 23 unchanged numeric reports, six new
+owning cases, four existing controls and one independent-process CLI passed.
+Discovery lists 241 tests; this stage did not rerun every body. The
+[validation record](CERTIFIED-PROJECTION-JOB-VALIDATION.md) records exact scope and
+observations. This adds no network SQL acceptance, key authority, fresh agreement
+or live lock grant. Upstream source/selection witnesses remain owner-local; the
+final public-product worker alone receives ciphertext/public material.
