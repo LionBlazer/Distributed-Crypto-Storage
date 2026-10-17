@@ -9,25 +9,25 @@ use p3_field::PrimeCharacteristicRing;
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, OnceLock};
 
-pub(super) const MODULI: [u64; 5] = [
+pub(in crate::opening) const MODULI: [u64; 5] = [
     8796092858369,
     8796092792833,
     17592186028033,
     17592185438209,
     17592184717313,
 ];
-pub(super) const PLAINTEXT: u64 = 114689;
-pub(super) const VARIANCE: usize = 10;
-pub(super) const MAX_PARAMETER_BYTES: usize = 1024;
+pub(in crate::opening) const PLAINTEXT: u64 = 114689;
+pub(in crate::opening) const VARIANCE: usize = 10;
+pub(in crate::opening) const MAX_PARAMETER_BYTES: usize = 1024;
 // Pinned codec: 8192*(43+43+44+44+44)/8 = 223232 coefficient bytes/poly.
 // Rq adds repr(2)+degree(3)+bytes tag/len(4)+variable-time(<=2) = <=11.
 // Ct adds tag/len(4) per poly: <=2*(223232+11+4)=446494 at level0.
 // Seeded form has one such poly + seed tag/len/32 = 223281. Both fit this cap.
-pub(super) const MAX_CIPHERTEXT_BYTES: usize = 512 * 1024;
-pub(super) const MAX_CANONICAL_UNSEEDED_BYTES: usize = 2 * (223232 + 11 + 4);
+pub(in crate::opening) const MAX_CIPHERTEXT_BYTES: usize = 512 * 1024;
+pub(in crate::opening) const MAX_CANONICAL_UNSEEDED_BYTES: usize = 2 * (223232 + 11 + 4);
 const _: () = assert!(MAX_CIPHERTEXT_BYTES >= MAX_CANONICAL_UNSEEDED_BYTES);
 
-pub(super) fn parameters() -> Arc<BfvParameters> {
+pub(in crate::opening) fn parameters() -> Arc<BfvParameters> {
     static PARAMETERS: OnceLock<Arc<BfvParameters>> = OnceLock::new();
     Arc::clone(PARAMETERS.get_or_init(|| {
         BfvParametersBuilder::new()
@@ -39,21 +39,22 @@ pub(super) fn parameters() -> Arc<BfvParameters> {
             .expect("fixed pinned BFV parameters")
     }))
 }
-pub(super) fn setup_digest() -> [u8; 32] {
+pub(in crate::opening) fn setup_digest() -> [u8; 32] {
     Sha256::digest(parameters().to_bytes()).into()
 }
 
 /// Fields are private: every instance originates in the complete canonical decoder.
 #[derive(Clone, PartialEq, Eq)]
-pub(super) struct CanonicalCiphertext {
+pub(in crate::opening) struct CanonicalCiphertext {
     parameter_bytes: Vec<u8>,
     ciphertext_bytes: Vec<u8>,
     basis: usize,
     coefficients: Vec<u64>,
+    b_coefficients: Vec<u64>,
     evaluations: Vec<Val>,
 }
 impl CanonicalCiphertext {
-    pub(super) fn decode(
+    pub(in crate::opening) fn decode(
         parameters_bytes: &[u8],
         bytes: &[u8],
         basis: usize,
@@ -103,6 +104,12 @@ impl CanonicalCiphertext {
         if coefficients.iter().any(|c| *c >= MODULI[basis]) {
             return Err(Error::Shape);
         }
+        let mut b = ct[0].clone();
+        b.change_representation(Representation::PowerBasis);
+        let b_coefficients = b.coefficients().row(basis).to_vec();
+        if b_coefficients.iter().any(|v| *v >= MODULI[basis]) {
+            return Err(Error::Shape);
+        }
         let evaluations = oracle(
             &coefficients
                 .iter()
@@ -115,23 +122,27 @@ impl CanonicalCiphertext {
             ciphertext_bytes: bytes.to_vec(),
             basis,
             coefficients,
+            b_coefficients,
             evaluations,
         })
     }
-    pub(super) fn basis(&self) -> usize {
+    pub(in crate::opening) fn basis(&self) -> usize {
         self.basis
     }
     #[cfg(test)]
-    pub(super) fn coefficients(&self) -> &[u64] {
+    pub(in crate::opening) fn coefficients(&self) -> &[u64] {
         &self.coefficients
     }
-    pub(super) fn evaluations(&self) -> &[Val] {
+    pub(in crate::opening) fn b_coefficients(&self) -> &[u64] {
+        &self.b_coefficients
+    }
+    pub(in crate::opening) fn evaluations(&self) -> &[Val] {
         &self.evaluations
     }
-    pub(super) fn parameter_bytes(&self) -> &[u8] {
+    pub(in crate::opening) fn parameter_bytes(&self) -> &[u8] {
         &self.parameter_bytes
     }
-    pub(super) fn bytes(&self) -> &[u8] {
+    pub(in crate::opening) fn bytes(&self) -> &[u8] {
         &self.ciphertext_bytes
     }
 }

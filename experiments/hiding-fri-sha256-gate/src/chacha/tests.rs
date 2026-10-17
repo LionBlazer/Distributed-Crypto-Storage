@@ -289,7 +289,8 @@ fn claimed_output(statement: &Statement, trace: &RowMajorMatrix<Val>) -> [u32; W
         | Kind::LockingSelection
         | Kind::VersionLockingSelection
         | Kind::BfvKeyTransform
-        | Kind::BfvBasisConvolution => {
+        | Kind::BfvBasisConvolution
+        | Kind::BfvLocalFormation => {
             unreachable!()
         }
     }

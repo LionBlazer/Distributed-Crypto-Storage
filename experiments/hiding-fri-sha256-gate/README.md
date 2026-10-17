@@ -322,3 +322,9 @@ experimental cases, both parsed-query CLI gates and owning parser/script/TLS/GUI
 checks. All 195 experiment names were discovered; this was not a full195 rerun.
 All previous BFV/AIR profiles remain unchanged, and historical reports retain
 their original frozen source and measurements.
+
+## Signed local BFV formation
+
+The [bounded full8192 local relation](src/opening/local_formation/README.md) opens all five Basis roots and the existing SelectedEncoding root with common bounded signed noise and integer-safe equations. The [validation record](BFV-LOCAL-FORMATION-VALIDATION.md) retains the R1 lint failure, actual 20 numerical reports and one observed genuine full-composition CLI.
+
+All 212 serial behavior tests passed: the 195 earlier cases and all 17 Local cases, with no failures or ignored tests. The actual Local degree 3 differs from the unchanged declared hint 5; both model floors reached 128 per proof, without a composed-security theorem. Its owner/client-local witness, key authority, entropy, network freshness and live SQL/lock acceptance remain open. The observed 58.3s process is not an interactive SQL result or general resource/latency guarantee.

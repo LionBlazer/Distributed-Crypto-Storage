@@ -345,3 +345,9 @@ These nonaccepting owner-witness candidates add no Owner key export, authorized
 BFV/evaluation-key binding, entropy proof, complete formation, live SQL/lock grant,
 writer fence or fresh final agreement. Earlier validated profile/report facts
 remain unchanged.
+
+## Signed local BFV formation
+
+The [bounded full8192 local relation](local_formation/README.md) opens all five Basis roots and the existing SelectedEncoding root with common bounded signed noise and integer-safe equations. The [validation record](../../BFV-LOCAL-FORMATION-VALIDATION.md) retains the R1 lint failure, actual 20 numerical reports and one observed genuine full-composition CLI.
+
+All 212 serial behavior tests passed: the 195 earlier cases and all 17 Local cases, with no failures or ignored tests. The actual Local degree 3 differs from the unchanged declared hint 5; both model floors reached 128 per proof, without a composed-security theorem. Its owner/client-local witness, key authority, entropy, network freshness and live SQL/lock acceptance remain open. The observed 58.3s process is not an interactive SQL result or general resource/latency guarantee.

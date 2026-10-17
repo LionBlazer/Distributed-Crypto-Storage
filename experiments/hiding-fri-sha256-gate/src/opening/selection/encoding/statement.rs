@@ -8,9 +8,9 @@ use sha2::{Digest, Sha256};
 
 pub(super) const PUBLIC_VALUES: usize = 100;
 #[derive(Clone)]
-pub(super) struct Statement {
-    pub(super) selection: Selection,
-    pub(super) encoded: [Val; 4],
+pub(in crate::opening) struct Statement {
+    pub(in crate::opening) selection: Selection,
+    pub(in crate::opening) encoded: [Val; 4],
 }
 impl Statement {
     pub(super) fn new(selection: &Selection, encoded: [Val; 4]) -> Self {
@@ -19,7 +19,7 @@ impl Statement {
             encoded,
         }
     }
-    pub(super) fn context(&self) -> [Val; 8] {
+    pub(in crate::opening) fn context(&self) -> [Val; 8] {
         let mut h = Sha256::new();
         h.update(b"dcs/experiment/N4-selected-encoding-context/v1");
         h.update(profile_digest(Kind::SelectedEncoding));
@@ -33,7 +33,7 @@ impl Statement {
             ))
         })
     }
-    pub(super) fn require_selection(
+    pub(in crate::opening) fn require_selection(
         &self,
         independently_expected: &Selection,
     ) -> Result<(), crate::backend::Error> {

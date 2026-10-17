@@ -42,6 +42,7 @@ fn prove_composite(
     let source_proof = source_backend.prove_with_trace(source, || source_witness.trace(source))?;
     // A real source verification precedes selection trace generation, too.
     source_backend.verify(source, &source_proof)?;
+    drop(source_backend);
     statement.require_source(source)?;
     let selection =
         Backend::new(statement)?.prove_with_trace(statement, || witness.trace(statement))?;
@@ -88,7 +89,7 @@ fn random_salt() -> Result<[Val; 4], Error> {
     let mut rng = StdRng::try_from_rng(&mut SysRng).map_err(|_| Error::Randomness)?;
     Ok(core::array::from_fn(|_| rng.random::<Val>()))
 }
-fn fixture(
+pub(in crate::opening) fn fixture(
     mask: [u8; 32],
     limit: Option<usize>,
 ) -> Result<(source::Statement, source_trace::Witness, Statement, Witness), Error> {

@@ -12,11 +12,11 @@ use p3_dft::{Radix2DitParallel, TwoAdicSubgroupDft};
 use p3_field::{Field, PrimeCharacteristicRing};
 use p3_matrix::dense::RowMajorMatrix;
 
-pub(super) struct Witness {
-    pub(super) evaluations: Vec<Val>,
-    pub(super) salts: [[Val; 4]; 2],
+pub(in crate::opening) struct Witness {
+    pub(in crate::opening) evaluations: Vec<Val>,
+    pub(in crate::opening) salts: [[Val; 4]; 2],
 }
-pub(super) fn oracle(evaluations: &[Val], a_hat: &[Val]) -> Vec<Val> {
+pub(in crate::opening) fn oracle(evaluations: &[Val], a_hat: &[Val]) -> Vec<Val> {
     assert_eq!(evaluations.len(), N);
     assert_eq!(a_hat.len(), N);
     let product = evaluations
@@ -34,7 +34,7 @@ pub(super) fn oracle(evaluations: &[Val], a_hat: &[Val]) -> Vec<Val> {
     output
 }
 impl Witness {
-    pub(super) fn new(key: &KeyWitness, output_salt: [Val; 4]) -> Self {
+    pub(in crate::opening) fn new(key: &KeyWitness, output_salt: [Val; 4]) -> Self {
         Self {
             evaluations: key_transform::trace::oracle(
                 &key.coefficients
@@ -46,7 +46,7 @@ impl Witness {
             salts: [key.salts[1], output_salt],
         }
     }
-    pub(super) fn statement(&self, expected: Expected) -> Statement {
+    pub(in crate::opening) fn statement(&self, expected: Expected) -> Statement {
         let mut s = Statement {
             expected,
             result: [Val::ZERO; 4],
@@ -58,7 +58,7 @@ impl Witness {
         );
         s
     }
-    pub(super) fn trace(&self, s: &Statement) -> Result<RowMajorMatrix<Val>, Error> {
+    pub(in crate::opening) fn trace(&self, s: &Statement) -> Result<RowMajorMatrix<Val>, Error> {
         if self.evaluations.len() != N {
             return Err(Error::Shape);
         }
@@ -78,7 +78,7 @@ impl Witness {
         Ok(RowMajorMatrix::new(values, WIDTH))
     }
 }
-pub(super) fn advance(vector: &mut [Val], physical: usize, a_hat: &[Val]) {
+pub(in crate::opening) fn advance(vector: &mut [Val], physical: usize, a_hat: &[Val]) {
     if physical == MULTIPLY_ROW {
         for (x, a) in vector.iter_mut().zip(a_hat) {
             *x *= *a;
@@ -113,7 +113,7 @@ pub(super) fn advance(vector: &mut [Val], physical: usize, a_hat: &[Val]) {
         }
     }
 }
-pub(super) fn write_row(
+pub(in crate::opening) fn write_row(
     vector: &[Val],
     cp: &mut [Val; 12],
     salts: [[Val; 4]; 2],

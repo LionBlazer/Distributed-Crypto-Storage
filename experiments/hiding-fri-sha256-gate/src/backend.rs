@@ -149,6 +149,10 @@ pub(crate) fn profile_digest(kind: Kind) -> [u8; 32] {
             crate::opening::key_transform::profile(&mut hash);
             (crate::opening::key_transform::air::WIDTH, 2)
         }
+        Kind::BfvLocalFormation => {
+            crate::opening::local_formation::profile(&mut hash);
+            (crate::opening::local_formation::air::WIDTH, 2)
+        }
         Kind::BfvBasisConvolution => {
             crate::opening::basis_convolution::profile(&mut hash);
             (crate::opening::basis_convolution::air::WIDTH, 2)

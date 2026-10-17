@@ -1,10 +1,10 @@
 //! Nonaccepting private selected-originals -> complete scaled BFV plaintext gate.
 pub(crate) mod air;
 mod matrix;
-mod statement;
+pub(in crate::opening) mod statement;
 #[cfg(test)]
 mod tests;
-mod trace;
+pub(in crate::opening) mod trace;
 
 use super::{statement::Statement as Selection, trace::Witness as SelectedWitness};
 use crate::backend::{Backend, Config, Error, Val};
@@ -19,11 +19,11 @@ use statement::Statement;
 pub(crate) use statement::profile;
 use trace::Witness;
 
-struct CompositeProof {
+pub(in crate::opening) struct CompositeProof {
     selection: super::CompositeProof,
     encoding: Proof<Config>,
 }
-fn prove_composite(
+pub(in crate::opening) fn prove_composite(
     source: &source::Statement,
     source_witness: &source_trace::Witness,
     selection: &Selection,
@@ -42,7 +42,7 @@ fn prove_composite(
         encoding,
     })
 }
-fn verify_composite(
+pub(in crate::opening) fn verify_composite(
     source: &source::Statement,
     independently_expected: &Selection,
     statement: &Statement,

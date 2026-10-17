@@ -77,7 +77,7 @@ impl Statement {
             selected: source::decode_digest(selected)?,
         })
     }
-    pub(super) fn request(&self) -> [u8; 32] {
+    pub(in crate::opening) fn request(&self) -> [u8; 32] {
         self.query_request.unwrap_or(self.source.request)
     }
     pub(super) fn plan_domain(&self) -> [u8; 16] {

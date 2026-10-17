@@ -174,7 +174,8 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for ChaChaAir {
             | Kind::LockingSelection
             | Kind::VersionLockingSelection
             | Kind::BfvKeyTransform
-            | Kind::BfvBasisConvolution => {
+            | Kind::BfvBasisConvolution
+            | Kind::BfvLocalFormation => {
                 unreachable!("separate typed SHA AIR")
             }
         }

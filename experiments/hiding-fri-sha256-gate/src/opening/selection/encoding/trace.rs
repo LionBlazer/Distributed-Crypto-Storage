@@ -10,10 +10,10 @@ use p3_goldilocks::default_goldilocks_poseidon2_12;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_symmetric::Permutation;
 
-pub(super) struct Witness {
+pub(in crate::opening) struct Witness {
     pub(super) tuples: [[u32; 12]; 4],
     pub(super) selected_salt: [Val; 4],
-    pub(super) encoding_salt: [Val; 4],
+    pub(in crate::opening) encoding_salt: [Val; 4],
 }
 pub(super) fn bits(out: &mut [Val], v: u64) {
     for (i, x) in out.iter_mut().enumerate() {
@@ -21,7 +21,7 @@ pub(super) fn bits(out: &mut [Val], v: u64) {
     }
 }
 impl Witness {
-    pub(super) fn from_selection(
+    pub(in crate::opening) fn from_selection(
         s: &selection::Statement,
         w: &SelectedWitness,
         salt: [Val; 4],
@@ -40,10 +40,10 @@ impl Witness {
             encoding_salt: salt,
         })
     }
-    pub(super) fn original(&self) -> [u64; 12] {
+    pub(in crate::opening) fn original(&self) -> [u64; 12] {
         core::array::from_fn(|k| u64::from(self.tuples[k % 4][[2, 3, 0][k / 4]]))
     }
-    pub(super) fn coefficients(&self) -> Vec<(u64, u64)> {
+    pub(in crate::opening) fn coefficients(&self) -> Vec<(u64, u64)> {
         let original = self.original();
         matrix::coefficients()
             .iter()
@@ -54,7 +54,7 @@ impl Witness {
             })
             .collect()
     }
-    pub(super) fn statement(&self, selection: &selection::Statement) -> Statement {
+    pub(in crate::opening) fn statement(&self, selection: &selection::Statement) -> Statement {
         let mut s = Statement::new(selection, [Val::ZERO; 4]);
         let mut fields: Vec<_> = s
             .context()

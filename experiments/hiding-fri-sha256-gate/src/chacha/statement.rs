@@ -150,7 +150,8 @@ pub(crate) fn reference_output(statement: &Statement) -> [u32; WORDS] {
         | Kind::LockingSelection
         | Kind::VersionLockingSelection
         | Kind::BfvKeyTransform
-        | Kind::BfvBasisConvolution => {
+        | Kind::BfvBasisConvolution
+        | Kind::BfvLocalFormation => {
             unreachable!("SHA has a separate typed fixture")
         }
     }

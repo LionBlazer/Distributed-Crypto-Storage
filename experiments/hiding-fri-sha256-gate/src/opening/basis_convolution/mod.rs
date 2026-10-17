@@ -1,10 +1,10 @@
 //! Public nonsecret fixture gate for one FULL ciphertext basis; not BFV formation acceptance.
 pub(crate) mod air;
-mod ciphertext;
-mod statement;
+pub(in crate::opening) mod ciphertext;
+pub(in crate::opening) mod statement;
 #[cfg(test)]
 mod tests;
-mod trace;
+pub(in crate::opening) mod trace;
 
 use crate::backend::{Backend, Config, Error, TRACE_HEIGHT, Val};
 use crate::opening::key_transform::{
@@ -65,6 +65,26 @@ struct CompositeProof {
     key: Option<Proof<Config>>,
     convolution: Proof<Config>,
 }
+pub(in crate::opening) fn prove_child(
+    expected: &Expected,
+    statement: &Statement,
+    key: &Proof<Config>,
+    factory: impl FnOnce() -> Result<p3_matrix::dense::RowMajorMatrix<Val>, Error>,
+) -> Result<Proof<Config>, Error> {
+    statement.require_expected(expected)?;
+    key_transform::verify(&expected.key().expected, expected.key(), key)?;
+    Backend::new(statement)?.prove_with_trace(statement, factory)
+}
+pub(in crate::opening) fn verify_child(
+    expected: &Expected,
+    statement: &Statement,
+    key: &Proof<Config>,
+    proof: &Proof<Config>,
+) -> Result<(), Error> {
+    statement.require_expected(expected)?;
+    key_transform::verify(&expected.key().expected, expected.key(), key)?;
+    Backend::new(statement)?.verify(statement, proof)
+}
 fn prove_with_trace(
     expected: &Expected,
     statement: &Statement,
@@ -76,10 +96,8 @@ fn prove_with_trace(
     let b = Backend::new(source)?;
     let key_proof = b.prove_with_trace(source, || key.trace(source))?;
     // Admission is actual cryptographic source verification, never a trusted marker.
-    key_transform::verify(&source.expected, source, &key_proof)?;
     drop(b);
-    let b = Backend::new(statement)?;
-    let convolution = b.prove_with_trace(statement, factory)?;
+    let convolution = prove_child(expected, statement, &key_proof, factory)?;
     Ok(CompositeProof {
         key: Some(key_proof),
         convolution,
@@ -88,8 +106,7 @@ fn prove_with_trace(
 fn verify(expected: &Expected, statement: &Statement, proof: &CompositeProof) -> Result<(), Error> {
     statement.require_expected(expected)?;
     let key = proof.key.as_ref().ok_or(Error::Shape)?;
-    key_transform::verify(&expected.key().expected, expected.key(), key)?;
-    Backend::new(statement)?.verify(statement, &proof.convolution)
+    verify_child(expected, statement, key, &proof.convolution)
 }
 fn salt(rng: &mut StdRng) -> [Val; 4] {
     core::array::from_fn(|_| rng.random::<Val>())
@@ -101,6 +118,36 @@ fn public_fixture(
     key_salts: [[Val; 4]; 2],
     basis: usize,
     caller_noise_seed: [u8; 32],
+) -> Result<(Statement, Witness, KeyWitness), Error> {
+    public_fixture_from_original(
+        PublicFixtureInput {
+            original: [255, 0, 255, 128, 0, 65535, 256, 255, 1, 1, 1, 1],
+            descriptor: SetupDescriptor {
+                database: [0x42; 16],
+                key_domain: [0x71; 16],
+                public_setup_digest: ciphertext::setup_digest(),
+                key_epoch: 1,
+            },
+            request: [0x72; 32],
+            caller_noise_seed,
+        },
+        output_salt,
+        key_salts,
+        basis,
+    )
+}
+/// Experimental PUBLIC NONSECRET fixture only: key seed is fixed internally, never imported.
+pub(in crate::opening) struct PublicFixtureInput {
+    pub(in crate::opening) original: [u64; 12],
+    pub(in crate::opening) descriptor: SetupDescriptor,
+    pub(in crate::opening) request: [u8; 32],
+    pub(in crate::opening) caller_noise_seed: [u8; 32],
+}
+pub(in crate::opening) fn public_fixture_from_original(
+    input: PublicFixtureInput,
+    output_salt: [Val; 4],
+    key_salts: [[Val; 4]; 2],
+    basis: usize,
 ) -> Result<(Statement, Witness, KeyWitness), Error> {
     use fhe::bfv::{Ciphertext, Encoding, Plaintext, SecretKey};
     use fhe_traits::{
@@ -122,14 +169,20 @@ fn public_fixture(
     {
         return Err(Error::Shape);
     }
+    if input.original[..4].iter().any(|v| *v > 255)
+        || input.original[4..8].iter().any(|v| *v > 65535)
+        || input.original[8..].iter().any(|v| *v > 1)
+    {
+        return Err(Error::Shape);
+    }
     let mut slots = vec![0u64; N];
-    slots[..4].copy_from_slice(&[255, 0, 255, 128]);
-    slots[4096..4100].copy_from_slice(&[0, 65535, 256, 255]);
-    slots[512..516].fill(1);
+    slots[..4].copy_from_slice(&input.original[..4]);
+    slots[4096..4100].copy_from_slice(&input.original[4..8]);
+    slots[512..516].copy_from_slice(&input.original[8..]);
     let pt = Plaintext::try_encode(slots.as_slice(), Encoding::simd(), &par)
         .map_err(|_| Error::Shape)?;
     // The caller seed controls CBD noise only. Upstream independently samples A from its OS RNG.
-    let mut noise = rand09::rngs::StdRng::from_seed(caller_noise_seed);
+    let mut noise = rand09::rngs::StdRng::from_seed(input.caller_noise_seed);
     let ct: Ciphertext = key.try_encrypt(&pt, &mut noise).map_err(|_| Error::Shape)?;
     let decoded: Vec<u64> = Vec::try_decode(
         &key.try_decrypt(&ct).map_err(|_| Error::Shape)?,
@@ -147,18 +200,13 @@ fn public_fixture(
         key_salts[0],
         key_salts[1],
     )?;
-    let descriptor = SetupDescriptor {
-        database: [0x42; 16],
-        key_domain: [0x71; 16],
-        public_setup_digest: ciphertext::setup_digest(),
-        key_epoch: 1,
-    };
+    let descriptor = input.descriptor;
     let key_statement = key_witness.statement(descriptor);
     let expected = Expected::new(
         key_statement,
         &par.to_bytes(),
         &ct.to_bytes(),
-        [0x72; 32],
+        input.request,
         basis,
     )?;
     let witness = Witness::new(&key_witness, output_salt);

@@ -9,18 +9,18 @@ use crate::primitive::{Kind, PrimitiveAir, PublicStatement};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use sha2::{Digest, Sha256};
 
-pub(super) const PUBLIC_VALUES: usize = 62;
-pub(super) const INPUT_ROOT: usize = 37;
-pub(super) const OUTPUT_ROOT: usize = 58;
+pub(in crate::opening) const PUBLIC_VALUES: usize = 62;
+pub(in crate::opening) const INPUT_ROOT: usize = 37;
+pub(in crate::opening) const OUTPUT_ROOT: usize = 58;
 
 #[derive(Clone)]
-pub(super) struct Expected {
+pub(in crate::opening) struct Expected {
     key: KeyStatement,
     ciphertext: CanonicalCiphertext,
     request: [u8; 32],
 }
 impl Expected {
-    pub(super) fn new(
+    pub(in crate::opening) fn new(
         key: KeyStatement,
         parameter_bytes: &[u8],
         bytes: &[u8],
@@ -36,14 +36,13 @@ impl Expected {
             request,
         })
     }
-    pub(super) fn key(&self) -> &KeyStatement {
+    pub(in crate::opening) fn key(&self) -> &KeyStatement {
         &self.key
     }
-    pub(super) fn ciphertext(&self) -> &CanonicalCiphertext {
+    pub(in crate::opening) fn ciphertext(&self) -> &CanonicalCiphertext {
         &self.ciphertext
     }
-    #[cfg(test)]
-    pub(super) fn request(&self) -> [u8; 32] {
+    pub(in crate::opening) fn request(&self) -> [u8; 32] {
         self.request
     }
     fn same(&self, other: &Self) -> bool {
@@ -54,11 +53,11 @@ impl Expected {
     }
 }
 #[derive(Clone)]
-pub(super) struct Statement {
-    pub(super) expected: Expected,
-    pub(super) result: [Val; 4],
+pub(in crate::opening) struct Statement {
+    pub(in crate::opening) expected: Expected,
+    pub(in crate::opening) result: [Val; 4],
 }
-pub(super) fn words(bytes: &[u8; 32]) -> [Val; 8] {
+pub(in crate::opening) fn words(bytes: &[u8; 32]) -> [Val; 8] {
     core::array::from_fn(|i| {
         Val::from_u32(u32::from_le_bytes(
             bytes[4 * i..4 * i + 4].try_into().unwrap(),
@@ -66,13 +65,13 @@ pub(super) fn words(bytes: &[u8; 32]) -> [Val; 8] {
     })
 }
 impl Statement {
-    pub(super) fn require_expected(&self, expected: &Expected) -> Result<(), Error> {
+    pub(in crate::opening) fn require_expected(&self, expected: &Expected) -> Result<(), Error> {
         if !self.expected.same(expected) {
             return Err(Error::Shape);
         }
         Ok(())
     }
-    pub(super) fn contexts(&self) -> [[Val; 8]; 2] {
+    pub(in crate::opening) fn contexts(&self) -> [[Val; 8]; 2] {
         let mut h = Sha256::new();
         h.update(b"DCS/BFV-BASIS-CONVOLUTION-CONTEXT/v1");
         h.update((OUTPUT_DOMAIN.len() as u32).to_le_bytes());
