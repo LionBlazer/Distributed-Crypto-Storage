@@ -894,3 +894,8 @@ mod public_material_tests {
         assert!(PublicSetup::from_bytes(&wire[..wire.len() - 1]).is_err());
     }
 }
+
+#[cfg(feature = "key-proofs")]
+mod key_anchor;
+#[cfg(feature = "key-proofs")]
+pub use key_anchor::{BfvKeyAnchor, KeyScope, OwnerKeyAnchor};

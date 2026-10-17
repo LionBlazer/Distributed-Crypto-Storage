@@ -98,6 +98,46 @@ name = "bfv-fixed-geometry"
 version = "0.1.0"
 
 [[package]]
+name = "bfv-hiding-stark"
+version = "0.1.0"
+dependencies = [
+ "bounded-postcard",
+ "p3-air",
+ "p3-challenger",
+ "p3-commit",
+ "p3-dft",
+ "p3-field",
+ "p3-fri",
+ "p3-goldilocks",
+ "p3-matrix",
+ "p3-maybe-rayon",
+ "p3-merkle-tree",
+ "p3-poseidon2",
+ "p3-symmetric",
+ "p3-uni-stark",
+ "postcard",
+ "rand 0.10.3",
+ "sha2",
+]
+
+[[package]]
+name = "bfv-key-transform"
+version = "0.1.0"
+dependencies = [
+ "bfv-hiding-stark",
+ "p3-air",
+ "p3-dft",
+ "p3-field",
+ "p3-goldilocks",
+ "p3-matrix",
+ "p3-symmetric",
+ "p3-uni-stark",
+ "rand 0.10.3",
+ "sha2",
+ "zeroize",
+]
+
+[[package]]
 name = "bfv-linear-circuit"
 version = "0.1.0"
 dependencies = [
@@ -675,6 +715,8 @@ dependencies = [
 name = "hiding-fri-source-primitives"
 version = "0.1.0"
 dependencies = [
+ "bfv-hiding-stark",
+ "bfv-key-transform",
  "bfv-product-circuit",
  "bfv-query-core",
  "bfv-query-proof",

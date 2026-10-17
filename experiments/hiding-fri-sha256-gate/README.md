@@ -421,3 +421,23 @@ The distinct Registry200 Journal adapter passed 14 new and 56 prior leaf tests p
 
 Registry200 successful Acquire results now have distinct original-row encoding evidence. The new Source+Lifecycle+encoding frame passed real SDK verification and the accepted signed-history consumer test. Ciphertext formation and live SQL admission remain open. See the
 [validation record](PRIVATE-REGISTRY-LIFECYCLE-ENCODING-VALIDATION.md).
+
+## Shared hiding/key implementation
+
+The fixed hiding suite, Poseidon2 gadget and canonical typed-proof mechanism now
+delegate to [bfv-hiding-stark](../../crates/bfv-hiding-stark/README.md). The existing
+KeyTransform AIR/native writer/profile payload delegate to
+[bfv-key-transform](../../crates/bfv-key-transform/README.md). This adapter retains
+its Kind/profile dispatch, exact public-statement lifetime, public nonsecret fixtures,
+all existing admission allowlists and caps. Its unchanged test-only r5/r4 PCS helper
+is independent adversarial SDK construction, not a production tuning API.
+
+The optional actual core Owner producer is a separate owning boundary. Historical
+fixture-key gates remain public test controls and do not mint an operational owner
+anchor. All 337 existing scenarios passed and all 33 ordered security report
+commands reproduced their complete historical JSON lists exactly; the separate
+Owner path passed actual hiding-proof and independent verification tests.
+
+The [reusable Owner-key validation](../../crates/bfv-key-transform/OWNER-KEY-VALIDATION.md)
+records strict builds, all 337 old experiment tests, 103 library/integration tests,
+the 33 exact historical numeric invocations and the genuine new Owner path.

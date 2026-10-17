@@ -1,11 +1,8 @@
 //! Public setup/roots only. Neither descriptor nor support proves key authority.
-use super::{INPUT_DOMAIN, OUTPUT_DOMAIN};
 use crate::backend::{Error, Val, profile_digest};
 use crate::primitive::{Kind, PrimitiveAir, PublicStatement};
-use p3_field::{PrimeCharacteristicRing, PrimeField64};
-use sha2::{Digest, Sha256};
+use p3_field::PrimeCharacteristicRing;
 
-pub(in crate::opening) const PUBLIC_VALUES: usize = 8 + 17 + 4 + 4;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::opening) struct SetupDescriptor {
     pub(in crate::opening) database: [u8; 16],
@@ -14,6 +11,14 @@ pub(in crate::opening) struct SetupDescriptor {
     pub(in crate::opening) key_epoch: u32,
 }
 impl SetupDescriptor {
+    pub(in crate::opening) fn shared(&self) -> bfv_key_transform::SetupDescriptor {
+        bfv_key_transform::SetupDescriptor {
+            database: self.database,
+            key_domain: self.key_domain,
+            public_setup_digest: self.public_setup_digest,
+            key_epoch: self.key_epoch,
+        }
+    }
     fn bytes(&self) -> Vec<u8> {
         self.database
             .into_iter()
@@ -48,27 +53,17 @@ impl Statement {
         }
         Ok(())
     }
+    pub(in crate::opening) fn shared(&self) -> bfv_key_transform::Statement {
+        bfv_key_transform::Statement {
+            expected: bfv_key_transform::Expected {
+                descriptor: self.expected.descriptor.shared(),
+                coefficients: self.expected.coefficients,
+            },
+            transformed: self.transformed,
+        }
+    }
     pub(in crate::opening) fn contexts(&self) -> [[Val; 8]; 2] {
-        core::array::from_fn(|role| {
-            let mut h = Sha256::new();
-            h.update(b"DCS/BFV-KEY-TRANSFORM-CONTEXT/v1");
-            let domain = if role == 0 {
-                INPUT_DOMAIN
-            } else {
-                OUTPUT_DOMAIN
-            };
-            h.update((domain.len() as u32).to_le_bytes());
-            h.update(domain);
-            h.update(profile_digest(Kind::BfvKeyTransform));
-            h.update(self.expected.descriptor.bytes());
-            // No circular output digest; the derived-root context pins SAME input anchor.
-            if role == 1 {
-                for v in self.expected.coefficients {
-                    h.update(v.as_canonical_u64().to_le_bytes());
-                }
-            }
-            words(&h.finalize()).collect::<Vec<_>>().try_into().unwrap()
-        })
+        self.shared().contexts()
     }
 }
 impl PublicStatement for Statement {
@@ -76,7 +71,7 @@ impl PublicStatement for Statement {
         Kind::BfvKeyTransform
     }
     fn air(&self) -> PrimitiveAir {
-        PrimitiveAir::KeyTransform(Box::new(super::air::TransformAir::new(self)))
+        PrimitiveAir::KeyTransform(Box::new(super::air::TransformAir::new(&self.shared())))
     }
     fn public_values(&self) -> Vec<Val> {
         words(&profile_digest(self.kind()))

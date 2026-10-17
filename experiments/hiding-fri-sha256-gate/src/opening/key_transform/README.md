@@ -108,3 +108,14 @@ through the actual SDK; they are not simulated proof acceptance. There is no
 SDK fork, extra challenge phase, random projection or new dependency. Shared
 arithmetic is only the existing [private P2 gadget](../poseidon.rs); the backend,
 field/DFT and hash dependencies were already locked in the standalone experiment.
+
+## Reusable owner boundary
+
+The preceding validation describes the original experimental baseline. The current
+module keeps its Kind/fixture and unchanged adversarial tests while delegating
+mathematics to [bfv-key-transform](../../../../../crates/bfv-key-transform/README.md)
+and shared mechanics to [bfv-hiding-stark](../../../../../crates/bfv-hiding-stark/README.md).
+The distinct optional Core Owner API has a bounded codec and real key anchor;
+[this validation](../../../../../crates/bfv-key-transform/OWNER-KEY-VALIDATION.md)
+records its executed gates. The old profile/caps and this experiment's nonaccepting
+SQL status remain unchanged.

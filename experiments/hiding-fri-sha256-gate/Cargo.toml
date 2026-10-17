@@ -9,6 +9,8 @@ publish = false
 [workspace]
 
 [dependencies]
+bfv-hiding-stark = { path = "../../crates/bfv-hiding-stark" }
+bfv-key-transform = { path = "../../crates/bfv-key-transform" }
 version-journal = { path = "../../crates/version-journal" }
 ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std", "fast", "zeroize"] }
 bounded-postcard = { path = "../../crates/bounded-postcard" }

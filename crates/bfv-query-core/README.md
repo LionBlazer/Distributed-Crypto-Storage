@@ -268,3 +268,34 @@ that comparison supplies no owner authorization, same-secret/evaluation-key
 consistency, computation proof or fresh agreed state. The
 [public seeded-key adapter](../bfv-relinearization-key-source/README.md) consumes
 this view at a separate boundary; PB-to-NTT proof links remain necessary.
+
+## Optional owner key evidence
+
+The `key-proofs` feature adds `Owner::key_anchor`, an opaque borrowed
+`OwnerKeyAnchor`, its public `BfvKeyAnchor`, and
+`PublicSetup::verify_key_transform`. Default core dependencies do not enable this
+feature. The direct optional [key-transform](../bfv-key-transform/README.md) and
+[hiding suite](../bfv-hiding-stark/README.md) dependencies own the reusable circuit
+and proof implementation; core never depends on an experiment.
+
+The actual Owner checks its original complete setup identity, fixed parameters and
+geometry before copying SDK coefficients. It mints a stable prequery input root and
+uses fresh output salt/prover randomness on each proof. The private handle has no
+Clone, Debug, serialization, import, callback or private-data getter. Explicit wide,
+narrow and stored salt buffers are zeroizing; native field vectors, FFT/trace and
+SDK scratch are not securely erased. Public verification requires the original
+setup and an independently owner-pinned anchor, never metadata chosen by the sender.
+The full setup association is trusted owner-local metadata; the unchanged AIR
+parameter descriptor does not prove evaluation-key same-secret consistency.
+
+There is no durable anchor/private-salt recovery, and standalone output openings
+are discarded. A future combined Basis producer must own a newly matching private
+opening and real Key proof. Executed owning tests include actual Owner proof
+generation, an independent full 8192-coefficient native oracle, fresh public
+verification and hostile frames. No ciphertext formation,
+SQL answer acceptance, client freshness or composed-security claim follows.
+
+Native validation of the optional owner-key API is recorded in
+[Owner key validation](../bfv-key-transform/OWNER-KEY-VALIDATION.md). It covers
+actual generated keys, independent fresh verification, rejection boundaries and
+observed resource limits; it does not grant live SQL acceptance.
