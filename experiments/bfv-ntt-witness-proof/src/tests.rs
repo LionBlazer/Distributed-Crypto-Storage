@@ -123,8 +123,8 @@ fn all_twenty_genuine_serialized_proofs_verify_without_retaining_a_proof_bank() 
 fn full_sha512_outputs_and_complete_statement_bytes_seed_distinct_domains() {
     use sha2::{Digest, Sha512};
     let words = [0x0102030405060708u64, 0xfedcba9876543210];
-    let leaf = hashes::Leaf.hash_iter(words);
-    let node = hashes::Node.hash_iter(words);
+    let leaf = backend::domains().leaf_hasher().hash_iter(words);
+    let node = backend::domains().node_hasher().hash_iter(words);
     let mut expected = Sha512::new();
     expected.update(b"DCS/NTT-WITNESS/v1/MERKLE-LEAF/LE64/");
     for w in words {
@@ -143,15 +143,43 @@ fn full_sha512_outputs_and_complete_statement_bytes_seed_distinct_domains() {
     let mut values = vec![0; DEGREE];
     values[DEGREE - 1] = 1;
     let other = fixture::output(&input, &values).unwrap();
-    let first: backend::Challenge = backend::challenger(&input, &output).sample();
-    let second: backend::Challenge = backend::challenger(&input, &other).sample();
+    let shape = bfv_ntt_circuit::multistark::shape(input.direction(), input.basis());
+    let specs: Vec<_> = shape
+        .airs()
+        .iter()
+        .map(|air| bfv_multilinear_stark::AirSpec::new(air, air.height().ilog2() as usize))
+        .collect();
+    let (config, _) = bfv_multilinear_stark::config_for(&specs, backend::domains()).unwrap();
+    let profile = backend::profile_digest(input.direction(), input.basis());
+    let first: backend::Challenge = config
+        .challenger(profile, &input.encode(), &output.encode())
+        .sample();
+    // Independently reconstruct the previous exact seed, including every byte after
+    // the legacy SHA256 codec header, before using the shared transcript adapter.
+    let mut seed = b"DCS/NTT-WITNESS-PROOF/v1/statement/".to_vec();
+    seed.extend(profile);
+    seed.extend(Sha512::digest(input.encode()));
+    seed.extend(Sha512::digest(output.encode()));
+    let mut expected = p3_challenger::SerializingChallenger64::<backend::Val, _>::new(
+        p3_challenger::HashChallenger::<u8, _, 64>::new(
+            seed,
+            backend::domains().transcript_hasher(),
+        ),
+    );
+    let expected: backend::Challenge = expected.sample();
+    assert_eq!(first, expected);
+    let second: backend::Challenge = config
+        .challenger(profile, &input.encode(), &other.encode())
+        .sample();
     assert_ne!(first, second);
     let changed = decode_request(
         &encode_request(input.direction(), input.basis(), [1; 32], input.input()).unwrap(),
     )
     .unwrap();
     let changed_output = fixture::output(&changed, output.coefficients()).unwrap();
-    let third: backend::Challenge = backend::challenger(&changed, &changed_output).sample();
+    let third: backend::Challenge = config
+        .challenger(profile, &changed.encode(), &changed_output.encode())
+        .sample();
     assert_ne!(first, third);
 }
 #[test]

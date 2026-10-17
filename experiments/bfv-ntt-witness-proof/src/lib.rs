@@ -4,7 +4,6 @@
 pub mod backend;
 mod codec;
 pub mod fixture;
-mod hashes;
 mod proof;
 pub use proof::{CheckedNtt, Generated, ProverTimings, VerifierTimings, prove, verify};
 

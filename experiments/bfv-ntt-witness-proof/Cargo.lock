@@ -43,6 +43,26 @@ name = "bfv-fixed-geometry"
 version = "0.1.0"
 
 [[package]]
+name = "bfv-multilinear-stark"
+version = "0.1.0"
+dependencies = [
+ "p3-air",
+ "p3-bus",
+ "p3-challenger",
+ "p3-commit",
+ "p3-dft",
+ "p3-field",
+ "p3-goldilocks",
+ "p3-lookup",
+ "p3-merkle-tree",
+ "p3-multi-stark",
+ "p3-sumcheck",
+ "p3-symmetric",
+ "p3-whir",
+ "sha2",
+]
+
+[[package]]
 name = "bfv-ntt-circuit"
 version = "0.1.0"
 dependencies = [
@@ -61,15 +81,13 @@ dependencies = [
 name = "bfv-ntt-witness-proof"
 version = "0.1.0"
 dependencies = [
+ "bfv-multilinear-stark",
  "bfv-ntt-circuit",
  "bounded-postcard",
  "fhe-math",
  "p3-air",
  "p3-challenger",
- "p3-commit",
- "p3-dft",
  "p3-field",
- "p3-goldilocks",
  "p3-lookup",
  "p3-matrix",
  "p3-merkle-tree",

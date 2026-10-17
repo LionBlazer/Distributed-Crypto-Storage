@@ -301,8 +301,16 @@ fn genuine_weak_program_is_rejected(attack: Attack) {
         .map(|inner| AlteredAir { inner, attack })
         .collect();
     let refs = airs.iter().collect::<Vec<_>>();
-    let (key, wrong_verifier) =
-        setup(&config, &refs, &mut backend::challenger(&input, &output)).unwrap();
+    let (key, wrong_verifier) = setup(
+        &config,
+        &refs,
+        &mut config.challenger(
+            backend::profile_digest(input.direction(), input.basis()),
+            &input.encode(),
+            &output.encode(),
+        ),
+    )
+    .unwrap();
     let instances = ProverInstances::new(
         airs.iter()
             .zip(traces)
@@ -316,7 +324,11 @@ fn genuine_weak_program_is_rejected(attack: Attack) {
         instances,
         0,
         backend::POLICY_BITS,
-        &mut backend::challenger(&input, &output),
+        &mut config.challenger(
+            backend::profile_digest(input.direction(), input.basis()),
+            &input.encode(),
+            &output.encode(),
+        ),
     )
     .unwrap();
     let own_instances = VerifierInstances::new(
@@ -332,7 +344,11 @@ fn genuine_weak_program_is_rejected(attack: Attack) {
         &raw,
         0,
         backend::POLICY_BITS,
-        &mut backend::challenger(&input, &output),
+        &mut config.challenger(
+            backend::profile_digest(input.direction(), input.basis()),
+            &input.encode(),
+            &output.encode(),
+        ),
     )
     .unwrap();
     let frame = proof::encode_frame(&input, &output, &raw).unwrap();

@@ -22,6 +22,7 @@ executables. The root Cargo default members select this layer only.
 | [bfv-relinearization-circuit](bfv-relinearization-circuit/README.md) | Complete fixed-Q5 embedding and five-term key accumulation arithmetic, with optional AIR | bfv-fixed-geometry |
 | [bfv-relinearization-key-source](bfv-relinearization-key-source/README.md) | Canonical original public seeded-key parsing and exact public c1 expansion, with independent complete setup identity | bfv-query-core, bfv-fixed-geometry |
 | [bfv-arithmetic-stark](bfv-arithmetic-stark/README.md) | Shared fixed linked STARK configuration, complete profile AIR delegation and actual security analysis for public arithmetic consumers | bfv-fixed-geometry |
+| [bfv-multilinear-stark](bfv-multilinear-stark/README.md) | Fixed public SHA512/WHIR multilinear protocol, checked current-only table planning and complete actual SDK security assessment | None |
 | [bfv-query-proof](bfv-query-proof/README.md) | Bounded genuine arithmetic STARKs and independent verification | bfv-linear-circuit, bfv-product-circuit, bounded-postcard, proof-acceleration; bfv-query-core in tests |
 | [bounded-postcard](bounded-postcard/README.md) | Bounded generic Postcard decoding with caller-owned container budgets | None |
 | [proof-acceleration](proof-acceleration/README.md) | Shared fixed-profile ABI and startup CPU/OS kernel selection | None |

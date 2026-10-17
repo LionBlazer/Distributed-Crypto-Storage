@@ -1,14 +1,26 @@
 # Full N8192 NTT main-witness proof candidate
 
-Native experimental validation passed: all twenty actual security reports,
-full upstream SDK parity, all twenty genuine serialized proofs and thirteen
-unignored owning tests. The standalone CPU smoke and full test process were
-measured; see [the exact results and limits](VALIDATION.md). This experiment certifies one public, nonsecret NTT stage
-for one of ten fixed Q5/P5 bases. It provides no MulRelin, SQL, freshness, key
+The shared-backend migration passed release compilation, strict Clippy, rustfmt,
+full upstream SDK parity and all thirteen unignored owning tests on 2026-10-17.
+All twenty actual complete security reports match the previous implementation
+exactly. All twenty genuine serialized proofs and the genuine weakened/foreign
+program proof rejections pass. Historical pre-extraction CPU measurements remain
+in [the exact results and limits](VALIDATION.md).
+
+After extraction, a fresh CPU smoke run generated and independently verified the
+same 1,958,608-byte forward-basis0 proof in 3,532.9335ms outer process time. Its
+sampled OS peak working set was 867,356,672 bytes. This single run is not a speed
+comparison or an interactive SQL latency guarantee. The complete regression suite
+ran without ignored tests; no plaintext SQL, key-authority, whole-operation or
+network acceptance shortcut was introduced.
+This experiment certifies one public, nonsecret NTT stage for one of ten fixed Q5/P5 bases. It provides no MulRelin, SQL, freshness, key
 ownership or production acceptance capability. The main trace is not hiding.
 
-The consumer owns its SHA-512 transcript, WHIR configuration, security floor,
-framing, bounded decoding and checked stage marker. The optional `multistark`
+The consumer owns the exact NTT hash domains and profile, complete statement
+encoding, framing, bounded decoding, semantic geometry, verifier-built setup and
+checked stage marker. [`bfv-multilinear-stark`](../../crates/bfv-multilinear-stark/README.md)
+owns the fixed serial SHA-512/WHIR configuration and complete SDK security
+assessment. The optional `multistark`
 module in `bfv-ntt-circuit` owns fixed arithmetic, native routing, canonical codecs,
 public preparation and witness layout. `bounded-postcard` owns allocation-budget
 accounting. This consumer does not depend on an older proof consumer or change an
@@ -108,8 +120,8 @@ The frame/decoder reject if actual serialization exceeds policy.
 
 Raw main plus public tables are about 40/43 MiB. They exclude the extension-field
 lookup reduction, WHIR codewords, trees, transposes, temporary copies and allocator
-overhead. Peak process RAM is much larger: the measured forward-0 CLI had an OS-reported
-peak working set of 867,315,712 bytes, and the complete thirteen-test process
+overhead. Before this migration, measured process RAM was much larger: the
+forward-0 CLI had an OS-reported peak working set of 867,315,712 bytes, and the complete thirteen-test process
 reached 917,577,728 bytes. These are sampled observations with a soft fuse, not a
 hard RAM bound or the memory of a complete peer/SQL operation. No latency SLA or
 speedup is established.
@@ -126,7 +138,9 @@ programs and positively verify each proof under its attacker-owned AIR/VK before
 honest rejection. Range and address attacks preserve every local integer equation
 and isolate the missing global link. Other attacks weaken carries, quotients,
 normalization, the final butterfly, multiplicities or complete IO preprocessing.
-All thirteen examples executed successfully, with zero ignored cases.
+Before this migration, all thirteen examples executed successfully, with zero
+ignored cases. The migration must repeat those owning checks and compare all
+twenty complete reports before acceptance.
 
 Reproduction uses the reviewed standalone lock, a separate target,
 pinned Rust 1.99, `--locked --offline`, bounded build/Rayon threads and the exact

@@ -1,136 +1,32 @@
-//! Consumer-owned SHA512/WHIR policy and complete SDK statement security report.
-use crate::{Error, hashes};
+//! NTT-owned statement policy and reports over the shared serial SHA512/WHIR backend.
+use crate::Error;
+use bfv_multilinear_stark::{AirSpec, Domains, assess, config_for};
+pub use bfv_multilinear_stark::{
+    COLLISION_BITS, Challenge, FOLDING, MAX_FINAL_VARIABLES, MAX_QUERIES, MAX_QUERY_PHASES,
+    PHASE_BITS, POLICY_BITS, Val, sha512 as digest,
+};
+pub(crate) use bfv_multilinear_stark::{Config, Proof};
 use bfv_ntt_circuit::multistark::{PreparedMachine, prepare_public};
 use bfv_ntt_circuit::{Basis, DEGREE, Direction, Output, Request, parameters};
 use p3_air::{BaseAir, symbolic::AirLayout};
-use p3_challenger::{HashChallenger, SerializingChallenger64};
-use p3_dft::Radix2DFTSmallBatch;
-use p3_field::extension::BinomialExtensionField;
-use p3_goldilocks::Goldilocks;
 use p3_lookup::InteractionSymbolicBuilder;
-use p3_merkle_tree::MerkleTreeMmcs;
-use p3_multi_stark::config::{MultiStarkConfig, ProverData};
-use p3_multi_stark::{
-    MultiStarkProof, ProvingKey, VerifierInstance, VerifierInstances, VerifyingKey,
-    security_report, setup,
-};
-use p3_sumcheck::layout::{Layout, PrefixProver, Table, Witness};
-use p3_symmetric::{CompressionFunctionFromHasher, SerializingHasher};
-use p3_whir::{FoldingFactor, ProtocolParameters, SecurityAssumption, WhirConfig, WhirProver};
+use p3_multi_stark::{ProvingKey, VerifierInstance, VerifierInstances, VerifyingKey, setup};
 use serde::Serialize;
 use sha2::{Digest, Sha512};
 
-pub type Val = Goldilocks;
-pub type Challenge = BinomialExtensionField<Val, 5>;
-pub(crate) type Challenger =
-    SerializingChallenger64<Val, HashChallenger<u8, hashes::Transcript, 64>>;
-pub(crate) type Mmcs = MerkleTreeMmcs<
-    Val,
-    u64,
-    SerializingHasher<hashes::Leaf>,
-    CompressionFunctionFromHasher<hashes::Node, 2, 8>,
-    2,
-    8,
->;
-type L = PrefixProver<Val, Challenge>;
-type Pcs = WhirProver<Challenge, Val, Radix2DFTSmallBatch<Val>, Mmcs, Challenger, L>;
-pub(crate) type Proof = MultiStarkProof<Config>;
-pub const POLICY_BITS: usize = 144;
-pub const PHASE_BITS: usize = 160;
-pub const COLLISION_BITS: usize = 256;
-pub const FOLDING: usize = 4;
-pub const MAX_QUERY_PHASES: usize = 6;
-pub const MAX_QUERIES: usize = 512;
 pub const MAX_MERKLE_DEPTH: usize = 22;
-pub const MAX_FINAL_VARIABLES: usize = 6;
 
-pub(crate) struct Config {
-    main: Pcs,
-    public: Pcs,
-}
-impl MultiStarkConfig for Config {
-    type Val = Val;
-    type Challenge = Challenge;
-    type Challenger = Challenger;
-    type Pcs = Pcs;
-    fn pcs(&self) -> &Pcs {
-        &self.main
-    }
-    fn preprocessed_pcs(&self) -> &Pcs {
-        &self.public
-    }
-    fn collision_resistance_bits(&self) -> Option<usize> {
-        Some(COLLISION_BITS)
-    }
-    fn min_num_variables(&self) -> usize {
-        FOLDING
-    }
-    fn build_witness(&self, tables: Vec<Table<Val>>) -> Witness<Val> {
-        L::new_witness(tables, FOLDING)
-    }
-    fn committed_table<'a>(&self, data: &'a ProverData<Self>, index: usize) -> &'a Table<Val> {
-        data.table(index)
-    }
-}
-#[derive(Clone, Debug, Serialize)]
-pub struct PcsSchedule {
-    pub variables: usize,
-    pub folding: Vec<usize>,
-    pub queries: Vec<usize>,
-    pub rates: Vec<usize>,
-    pub initial_claims: usize,
-    pub final_variables: usize,
-}
-fn pcs(variables: usize, claims: usize) -> Result<(Pcs, PcsSchedule), Error> {
-    let params = ProtocolParameters {
-        starting_log_inv_rate: 1,
-        round_log_inv_rates: vec![],
-        folding_factor: FoldingFactor::Constant(FOLDING),
-        soundness_type: SecurityAssumption::UniqueDecoding,
-        security_level: PHASE_BITS,
-        pow_bits: 0,
-    };
-    let cfg = WhirConfig::<Challenge, Val, Challenger>::new_with_initial_claims(
-        variables, params, claims,
+/// The application domains are unchanged protocol inputs, owned by this consumer.
+pub(crate) fn domains() -> Domains {
+    Domains::new(
+        b"DCS/NTT-WITNESS/v1/MERKLE-LEAF/LE64/",
+        b"DCS/NTT-WITNESS/v1/MERKLE-NODE/LE64/",
+        b"DCS/NTT-WITNESS/v1/FIAT-SHAMIR/BYTES/",
+        b"DCS/NTT-WITNESS-PROOF/v1/statement/",
     )
-    .map_err(|_| Error::SecurityProfile)?;
-    let mut queries: Vec<_> = cfg
-        .round_parameters()
-        .iter()
-        .map(|r| r.num_queries)
-        .collect();
-    queries.push(cfg.terminal().num_queries);
-    if cfg.max_pow_bits() != 0
-        || cfg.commitment_ood_samples() != 0
-        || cfg
-            .round_parameters()
-            .iter()
-            .any(|r| r.ood_samples != 0 || r.folding_factor > FOLDING)
-        || queries.len() > MAX_QUERY_PHASES
-        || queries.iter().any(|&q| q == 0 || q > MAX_QUERIES)
-        || cfg.final_sumcheck_rounds() > MAX_FINAL_VARIABLES
-    {
-        return Err(Error::SecurityProfile);
-    }
-    let report = PcsSchedule {
-        variables,
-        folding: cfg.folding_schedule().to_vec(),
-        queries,
-        rates: cfg
-            .round_parameters()
-            .iter()
-            .map(|r| r.log_inv_rate)
-            .collect(),
-        initial_claims: claims,
-        final_variables: cfg.final_sumcheck_rounds(),
-    };
-    let mmcs = Mmcs::new(
-        SerializingHasher::new(hashes::Leaf),
-        CompressionFunctionFromHasher::new(hashes::Node),
-        0,
-    );
-    Ok((Pcs::new(cfg, Radix2DFTSmallBatch::default(), mmcs), report))
+    .expect("the fixed NTT domains are nonempty and prefix-free")
 }
+
 pub fn direction_name(d: Direction) -> &'static str {
     match d {
         Direction::Forward => "forward",
@@ -139,9 +35,6 @@ pub fn direction_name(d: Direction) -> &'static str {
 }
 pub(crate) fn tag(d: Direction) -> u8 {
     d as u8
-}
-pub fn digest(bytes: &[u8]) -> [u8; 64] {
-    Sha512::digest(bytes).into()
 }
 /// Complete fixed machine/backend policy. Old circuit SHA256 profiles are unchanged.
 pub fn profile_digest(d: Direction, b: Basis) -> [u8; 64] {
@@ -188,13 +81,26 @@ pub fn profile_digest(d: Direction, b: Basis) -> [u8; 64] {
     }
     h.finalize().into()
 }
-pub(crate) fn challenger(input: &Request, output: &Output) -> Challenger {
-    let mut seed = b"DCS/NTT-WITNESS-PROOF/v1/statement/".to_vec();
-    seed.extend(profile_digest(input.direction(), input.basis()));
-    // Hash complete canonical wire bytes, never merely the old SHA256 header digests.
-    seed.extend(digest(&input.encode()));
-    seed.extend(digest(&output.encode()));
-    SerializingChallenger64::new(HashChallenger::new(seed, hashes::Transcript))
+#[derive(Clone, Debug, Serialize)]
+pub struct PcsSchedule {
+    pub variables: usize,
+    pub folding: Vec<usize>,
+    pub queries: Vec<usize>,
+    pub rates: Vec<usize>,
+    pub initial_claims: usize,
+    pub final_variables: usize,
+}
+impl From<bfv_multilinear_stark::PcsSchedule> for PcsSchedule {
+    fn from(schedule: bfv_multilinear_stark::PcsSchedule) -> Self {
+        Self {
+            variables: schedule.variables,
+            folding: schedule.folding,
+            queries: schedule.queries,
+            rates: schedule.rates,
+            initial_claims: schedule.initial_claims,
+            final_variables: schedule.final_variables,
+        }
+    }
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct Term {
@@ -325,15 +231,36 @@ impl Backend {
         if (main_variables, public_variables) != (22, 21) {
             return Err(Error::SecurityProfile);
         }
-        let (main, main_pcs) = pcs(main_variables, tables.iter().map(|a| a.main_width).sum())?;
-        let (public, preprocessed_pcs) = pcs(
-            public_variables,
-            tables.iter().map(|a| a.preprocessed_width).sum(),
-        )?;
-        let config = Config { main, public };
+        let specs: Vec<_> = machine
+            .airs()
+            .iter()
+            .map(|a| AirSpec::new(a, a.height().ilog2() as usize))
+            .collect();
+        let (config, plan) = config_for(&specs, domains()).map_err(|_| Error::SecurityProfile)?;
+        let public_plan = plan.preprocessed_pcs.ok_or(Error::SecurityProfile)?;
+        if plan.main_cells != main_cells
+            || plan.preprocessed_cells != preprocessed_cells
+            || plan.main_pcs.variables != main_variables
+            || public_plan.variables != public_variables
+            || plan.main_pcs.initial_claims != tables.iter().map(|a| a.main_width).sum::<usize>()
+            || public_plan.initial_claims
+                != tables.iter().map(|a| a.preprocessed_width).sum::<usize>()
+        {
+            return Err(Error::SecurityProfile);
+        }
+        let main_pcs = plan.main_pcs.into();
+        let preprocessed_pcs = public_plan.into();
         let airs = machine.airs().iter().collect::<Vec<_>>();
-        let (prover, verifier) = setup(&config, &airs, &mut challenger(input, output))
-            .map_err(|_| Error::Preprocessing)?;
+        let (prover, verifier) = setup(
+            &config,
+            &airs,
+            &mut config.challenger(
+                profile_digest(input.direction(), input.basis()),
+                &input.encode(),
+                &output.encode(),
+            ),
+        )
+        .map_err(|_| Error::Preprocessing)?;
         let instances = VerifierInstances::new(
             machine
                 .airs()
@@ -341,7 +268,7 @@ impl Backend {
                 .map(|a| VerifierInstance::new(a, &verifier, a.height().ilog2() as usize, &[]))
                 .collect(),
         );
-        let actual = security_report(&config, &instances).map_err(|_| Error::SecurityProfile)?;
+        let actual = assess(&config, &instances).map_err(|_| Error::SecurityProfile)?;
         actual
             .require_security(POLICY_BITS)
             .map_err(|_| Error::SecurityProfile)?;

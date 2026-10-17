@@ -235,7 +235,11 @@ pub fn prove(input: &Request) -> Result<Generated, Error> {
         instances,
         0,
         POLICY_BITS,
-        &mut backend::challenger(input, &evaluation.output),
+        &mut backend.config.challenger(
+            backend::profile_digest(input.direction(), input.basis()),
+            &input.encode(),
+            &evaluation.output.encode(),
+        ),
     )
     .map_err(|_| Error::Proving)?;
     layout(&proof, &backend)?;
@@ -285,7 +289,11 @@ fn verify_inner(input: &Request, output: &Output, bytes: &[u8]) -> Result<Checke
         &proof,
         0,
         POLICY_BITS,
-        &mut backend::challenger(input, output),
+        &mut config.challenger(
+            backend::profile_digest(input.direction(), input.basis()),
+            &input.encode(),
+            &output.encode(),
+        ),
     )
     .map_err(|_| Error::Verification)?;
     Ok(CheckedNtt {
