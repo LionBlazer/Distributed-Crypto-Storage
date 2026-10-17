@@ -332,3 +332,16 @@ version tags remain distinct from fresh query/control context; old CanonicalInde
 locking stays separate. Seventeen numerical reports, one genuine cold/two-warm
 chain and all 158 serial tests passed. This additive candidate remains nonaccepting;
 the [validation record](../../VERSION-LOCKING-VALIDATION.md) limits all observations.
+
+## Compiled and numerically gated BFV prerequisites
+
+The distinct [full8192 KeyTransform](key_transform/README.md) and
+[complete-ciphertext BasisConvolution](basis_convolution/README.md) profiles passed release build,
+test compilation, strict Clippy and all nineteen numerical CLI gates. Both new
+actual AIR reports have degree3 and unique/list bounds128. Three native oracle
+filters and both genuine proof commands also passed in single observed runs. The
+complete 189 serial behavior suite also passed; see the [validation record](../../BFV-KEY-BASIS-VALIDATION.md).
+These nonaccepting owner-witness candidates add no Owner key export, authorized
+BFV/evaluation-key binding, entropy proof, complete formation, live SQL/lock grant,
+writer fence or fresh final agreement. Earlier validated profile/report facts
+remain unchanged.

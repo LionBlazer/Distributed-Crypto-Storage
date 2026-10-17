@@ -1,16 +1,19 @@
 # PostgreSQL implementation contract and open work
 
 The user selected PostgreSQL semantics on 2026-10-16 and requested complete SQL,
-including `FOR UPDATE` and `SKIP LOCKED`, with ordinary queries at most 500 ms.
+including `FOR UPDATE` and `SKIP LOCKED`. The latest explicit instruction removes
+the fixed query-latency cutoff; reasonable practical latency remains an empirical
+requirement for representative complete operations.
 [REQUIREMENTS.md](../REQUIREMENTS.md) remains the unchanged implementation contract.
 This document records design work and blockers, not implemented SQL support.
 The [combined measurements](../experiments/combined-sql/README.md) include actual
 small fixed queries, typed 300-row projection, million-row point operations and a
-separate whole-lifecycle resource observation. Million-row UPDATE and the measured
-2,155-row typed output still exceed 500 ms.
+separate whole-lifecycle resource observation. Linked historical reports retain
+their actual timing samples, including million-row UPDATE and 2,155-row typed
+output; their former cutoff is not a current acceptance condition.
 The [measured network path](proved-sql-network.md) identifies the current workloads,
-CPU budgets, proof boundary and remaining latency failures. A representative
-larger workload and tail-latency contract remain to be established.
+CPU budgets, proof boundary and remaining latency work. A representative larger
+workload and tail-latency objectives remain to be established.
 
 ## Current execution boundary
 

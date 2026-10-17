@@ -245,7 +245,7 @@ both CLI gates and all 97 serial tests passed. The
 [validation record](VERSION-STATE-VALIDATION.md) separates cold admission and warm
 query timings, owned cache accounting and sampled process observations. Its
 distinct profiles preserve earlier gates; production acceptance, freshness,
-full SQL/FHE linkage, private locks and a complete 500 ms operation remain open.
+full SQL/FHE linkage, private locks and practical complete-operation latency remain open.
 
 ## Selected-encoding validation
 
@@ -256,7 +256,7 @@ actual numerical reports, all three upstream matrix gates, the genuine composite
 and all 114 serial tests passed. The [validation record](SELECTED-ENCODING-VALIDATION.md)
 describes exact provenance, measured composite timings and sampled resources.
 Ciphertext formation, peer-only computation, production SQL acceptance and the
-500 ms target remain open. Earlier reports retain their original scope.
+practical latency remain open. Earlier reports retain their original scope.
 
 ## Factorized periodic-basis source candidate
 
@@ -296,3 +296,16 @@ preserved. Release build, strict Clippy, all seventeen numerical reports, one
 genuine cold/two-warm chain and all 158 serial tests passed. The
 [validation record](VERSION-LOCKING-VALIDATION.md) gives one fixed observation;
 no comparative speedup, composed security or production acceptance is claimed.
+
+## Compiled and numerically gated BFV prerequisites
+
+The distinct [full8192 KeyTransform](src/opening/key_transform/README.md) and
+[complete-ciphertext BasisConvolution](src/opening/basis_convolution/README.md) profiles passed release build,
+test compilation, strict Clippy and all nineteen numerical CLI gates. Both new
+actual AIR reports have degree3 and unique/list bounds128. Three native oracle
+filters and both genuine proof commands also passed in single observed runs. The
+complete 189 serial behavior suite also passed; see the [validation record](BFV-KEY-BASIS-VALIDATION.md).
+These nonaccepting owner-witness candidates add no Owner key export, authorized
+BFV/evaluation-key binding, entropy proof, complete formation, live SQL/lock grant,
+writer fence or fresh final agreement. Earlier validated profile/report facts
+remain unchanged.

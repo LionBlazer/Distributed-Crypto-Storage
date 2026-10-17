@@ -1,0 +1,198 @@
+//! Public nonsecret fixture gate for one FULL ciphertext basis; not BFV formation acceptance.
+pub(crate) mod air;
+mod ciphertext;
+mod statement;
+#[cfg(test)]
+mod tests;
+mod trace;
+
+use crate::backend::{Backend, Config, Error, TRACE_HEIGHT, Val};
+use crate::opening::key_transform::{
+    self, statement::SetupDescriptor, trace::Witness as KeyWitness,
+};
+use p3_field::{PrimeCharacteristicRing, PrimeField64};
+use p3_uni_stark::Proof;
+use rand::{
+    RngExt, SeedableRng,
+    rngs::{StdRng, SysRng},
+};
+use sha2::{Digest, Sha256};
+use statement::{Expected, Statement};
+use trace::Witness;
+
+pub(super) use key_transform::{BLOCKS, GADGETS, HASH_ROWS, N, psi, reverse};
+pub(super) const MULTIPLY_ROW: usize = 206;
+pub(super) const FIRST_STAGE: usize = 207;
+pub(super) const SCALE_ROW: usize = 220;
+pub(super) const OUTPUT_ROW: usize = 221;
+pub(super) const OUTPUT_DOMAIN: &[u8] = b"DCS/BFV-BASIS-NEGACYCLIC-RESIDUES/v1";
+pub(super) fn hash_phase(row: usize) -> Option<(usize, usize)> {
+    if row < HASH_ROWS {
+        Some((0, row))
+    } else if (OUTPUT_ROW..OUTPUT_ROW + HASH_ROWS).contains(&row) {
+        Some((1, row - OUTPUT_ROW))
+    } else {
+        None
+    }
+}
+pub(crate) fn profile(h: &mut Sha256) {
+    h.update(b"BFV-one-basis-convolution/full-canonical-ciphertext/Goldilocks/v1");
+    h.update(OUTPUT_DOMAIN);
+    h.update(b"original-KeyTransform-role1/raw-natural-Shat/input0..205/hold205/multiply-rev13-206/inverseDIT207..219/scale-untwist220/output221..426");
+    h.update(b"five-unconditional-P2/context8-salt4-zero4-vector8192/last-active-checkpoint/degree-bound5");
+    h.update(b"fixed-upstream-params/N8192/t114689/variance10/five-qi/level0/two-Ntt/canonical-roundtrip/full-ct-SHA256/basis0..4");
+    for q in ciphertext::MODULI {
+        h.update(q.to_le_bytes());
+    }
+    for x in [
+        N,
+        GADGETS,
+        BLOCKS,
+        HASH_ROWS,
+        MULTIPLY_ROW,
+        FIRST_STAGE,
+        SCALE_ROW,
+        OUTPUT_ROW,
+        air::WIDTH,
+        statement::PUBLIC_VALUES,
+        TRACE_HEIGHT,
+    ] {
+        h.update((x as u64).to_le_bytes());
+    }
+    h.update(psi().as_canonical_u64().to_le_bytes());
+}
+struct CompositeProof {
+    key: Option<Proof<Config>>,
+    convolution: Proof<Config>,
+}
+fn prove_with_trace(
+    expected: &Expected,
+    statement: &Statement,
+    key: &KeyWitness,
+    factory: impl FnOnce() -> Result<p3_matrix::dense::RowMajorMatrix<Val>, Error>,
+) -> Result<CompositeProof, Error> {
+    statement.require_expected(expected)?;
+    let source = expected.key();
+    let b = Backend::new(source)?;
+    let key_proof = b.prove_with_trace(source, || key.trace(source))?;
+    // Admission is actual cryptographic source verification, never a trusted marker.
+    key_transform::verify(&source.expected, source, &key_proof)?;
+    drop(b);
+    let b = Backend::new(statement)?;
+    let convolution = b.prove_with_trace(statement, factory)?;
+    Ok(CompositeProof {
+        key: Some(key_proof),
+        convolution,
+    })
+}
+fn verify(expected: &Expected, statement: &Statement, proof: &CompositeProof) -> Result<(), Error> {
+    statement.require_expected(expected)?;
+    let key = proof.key.as_ref().ok_or(Error::Shape)?;
+    key_transform::verify(&expected.key().expected, expected.key(), key)?;
+    Backend::new(statement)?.verify(statement, &proof.convolution)
+}
+fn salt(rng: &mut StdRng) -> [Val; 4] {
+    core::array::from_fn(|_| rng.random::<Val>())
+}
+
+/// NO supplied key or exporter: this function creates an explicitly PUBLIC NONSECRET fixture.
+fn public_fixture(
+    output_salt: [Val; 4],
+    key_salts: [[Val; 4]; 2],
+    basis: usize,
+    caller_noise_seed: [u8; 32],
+) -> Result<(Statement, Witness, KeyWitness), Error> {
+    use fhe::bfv::{Ciphertext, Encoding, Plaintext, SecretKey};
+    use fhe_traits::{
+        DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
+    };
+    use rand09::SeedableRng;
+    let par = ciphertext::parameters();
+    let mut key_rng = rand09::rngs::StdRng::from_seed([0x53; 32]);
+    let mut replay = key_rng.clone();
+    let key = SecretKey::random(&par, &mut key_rng);
+    let s =
+        fhe_util::sample_vec_cbd(N, ciphertext::VARIANCE, &mut replay).map_err(|_| Error::Shape)?;
+    if fhe::proto::bfv::SecretKey::from(&key).coeffs != s {
+        return Err(Error::Shape);
+    }
+    let encoded_key = key.to_bytes();
+    let restored = SecretKey::from_bytes(&encoded_key, &par).map_err(|_| Error::Shape)?;
+    if restored.to_bytes() != encoded_key || fhe::proto::bfv::SecretKey::from(&restored).coeffs != s
+    {
+        return Err(Error::Shape);
+    }
+    let mut slots = vec![0u64; N];
+    slots[..4].copy_from_slice(&[255, 0, 255, 128]);
+    slots[4096..4100].copy_from_slice(&[0, 65535, 256, 255]);
+    slots[512..516].fill(1);
+    let pt = Plaintext::try_encode(slots.as_slice(), Encoding::simd(), &par)
+        .map_err(|_| Error::Shape)?;
+    // The caller seed controls CBD noise only. Upstream independently samples A from its OS RNG.
+    let mut noise = rand09::rngs::StdRng::from_seed(caller_noise_seed);
+    let ct: Ciphertext = key.try_encrypt(&pt, &mut noise).map_err(|_| Error::Shape)?;
+    let decoded: Vec<u64> = Vec::try_decode(
+        &key.try_decrypt(&ct).map_err(|_| Error::Shape)?,
+        Encoding::simd(),
+    )
+    .map_err(|_| Error::Shape)?;
+    if decoded != slots {
+        return Err(Error::Shape);
+    }
+    let key_witness = KeyWitness::new(
+        s.into_iter()
+            .map(i8::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| Error::Shape)?,
+        key_salts[0],
+        key_salts[1],
+    )?;
+    let descriptor = SetupDescriptor {
+        database: [0x42; 16],
+        key_domain: [0x71; 16],
+        public_setup_digest: ciphertext::setup_digest(),
+        key_epoch: 1,
+    };
+    let key_statement = key_witness.statement(descriptor);
+    let expected = Expected::new(
+        key_statement,
+        &par.to_bytes(),
+        &ct.to_bytes(),
+        [0x72; 32],
+        basis,
+    )?;
+    let witness = Witness::new(&key_witness, output_salt);
+    let statement = witness.statement(expected);
+    Ok((statement, witness, key_witness))
+}
+pub(crate) fn gate(mode: &str) -> Result<(), Error> {
+    if mode == "security" {
+        // Same real PUBLIC NONSECRET encryption fixture; no AIR trace, proof or PCS commitment.
+        let (statement, _, _) = public_fixture([Val::ZERO; 4], [[Val::ZERO; 4]; 2], 0, [0x45; 32])?;
+        return crate::security(&statement, "public-nonsecret-upstream-ciphertext");
+    }
+    if mode != "prove" {
+        return Err(Error::Shape);
+    }
+    let mut rng = StdRng::try_from_rng(&mut SysRng).map_err(|_| Error::Randomness)?;
+    let (statement, witness, key) = public_fixture(
+        salt(&mut rng),
+        [salt(&mut rng), salt(&mut rng)],
+        0,
+        [0x45; 32],
+    )?;
+    crate::security(&statement, "public-nonsecret-upstream-ciphertext")?;
+    let started = std::time::Instant::now();
+    let proof = prove_with_trace(&statement.expected, &statement, &key, || {
+        witness.trace(&statement)
+    })?;
+    let proving = started.elapsed();
+    let started = std::time::Instant::now();
+    verify(&statement.expected, &statement, &proof)?;
+    println!(
+        "{{\"stage\":\"verified_experimental_bfv_basis_convolution\",\"proving_ms\":{},\"verification_ms\":{}}}",
+        proving.as_secs_f64() * 1000.0,
+        started.elapsed().as_secs_f64() * 1000.0
+    );
+    Ok(())
+}

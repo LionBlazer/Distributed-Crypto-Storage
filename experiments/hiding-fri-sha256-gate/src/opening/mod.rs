@@ -2,6 +2,7 @@
 //! Public canonical ciphertext is checked outside AIR; ALL private key/AEAD/XOR
 //! and salted commitment links are constrained inside one hiding relation.
 pub(crate) mod air;
+pub(crate) mod basis_convolution;
 pub(crate) mod canonical;
 mod layout;
 pub(crate) use layout::PACKED_WIDTH;
@@ -12,6 +13,7 @@ pub(crate) mod factorized;
 #[cfg(test)]
 mod factorized_tests;
 mod fixture;
+pub(crate) mod key_transform;
 pub(crate) mod locking;
 #[cfg(test)]
 mod packed_tests;
