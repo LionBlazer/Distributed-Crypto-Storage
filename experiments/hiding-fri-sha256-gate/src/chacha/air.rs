@@ -177,7 +177,8 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for ChaChaAir {
             | Kind::BfvBasisConvolution
             | Kind::BfvLocalFormation
             | Kind::LockReturnedEncoding
-            | Kind::BfvLockReturnedFormation => {
+            | Kind::BfvLockReturnedFormation
+            | Kind::RegistryBootstrap => {
                 unreachable!("separate typed SHA AIR")
             }
         }

@@ -22,7 +22,7 @@ fn run() -> Result<(), Error> {
     if !(2..=3).contains(&arguments.len()) || !matches!(arguments[0].as_str(), "security" | "prove")
     {
         eprintln!(
-            "usage: hiding-fri-source-primitives <security|prove> <sha256|hchacha20|chacha20|poly1305-raw|poly1305-padded|pair-opening|canonical-index-opening|selection-opening|packed-canonical-index-opening|factorized-packed-canonical-index-opening|state-certificate|version-selection|selected-encoding|locking-selection|version-locking-selection|bfv-key-transform|bfv-basis-convolution|bfv-local-formation|bfv-lock-returned-formation|lock-returned-encoding|version-lock-returned-encoding|certified-projection-job> [empty: Poly1305 security only]; prove certified-projection-job <absolute-dcs-peer-exe>"
+            "usage: hiding-fri-source-primitives <security|prove> <sha256|hchacha20|chacha20|poly1305-raw|poly1305-padded|pair-opening|canonical-index-opening|selection-opening|packed-canonical-index-opening|factorized-packed-canonical-index-opening|state-certificate|version-selection|selected-encoding|locking-selection|version-locking-selection|bfv-key-transform|bfv-basis-convolution|bfv-local-formation|bfv-lock-returned-formation|lock-returned-encoding|version-lock-returned-encoding|registry-bootstrap|certified-projection-job> [empty: Poly1305 security only]; prove certified-projection-job <absolute-dcs-peer-exe>"
         );
         return Err(Error::Shape);
     }
@@ -52,6 +52,7 @@ fn run() -> Result<(), Error> {
         "version-selection" => opening::state::gate(&arguments[0], true),
         "selection-opening" => opening::selection::gate(&arguments[0]),
         "locking-selection" => opening::locking::gate(&arguments[0]),
+        "registry-bootstrap" => opening::registry_bootstrap::gate(&arguments[0]),
         "version-locking-selection" => opening::state::locking::gate(&arguments[0]),
         "bfv-key-transform" => opening::key_transform::gate(&arguments[0]),
         "bfv-basis-convolution" => opening::basis_convolution::gate(&arguments[0]),

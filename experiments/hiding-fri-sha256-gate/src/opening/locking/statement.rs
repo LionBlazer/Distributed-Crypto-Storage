@@ -15,7 +15,7 @@ pub(super) const PLAN: usize = 100;
 pub(super) const RETURNED: usize = 104;
 pub(super) const OWNED: usize = 108;
 pub(super) const NEW: usize = 112;
-pub(super) const REGISTRY_DOMAIN: [u8; 16] = *b"DCS/LKREG/N4/v1!";
+pub(in crate::opening) const REGISTRY_DOMAIN: [u8; 16] = *b"DCS/LKREG/N4/v1!";
 pub(super) const PLAN_DOMAIN: [u8; 16] = *b"DCS/LKPLAN/N4/v1";
 pub(super) const RETURN_DOMAIN: [u8; 16] = *b"DCS/LKRET/N4/v1!";
 pub(super) const OWNED_DOMAIN: [u8; 16] = *b"DCS/LKOWN/N4/v1!";
@@ -218,15 +218,39 @@ pub(in crate::opening) fn registry_fields(
     r: &Registry,
     salt: [Val; 4],
 ) -> Vec<Val> {
+    registry_fields_opening(
+        &RegistryScope {
+            genesis: &e.genesis,
+            source: &e.source,
+            table: &w.plan.table,
+            row_ids: w.plain[2220..2348].try_into().unwrap(),
+        },
+        r,
+        salt,
+    )
+}
+/// Private stable registry opening shared with the initialization relation.
+/// This scope deliberately contains no query plan, request or current parent.
+pub(in crate::opening) struct RegistryScope<'a> {
+    pub(in crate::opening) genesis: &'a [u8; 32],
+    pub(in crate::opening) source: &'a source::Statement,
+    pub(in crate::opening) table: &'a [u8; 32],
+    pub(in crate::opening) row_ids: &'a [u8; 128],
+}
+pub(in crate::opening) fn registry_fields_opening(
+    scope: &RegistryScope<'_>,
+    r: &Registry,
+    salt: [Val; 4],
+) -> Vec<Val> {
     let mut out: Vec<_> = source::words(&REGISTRY_DOMAIN)
         .chain([Val::ONE])
         .chain(source::words(&registry_profile()))
-        .chain(source::words(&e.genesis))
-        .chain(source::words(&e.source.heads[0][8..40]))
-        .chain(e.source.key_commitment)
-        .chain(source::words(&w.plan.table))
+        .chain(source::words(scope.genesis))
+        .chain(source::words(&scope.source.heads[0][8..40]))
+        .chain(scope.source.key_commitment)
+        .chain(source::words(scope.table))
         .collect();
-    out.extend(source::words(&w.plain[2220..2348]));
+    out.extend(source::words(scope.row_ids));
     out.extend([Val::from_u8(2), Val::from_u8(4), Val::from_u32(r.revision)]);
     for tx in &r.tx {
         out.push(Val::from_u32(tx.id));

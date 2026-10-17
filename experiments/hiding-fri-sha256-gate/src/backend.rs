@@ -165,6 +165,10 @@ pub(crate) fn profile_digest(kind: Kind) -> [u8; 32] {
             crate::opening::state::locking::profile(&mut hash);
             (crate::opening::locking::air::WIDTH, 2)
         }
+        Kind::RegistryBootstrap => {
+            crate::opening::registry_bootstrap::profile(&mut hash);
+            (crate::opening::registry_bootstrap::air::WIDTH, 2)
+        }
         Kind::LockingSelection => {
             crate::opening::locking::profile(&mut hash);
             (crate::opening::locking::air::WIDTH, 2)

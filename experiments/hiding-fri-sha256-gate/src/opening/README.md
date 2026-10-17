@@ -366,3 +366,14 @@ successful release/no-run/strict Clippy, 23 numeric calls, three native oracles 
 three genuine CLI proof compositions. The full 235-case suite passed on the same source. No source/custody,
 controller authority, freshness, writer-fence or network acceptance gap is resolved
 by treating the public owner-local fixtures as peer computation.
+
+## Initial private registry candidate
+
+[RegistryBootstrap](registry_bootstrap/README.md) supplies a distinct source-first
+initialization relation. Enrollment64 and Registry112 share the same private
+controllers, and all stable table/row identities come from the complete canonical
+C_open. The registry's IDs1/2, revision2, Active/sequence1 and empty holdings are
+AIR constants. Actual release/Clippy, 24 numerical modes, 85 affected tests and
+genuine source/child proofs passed; see the
+[validation record](../../PRIVATE-REGISTRY-BOOTSTRAP-VALIDATION.md). Earlier profiles
+and reports retain their original scope.

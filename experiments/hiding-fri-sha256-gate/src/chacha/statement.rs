@@ -153,7 +153,8 @@ pub(crate) fn reference_output(statement: &Statement) -> [u32; WORDS] {
         | Kind::BfvBasisConvolution
         | Kind::BfvLocalFormation
         | Kind::LockReturnedEncoding
-        | Kind::BfvLockReturnedFormation => {
+        | Kind::BfvLockReturnedFormation
+        | Kind::RegistryBootstrap => {
             unreachable!("SHA has a separate typed fixture")
         }
     }

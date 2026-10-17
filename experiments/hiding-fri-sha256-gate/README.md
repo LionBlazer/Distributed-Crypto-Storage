@@ -361,3 +361,14 @@ Discovery lists 241 tests; this stage did not rerun every body. The
 observations. This adds no network SQL acceptance, key authority, fresh agreement
 or live lock grant. Upstream source/selection witnesses remain owner-local; the
 final public-product worker alone receives ciphertext/public material.
+
+## Private registry initialization candidate
+
+The distinct [RegistryBootstrap](src/opening/registry_bootstrap/README.md) candidate
+opens a separately anchored enrollment and the exact stable Registry112, with two
+Active IDs, revision2, sequence1 and no held locks. It verifies an actual canonical
+source prerequisite before the child. Its actual W1082/PV104/T512 layout,
+24 numerical modes, 85 affected tests and genuine source/child composition passed;
+see the [validation record](PRIVATE-REGISTRY-BOOTSTRAP-VALIDATION.md).
+Owner enrollment authorization, post-genesis registration/freshness, live grants
+and peer-only FHE execution remain separate obligations.

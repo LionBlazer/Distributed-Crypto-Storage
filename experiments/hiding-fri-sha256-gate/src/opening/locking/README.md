@@ -213,3 +213,15 @@ after real prerequisite proofs. Its public projection remains visible; all live
 SQL/finality/writer boundaries above remain unchanged. Six new cases, four
 existing controls and the independent-process CLI passed; see the
 [validation record](../../../CERTIFIED-PROJECTION-JOB-VALIDATION.md) for scope.
+
+## Initialization boundary
+
+The [RegistryBootstrap candidate](../registry_bootstrap/README.md) separately proves
+initial empty holdings from canonical source plus independently anchored enrollment.
+Its stable Registry112 uses this module's exact shared private field encoder.
+Existing LockingSelection/VersionLockingSelection still accept independently
+anchored old registries; this candidate does not turn those roots or local fixtures
+into historical authority, fresh agreement or a live lock grant.
+
+The [validation record](../../../PRIVATE-REGISTRY-BOOTSTRAP-VALIDATION.md) records
+real source/initialization proofs, 12 new tests and 73 affected regression tests.

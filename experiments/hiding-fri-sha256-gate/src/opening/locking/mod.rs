@@ -97,7 +97,7 @@ fn salt() -> Result<[Val; 4], Error> {
 }
 /// Every fixture key/row/controller is explicitly PUBLIC NONSECRET. Values are
 /// original source records; no fixture-generated FHE/SQL answer is accepted.
-fn fixture() -> Result<(Expected, source_trace::Witness, Witness), Error> {
+pub(super) fn fixture() -> Result<(Expected, source_trace::Witness, Witness), Error> {
     let salts = [salt()?, salt()?, salt()?, salt()?, salt()?, salt()?];
     let (source, source_witness) = source_fixture::from_suffix(
         Relation::CanonicalIndex,
