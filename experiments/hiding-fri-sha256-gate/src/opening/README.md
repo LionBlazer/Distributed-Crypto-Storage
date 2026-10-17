@@ -397,3 +397,14 @@ retain Journal idempotence. The
 [validation record](../../PRIVATE-CONTROL-JOURNAL-VALIDATION.md) covers actual
 lineage, rejected tampering, stale CAS and local forks without claiming a live
 SQL grant or partition-safe finality. Earlier reports retain their stage scope.
+
+## Private Registry200 lifecycle
+
+The distinct [lifecycle relation](registry_lifecycle/README.md) proves an empty registry and
+Begin, Acquire, FailCurrent, Savepoint, RollbackTo, Release and End under bounded
+N4/T2/D2 semantics. Real Source-first proofs and all 21 new owning tests passed;
+see the [validation record](../../PRIVATE-REGISTRY-LIFECYCLE-VALIDATION.md) for 296 discovered versus
+48 executed leaf cases, numerical security and measured component sizes. The
+relation remains owner-local and has no existing wire/Journal, live SQL, MVCC,
+controller-signature or encrypted data commit authority. Earlier stage reports
+retain their original scope.

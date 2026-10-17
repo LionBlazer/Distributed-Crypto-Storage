@@ -392,3 +392,14 @@ durable replay, and rejection cases passed. See the
 versus 27 executed leaf cases, Journal checks and observed complete Body sizes.
 The adapter supplies experimental lineage; live grants, private transaction
 lifecycle, writer fencing, agreed finality and peer-only FHE SQL remain open.
+
+## Private Registry200 lifecycle
+
+The distinct [lifecycle relation](src/opening/registry_lifecycle/README.md) proves an empty registry and
+Begin, Acquire, FailCurrent, Savepoint, RollbackTo, Release and End under bounded
+N4/T2/D2 semantics. Real Source-first proofs and all 21 new owning tests passed;
+see the [validation record](PRIVATE-REGISTRY-LIFECYCLE-VALIDATION.md) for 296 discovered versus
+48 executed leaf cases, numerical security and measured component sizes. The
+relation remains owner-local and has no existing wire/Journal, live SQL, MVCC,
+controller-signature or encrypted data commit authority. Earlier stage reports
+retain their original scope.

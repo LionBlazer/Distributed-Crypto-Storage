@@ -22,6 +22,7 @@ mod packed_tests;
 mod poseidon;
 mod proof_wire;
 pub(crate) mod registry_bootstrap;
+pub(crate) mod registry_lifecycle;
 pub(crate) mod schedule;
 pub(crate) mod selection;
 pub(crate) mod state;

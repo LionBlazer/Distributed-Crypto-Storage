@@ -32,6 +32,8 @@ pub(crate) enum Kind {
     LockReturnedEncoding,
     BfvLockReturnedFormation,
     RegistryBootstrap,
+    RegistryLifecycleBootstrap,
+    RegistryLifecycle,
 }
 
 impl Kind {
@@ -60,6 +62,8 @@ impl Kind {
             Self::LockReturnedEncoding => "lock-returned-encoding",
             Self::BfvLockReturnedFormation => "bfv-lock-returned-formation",
             Self::RegistryBootstrap => "registry-bootstrap",
+            Self::RegistryLifecycleBootstrap => "registry-lifecycle-bootstrap",
+            Self::RegistryLifecycle => "registry-lifecycle",
         }
     }
 }
@@ -89,6 +93,8 @@ pub(crate) enum PrimitiveAir {
     BasisConvolution(Box<crate::opening::basis_convolution::air::ConvolutionAir>),
     LocalFormation(Box<crate::opening::local_formation::air::LocalAir>),
     RegistryBootstrap(Box<crate::opening::registry_bootstrap::air::BootstrapAir>),
+    LifecycleBootstrap(Box<crate::opening::registry_lifecycle::bootstrap::BootstrapAir>),
+    Lifecycle(Box<crate::opening::registry_lifecycle::air::LifecycleAir>),
 }
 
 impl BaseAir<Val> for PrimitiveAir {
@@ -105,6 +111,8 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::BasisConvolution(air) => air.width(),
             Self::LocalFormation(air) => air.width(),
             Self::RegistryBootstrap(air) => air.width(),
+            Self::LifecycleBootstrap(air) => air.width(),
+            Self::Lifecycle(air) => air.width(),
         }
     }
 
@@ -121,6 +129,8 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::BasisConvolution(air) => air.main_next_row_columns(),
             Self::LocalFormation(air) => air.main_next_row_columns(),
             Self::RegistryBootstrap(air) => air.main_next_row_columns(),
+            Self::LifecycleBootstrap(air) => air.main_next_row_columns(),
+            Self::Lifecycle(air) => air.main_next_row_columns(),
         }
     }
 
@@ -137,6 +147,8 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::BasisConvolution(air) => air.num_public_values(),
             Self::LocalFormation(air) => air.num_public_values(),
             Self::RegistryBootstrap(air) => air.num_public_values(),
+            Self::LifecycleBootstrap(air) => air.num_public_values(),
+            Self::Lifecycle(air) => air.num_public_values(),
         }
     }
 
@@ -153,6 +165,8 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::BasisConvolution(air) => air.num_periodic_columns(),
             Self::LocalFormation(air) => air.num_periodic_columns(),
             Self::RegistryBootstrap(air) => air.num_periodic_columns(),
+            Self::LifecycleBootstrap(air) => air.num_periodic_columns(),
+            Self::Lifecycle(air) => air.num_periodic_columns(),
         }
     }
 
@@ -169,6 +183,8 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::BasisConvolution(air) => air.periodic_columns(),
             Self::LocalFormation(air) => air.periodic_columns(),
             Self::RegistryBootstrap(air) => air.periodic_columns(),
+            Self::LifecycleBootstrap(air) => air.periodic_columns(),
+            Self::Lifecycle(air) => air.periodic_columns(),
         }
     }
 
@@ -185,6 +201,8 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::BasisConvolution(air) => air.max_constraint_degree(),
             Self::LocalFormation(air) => air.max_constraint_degree(),
             Self::RegistryBootstrap(air) => air.max_constraint_degree(),
+            Self::LifecycleBootstrap(air) => air.max_constraint_degree(),
+            Self::Lifecycle(air) => air.max_constraint_degree(),
         }
     }
 }
@@ -203,6 +221,8 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for PrimitiveAir {
             Self::BasisConvolution(air) => air.eval(builder),
             Self::LocalFormation(air) => air.eval(builder),
             Self::RegistryBootstrap(air) => air.eval(builder),
+            Self::LifecycleBootstrap(air) => air.eval(builder),
+            Self::Lifecycle(air) => air.eval(builder),
         }
     }
 }

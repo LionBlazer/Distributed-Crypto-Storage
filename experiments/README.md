@@ -58,3 +58,14 @@ explicitly with `-p`; the addition-proof experiment and other probes document th
 standalone commands. The
 [playground](../playground/README.md) is the separate interactive GUI consumer.
 Measured results and remaining limits are recorded in [research reports](../docs/).
+
+## Private Registry200 lifecycle
+
+The distinct [lifecycle relation](hiding-fri-sha256-gate/src/opening/registry_lifecycle/README.md) proves an empty registry and
+Begin, Acquire, FailCurrent, Savepoint, RollbackTo, Release and End under bounded
+N4/T2/D2 semantics. Real Source-first proofs and all 21 new owning tests passed;
+see the [validation record](hiding-fri-sha256-gate/PRIVATE-REGISTRY-LIFECYCLE-VALIDATION.md) for 296 discovered versus
+48 executed leaf cases, numerical security and measured component sizes. The
+relation remains owner-local and has no existing wire/Journal, live SQL, MVCC,
+controller-signature or encrypted data commit authority. Earlier stage reports
+retain their original scope.

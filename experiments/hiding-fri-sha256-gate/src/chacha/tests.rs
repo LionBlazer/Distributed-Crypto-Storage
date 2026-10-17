@@ -293,6 +293,8 @@ fn claimed_output(statement: &Statement, trace: &RowMajorMatrix<Val>) -> [u32; W
         | Kind::BfvLocalFormation
         | Kind::LockReturnedEncoding
         | Kind::BfvLockReturnedFormation
+        | Kind::RegistryLifecycleBootstrap
+        | Kind::RegistryLifecycle
         | Kind::RegistryBootstrap => {
             unreachable!()
         }
