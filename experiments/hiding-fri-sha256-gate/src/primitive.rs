@@ -24,6 +24,7 @@ pub(crate) enum Kind {
     StateCertificate,
     VersionSelection,
     SelectedEncoding,
+    LockingSelection,
 }
 
 impl Kind {
@@ -44,6 +45,7 @@ impl Kind {
             Self::StateCertificate => "state-certificate",
             Self::VersionSelection => "version-selection",
             Self::SelectedEncoding => "selected-encoding",
+            Self::LockingSelection => "locking-selection",
         }
     }
 }
@@ -68,6 +70,7 @@ pub(crate) enum PrimitiveAir {
     Opening(Box<crate::opening::air::OpeningAir>),
     Selection(Box<crate::opening::selection::air::SelectionAir>),
     Encoding(Box<crate::opening::selection::encoding::air::EncodingAir>),
+    Locking(Box<crate::opening::locking::air::LockingAir>),
 }
 
 impl BaseAir<Val> for PrimitiveAir {
@@ -79,6 +82,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Opening(air) => air.width(),
             Self::Selection(air) => air.width(),
             Self::Encoding(air) => air.width(),
+            Self::Locking(air) => air.width(),
         }
     }
 
@@ -90,6 +94,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Opening(air) => air.main_next_row_columns(),
             Self::Selection(air) => air.main_next_row_columns(),
             Self::Encoding(air) => air.main_next_row_columns(),
+            Self::Locking(air) => air.main_next_row_columns(),
         }
     }
 
@@ -101,6 +106,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Opening(air) => air.num_public_values(),
             Self::Selection(air) => air.num_public_values(),
             Self::Encoding(air) => air.num_public_values(),
+            Self::Locking(air) => air.num_public_values(),
         }
     }
 
@@ -112,6 +118,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Opening(air) => air.num_periodic_columns(),
             Self::Selection(air) => air.num_periodic_columns(),
             Self::Encoding(air) => air.num_periodic_columns(),
+            Self::Locking(air) => air.num_periodic_columns(),
         }
     }
 
@@ -123,6 +130,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Opening(air) => air.periodic_columns(),
             Self::Selection(air) => air.periodic_columns(),
             Self::Encoding(air) => air.periodic_columns(),
+            Self::Locking(air) => air.periodic_columns(),
         }
     }
 
@@ -134,6 +142,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Opening(air) => air.max_constraint_degree(),
             Self::Selection(air) => air.max_constraint_degree(),
             Self::Encoding(air) => air.max_constraint_degree(),
+            Self::Locking(air) => air.max_constraint_degree(),
         }
     }
 }
@@ -147,6 +156,7 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for PrimitiveAir {
             Self::Opening(air) => air.eval(builder),
             Self::Selection(air) => air.eval(builder),
             Self::Encoding(air) => air.eval(builder),
+            Self::Locking(air) => air.eval(builder),
         }
     }
 }

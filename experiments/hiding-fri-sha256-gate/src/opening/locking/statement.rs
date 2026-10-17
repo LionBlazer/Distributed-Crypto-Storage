@@ -1,0 +1,235 @@
+//! Independently pinned public inputs and fixed, domain-separated encodings.
+use super::{
+    air,
+    trace::{Registry, Witness},
+};
+use crate::backend::{Error, Val, profile_digest};
+use crate::opening::{commitment, statement as source};
+use crate::primitive::{Kind, PrimitiveAir, PublicStatement};
+use p3_field::PrimeCharacteristicRing;
+use sha2::{Digest, Sha256};
+
+pub(super) const PUBLIC_VALUES: usize = 116;
+pub(super) const OLD: usize = 96;
+pub(super) const PLAN: usize = 100;
+pub(super) const RETURNED: usize = 104;
+pub(super) const OWNED: usize = 108;
+pub(super) const NEW: usize = 112;
+pub(super) const REGISTRY_DOMAIN: [u8; 16] = *b"DCS/LKREG/N4/v1!";
+pub(super) const PLAN_DOMAIN: [u8; 16] = *b"DCS/LKPLAN/N4/v1";
+pub(super) const RETURN_DOMAIN: [u8; 16] = *b"DCS/LKRET/N4/v1!";
+pub(super) const OWNED_DOMAIN: [u8; 16] = *b"DCS/LKOWN/N4/v1!";
+
+/// PUBLIC expected context supplied independently of the proposed proof/witness.
+/// This research caller does not establish controller authorization or finality.
+#[derive(Clone)]
+pub(super) struct Expected {
+    pub(super) source: source::Statement,
+    pub(super) genesis: [u8; 32],
+    pub(super) parent: [u8; 32],
+    pub(super) old: [Val; 4],
+    pub(super) plan: [Val; 4],
+}
+impl Expected {
+    pub(super) fn checked(
+        source: &source::Statement,
+        genesis: [u8; 32],
+        parent: [u8; 32],
+        old: [u8; 32],
+        plan: [u8; 32],
+    ) -> Result<Self, Error> {
+        if source.relation != crate::opening::Relation::CanonicalIndex {
+            return Err(Error::Shape);
+        }
+        Ok(Self {
+            source: source.clone(),
+            genesis,
+            parent,
+            old: source::decode_digest(old)?,
+            plan: source::decode_digest(plan)?,
+        })
+    }
+}
+#[derive(Clone)]
+pub(super) struct Statement {
+    pub(super) expected: Expected,
+    pub(super) returned: [Val; 4],
+    pub(super) owned: [Val; 4],
+    pub(super) next: [Val; 4],
+}
+impl Statement {
+    pub(super) fn checked(
+        expected: &Expected,
+        returned: [u8; 32],
+        owned: [u8; 32],
+        next: [u8; 32],
+    ) -> Result<Self, Error> {
+        Ok(Self {
+            expected: expected.clone(),
+            returned: source::decode_digest(returned)?,
+            owned: source::decode_digest(owned)?,
+            next: source::decode_digest(next)?,
+        })
+    }
+    pub(super) fn require_expected(&self, expected: &Expected) -> Result<(), Error> {
+        if self.expected.source.public_values() != expected.source.public_values()
+            || self.expected.genesis != expected.genesis
+            || self.expected.parent != expected.parent
+            || self.expected.old != expected.old
+            || self.expected.plan != expected.plan
+        {
+            return Err(Error::Shape);
+        }
+        Ok(())
+    }
+    pub(super) fn context(&self) -> Vec<Val> {
+        context(&self.expected)
+    }
+}
+impl PublicStatement for Statement {
+    fn kind(&self) -> Kind {
+        Kind::LockingSelection
+    }
+    fn air(&self) -> PrimitiveAir {
+        PrimitiveAir::Locking(Box::new(air::LockingAir::new(self)))
+    }
+    fn public_values(&self) -> Vec<Val> {
+        self.context()
+            .into_iter()
+            .chain(self.expected.old)
+            .chain(self.expected.plan)
+            .chain(self.returned)
+            .chain(self.owned)
+            .chain(self.next)
+            .collect()
+    }
+}
+pub(super) fn context(e: &Expected) -> Vec<Val> {
+    source::words(&profile_digest(Kind::LockingSelection))
+        .chain(source::words(&e.source.request))
+        .chain(e.source.heads.iter().flat_map(|h| source::words(h)))
+        .chain(e.source.key_commitment)
+        .chain(e.source.open_commitment)
+        .chain(source::words(&e.genesis))
+        .chain(source::words(&e.parent))
+        .collect()
+}
+pub(super) fn registry_profile() -> [u8; 32] {
+    let mut h = Sha256::new();
+    h.update(b"DCS/private-effective-registry/N4-T2/v1");
+    h.update(b"P2-12/rate8/overwrite/digest4/fixed112/old-new-same-domain");
+    h.update(
+        b"u32-id-sorted-positive/u32-seq-positive/u32-revision/controller256-nonzero/failed-bit",
+    );
+    h.update(
+        b"four-ordinal-RowIds/two-existing-transactions/absent-K-S-N-U/candidate-counter-admission",
+    );
+    h.finalize().into()
+}
+/// Stable before the request: no parent/request/current heads/opening/plan here.
+pub(super) fn registry_fields(e: &Expected, w: &Witness, r: &Registry, salt: [Val; 4]) -> Vec<Val> {
+    let mut out: Vec<_> = source::words(&REGISTRY_DOMAIN)
+        .chain([Val::ONE])
+        .chain(source::words(&registry_profile()))
+        .chain(source::words(&e.genesis))
+        .chain(source::words(&e.source.heads[0][8..40]))
+        .chain(e.source.key_commitment)
+        .chain(source::words(&w.plan.table))
+        .collect();
+    out.extend(source::words(&w.plain[2220..2348]));
+    out.extend([Val::from_u8(2), Val::from_u8(4), Val::from_u32(r.revision)]);
+    for tx in &r.tx {
+        out.push(Val::from_u32(tx.id));
+        out.extend(source::words(&tx.controller));
+        out.extend([Val::from_u32(tx.sequence), Val::from_bool(tx.failed)]);
+        out.extend(tx.held.map(Val::from_u8));
+    }
+    out.extend(salt);
+    out.extend([Val::ZERO; 2]);
+    assert_eq!(out.len(), 112);
+    out
+}
+pub(super) fn plan_fields(e: &Expected, w: &Witness) -> Vec<Val> {
+    let tx = &w.old.tx[usize::from(w.plan.actor)];
+    let mut out: Vec<_> = source::words(&PLAN_DOMAIN)
+        .chain([Val::ONE])
+        .chain(context(e))
+        .chain(e.old)
+        .chain(source::words(&w.plan.table))
+        .chain(source::words(&w.plan.mask))
+        .chain([Val::from_u32(tx.id)])
+        .chain(source::words(&tx.controller))
+        .chain([
+            Val::from_u32(tx.sequence),
+            Val::from_u32(w.old.revision),
+            Val::from_u8(w.plan.mode),
+            Val::from_u8(w.plan.wait),
+            Val::from_u8(w.plan.offset),
+            Val::from_u8(w.plan.limit),
+            Val::from_u8(w.plan.projection),
+        ])
+        .chain(w.salts[2])
+        .collect();
+    out.extend([Val::ZERO; 3]);
+    assert_eq!(out.len(), 144);
+    out
+}
+pub(super) fn output_fields(s: &Statement, w: &Witness, owned: bool) -> Result<Vec<Val>, Error> {
+    let result = w.walk()?;
+    let mut out: Vec<_> = source::words(if owned { &OWNED_DOMAIN } else { &RETURN_DOMAIN })
+        .chain([Val::ONE])
+        .chain(s.context())
+        .chain(s.expected.old)
+        .chain(s.expected.plan)
+        .chain(s.next)
+        .chain([Val::from_u8(4), Val::from_u8(result.outcome)])
+        .chain(w.salts[if owned { 4 } else { 5 }])
+        .collect();
+    let kept = if owned { result.visit } else { result.returned };
+    let rows: Vec<_> = (0..4).filter(|i| result.outcome == 0 && kept[*i]).collect();
+    for slot in 0..4 {
+        if let Some(&i) = rows.get(slot) {
+            out.extend([Val::ONE, Val::from_usize(i)]);
+            let id = source::words(&w.plain[2220 + i * 32..2252 + i * 32]);
+            if owned {
+                out.extend(id);
+                out.extend([
+                    Val::from_u8(w.old.tx[usize::from(w.plan.actor)].held[i]),
+                    Val::from_u8(result.next.tx[usize::from(w.plan.actor)].held[i]),
+                ]);
+            } else {
+                out.extend([
+                    Val::from_u8(w.plain[3 * i]),
+                    Val::from_u16(u16::from_le_bytes([w.plain[3 * i + 1], w.plain[3 * i + 2]])),
+                ]);
+                out.extend(id);
+            }
+        } else {
+            out.extend([Val::ZERO; 12]);
+        }
+    }
+    out.push(Val::ZERO);
+    assert_eq!(out.len(), 168);
+    Ok(out)
+}
+pub(super) fn encoded(d: [Val; 4]) -> [u8; 32] {
+    use p3_field::PrimeField64;
+    let mut out = [0; 32];
+    for (i, v) in d.into_iter().enumerate() {
+        out[i * 8..i * 8 + 8].copy_from_slice(&v.as_canonical_u64().to_le_bytes());
+    }
+    out
+}
+pub(super) fn proposed(e: &Expected, w: &Witness) -> Result<Statement, Error> {
+    let result = w.walk()?;
+    let salt = if result.outcome == 0 {
+        w.salts[3]
+    } else {
+        w.salts[1]
+    };
+    let next = commitment::digest(&registry_fields(e, w, &result.next, salt));
+    let mut s = Statement::checked(e, [0; 32], [0; 32], encoded(next))?;
+    s.owned = commitment::digest(&output_fields(&s, w, true)?);
+    s.returned = commitment::digest(&output_fields(&s, w, false)?);
+    Ok(s)
+}

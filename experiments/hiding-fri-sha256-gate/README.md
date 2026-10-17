@@ -275,3 +275,13 @@ Backend. The fifteen numerical reports remain field-exact; genuine old/new
 proof comparisons and all 122 serial tests passed. The
 [validation record](SOURCE-GATE-SETUP-VALIDATION.md) gives complete cold-process
 intervals and limitations. Security-only and composite lifecycles remain unchanged.
+
+## Validated private locking candidate
+
+The [closed N4/two-transaction locking relation](src/opening/locking/README.md) links complete
+private source candidates to exact ownership/conflict/window transitions. It is
+nonaccepting; old profiles remain unchanged. Sixteen numerical reports,
+three genuine source-plus-locking proofs and all 146 serial tests passed. The
+[validation record](PRIVATE-LOCKING-VALIDATION.md) reports seconds-long fixed-fixture
+operations. Registry anchoring, lifecycle, FHE formation, writer enforcement, MVCC
+and finality remain open.

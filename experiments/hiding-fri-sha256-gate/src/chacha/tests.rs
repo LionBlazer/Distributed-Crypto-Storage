@@ -285,7 +285,8 @@ fn claimed_output(statement: &Statement, trace: &RowMajorMatrix<Val>) -> [u32; W
         | Kind::FactorizedPackedCanonicalIndexOpening
         | Kind::StateCertificate
         | Kind::VersionSelection
-        | Kind::SelectedEncoding => {
+        | Kind::SelectedEncoding
+        | Kind::LockingSelection => {
             unreachable!()
         }
     }

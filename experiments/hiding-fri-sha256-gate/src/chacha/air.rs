@@ -170,7 +170,8 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for ChaChaAir {
             | Kind::FactorizedPackedCanonicalIndexOpening
             | Kind::StateCertificate
             | Kind::VersionSelection
-            | Kind::SelectedEncoding => {
+            | Kind::SelectedEncoding
+            | Kind::LockingSelection => {
                 unreachable!("separate typed SHA AIR")
             }
         }

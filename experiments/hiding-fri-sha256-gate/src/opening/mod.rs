@@ -12,6 +12,7 @@ pub(crate) mod factorized;
 #[cfg(test)]
 mod factorized_tests;
 mod fixture;
+pub(crate) mod locking;
 #[cfg(test)]
 mod packed_tests;
 mod poseidon;

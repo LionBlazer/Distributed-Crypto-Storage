@@ -313,3 +313,13 @@ A shared formatter preserves the security JSON. Public-only `security` and the
 State/Selection/SelectedEncoding composite lifecycles are unchanged. All 122 tests
 passed; the [validation record](../../SOURCE-GATE-SETUP-VALIDATION.md) compares
 old/new executables for each fixed profile. This remains a nonaccepting experiment.
+
+## Validated private locking candidate
+
+The [closed N4/two-transaction locking relation](locking/README.md) links complete
+private source candidates to exact ownership/conflict/window transitions. It is
+nonaccepting; old profiles remain unchanged. Sixteen numerical reports,
+three genuine source-plus-locking proofs and all 146 serial tests passed. The
+[validation record](../../PRIVATE-LOCKING-VALIDATION.md) reports seconds-long fixed-fixture
+operations. Registry anchoring, lifecycle, FHE formation, writer enforcement, MVCC
+and finality remain open.
