@@ -265,5 +265,6 @@ is not an allocation-free constructor or a whole-process resource guarantee.
 The caller must already trust the expected owner/setup provenance. A setup decoded
 from an untrusted sender can have a perfectly matching self-derived identity;
 that comparison supplies no owner authorization, same-secret/evaluation-key
-consistency, computation proof or fresh agreed state. A future public seeded-key
-adapter and its PB-to-NTT proof links are separate owning capabilities.
+consistency, computation proof or fresh agreed state. The
+[public seeded-key adapter](../bfv-relinearization-key-source/README.md) consumes
+this view at a separate boundary; PB-to-NTT proof links remain necessary.

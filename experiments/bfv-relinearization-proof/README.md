@@ -146,8 +146,11 @@ The validation report also records an external observer's complete owned-process
 time and sampled memory; neither those observations nor the CLI timers measure
 a whole SQL query.
 
-Full relinearization still requires a canonical key-source adapter, all required
-digit/key/producer/output NTT links, complete setup/request/stage binding and an explicit same-secret authority
+The [canonical key-source adapter](../../crates/bfv-relinearization-key-source/README.md)
+now exposes the original c0 PowerBasis rows and exact seeded c1 NTT values. This
+experiment has not yet linked that material into a complete operation.
+Full relinearization still requires all digit/key/producer/output NTT links,
+complete setup/request/stage binding and an explicit same-secret authority
 decision. Full MulRelin additionally needs all tensor/scaling/NTT links and a
 sound composition-security argument. Source formation, private custody, SQL
 completeness, freshness, writer fences and decentralized agreement remain outside

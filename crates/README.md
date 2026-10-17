@@ -20,6 +20,7 @@ executables. The root Cargo default members select this layer only.
 | [bfv-ntt-circuit](bfv-ntt-circuit/README.md) | Exact full-8192 native forward/inverse NTT for all ten Q5/P5 moduli, with optional limb AIR | bfv-fixed-geometry |
 | [bfv-tensor-circuit](bfv-tensor-circuit/README.md) | Full three-component BFV tensor product over all 8192 positions of one Q5/P5 modulus, with optional limb AIR | bfv-fixed-geometry |
 | [bfv-relinearization-circuit](bfv-relinearization-circuit/README.md) | Complete fixed-Q5 embedding and five-term key accumulation arithmetic, with optional AIR | bfv-fixed-geometry |
+| [bfv-relinearization-key-source](bfv-relinearization-key-source/README.md) | Canonical original public seeded-key parsing and exact public c1 expansion, with independent complete setup identity | bfv-query-core, bfv-fixed-geometry |
 | [bfv-arithmetic-stark](bfv-arithmetic-stark/README.md) | Shared fixed linked STARK configuration, complete profile AIR delegation and actual security analysis for public arithmetic consumers | bfv-fixed-geometry |
 | [bfv-query-proof](bfv-query-proof/README.md) | Bounded genuine arithmetic STARKs and independent verification | bfv-linear-circuit, bfv-product-circuit, bounded-postcard, proof-acceleration; bfv-query-core in tests |
 | [bounded-postcard](bounded-postcard/README.md) | Bounded generic Postcard decoding with caller-owned container budgets | None |

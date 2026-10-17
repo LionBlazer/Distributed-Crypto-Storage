@@ -310,6 +310,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "bfv-relinearization-key-source"
+version = "0.1.0"
+dependencies = [
+ "bfv-fixed-geometry",
+ "bfv-query-core",
+ "fhe",
+ "fhe-math",
+ "fhe-traits",
+ "prost",
+ "rand 0.9.2",
+ "rand_chacha",
+ "sha2",
+]
+
+[[package]]
 name = "bfv-scale-circuit"
 version = "0.1.0"
 dependencies = [
