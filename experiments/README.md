@@ -34,6 +34,12 @@ in ignored `.local/`, not in the library source tree.
   [validation](bfv-relinearization-proof/VALIDATION.md) covers actual SDK parity,
   proofs on an encrypted product, both genuine stages and regression of the shared
   profile wrapper. Full key provenance and linked relinearization remain open.
+- [bfv-relinearization-multilinear-proof](bfv-relinearization-multilinear-proof/README.md)
+  verifies both complete public-Aux stages with full SHA512/WHIR and an actual
+  whole-statement floor of 144 bits. Its
+  [validation](bfv-relinearization-multilinear-proof/VALIDATION.md) records genuine
+  proofs, SDK parity, hostile programs and process observations. Complete linked
+  relinearization and SQL acceptance remain open.
 - [source-primitive and opening gates](hiding-fri-sha256-gate/README.md) share an
   experimental private hiding-FRI backend. Genuine primitive proofs extend to a
   bounded private CSTORE opening and the
