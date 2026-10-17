@@ -77,6 +77,37 @@ self-authenticating. Validated immutable public parameters are cached once per
 process; no secret key or row data enters that cache. This reduced execution path
 does not itself supply a computation proof or authorize accepting a SQL answer.
 
+`PublicSetup::from_public_material` assembles the existing public container for
+callers that already hold public parameter/relinearization/rotation bytes.
+It uses the existing setup codec, typed geometry and exact pinned parameters,
+checking the complete 64 MiB encoded-size cap before copying. This bounds the
+encoded setup rather than process RAM. Evaluation-key blobs
+remain opaque and byte-exact, including their original order. As with `from_bytes`,
+this container does not validate their mathematical structure, same-secret origin
+or owner authorization; the full evaluator parses keys when it uses them. The
+stripped evaluator retains the hash of the COMPLETE setup, never a parameter-only
+substitute. Callers must independently authenticate that identity. Upstream rotation
+keys serialize a HashMap, so decoding and reserializing them is not a canonicality
+check for the original full keyset bytes.
+
+`PublicUpdateEvaluator::encode_public_select(context, projection, canonical_ct)`
+wraps an existing ciphertext in the same ExactPublicProjection request and codec,
+with an empty private mask. It receives no Owner, secret key, original slots or
+pending token and performs no encryption. The new boundary checks context lengths,
+a 512 KiB ciphertext cap, two level-zero NTT components, canonical residues and exact
+upstream roundtrip before retaining the original bytes. The pinned unseeded ceiling
+is 446,494 bytes; compressed seeded inputs also fit. It does not establish same-key
+formation, complete all-active source selection, zero padding, authorization or a
+fresh agreed head. Those proofs and expected bindings must precede any accepting
+consumer. A canonical ciphertext under another key remains syntactically valid.
+The encoder returns only request bytes; arithmetic conversion/restoration and
+unverified evaluation keep their existing contracts. No wire ABI or existing
+Owner path changes. Validation passed all 90 owning tests and three compile-fail
+doctests, with strict all-target Clippy. The new cases cover exact codec/byte
+preservation, public setup identity, canonical input rejection and actual complete
+FHE projection. These are syntax and binding checks; this API adds no computation
+proof, key authority or production acceptance.
+
 `PublicUpdateEvaluator::request_context` validates a supported original UPDATE,
 exact-set SELECT or version-3 INSERT request, including every ciphertext's level,
 component count and representation, then returns its public `QueryContext`. Runtime

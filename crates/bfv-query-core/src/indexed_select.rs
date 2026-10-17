@@ -348,6 +348,53 @@ fn public_projection(
     Plaintext::try_encode(&mask, Encoding::simd(), parameters).map_err(backend)
 }
 
+// Pinned level-zero codec: 8192*(43+43+44+44+44)/8 = 223232 bytes/poly;
+// two unseeded polys plus their protobuf overhead fit 446494 bytes. A seeded
+// ciphertext is smaller. Bound incoming bytes before upstream decode or copying.
+const MAX_PUBLIC_SELECT_CIPHERTEXT_BYTES: usize = 512 * 1024;
+
+pub(super) fn encode_public_select(
+    parameters: &Arc<BfvParameters>,
+    geometry: Geometry,
+    keyset_id: [u8; 32],
+    context: QueryContext,
+    projection: RowProjection,
+    canonical_ciphertext: &[u8],
+) -> Result<Vec<u8>> {
+    if !context.valid() {
+        return Err(Error::BindingMismatch);
+    }
+    if canonical_ciphertext.len() > MAX_PUBLIC_SELECT_CIPHERTEXT_BYTES {
+        return Err(Error::WireLimit);
+    }
+    // Malformed public polynomial encodings can reach assertions upstream.
+    // They are rejection, never permission to normalize or replace the input.
+    let rows = std::panic::catch_unwind(|| checked_ciphertext(canonical_ciphertext, parameters))
+        .map_err(|_| Error::InvalidShape)??;
+    if rows.iter().any(|poly| {
+        poly.coefficients().dim() != (MODULI.len(), DEGREE)
+            || poly
+                .coefficients()
+                .outer_iter()
+                .zip(MODULI)
+                .any(|(row, q)| row.iter().any(|value| *value >= q))
+    }) || rows.to_bytes() != canonical_ciphertext
+    {
+        return Err(Error::InvalidShape);
+    }
+    encode(&Request {
+        magic: REQUEST_MAGIC,
+        version: SELECT_VERSION,
+        operation: Operation::ExactPublicProjection,
+        keyset_id,
+        context,
+        geometry,
+        projection,
+        rows: canonical_ciphertext.to_vec(),
+        mask: Vec::new(),
+    })
+}
+
 fn checked_exact_request(geometry: Geometry, keyset_id: [u8; 32], wire: &[u8]) -> Result<Request> {
     let request: Request = decode(wire)?;
     if request.magic != REQUEST_MAGIC

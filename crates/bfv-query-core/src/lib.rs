@@ -242,6 +242,48 @@ fn official_parameters() -> Result<Arc<BfvParameters>> {
         .clone())
 }
 impl PublicSetup {
+    /// Assemble the existing public setup container without receiving a secret key.
+    /// The pinned parameter bytes and complete encoded size are checked before
+    /// copying. Public evaluation-key blobs are retained byte for byte, as with
+    /// `from_bytes`; they are not decoded, authenticated or proved consistent with
+    /// any secret key. A full evaluator validates their structure when it uses them.
+    /// The caller must independently bind this complete setup, not a parameter hash.
+    pub fn from_public_material(
+        geometry: Geometry,
+        parameters: &[u8],
+        relinearization_key: &[u8],
+        rotation_keys: &[u8],
+    ) -> Result<Self> {
+        let mut setup = Self {
+            version: VERSION,
+            geometry,
+            parameters: Vec::new(),
+            relinearization_key: Vec::new(),
+            rotation_keys: Vec::new(),
+        };
+        // Ask the owning codec for its fixed overhead instead of mirroring its wire.
+        let encoded_bytes = [
+            parameters.len(),
+            relinearization_key.len(),
+            rotation_keys.len(),
+        ]
+        .into_iter()
+        .try_fold(encode(&setup)?.len(), |total, length| {
+            total.checked_add(length).ok_or(Error::WireLimit)
+        })?;
+        if u64::try_from(encoded_bytes).map_err(|_| Error::WireLimit)? > MAX_WIRE_BYTES {
+            return Err(Error::WireLimit);
+        }
+        if parameters != official_parameters()?.to_bytes() {
+            return Err(Error::ParameterProfile);
+        }
+        setup.parameters.extend_from_slice(parameters);
+        setup
+            .relinearization_key
+            .extend_from_slice(relinearization_key);
+        setup.rotation_keys.extend_from_slice(rotation_keys);
+        Ok(setup)
+    }
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
         encode(self)
     }
@@ -731,5 +773,123 @@ mod profile_and_level_tests {
             owner.decrypt_unverified(prepared.pending, &output),
             Err(Error::InvalidShape)
         ));
+    }
+}
+
+#[cfg(test)]
+mod public_material_tests {
+    use super::*;
+
+    #[test]
+    fn public_material_assembly_preserves_the_complete_existing_setup_wire() {
+        for geometry in [Geometry::Rows16, Geometry::Rows256] {
+            // Explicitly nonsecret fixtures; real public keys stay in the original order.
+            let (_, original) = Owner::generate(geometry).unwrap();
+
+            let assembled = PublicSetup::from_public_material(
+                geometry,
+                &original.parameters,
+                &original.relinearization_key,
+                &original.rotation_keys,
+            )
+            .unwrap();
+
+            assert_eq!(assembled.to_bytes().unwrap(), original.to_bytes().unwrap());
+            let restored = PublicSetup::from_bytes(&assembled.to_bytes().unwrap()).unwrap();
+            assert_eq!(restored.geometry(), geometry);
+            assert_eq!(
+                restored.update_parameters().unwrap().to_bytes().unwrap(),
+                original.update_parameters().unwrap().to_bytes().unwrap()
+            );
+            assert!(PeerEvaluator::from_public_setup(&restored).is_ok());
+        }
+    }
+
+    #[test]
+    fn opaque_public_material_changes_the_full_keyset_but_never_authenticates_itself() {
+        let parameters = official_parameters().unwrap().to_bytes();
+        // Opaque public container fixtures, deliberately NOT valid evaluation keys.
+        let original =
+            PublicSetup::from_public_material(Geometry::Rows16, &parameters, &[11, 12], &[21, 22])
+                .unwrap();
+        let original_id = keyset_id(&original).unwrap();
+        for (geometry, relin, rotations) in [
+            (Geometry::Rows256, [11, 12], [21, 22]),
+            (Geometry::Rows16, [11, 13], [21, 22]),
+            (Geometry::Rows16, [11, 12], [21, 23]),
+        ] {
+            let other =
+                PublicSetup::from_public_material(geometry, &parameters, &relin, &rotations)
+                    .unwrap();
+            assert_ne!(keyset_id(&other).unwrap(), original_id);
+        }
+        let restored = PublicSetup::from_bytes(&original.to_bytes().unwrap()).unwrap();
+        assert_eq!(restored.relinearization_key, [11, 12]);
+        assert_eq!(restored.rotation_keys, [21, 22]);
+        // The projection descriptor omits keys but retains the full container identity.
+        assert_eq!(keyset_id(&restored).unwrap(), original_id);
+        assert!(PeerEvaluator::from_public_setup(&restored).is_err());
+    }
+
+    #[test]
+    fn public_material_checks_the_complete_size_before_profile_validation_and_copying() {
+        let parameters = official_parameters().unwrap().to_bytes();
+        let empty =
+            PublicSetup::from_public_material(Geometry::Rows16, &parameters, &[], &[]).unwrap();
+        let overhead = empty.to_bytes().unwrap().len();
+        let public_bytes = vec![0; MAX_WIRE_BYTES as usize];
+
+        assert!(matches!(
+            PublicSetup::from_public_material(Geometry::Rows16, &[0], &public_bytes, &[]),
+            Err(Error::WireLimit)
+        ));
+        let maximum = PublicSetup::from_public_material(
+            Geometry::Rows16,
+            &parameters,
+            &public_bytes[..public_bytes.len() - overhead],
+            &[],
+        )
+        .unwrap();
+        assert_eq!(
+            maximum.byte_counts().unwrap().serialized_wire as u64,
+            MAX_WIRE_BYTES
+        );
+        assert!(matches!(
+            PublicSetup::from_public_material(
+                Geometry::Rows16,
+                &parameters,
+                &public_bytes[..public_bytes.len() - overhead],
+                &[1],
+            ),
+            Err(Error::WireLimit)
+        ));
+    }
+
+    #[test]
+    fn public_material_and_existing_wire_reject_profile_geometry_and_trailing_changes() {
+        let parameters = official_parameters().unwrap().to_bytes();
+        let setup =
+            PublicSetup::from_public_material(Geometry::Rows16, &parameters, &[], &[]).unwrap();
+        let wire = setup.to_bytes().unwrap();
+        let mut changed_parameters = parameters;
+        changed_parameters[0] ^= 1;
+        assert!(matches!(
+            PublicSetup::from_public_material(Geometry::Rows16, &changed_parameters, &[], &[]),
+            Err(Error::ParameterProfile)
+        ));
+        let mut changed = setup.clone();
+        changed.parameters = changed_parameters;
+        assert!(PublicSetup::from_bytes(&changed.to_bytes().unwrap()).is_err());
+        let mut invalid_geometry = wire.clone();
+        // The owning v1 codec encodes u16 version then the fixed u32 Geometry enum.
+        invalid_geometry[2..6].copy_from_slice(&2u32.to_le_bytes());
+        assert!(PublicSetup::from_bytes(&invalid_geometry).is_err());
+        let mut wrong_version = wire.clone();
+        wrong_version[..2].copy_from_slice(&(VERSION + 1).to_le_bytes());
+        assert!(PublicSetup::from_bytes(&wrong_version).is_err());
+        let mut trailing = wire.clone();
+        trailing.push(0);
+        assert!(PublicSetup::from_bytes(&trailing).is_err());
+        assert!(PublicSetup::from_bytes(&wire[..wire.len() - 1]).is_err());
     }
 }

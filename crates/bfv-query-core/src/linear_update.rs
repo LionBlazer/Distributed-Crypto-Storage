@@ -161,6 +161,26 @@ impl PublicUpdateEvaluator {
         )
     }
 
+    /// Encode the existing public-projection request around an exact canonical
+    /// level-zero ciphertext. This does not encrypt, construct a pending owner
+    /// token, certify original slots or authorize a query. The caller must verify
+    /// source/formation proofs and independently bind the full public setup.
+    pub fn encode_public_select(
+        &self,
+        context: QueryContext,
+        projection: RowProjection,
+        canonical_ciphertext: &[u8],
+    ) -> Result<Vec<u8>> {
+        indexed_select::encode_public_select(
+            &self.parameters,
+            self.geometry,
+            self.keyset_id,
+            context,
+            projection,
+            canonical_ciphertext,
+        )
+    }
+
     /// Exact-index SELECT with encrypted original rows and a public column-only mask.
     /// It does not accept private-active SELECT requests or prove selection completeness.
     pub fn evaluate_exact_select(&self, request: &[u8]) -> Result<Vec<u8>> {
