@@ -237,6 +237,7 @@ dependencies = [
  "bfv-linear-circuit",
  "bfv-product-circuit",
  "bfv-query-core",
+ "bounded-postcard",
  "p3-air",
  "p3-challenger",
  "p3-commit",
@@ -332,6 +333,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdeb9d870516001442e364c5220d3574d2da8dc765554b4a617230d33fa58ef5"
 dependencies = [
  "objc2 0.6.5",
+]
+
+[[package]]
+name = "bounded-postcard"
+version = "0.1.0"
+dependencies = [
+ "postcard",
+ "serde",
 ]
 
 [[package]]

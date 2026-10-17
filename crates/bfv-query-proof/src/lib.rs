@@ -4,7 +4,6 @@
 #![forbid(unsafe_code)]
 
 mod circuit;
-mod codec;
 mod dispatch;
 
 pub use dispatch::{backend_kind, compiled_kind, initialize_backend};
@@ -270,7 +269,17 @@ fn verify_engine(input: &[u8], output: &[u8], wire: &[u8]) -> Result<CheckedOper
     }
     let certificate = &wire[magic.len()..certificate_end];
     let payload = &wire[certificate_end..];
-    let (proof, trailing): (Proof<Config>, _) = codec::take_from_bytes(payload)?;
+    let (proof, trailing): (Proof<Config>, _) = bounded_postcard::take_from_bytes(
+        payload,
+        bounded_postcard::Limits {
+            max_sequence_elements: MAX_PROOF_SEQUENCE_ELEMENTS,
+            max_total_elements: MAX_PROOF_DECODE_ELEMENTS,
+        },
+    )
+    .map_err(|error| match error {
+        bounded_postcard::Error::Encoding => Error::ProofEncoding,
+        bounded_postcard::Error::ResourceLimit => Error::ProofResourceLimit,
+    })?;
     if !trailing.is_empty() {
         return Err(Error::TrailingProofBytes);
     }

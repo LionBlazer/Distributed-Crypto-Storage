@@ -1,33 +1,55 @@
-//! Resource-limited Serde decoding of the unchanged Postcard SDK representation.
-//!
-//! The underlying slice deserializer reports an exact sequence length when the
-//! declaration fits in its remaining bytes. `None` is rejected rather than
-//! allowing a consumer to grow a sequence without an up-front budget check.
+//! Per-call sequence/map budgets around the original Postcard representation.
+//! Callers own frame-size, type-depth and application-specific acceptance policy.
+#![forbid(unsafe_code)]
 
-use crate::{Error, MAX_PROOF_DECODE_ELEMENTS, MAX_PROOF_SEQUENCE_ELEMENTS};
+/// Container-slot limits checked before a Serde sequence/map consumer runs.
+/// Every nested call shares one budget; a new decode starts a fresh budget.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    pub max_sequence_elements: usize,
+    /// Includes sequence/tuple/array slots and both map keys and values.
+    pub max_total_elements: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Error {
+    Encoding,
+    ResourceLimit,
+}
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "Bounded Postcard decoding rejected {self:?}")
+    }
+}
+impl std::error::Error for Error {}
+
 use serde::de::{
     self, Deserialize, DeserializeSeed, Deserializer, EnumAccess, MapAccess, SeqAccess,
     VariantAccess, Visitor,
 };
 use std::fmt;
 
-pub(super) fn take_from_bytes<'de, T: Deserialize<'de>>(
+/// Decodes one value and returns the untouched trailing slice. Limits are caller
+/// policy, not wire-format fields; this does not enforce canonical encoding or
+/// reject trailing bytes. The caller must independently bound the input frame.
+pub fn take_from_bytes<'de, T: Deserialize<'de>>(
     bytes: &'de [u8],
+    limits: Limits,
 ) -> Result<(T, &'de [u8]), Error> {
     let mut decoder = postcard::Deserializer::from_bytes(bytes);
-    let mut budget = Budget::new(MAX_PROOF_SEQUENCE_ELEMENTS, MAX_PROOF_DECODE_ELEMENTS);
+    let mut budget = Budget::new(limits.max_sequence_elements, limits.max_total_elements);
     let value = T::deserialize(Limited {
         inner: &mut decoder,
         budget: &mut budget,
     })
     .map_err(|_| {
         if budget.exceeded {
-            Error::ProofResourceLimit
+            Error::ResourceLimit
         } else {
-            Error::ProofEncoding
+            Error::Encoding
         }
     })?;
-    let trailing = decoder.finalize().map_err(|_| Error::ProofEncoding)?;
+    let trailing = decoder.finalize().map_err(|_| Error::Encoding)?;
     Ok((value, trailing))
 }
 
@@ -59,7 +81,7 @@ impl Budget {
             return Ok(());
         }
         self.exceeded = true;
-        Err(E::custom("proof sequence decoder resource limit"))
+        Err(E::custom("Postcard container decoder resource limit"))
     }
 }
 
@@ -331,6 +353,10 @@ mod tests {
     use super::*;
     use std::cell::Cell;
     use std::collections::BTreeMap;
+    const TEST_LIMITS: Limits = Limits {
+        max_sequence_elements: 4096,
+        max_total_elements: 1024 * 1024,
+    };
 
     struct ConsumerEntered<'a>(&'a Cell<bool>);
 
@@ -349,12 +375,15 @@ mod tests {
 
     #[test]
     fn oversized_sequence_is_rejected_before_the_consumers_reservation_can_run() {
-        // This is the malicious quotient-chunk count: 524,288 empty vectors.
+        // A declared collection of 524,288 empty vectors must reject before reserve.
         let mut bytes = postcard::to_allocvec(&524_288_usize).unwrap();
         bytes.resize(bytes.len() + 524_288, 0);
         let entered = Cell::new(false);
         let mut decoder = postcard::Deserializer::from_bytes(&bytes);
-        let mut budget = Budget::new(MAX_PROOF_SEQUENCE_ELEMENTS, MAX_PROOF_DECODE_ELEMENTS);
+        let mut budget = Budget::new(
+            TEST_LIMITS.max_sequence_elements,
+            TEST_LIMITS.max_total_elements,
+        );
 
         let result = Limited {
             inner: &mut decoder,
@@ -376,7 +405,10 @@ mod tests {
         let bytes = postcard::to_allocvec(&usize::MAX).unwrap();
         let entered = Cell::new(false);
         let mut decoder = postcard::Deserializer::from_bytes(&bytes);
-        let mut budget = Budget::new(MAX_PROOF_SEQUENCE_ELEMENTS, MAX_PROOF_DECODE_ELEMENTS);
+        let mut budget = Budget::new(
+            TEST_LIMITS.max_sequence_elements,
+            TEST_LIMITS.max_total_elements,
+        );
 
         let result = Limited {
             inner: &mut decoder,
@@ -393,9 +425,9 @@ mod tests {
     fn nested_sequence_lengths_are_limited_instead_of_only_checking_the_outer_length() {
         let bytes = postcard::to_allocvec(&Some(vec![vec![0_u8; 4097]])).unwrap();
 
-        let result = take_from_bytes::<Option<Vec<Vec<u8>>>>(&bytes);
+        let result = take_from_bytes::<Option<Vec<Vec<u8>>>>(&bytes, TEST_LIMITS);
 
-        assert_eq!(result.unwrap_err(), Error::ProofResourceLimit);
+        assert_eq!(result.unwrap_err(), Error::ResourceLimit);
     }
 
     #[test]
@@ -403,11 +435,11 @@ mod tests {
         // Every individual length (31, 4096, 8) is allowed and the encoded bytes
         // fit the frame cap, but their nested sequence slots exceed the budget.
         let bytes = postcard::to_allocvec(&vec![vec![[0_u8; 8]; 4096]; 31]).unwrap();
-        assert!(bytes.len() + 8 < crate::MAX_PROOF_BYTES);
+        assert!(bytes.len() + 8 < 2 * 1024 * 1024);
 
-        let result = take_from_bytes::<Vec<Vec<[u8; 8]>>>(&bytes);
+        let result = take_from_bytes::<Vec<Vec<[u8; 8]>>>(&bytes, TEST_LIMITS);
 
-        assert_eq!(result.unwrap_err(), Error::ProofResourceLimit);
+        assert_eq!(result.unwrap_err(), Error::ResourceLimit);
     }
 
     #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -433,7 +465,7 @@ mod tests {
             let mut bytes = postcard::to_allocvec(&expected).unwrap();
             bytes.push(99);
 
-            let (actual, trailing) = take_from_bytes::<Container>(&bytes).unwrap();
+            let (actual, trailing) = take_from_bytes::<Container>(&bytes, TEST_LIMITS).unwrap();
 
             assert_eq!(actual, expected);
             assert_eq!(trailing, &[99]);
@@ -449,12 +481,46 @@ mod tests {
         let map_bytes = postcard::to_allocvec(&BTreeMap::from([(0_u8, vec![0_u8; 4097])])).unwrap();
 
         assert_eq!(
-            take_from_bytes::<Container>(&enum_bytes).unwrap_err(),
-            Error::ProofResourceLimit
+            take_from_bytes::<Container>(&enum_bytes, TEST_LIMITS).unwrap_err(),
+            Error::ResourceLimit
         );
         assert_eq!(
-            take_from_bytes::<BTreeMap<u8, Vec<u8>>>(&map_bytes).unwrap_err(),
-            Error::ProofResourceLimit
+            take_from_bytes::<BTreeMap<u8, Vec<u8>>>(&map_bytes, TEST_LIMITS).unwrap_err(),
+            Error::ResourceLimit
         );
+    }
+
+    #[test]
+    fn exact_nested_budget_is_accepted_and_each_decode_has_a_fresh_budget() {
+        let value = vec![vec![1_u8, 2]];
+        let bytes = postcard::to_allocvec(&value).unwrap();
+        let exact = Limits {
+            max_sequence_elements: 2,
+            max_total_elements: 3,
+        };
+        let too_small = Limits {
+            max_total_elements: 2,
+            ..exact
+        };
+
+        let first = take_from_bytes::<Vec<Vec<u8>>>(&bytes, exact);
+        let rejected = take_from_bytes::<Vec<Vec<u8>>>(&bytes, too_small);
+        let next = take_from_bytes::<Vec<Vec<u8>>>(&bytes, exact);
+
+        assert_eq!(first.unwrap(), (value.clone(), &[][..]));
+        assert_eq!(rejected.unwrap_err(), Error::ResourceLimit);
+        assert_eq!(next.unwrap(), (value, &[][..]));
+    }
+
+    #[test]
+    fn malformed_scalar_encoding_is_distinct_from_a_container_budget_rejection() {
+        let limits = Limits {
+            max_sequence_elements: 0,
+            max_total_elements: 0,
+        };
+
+        let result = take_from_bytes::<u16>(&[0x80], limits);
+
+        assert_eq!(result.unwrap_err(), Error::Encoding);
     }
 }

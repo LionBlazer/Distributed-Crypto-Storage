@@ -8,6 +8,7 @@ owns authenticated SQL-plan coverage, authorization and a fresh agreed database 
 
 | Direct project dependency | Responsibility |
 | --- | --- |
+| [bounded-postcard](../bounded-postcard/README.md) | Generic per-call container budgets; proof policy remains here |
 | [bfv-linear-circuit](../bfv-linear-circuit/README.md) | Fixed BFV profile and exact canonical addition input/output |
 | [bfv-product-circuit](../bfv-product-circuit/README.md) | Exact canonical ciphertext/public-polynomial product input/output |
 | [proof-acceleration](../proof-acceleration/README.md) | Shared fixed-profile ABI and optional startup-only trusted kernel loader |
@@ -100,7 +101,9 @@ not an independent production cryptographic audit.
 
 ## Serialized and resource boundary
 
-Proof frames are capped at two MiB before decoding. The recursive Serde adapter
+Proof frames are capped at two MiB before decoding. The shared
+[bounded-postcard](../bounded-postcard/README.md) decoder receives this module's
+unchanged explicit limits. Its recursive Serde adapter
 requires every sequence to declare at most 4,096 elements before its consumer can
 reserve storage. A shared budget of 1,048,576 slots also charges nested sequences,
 tuples, fixed arrays and map keys/values. The fixed public certificate is parsed separately without attacker-controlled

@@ -10,6 +10,7 @@ default = ["runtime-dispatch"]
 runtime-dispatch = ["proof-acceleration/loader"]
 
 [dependencies]
+bounded-postcard = { path = "../bounded-postcard" }
 bfv-linear-circuit = { path = "../bfv-linear-circuit" }
 bfv-product-circuit = { path = "../bfv-product-circuit" }
 proof-acceleration = { path = "../proof-acceleration", default-features = false }
