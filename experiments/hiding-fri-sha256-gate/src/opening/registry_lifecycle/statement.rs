@@ -255,7 +255,27 @@ pub(super) fn registry_fields(
     assert_eq!(out.len(), 200);
     out
 }
+pub(super) struct CommandFieldsOpening {
+    pub controller: [u8; 32],
+    pub revision: u64,
+    pub salt: [Val; 4],
+}
 pub(super) fn command_fields(e: &Expected, w: &Witness, c: &Command) -> Vec<Val> {
+    command_fields_opening(
+        e,
+        c,
+        &CommandFieldsOpening {
+            controller: w.controllers[usize::from(c.principal - 1)],
+            revision: w.old.revision,
+            salt: w.salts[3],
+        },
+    )
+}
+pub(super) fn command_fields_opening(
+    e: &Expected,
+    c: &Command,
+    opening: &CommandFieldsOpening,
+) -> Vec<Val> {
     let Phase::Transition { old, .. } = e.phase else {
         unreachable!()
     };
@@ -267,8 +287,8 @@ pub(super) fn command_fields(e: &Expected, w: &Witness, c: &Command) -> Vec<Val>
     out.push(Val::from_u8(c.operation as u8));
     out.extend(limbs(c.transaction));
     out.push(Val::from_u8(c.principal));
-    out.extend(source::words(&w.controllers[usize::from(c.principal - 1)]));
-    out.extend(limbs(w.old.revision));
+    out.extend(source::words(&opening.controller));
+    out.extend(limbs(opening.revision));
     out.extend(limbs(c.sequence));
     out.extend(source::words(&c.mask));
     out.extend([c.mode, c.wait, c.offset, c.limit, c.projection].map(Val::from_u8));
@@ -279,7 +299,7 @@ pub(super) fn command_fields(e: &Expected, w: &Witness, c: &Command) -> Vec<Val>
         out.extend([Val::ZERO; 8]);
     }
     out.push(Val::from_bool(c.abort));
-    out.extend(w.salts[3]);
+    out.extend(opening.salt);
     out.push(Val::ZERO);
     assert_eq!(out.len(), 160);
     out

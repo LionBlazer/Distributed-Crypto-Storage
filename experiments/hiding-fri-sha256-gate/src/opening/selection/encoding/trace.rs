@@ -1,5 +1,5 @@
 //! Private bounded witness. No Owner import/export or serialized secret handle.
-use super::{air::*, matrix, statement::Statement};
+use super::{air::*, statement::Statement};
 use crate::backend::{Error, TRACE_HEIGHT, Val};
 use crate::opening::{
     poseidon,
@@ -44,15 +44,7 @@ impl Witness {
         core::array::from_fn(|k| u64::from(self.tuples[k % 4][[2, 3, 0][k / 4]]))
     }
     pub(in crate::opening) fn coefficients(&self) -> Vec<(u64, u64)> {
-        let original = self.original();
-        matrix::coefficients()
-            .iter()
-            .map(|a| {
-                let dot: u64 = a.iter().zip(original).map(|(a, x)| u64::from(*a) * x).sum();
-                let m = dot % matrix::T;
-                (m, m * matrix::Q_MOD_T % matrix::T)
-            })
-            .collect()
+        super::kernel::coefficients(self.original())
     }
     pub(in crate::opening) fn statement(&self, selection: &selection::Statement) -> Statement {
         let mut s = Statement::new(selection, [Val::ZERO; 4]);
@@ -120,7 +112,6 @@ impl Witness {
     fn trace_with_air(&self, air: EncodingAir) -> Result<RowMajorMatrix<Val>, Error> {
         let mut values = Val::zero_vec(TRACE_HEIGHT * WIDTH);
         let original = self.original();
-        let coefficients = self.coefficients();
         for (r, row) in values.as_chunks_mut::<WIDTH>().0.iter_mut().enumerate() {
             for (slot, tuple) in self.tuples.iter().enumerate() {
                 let at = BANK + slot * TUPLE_BITS;
@@ -137,29 +128,7 @@ impl Witness {
             }
             row[SEL_SALT..ENC_SALT].copy_from_slice(&self.selected_salt);
             row[ENC_SALT..COEFF].copy_from_slice(&self.encoding_salt);
-            for l in 0..16 {
-                let dot: u64 = matrix::coefficients()[r * 16 + l]
-                    .iter()
-                    .zip(original)
-                    .map(|(a, x)| u64::from(*a) * x)
-                    .sum();
-                let (m, w) = coefficients[r * 16 + l];
-                let fields = [
-                    m,
-                    w,
-                    dot / matrix::T,
-                    m * matrix::Q_MOD_T / matrix::T,
-                    matrix::T - 1 - m,
-                    matrix::T - 1 - w,
-                ];
-                for ((start, len), v) in [(0, 17), (17, 17), (34, 19), (53, 17), (70, 17), (87, 17)]
-                    .into_iter()
-                    .zip(fields)
-                {
-                    let at = COEFF + l * LANE_BITS + start;
-                    bits(&mut row[at..at + len], v);
-                }
-            }
+            super::kernel::write_lanes(row, r, original);
         }
         let mut trace = RowMajorMatrix::new(values, WIDTH);
         let _ = refresh_with_air(&air, &mut trace);

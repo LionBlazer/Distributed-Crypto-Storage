@@ -34,6 +34,7 @@ pub(crate) enum Kind {
     RegistryBootstrap,
     RegistryLifecycleBootstrap,
     RegistryLifecycle,
+    RegistryLifecycleEncoding,
 }
 
 impl Kind {
@@ -64,6 +65,7 @@ impl Kind {
             Self::RegistryBootstrap => "registry-bootstrap",
             Self::RegistryLifecycleBootstrap => "registry-lifecycle-bootstrap",
             Self::RegistryLifecycle => "registry-lifecycle",
+            Self::RegistryLifecycleEncoding => "registry-lifecycle-encoding",
         }
     }
 }
@@ -95,6 +97,7 @@ pub(crate) enum PrimitiveAir {
     RegistryBootstrap(Box<crate::opening::registry_bootstrap::air::BootstrapAir>),
     LifecycleBootstrap(Box<crate::opening::registry_lifecycle::bootstrap::BootstrapAir>),
     Lifecycle(Box<crate::opening::registry_lifecycle::air::LifecycleAir>),
+    LifecycleEncoding(Box<crate::opening::registry_lifecycle::encoding::air::EncodingAir>),
 }
 
 impl BaseAir<Val> for PrimitiveAir {
@@ -113,6 +116,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::RegistryBootstrap(air) => air.width(),
             Self::LifecycleBootstrap(air) => air.width(),
             Self::Lifecycle(air) => air.width(),
+            Self::LifecycleEncoding(air) => air.width(),
         }
     }
 
@@ -131,6 +135,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::RegistryBootstrap(air) => air.main_next_row_columns(),
             Self::LifecycleBootstrap(air) => air.main_next_row_columns(),
             Self::Lifecycle(air) => air.main_next_row_columns(),
+            Self::LifecycleEncoding(air) => air.main_next_row_columns(),
         }
     }
 
@@ -149,6 +154,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::RegistryBootstrap(air) => air.num_public_values(),
             Self::LifecycleBootstrap(air) => air.num_public_values(),
             Self::Lifecycle(air) => air.num_public_values(),
+            Self::LifecycleEncoding(air) => air.num_public_values(),
         }
     }
 
@@ -167,6 +173,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::RegistryBootstrap(air) => air.num_periodic_columns(),
             Self::LifecycleBootstrap(air) => air.num_periodic_columns(),
             Self::Lifecycle(air) => air.num_periodic_columns(),
+            Self::LifecycleEncoding(air) => air.num_periodic_columns(),
         }
     }
 
@@ -185,6 +192,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::RegistryBootstrap(air) => air.periodic_columns(),
             Self::LifecycleBootstrap(air) => air.periodic_columns(),
             Self::Lifecycle(air) => air.periodic_columns(),
+            Self::LifecycleEncoding(air) => air.periodic_columns(),
         }
     }
 
@@ -203,6 +211,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::RegistryBootstrap(air) => air.max_constraint_degree(),
             Self::LifecycleBootstrap(air) => air.max_constraint_degree(),
             Self::Lifecycle(air) => air.max_constraint_degree(),
+            Self::LifecycleEncoding(air) => air.max_constraint_degree(),
         }
     }
 }
@@ -223,6 +232,7 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for PrimitiveAir {
             Self::RegistryBootstrap(air) => air.eval(builder),
             Self::LifecycleBootstrap(air) => air.eval(builder),
             Self::Lifecycle(air) => air.eval(builder),
+            Self::LifecycleEncoding(air) => air.eval(builder),
         }
     }
 }

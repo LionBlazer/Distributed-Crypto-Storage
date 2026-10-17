@@ -420,3 +420,9 @@ The internal proof_codec shares fixed SDK topology and canonical bounded seriali
 
 registry_lifecycle/journal now supplies the distinct Request200/Control200 owner-authorized adapter over registry_lifecycle/wire. It checks actual previous heads and proof-derived next roots. The historical Registry112 adapter and live SQL acceptance path are unchanged. See the
 [validation record](../../PRIVATE-REGISTRY-LIFECYCLE-JOURNAL-VALIDATION.md).
+
+
+## Registry200 original-row encoding
+
+registry_lifecycle/encoding binds successful Result144 returned flags to compact original tuples, all RowId words and all 8192 coefficients. It requires both actual original proofs before its backend and preserves legacy producer contracts. See the
+[validation record](../../PRIVATE-REGISTRY-LIFECYCLE-ENCODING-VALIDATION.md).

@@ -80,3 +80,9 @@ All 20 prior complete ordered JSON object lists are unchanged; compilation/stric
 three owning oracles and three genuine new CLI compositions passed. The full 235-case suite passed after this shared-source change. See the [validation record](../../../../LOCK-RETURNED-BFV-VALIDATION.md).
 The shared kernel adds no secret custody, peer witness construction or live
 production acceptance.
+
+
+## Registry200 original-row encoding
+
+kernel.rs now owns the shared stateless coefficient/range equations and lane writer. Selected88 and Return168 retain their own commitments, profiles and producer contracts; the separate Registry200 adapter reuses only this mathematical kernel. All 28 affected former encoding controls passed. See the
+[validation record](../../../../PRIVATE-REGISTRY-LIFECYCLE-ENCODING-VALIDATION.md).

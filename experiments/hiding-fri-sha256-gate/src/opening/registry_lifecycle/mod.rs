@@ -4,6 +4,7 @@ mod acquire;
 pub(crate) mod air;
 pub(crate) mod bootstrap;
 mod control;
+pub(crate) mod encoding;
 mod fixture;
 mod journal;
 mod layout;
@@ -167,4 +168,8 @@ pub(crate) fn wire_gate(mode: &str, bootstrap: bool) -> Result<(), Error> {
 
 pub(crate) fn journal_gate(mode: &str) -> Result<(), Error> {
     journal::gate(mode)
+}
+
+pub(crate) fn encoding_gate(mode: &str) -> Result<(), Error> {
+    encoding::gate(mode)
 }

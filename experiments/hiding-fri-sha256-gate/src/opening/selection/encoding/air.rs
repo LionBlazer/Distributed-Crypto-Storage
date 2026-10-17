@@ -49,7 +49,10 @@ pub(in crate::opening) fn lane<E: Algebra<Val>, T: Copy + Into<E>>(
     let at = COEFF + number * LANE_BITS + start;
     pack_bits_le(row[at..at + bits].iter().copied())
 }
-pub(super) fn original<E: Algebra<Val>, T: Copy + Into<E>>(row: &[T], slot: usize) -> E {
+pub(in crate::opening) fn original<E: Algebra<Val>, T: Copy + Into<E>>(
+    row: &[T],
+    slot: usize,
+) -> E {
     tuple(row, slot % 4, [2, 3, 0][slot / 4])
 }
 
@@ -198,9 +201,10 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for EncodingAir {
         for col in BANK..COEFF {
             b.when_transition().assert_eq(next[col], row[col]);
         }
-        for &bit in row[BANK..SEL_SALT].iter().chain(&row[COEFF..CARRY]) {
+        for &bit in &row[BANK..SEL_SALT] {
             b.assert_bool(bit);
         }
+        super::kernel::assert_bits(b, row);
         for slot in 0..4 {
             let p: AB::Expr = tuple(row, slot, 0);
             for part in 0..12 {
@@ -213,27 +217,7 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for EncodingAir {
             }
         }
         let periodic = b.periodic_values().to_vec();
-        for l in 0..16 {
-            let sum: AB::Expr = (0..12)
-                .map(|k| {
-                    let a: AB::Expr = periodic[l * 12 + k].into();
-                    a * original::<AB::Expr, _>(row, k)
-                })
-                .sum();
-            let m: AB::Expr = lane(row, l, 0);
-            let w: AB::Expr = lane(row, l, 1);
-            let km: AB::Expr = lane(row, l, 2);
-            let kw: AB::Expr = lane(row, l, 3);
-            let sm: AB::Expr = lane(row, l, 4);
-            let sw: AB::Expr = lane(row, l, 5);
-            b.assert_eq(sum, m.clone() + km * Val::from_u64(matrix::T));
-            b.assert_eq(
-                m.clone() * Val::from_u64(matrix::Q_MOD_T),
-                w.clone() + kw * Val::from_u64(matrix::T),
-            );
-            b.assert_eq(m + sm, Val::from_u64(matrix::T - 1));
-            b.assert_eq(w + sw, Val::from_u64(matrix::T - 1));
-        }
+        super::kernel::evaluate(b, row, &periodic);
         let first: AB::Expr = periodic[192].into();
         let blocks = self.source_blocks();
         let last: AB::Expr = periodic[193 + blocks].into();

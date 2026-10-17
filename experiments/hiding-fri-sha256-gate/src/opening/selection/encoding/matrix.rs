@@ -66,7 +66,7 @@ pub(super) fn mapped_slot(slot: usize) -> usize {
     };
     index.reverse_bits() >> (usize::BITS - 13)
 }
-pub(super) fn coefficients() -> &'static [[u32; 12]] {
+pub(in crate::opening) fn coefficients() -> &'static [[u32; 12]] {
     static MATRIX: OnceLock<Vec<[u32; 12]>> = OnceLock::new();
     MATRIX.get_or_init(|| {
         assert_eq!(pow(ROOT, N as u64), T - 1);

@@ -173,3 +173,9 @@ validation record gives actual timings, component sizes and observed process RAM
 
 The separate journal module now admits both new proof kinds to an experimental owner-authorized Journal through canonical Request200 and exact actual-parent control CAS. It supports genuine durable reopen and quota rejection. The legacy Registry112 adapter, BFV producers and live SQL path remain separate. See the
 [validation record](../../../PRIVATE-REGISTRY-LIFECYCLE-JOURNAL-VALIDATION.md).
+
+
+## Registry200 original-row encoding
+
+The child encoding module consumes the exact canonical Source and PV116 lifecycle proof pair, matches client SQL through the shared unchanged Command160 codec, and proves a separate PV136 encoding commitment. It does not grant live locks or form a ciphertext. See the
+[validation record](../../../PRIVATE-REGISTRY-LIFECYCLE-ENCODING-VALIDATION.md).

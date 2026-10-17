@@ -92,6 +92,12 @@ pub(in crate::opening) fn encode(
     frame::join(role, &outputs, &source, &child)
 }
 pub(in crate::opening) fn verify(e: &Expected, bytes: &[u8]) -> Result<Statement, Error> {
+    decode_and_verify(e, bytes).map(|(statement, _)| statement)
+}
+pub(super) fn decode_and_verify(
+    e: &Expected,
+    bytes: &[u8],
+) -> Result<(Statement, CompositeProof), Error> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         e.require_contract()?;
         let role = role(e);
@@ -123,7 +129,7 @@ pub(in crate::opening) fn verify(e: &Expected, bytes: &[u8]) -> Result<Statement
             child,
         };
         super::verify(e, &s, &p)?;
-        Ok(s)
+        Ok((s, p))
     }))
     .map_err(|_| Error::Verification)?
 }

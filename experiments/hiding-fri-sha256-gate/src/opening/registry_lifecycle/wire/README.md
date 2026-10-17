@@ -112,3 +112,9 @@ decentralized finality and compact encrypted storage remain separate requirement
 
 This module remains the typed proof transport. The separate companion journal module now parses Request200 and performs owner-authorized experimental Journal admission/reopen using these actual proof bytes; live SQL grants and decentralized fresh heads remain open. See the
 [validation record](../../../../PRIVATE-REGISTRY-LIFECYCLE-JOURNAL-VALIDATION.md).
+
+
+## Registry200 original-row encoding
+
+The additive decode_and_verify API returns the genuine original Statement and CompositeProof after the same bounded Source-first verification. Existing verify delegates and discards that pair. Roles, profiles, frame bytes, topology and limits remain unchanged. See the
+[validation record](../../../../PRIVATE-REGISTRY-LIFECYCLE-ENCODING-VALIDATION.md).

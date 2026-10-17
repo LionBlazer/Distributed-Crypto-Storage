@@ -169,6 +169,10 @@ pub(crate) fn profile_digest(kind: Kind) -> [u8; 32] {
             crate::opening::registry_lifecycle::profile(&mut hash, true);
             (crate::opening::registry_lifecycle::bootstrap::WIDTH, 2)
         }
+        Kind::RegistryLifecycleEncoding => {
+            crate::opening::registry_lifecycle::encoding::profile(&mut hash);
+            (crate::opening::registry_lifecycle::encoding::air::WIDTH, 2)
+        }
         Kind::RegistryLifecycle => {
             crate::opening::registry_lifecycle::profile(&mut hash, false);
             (crate::opening::registry_lifecycle::air_width(), 2)

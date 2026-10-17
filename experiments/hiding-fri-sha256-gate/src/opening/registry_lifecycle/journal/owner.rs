@@ -215,6 +215,11 @@ impl<'a> Inputs<'a> {
     }
 }
 impl Prepared<'_> {
+    #[cfg(test)]
+    pub(super) fn encoding_inputs(&self) -> (&Expected, &Witness) {
+        (&self.expected, &self.witness)
+    }
+
     /// Actual proof generation; the independent Journal will verify the emitted bytes again.
     pub(super) fn prove(self, genesis: &Genesis, owner: &SigningKey) -> Result<Produced> {
         let app = self.app;

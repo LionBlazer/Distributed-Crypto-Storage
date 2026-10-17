@@ -102,3 +102,9 @@ new Bootstrap and Transition). It creates no trace, proof or durable append and
 makes no composed 128-bit claim. Configuration/hash analysis belongs to the
 [existing backend](../../../../src/backend.rs); canonical storage commitments belong
 to [compact-store](../../../../../../crates/compact-store/README.md).
+
+
+## Registry200 original-row encoding
+
+A test-only consumer now takes an actual accepted owner-signed Bootstrap/Begin/Acquire history through exact SQL binding, original proof-pair decode and fresh three-proof encoding evidence verification. Production Journal admission and Body/history quotas are unchanged. See the
+[validation record](../../../../PRIVATE-REGISTRY-LIFECYCLE-ENCODING-VALIDATION.md).

@@ -415,3 +415,9 @@ Distinct DCSLFPW1 Registry200 roles now serialize actual Source/child proofs and
 
 The distinct Registry200 Journal adapter passed 14 new and 56 prior leaf tests plus two actual contracts; discovery listed 318, with 248 other bodies not rerun. A genuine Bootstrap/seven-operation lineage and all eight proof pairs were reopened and reverified under unchanged quotas. See the
 [validation record](PRIVATE-REGISTRY-LIFECYCLE-JOURNAL-VALIDATION.md).
+
+
+## Registry200 original-row encoding
+
+Registry200 successful Acquire results now have distinct original-row encoding evidence. The new Source+Lifecycle+encoding frame passed real SDK verification and the accepted signed-history consumer test. Ciphertext formation and live SQL admission remain open. See the
+[validation record](PRIVATE-REGISTRY-LIFECYCLE-ENCODING-VALIDATION.md).

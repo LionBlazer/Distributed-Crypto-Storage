@@ -1,5 +1,7 @@
 //! Owner-authorized Registry200 Journal research. No controller delegation/live grant.
 mod control;
+#[cfg(test)]
+mod encoding_tests;
 mod fixture;
 mod owner;
 mod request;
