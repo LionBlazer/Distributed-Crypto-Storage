@@ -1,0 +1,18 @@
+[package]
+name = "bfv-tensor-circuit"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[features]
+default = []
+plonky3 = ["dep:p3-air", "dep:p3-field", "dep:p3-matrix", "dep:p3-goldilocks"]
+
+[dependencies]
+bfv-fixed-geometry = { path = "../bfv-fixed-geometry" }
+sha2 = "=0.10.9"
+p3-air = { version = "=0.8.0", optional = true }
+p3-field = { version = "=0.8.0", optional = true }
+p3-matrix = { version = "=0.8.0", optional = true }
+p3-goldilocks = { version = "=0.8.0", optional = true }

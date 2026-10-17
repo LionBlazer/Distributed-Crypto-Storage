@@ -18,6 +18,7 @@ executables. The root Cargo default members select this layer only.
 | [bfv-product-circuit](bfv-product-circuit/README.md) | Canonical full-residue BFV public-polynomial product | bfv-linear-circuit |
 | [bfv-scale-circuit](bfv-scale-circuit/README.md) | Canonical full-8192 public RNS scaling and optional limb AIR | bfv-fixed-geometry |
 | [bfv-ntt-circuit](bfv-ntt-circuit/README.md) | Exact full-8192 native forward/inverse NTT for all ten Q5/P5 moduli, with optional limb AIR | bfv-fixed-geometry |
+| [bfv-tensor-circuit](bfv-tensor-circuit/README.md) | Full three-component BFV tensor product over all 8192 positions of one Q5/P5 modulus, with optional limb AIR | bfv-fixed-geometry |
 | [bfv-query-proof](bfv-query-proof/README.md) | Bounded genuine arithmetic STARKs and independent verification | bfv-linear-circuit, bfv-product-circuit, bounded-postcard, proof-acceleration; bfv-query-core in tests |
 | [bounded-postcard](bounded-postcard/README.md) | Bounded generic Postcard decoding with caller-owned container budgets | None |
 | [proof-acceleration](proof-acceleration/README.md) | Shared fixed-profile ABI and startup CPU/OS kernel selection | None |

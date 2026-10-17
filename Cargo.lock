@@ -294,6 +294,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "bfv-tensor-circuit"
+version = "0.1.0"
+dependencies = [
+ "bfv-fixed-geometry",
+ "p3-air",
+ "p3-field",
+ "p3-goldilocks",
+ "p3-matrix",
+ "sha2",
+]
+
+[[package]]
 name = "bincode"
 version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
