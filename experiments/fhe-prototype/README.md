@@ -140,10 +140,11 @@ strategies need separate measurements.
 
 [Optimization research](../../docs/fhe-optimization.md) records the current
 compression preset's structural overhead, larger storage probes, a measured
-aggregation variant and two index privacy models. The active acceptance goal is
-canonical encrypted storage at most 2x logical plaintext size and 500 ms indexed
-queries; the earlier research target was 100 ms, preferably 50 ms. The current
-evaluator does not establish either indexed-query target or compact storage.
+aggregation variant and two index privacy models. The canonical encrypted storage
+target remains at most 2x logical plaintext size. Query latency should be practical
+and measured without a fixed cutoff; earlier research considered 500 ms, 100 ms
+and 50 ms targets. The current evaluator does not establish full indexed-query
+performance or compact storage.
 
 The `storage_size` example measures image growth through 1024 rows without scanning
 the table. `query_layout` compares the previous serial scan/update kernels, the

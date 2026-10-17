@@ -114,8 +114,8 @@ remains separate; it cannot silently answer or mutate typed catalog tables.
 `schemas`, `shards`, `rows`, `version`, `replace_participant` and `copy_shard`
 expose catalog metadata and real custody/restart/repair operations. The core never
 starts processes or supplies local consensus parameters. Owner restart/key recovery,
-publicly verifiable AEAD-to-FHE conversion, production consensus and a general
-500-ms full-operation bound remain open.
+publicly verifiable AEAD-to-FHE conversion, production consensus and representative
+end-to-end performance measurements remain open.
 
 ## Two-column verified network path
 
@@ -384,8 +384,9 @@ Journal storage stops at its cap; proof-body pruning is unimplemented. Collectio
 reclaims superseded known compact versions while retaining current and confirmation
 states. Unknown failed staging is retained and can fill quota. Copies on one host
 share a failure domain. Successful writes do not prove independent availability.
-The requested 500-ms full-query bound still needs representative workloads and
-tail measurements; failure recovery can take seconds.
+Practical full-query latency still needs representative workloads and tail
+measurements; failure recovery can take seconds. The current goal has no fixed
+latency cutoff.
 
 The earlier `Database::execute` remains an unverified diagnostic path: it rejects
 with `MissingComputationProof`, and `AcceptedResult` is uninhabited. The live GUI

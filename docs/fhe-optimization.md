@@ -1,8 +1,9 @@
 # FHE storage and indexed query performance
 
-The active acceptance goal is canonical encrypted storage at most 2x the logical
-plaintext size and indexed queries within 500 ms. The earlier research target was
-100 ms, preferably 50 ms. Full scans and arbitrary SQL remain separate workloads.
+The canonical encrypted storage target remains at most 2x the logical plaintext
+size. Query latency should be practical and measured on declared workloads; the
+current goal has no fixed latency cutoff. Earlier research considered 500 ms,
+100 ms and 50 ms targets. Full scans and arbitrary SQL remain separate workloads.
 The current TFHE representation does not meet the storage target; a faster scan
 alone does not provide an index. Both observable-access and concealed-access index
 designs remain candidates. Neither privacy model has been selected.
@@ -160,8 +161,8 @@ transmission, verification and version checks, not just FHE arithmetic.
    reads requiring a new confirmed head need separate budgets.
 
 An implementation can claim at most 2x storage only after the read/update lifecycle
-preserves it. Both the active 500 ms goal and earlier 100 ms/50 ms targets need a
-declared indexed query family, result-size bound, privacy model and network profile.
+preserves it. Practical query latency needs a declared indexed query family,
+result-size bound, privacy model and network profile.
 Online-owner requirements, proof design
 and strict versus snapshot freshness remain unresolved.
 
