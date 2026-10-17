@@ -21,6 +21,10 @@ in ignored `.local/`, not in the library source tree.
   across all ten fixed Q5/P5 moduli, including inverse normalization. Its
   [native validation](bfv-ntt-proof/VALIDATION.md) covers all 20 genuine stages,
   actual SDK parity, rebuilt-certificate attacks and explicit decoder budgets.
+- [bfv-ntt-witness-proof](bfv-ntt-witness-proof/README.md) verifies a complete NTT
+  without a verifier-supplied auxiliary certificate, using full SHA-512, global
+  copy/range lookups and WHIR. Its [validation](bfv-ntt-witness-proof/VALIDATION.md)
+  covers all twenty genuine stages, hostile programs and measured process memory.
 - [bfv-tensor-proof](bfv-tensor-proof/README.md) proves all three complete tensor
   components for each fixed Q5/P5 modulus. Its [validation](bfv-tensor-proof/VALIDATION.md)
   covers upstream polynomial parity, ten genuine serialized stages, hostile

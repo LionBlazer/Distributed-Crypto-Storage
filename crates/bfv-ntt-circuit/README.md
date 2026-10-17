@@ -160,6 +160,7 @@ and cannot establish cross-table copy or range soundness. Native library validat
 feature suites (7/9/15/18 tests), strict all-target Clippy for all four selections,
 and the old consumer's fifteen genuine SDK/proof/rejection tests. No test was
 ignored. These are 64 test executions across overlapping feature configurations,
-not 64 distinct behaviors. Genuine composed multi-STARK proof/rejection gates,
-whole-model security analysis and whole-process resource measurements for the new
-layout belong to its standalone consumer and remain pending.
+not 64 distinct behaviors. The standalone [main-witness consumer](../../experiments/bfv-ntt-witness-proof/VALIDATION.md)
+now owns actual whole-stage security analysis, all twenty genuine serialized
+proofs, hostile SDK proofs and process resource observations. Its result remains
+one public arithmetic NTT stage; it grants no MulRelin or live SQL acceptance.
