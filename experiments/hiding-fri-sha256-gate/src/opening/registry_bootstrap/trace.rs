@@ -24,6 +24,32 @@ pub(super) fn bits(out: &mut [Val], value: u64) {
     }
 }
 impl Witness {
+    /// Owner-local producer input; no private material is returned publicly.
+    pub(in crate::opening) fn new(
+        plain: [u8; 2348],
+        controllers: [[u8; 32]; 2],
+        salts: [[Val; 4]; 3],
+    ) -> Result<Self, Error> {
+        if controllers.contains(&[0; 32]) {
+            return Err(Error::Shape);
+        }
+        Ok(Self {
+            plain,
+            controllers,
+            salts,
+        })
+    }
+    /// Computes an enrollment anchor before the query-dependent C_open exists.
+    pub(in crate::opening) fn enrollment(
+        &self,
+        source: &crate::opening::statement::Statement,
+        genesis: [u8; 32],
+    ) -> Result<[u8; 32], Error> {
+        let e = Expected::checked(source, genesis, [0; 32], [0; 32])?;
+        Ok(crate::opening::locking::statement::encoded(
+            crate::opening::commitment::digest(&statement::enrollment_fields(&e, self)),
+        ))
+    }
     pub(super) fn table(&self) -> [u8; 32] {
         self.plain[124..156].try_into().unwrap()
     }
@@ -101,7 +127,7 @@ impl Witness {
         }
         Ok(RowMajorMatrix::new(values, WIDTH))
     }
-    pub(super) fn statement(&self, expected: &Expected) -> Result<Statement, Error> {
+    pub(in crate::opening) fn statement(&self, expected: &Expected) -> Result<Statement, Error> {
         statement::proposed(expected, self)
     }
 }

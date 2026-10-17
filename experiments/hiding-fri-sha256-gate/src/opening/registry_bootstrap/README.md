@@ -98,3 +98,13 @@ never come from that frame. Fresh bounded decode and real Source-first verificat
 passed; see the [wire module](../proof_wire/README.md) and
 [validation record](../../../PRIVATE-PROOF-WIRE-VALIDATION.md). Post-genesis owner
 authorization, Journal publication and fresh agreement remain separate obligations.
+
+## Owner-authorized Journal registration
+
+The separate [private Journal adapter](../private_journal/README.md) now exercises
+the later registration described above: immutable Source plus Pending control
+heads enter genesis before its ID exists, then a genuine owner-signed Bootstrap
+proof installs the first Active root. Actual parent/source/enrollment and verified
+output are checked by the Journal callback. See the
+[validation record](../../../PRIVATE-CONTROL-JOURNAL-VALIDATION.md). This does not
+add delegated controller authority, private Begin/End, global freshness or finality.

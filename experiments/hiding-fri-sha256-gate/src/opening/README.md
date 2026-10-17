@@ -386,3 +386,14 @@ Bootstrap/Locking wrappers reconstruct only proposed outputs from independent
 Expected, then bounded-decode and verify the real Source-first pair. See the
 [validation record](../../PRIVATE-PROOF-WIRE-VALIDATION.md). Expected authority and
 Journal lineage remain external; no production acceptance rule changed.
+
+## Private control lineage
+
+The separate [private_journal](private_journal/README.md) module binds independent
+Expected values to the actual owner-authorized Journal callback. Stable Pending
+and Active heads avoid query-dependent no-op updates; complete original proofs
+are reverified on first admission and durable reopen. Exact known duplicates
+retain Journal idempotence. The
+[validation record](../../PRIVATE-CONTROL-JOURNAL-VALIDATION.md) covers actual
+lineage, rejected tampering, stale CAS and local forks without claiming a live
+SQL grant or partition-safe finality. Earlier reports retain their stage scope.

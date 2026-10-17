@@ -381,3 +381,14 @@ decoding/verification passed, with no receipt/cache shortcut. The
 [validation record](PRIVATE-PROOF-WIRE-VALIDATION.md) separates 263 discovered cases
 from 15 executed leaf cases plus shared decoder/contract checks. This adds no
 Journal admission, owner/controller authority, agreed freshness or live SQL grant.
+
+## Owner-authorized private-control Journal
+
+The [experimental Journal adapter](src/opening/private_journal/README.md) verifies
+complete Source+Bootstrap/Lock proof pairs under owner-signed real parent
+transitions. A genuine Bootstrap -> FOR UPDATE -> conflicting SKIP LOCKED lineage,
+durable replay, and rejection cases passed. See the
+[validation record](PRIVATE-CONTROL-JOURNAL-VALIDATION.md) for the 275 discovered
+versus 27 executed leaf cases, Journal checks and observed complete Body sizes.
+The adapter supplies experimental lineage; live grants, private transaction
+lifecycle, writer fencing, agreed finality and peer-only FHE SQL remain open.

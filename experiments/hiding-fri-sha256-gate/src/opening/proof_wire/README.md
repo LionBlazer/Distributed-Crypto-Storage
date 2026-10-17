@@ -105,3 +105,12 @@ shape/security analysis, fresh Backend configurations and both SDK verifications
 it excludes fixture setup, proof generation and encoding. An owned-process
 observer must measure complete CLI time and RAM separately. No interactive SQL,
 process memory or latency guarantee follows from byte size alone.
+
+## Complete Journal Body admission
+
+The separate [private Journal adapter](../private_journal/README.md) checks the
+complete canonical Body under the unchanged 32 MiB limit and verifies the original
+wire pair against actual pinned application and parent state. Genuine complete
+Bodies, durable proof replay and negative admission cases passed; see its
+[validation record](../../../PRIVATE-CONTROL-JOURNAL-VALIDATION.md). The wire codec
+continues to own byte/shape bounds, while Journal owns signature and publication.

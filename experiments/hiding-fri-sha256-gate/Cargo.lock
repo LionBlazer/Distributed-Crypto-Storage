@@ -682,6 +682,7 @@ dependencies = [
  "chacha20 0.9.1",
  "chacha20poly1305",
  "compact-store",
+ "ed25519-dalek",
  "fhe",
  "fhe-math",
  "fhe-traits",
@@ -712,6 +713,7 @@ dependencies = [
  "sql-plan",
  "transaction-state",
  "universal-hash",
+ "version-journal",
  "zeroize",
 ]
 

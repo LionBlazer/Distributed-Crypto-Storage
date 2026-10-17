@@ -235,3 +235,13 @@ It has no StateLease or cache-ID transport. The
 [validation record](../../../PRIVATE-PROOF-WIRE-VALIDATION.md) describe actual sizes,
 foreign/structural/cryptographic rejection and resource observations. The returned
 experimental Statement is not a writer capability, durable receipt or live grant.
+
+## Owner-authorized Journal transitions
+
+The separate [private Journal adapter](../private_journal/README.md) admits actual
+Source+Lock proof pairs against the real parent control root and signed request.
+The native conflicting SKIP case follows an accepted FOR UPDATE record; genuine
+Blocked/NOWAIT proofs retain their old root and cannot append an invented update.
+See the [validation record](../../../PRIVATE-CONTROL-JOURNAL-VALIDATION.md).
+Owner-authorized experimental lineage does not supply controller delegation,
+private transaction lifecycle, MVCC, writer fences or a finalized live lock grant.

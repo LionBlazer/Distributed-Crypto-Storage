@@ -51,6 +51,10 @@ pub(in crate::opening) struct Statement {
     pub(super) registry: [Val; 4],
 }
 impl Statement {
+    /// Public output only; this accessor confers no owner authority or freshness.
+    pub(in crate::opening) fn registry_root(&self) -> [u8; 32] {
+        registry::encoded(self.registry)
+    }
     pub(in crate::opening) fn checked(
         expected: &Expected,
         registry: [u8; 32],

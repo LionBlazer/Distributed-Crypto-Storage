@@ -6,6 +6,7 @@ pub(crate) mod basis_convolution;
 pub(crate) mod canonical;
 mod layout;
 pub(crate) mod local_formation;
+pub(crate) mod private_journal;
 pub(crate) use layout::PACKED_WIDTH;
 #[cfg(test)]
 mod canonical_tests;
