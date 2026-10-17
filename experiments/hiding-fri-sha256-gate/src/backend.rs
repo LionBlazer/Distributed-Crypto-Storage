@@ -149,6 +149,10 @@ pub(crate) fn profile_digest(kind: Kind) -> [u8; 32] {
             crate::opening::key_transform::profile(&mut hash);
             (crate::opening::key_transform::air::WIDTH, 2)
         }
+        Kind::BfvLockReturnedFormation => {
+            crate::opening::locking::formation::profile(&mut hash);
+            (crate::opening::local_formation::air::WIDTH, 2)
+        }
         Kind::BfvLocalFormation => {
             crate::opening::local_formation::profile(&mut hash);
             (crate::opening::local_formation::air::WIDTH, 2)
@@ -164,6 +168,10 @@ pub(crate) fn profile_digest(kind: Kind) -> [u8; 32] {
         Kind::LockingSelection => {
             crate::opening::locking::profile(&mut hash);
             (crate::opening::locking::air::WIDTH, 2)
+        }
+        Kind::LockReturnedEncoding => {
+            crate::opening::locking::encoding::profile(&mut hash);
+            (crate::opening::locking::encoding::air::WIDTH, 2)
         }
         Kind::SelectedEncoding => {
             crate::opening::selection::encoding::profile(&mut hash);

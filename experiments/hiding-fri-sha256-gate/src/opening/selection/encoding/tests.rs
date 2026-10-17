@@ -434,3 +434,25 @@ fn changed_expected_values_reject_before_the_encoded_witness_factory_runs() {
     );
     assert!(!called.get());
 }
+
+#[test]
+fn a_genuine_selection88_encoding_proof_is_not_successful_lockreturn168_evidence() {
+    let (_, _, selected, w) = source_fixture(&[0, 255], Some(2));
+    let ew = witness(&selected, &w);
+    let old = ew.statement(&selected);
+    let proof = Backend::new(&old)
+        .unwrap()
+        .prove_with_trace(&old, || ew.trace(&old))
+        .unwrap();
+    Backend::new(&old).unwrap().verify(&old, &proof).unwrap();
+    let returned = crate::opening::locking::encoding::fixture()
+        .unwrap()
+        .statement;
+    assert_ne!(old.kind(), returned.kind());
+    assert!(
+        Backend::new(&returned)
+            .unwrap()
+            .verify(&returned, &proof)
+            .is_err()
+    );
+}

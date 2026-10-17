@@ -183,3 +183,19 @@ policy trace with independently retained C_plan. Live Session/scripts/typed cata
 remain fail-closed; LockReturn168 is not SelectedEncoding88. Full PostgreSQL,
 writer fences, rollback data semantics, key/actor authorization and finality remain
 unfinished requirements. No practical latency or RAM result is claimed here.
+
+## Successful returned-original encoding and formation
+
+[LockReturnedEncoding](encoding/README.md) verifies the actual canonical whole
+source/lock composite or exact StateLease/lock evidence before child Backend/trace,
+then opens Return168 with successful outcome 0. Original age/amount/ordinal/RowId
+values feed every coefficient; OFFSET-owned rows do not become RETURNED.
+[Returned formation](formation/README.md) binds that exact C_enc to the complete
+actual ciphertext and shared Key/five-Basis/local integer relations.
+
+Compile/strict Clippy, 23 numeric calls, three owning oracles and three genuine CLI
+proof compositions and the full 235-case suite passed. The [validation report](../../../LOCK-RETURNED-BFV-VALIDATION.md)
+separates the two encoder timers from normal formation's complete composition.
+No projected SQL output, column ACL, live grant, writer fence, controller authority
+or fresh decentralized agreement is inferred. Existing closed Blocked/selected
+PostgreSQL scope remains the published contract.

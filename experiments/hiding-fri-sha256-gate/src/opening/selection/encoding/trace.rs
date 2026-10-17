@@ -11,11 +11,11 @@ use p3_matrix::dense::RowMajorMatrix;
 use p3_symmetric::Permutation;
 
 pub(in crate::opening) struct Witness {
-    pub(super) tuples: [[u32; 12]; 4],
-    pub(super) selected_salt: [Val; 4],
+    pub(in crate::opening) tuples: [[u32; 12]; 4],
+    pub(in crate::opening) selected_salt: [Val; 4],
     pub(in crate::opening) encoding_salt: [Val; 4],
 }
-pub(super) fn bits(out: &mut [Val], v: u64) {
+pub(in crate::opening) fn bits(out: &mut [Val], v: u64) {
     for (i, x) in out.iter_mut().enumerate() {
         *x = Val::from_u64((v >> i) & 1);
     }
@@ -56,8 +56,11 @@ impl Witness {
     }
     pub(in crate::opening) fn statement(&self, selection: &selection::Statement) -> Statement {
         let mut s = Statement::new(selection, [Val::ZERO; 4]);
-        let mut fields: Vec<_> = s
-            .context()
+        s.encoded = self.digest(s.context());
+        s
+    }
+    fn digest(&self, context: [Val; 8]) -> [Val; 4] {
+        let mut fields: Vec<_> = context
             .into_iter()
             .chain(self.encoding_salt)
             .chain([Val::ZERO; 4])
@@ -74,10 +77,47 @@ impl Witness {
             state[..8].copy_from_slice(block);
             permutation.permute_mut(&mut state);
         }
-        s.encoded = state[..4].try_into().unwrap();
+        state[..4].try_into().unwrap()
+    }
+    pub(in crate::opening) fn from_lock(
+        s: &crate::opening::locking::encoding::statement::Statement,
+        w: &crate::opening::locking::trace::Witness,
+        salt: [Val; 4],
+    ) -> Result<Self, Error> {
+        let fields =
+            crate::opening::locking::statement::output_fields(s.expected.lock(), w, false)?;
+        let mut tuples = [[0; 12]; 4];
+        for (i, tuple) in tuples.iter_mut().enumerate() {
+            for (j, value) in tuple.iter_mut().enumerate() {
+                *value = u32::try_from(fields[119 + i * 12 + j].as_canonical_u64())
+                    .map_err(|_| Error::Shape)?;
+            }
+        }
+        Ok(Self {
+            tuples,
+            selected_salt: w.salts[5],
+            encoding_salt: salt,
+        })
+    }
+    pub(in crate::opening) fn returned_statement(
+        &self,
+        expected: crate::opening::locking::encoding::statement::Expected,
+    ) -> crate::opening::locking::encoding::statement::Statement {
+        let mut s =
+            crate::opening::locking::encoding::statement::Statement::new(expected, [Val::ZERO; 4]);
+        s.encoded = self.digest(s.context());
         s
     }
+    pub(in crate::opening) fn trace_returned(
+        &self,
+        s: &crate::opening::locking::encoding::statement::Statement,
+    ) -> Result<RowMajorMatrix<Val>, Error> {
+        self.trace_with_air(EncodingAir::returned(s))
+    }
     pub(super) fn trace(&self, s: &Statement) -> Result<RowMajorMatrix<Val>, Error> {
+        self.trace_with_air(EncodingAir::new(s))
+    }
+    fn trace_with_air(&self, air: EncodingAir) -> Result<RowMajorMatrix<Val>, Error> {
         let mut values = Val::zero_vec(TRACE_HEIGHT * WIDTH);
         let original = self.original();
         let coefficients = self.coefficients();
@@ -122,14 +162,25 @@ impl Witness {
             }
         }
         let mut trace = RowMajorMatrix::new(values, WIDTH);
-        let _ = refresh_hashes(s, &mut trace);
+        let _ = refresh_with_air(&air, &mut trace);
         Ok(trace)
     }
 }
 /// One producer implementation also lets rebuilt tests recompute every genuine
 /// sponge/carry cell after deliberately substituting a forbidden original word.
+#[cfg(test)]
 pub(super) fn refresh_hashes(s: &Statement, trace: &mut RowMajorMatrix<Val>) -> [Val; 4] {
-    let air = EncodingAir::new(s);
+    refresh_with_air(&EncodingAir::new(s), trace)
+}
+#[cfg(test)]
+pub(in crate::opening) fn refresh_returned(
+    s: &crate::opening::locking::encoding::statement::Statement,
+    trace: &mut RowMajorMatrix<Val>,
+) -> [Val; 4] {
+    refresh_with_air(&EncodingAir::returned(s), trace)
+}
+fn refresh_with_air(air: &EncodingAir, trace: &mut RowMajorMatrix<Val>) -> [Val; 4] {
+    let blocks = air.source_blocks();
     let mut source = [Val::ZERO; 12];
     let mut encoded = [Val::ZERO; 12];
     let mut carry = [Val::ZERO; 8];
@@ -146,7 +197,7 @@ pub(super) fn refresh_hashes(s: &Statement, trace: &mut RowMajorMatrix<Val>) -> 
         row[CARRY..SOURCE_CP].copy_from_slice(&carry);
         let mut a = [Val::ZERO; 12];
         if r == 0 {
-            a[..8].copy_from_slice(&s.context());
+            a[..8].copy_from_slice(&air.context());
         } else {
             a[..8].copy_from_slice(&carry);
         }
@@ -168,20 +219,20 @@ pub(super) fn refresh_hashes(s: &Statement, trace: &mut RowMajorMatrix<Val>) -> 
                 *v = lane(row, if r == 0 { i } else { i + 8 }, 1);
             }
             c[8..].copy_from_slice(&b_out[8..]);
-        } else if (1..=11).contains(&r) {
+        } else if (1..=blocks).contains(&r) {
             for (i, v) in c[..8].iter_mut().enumerate() {
                 *v = air.selected_field(row, (r - 1) * 8 + i);
             }
             c[8..].copy_from_slice(&source[8..]);
         }
-        let active = r <= 11 || r == 511;
+        let active = r <= blocks || r == 511;
         row[2 * P2..3 * P2].fill(Val::ZERO);
         let c_out = if active {
             poseidon::write(&mut row[2 * P2..3 * P2], c)
         } else {
             [Val::ZERO; 12]
         };
-        if (1..=11).contains(&r) {
+        if (1..=blocks).contains(&r) {
             source = c_out;
         }
         encoded = if r == 0 { c_out } else { b_out };

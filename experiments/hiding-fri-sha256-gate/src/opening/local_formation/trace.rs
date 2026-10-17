@@ -10,14 +10,14 @@ use crate::opening::{key_transform, poseidon};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_matrix::dense::RowMajorMatrix;
 
-pub(super) struct Witness {
-    pub(super) r: [Vec<i128>; 5],
-    pub(super) k: [Vec<i128>; 5],
-    pub(super) error: Vec<i8>,
-    pub(super) w: Vec<u64>,
-    pub(super) salts: [[Val; 4]; 7],
+pub(in crate::opening) struct Witness {
+    pub(in crate::opening) r: [Vec<i128>; 5],
+    pub(in crate::opening) k: [Vec<i128>; 5],
+    pub(in crate::opening) error: Vec<i8>,
+    pub(in crate::opening) w: Vec<u64>,
+    pub(in crate::opening) salts: [[Val; 4]; 7],
 }
-pub(super) fn signed(v: i128) -> Val {
+pub(in crate::opening) fn signed(v: i128) -> Val {
     if v < 0 {
         -Val::from_u64((-v) as u64)
     } else {
@@ -48,6 +48,27 @@ impl Witness {
         noise_salt: [Val; 4],
     ) -> Result<Self, Error> {
         expected.validate()?;
+        Self::from_bases(&expected.bases, key, encoded, error, r_salts, noise_salt)
+    }
+    pub(in crate::opening) fn returned(
+        expected: &crate::opening::locking::formation::statement::Expected,
+        key: &key_transform::trace::Witness,
+        encoded: &encoding::trace::Witness,
+        error: Vec<i8>,
+        r_salts: [[Val; 4]; 5],
+        noise_salt: [Val; 4],
+    ) -> Result<Self, Error> {
+        expected.validate()?;
+        Self::from_bases(&expected.bases, key, encoded, error, r_salts, noise_salt)
+    }
+    fn from_bases(
+        bases: &[basis::statement::Statement; 5],
+        key: &key_transform::trace::Witness,
+        encoded: &encoding::trace::Witness,
+        error: Vec<i8>,
+        r_salts: [[Val; 4]; 5],
+        noise_salt: [Val; 4],
+    ) -> Result<Self, Error> {
         if error.len() != N || error.iter().any(|e| !(-20..=20).contains(e)) {
             return Err(Error::Shape);
         }
@@ -61,7 +82,7 @@ impl Witness {
         );
         let mut rs = Vec::new();
         let mut ks = Vec::new();
-        for (i, s) in expected.bases.iter().enumerate() {
+        for (i, s) in bases.iter().enumerate() {
             let values = basis::trace::oracle(&shat, s.expected.ciphertext().evaluations());
             let r = values
                 .into_iter()
@@ -114,6 +135,19 @@ impl Witness {
         s
     }
     pub(super) fn trace(&self, s: &Statement) -> Result<RowMajorMatrix<Val>, Error> {
+        let mut t = self.trace_values()?;
+        let _ = refresh_hashes(s, &mut t);
+        Ok(t)
+    }
+    pub(in crate::opening) fn trace_returned(
+        &self,
+        s: &crate::opening::locking::formation::statement::Statement,
+    ) -> Result<RowMajorMatrix<Val>, Error> {
+        let mut t = self.trace_values()?;
+        let _ = refresh_returned(s, &mut t);
+        Ok(t)
+    }
+    fn trace_values(&self) -> Result<RowMajorMatrix<Val>, Error> {
         if self.r.iter().chain(&self.k).any(|v| v.len() != N)
             || self.w.len() != N
             || self.error.len() != N
@@ -152,12 +186,19 @@ impl Witness {
                 }
             }
         }
-        let _ = refresh_hashes(s, &mut t);
         Ok(t)
     }
 }
 pub(super) fn refresh_hashes(s: &Statement, t: &mut RowMajorMatrix<Val>) -> [[Val; 4]; 7] {
-    let contexts = s.contexts();
+    refresh_contexts(s.contexts(), t)
+}
+pub(in crate::opening) fn refresh_returned(
+    s: &crate::opening::locking::formation::statement::Statement,
+    t: &mut RowMajorMatrix<Val>,
+) -> [[Val; 4]; 7] {
+    refresh_contexts(s.contexts(), t)
+}
+fn refresh_contexts(contexts: [[Val; 8]; 7], t: &mut RowMajorMatrix<Val>) -> [[Val; 4]; 7] {
     let mut cp = [[Val::ZERO; 12]; 7];
     let mut carry = [[Val::ZERO; 8]; 7];
     for (r, row) in t.values.as_chunks_mut::<WIDTH>().0.iter_mut().enumerate() {

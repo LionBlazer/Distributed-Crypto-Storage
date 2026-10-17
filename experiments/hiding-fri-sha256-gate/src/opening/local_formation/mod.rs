@@ -1,9 +1,11 @@
 //! Nonaccepting owner-local composition. Public fixtures never substitute for peer FHE.
 pub(crate) mod air;
+#[cfg(test)]
+mod returned_replay_tests;
 mod statement;
 #[cfg(test)]
 mod tests;
-mod trace;
+pub(in crate::opening) mod trace;
 
 use crate::backend::{Backend, Config, Error, Val};
 use crate::opening::{
@@ -20,16 +22,16 @@ use sha2::{Digest, Sha256};
 use statement::{Expected, Statement};
 use trace::Witness;
 
-pub(super) const N: usize = 8192;
-pub(super) const STREAMS: usize = 7;
-pub(super) const Q: [u64; 5] = [
+pub(in crate::opening) const N: usize = 8192;
+pub(in crate::opening) const STREAMS: usize = 7;
+pub(in crate::opening) const Q: [u64; 5] = [
     8796092858369,
     8796092792833,
     17592186028033,
     17592185438209,
     17592184717313,
 ];
-pub(super) const DELTA: [u64; 5] = [
+pub(in crate::opening) const DELTA: [u64; 5] = [
     2868552913433,
     2398181390884,
     1315015483772,

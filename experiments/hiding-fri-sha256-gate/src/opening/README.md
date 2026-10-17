@@ -351,3 +351,18 @@ remain unchanged.
 The [bounded full8192 local relation](local_formation/README.md) opens all five Basis roots and the existing SelectedEncoding root with common bounded signed noise and integer-safe equations. The [validation record](../../BFV-LOCAL-FORMATION-VALIDATION.md) retains the R1 lint failure, actual 20 numerical reports and one observed genuine full-composition CLI.
 
 All 212 serial behavior tests passed: the 195 earlier cases and all 17 Local cases, with no failures or ignored tests. The actual Local degree 3 differs from the unchanged declared hint 5; both model floors reached 128 per proof, without a composed-security theorem. Its owner/client-local witness, key authority, entropy, network freshness and live SQL/lock acceptance remain open. The observed 58.3s process is not an interactive SQL result or general resource/latency guarantee.
+
+## Successful lock-return encoding and formation (validated experimental relation)
+
+[Return168 encoding](locking/encoding/README.md) opens actual successful returned
+originals from a canonical source/lock composite or exact admitted StateLease/lock
+evidence. It shares the full coefficient arithmetic while preserving old
+SelectedEncoding's profile/source layout. [Returned formation](locking/formation/README.md)
+consumes the new exact C_enc with actual same-key/five-Basis verification before
+child setup; old LocalFormation is a distinct producer contract.
+
+The [validation record](../../LOCK-RETURNED-BFV-VALIDATION.md) records
+successful release/no-run/strict Clippy, 23 numeric calls, three native oracles and
+three genuine CLI proof compositions. The full 235-case suite passed on the same source. No source/custody,
+controller authority, freshness, writer-fence or network acceptance gap is resolved
+by treating the public owner-local fixtures as peer computation.

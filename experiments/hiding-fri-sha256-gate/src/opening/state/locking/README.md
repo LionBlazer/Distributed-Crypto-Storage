@@ -122,3 +122,20 @@ the actual cold/two-warm parsed-query case and CLI, six focused new cases, ownin
 rejection checks and unchanged 19 numerical reports. All 195 discovered names are
 not claimed as a full rerun. This grants no live lock, freshness, writer fence,
 BFV formation or network acceptance.
+
+## Typed successful-return encoding and formation consumers
+
+`version-lock-returned-encoding` performs actual cold certificate admission and
+one warm lock/encoding composition using the exact lease, independent Expected
+and full producer PV116 before child setup. Source version tags and fresh query
+requests remain distinct. The [returned formation child](../../locking/formation/README.md)
+also has an owning cold-certificate/two-fresh-warm test; it is not a separate CLI
+and supplies no standalone certified-formation timing observation.
+
+Compilation/strict Clippy, 23 numeric calls, three oracles and three genuine CLI
+compositions and all 235 owning tests passed, including that actual cold/two-warm
+formation case. The [validation record](../../../../LOCK-RETURNED-BFV-VALIDATION.md) separates
+cold source/cache admission from the single warm encoder timers. No Backend or
+secret witness is cached; 64MiB bounds the certificate cache, not witness/prover
+or process memory. Controller authority, writer fencing, fresh agreed heads and
+live SQL/network acceptance remain external and unimplemented.

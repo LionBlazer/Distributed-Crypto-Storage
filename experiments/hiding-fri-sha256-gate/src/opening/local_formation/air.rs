@@ -10,13 +10,13 @@ use p3_air::{Air, AirBuilder, BaseAir, WindowAccess, utils::pack_bits_le};
 use p3_field::{Algebra, PrimeCharacteristicRing};
 use std::{borrow::Cow, sync::OnceLock};
 
-pub(super) const CP: usize = 21 * poseidon::WIDTH;
-pub(super) const SALTS: usize = CP + 7 * 12;
-pub(super) const CARRY: usize = SALTS + 7 * 4;
-pub(super) const COEFFICIENTS: usize = CARRY + 7 * 8;
-pub(super) const LANE_BITS: usize = 461;
+pub(in crate::opening) const CP: usize = 21 * poseidon::WIDTH;
+pub(in crate::opening) const SALTS: usize = CP + 7 * 12;
+pub(in crate::opening) const CARRY: usize = SALTS + 7 * 4;
+pub(in crate::opening) const COEFFICIENTS: usize = CARRY + 7 * 8;
+pub(in crate::opening) const LANE_BITS: usize = 461;
 pub(crate) const WIDTH: usize = COEFFICIENTS + 16 * LANE_BITS;
-pub(super) const PERIODICS: usize = TRACE_HEIGHT + 5 * 16;
+pub(in crate::opening) const PERIODICS: usize = TRACE_HEIGHT + 5 * 16;
 const _: () = assert!(WIDTH == 12752 && COEFFICIENTS == 5376);
 pub(super) fn packed<E: Algebra<Val>, T: Copy + Into<E>>(
     row: &[T],
@@ -27,7 +27,7 @@ pub(super) fn packed<E: Algebra<Val>, T: Copy + Into<E>>(
     let a = COEFFICIENTS + lane * LANE_BITS + start;
     pack_bits_le(row[a..a + bits].iter().copied())
 }
-pub(super) fn value<E: Algebra<Val>, T: Copy + Into<E>>(
+pub(in crate::opening) fn value<E: Algebra<Val>, T: Copy + Into<E>>(
     row: &[T],
     lane: usize,
     stream: usize,
@@ -48,6 +48,24 @@ impl LocalAir {
     pub(super) fn new(s: &Statement) -> Self {
         Self {
             values: s.public_values().try_into().unwrap(),
+            contexts: s.contexts(),
+            b: core::array::from_fn(|i| {
+                s.expected.bases[i]
+                    .expected
+                    .ciphertext()
+                    .b_coefficients()
+                    .to_vec()
+            }),
+            periodics: OnceLock::new(),
+        }
+    }
+    pub(in crate::opening) fn returned(
+        s: &crate::opening::locking::formation::statement::Statement,
+    ) -> Self {
+        let values: [Val; crate::opening::locking::formation::statement::PUBLIC_VALUES] =
+            s.public_values().try_into().unwrap();
+        Self {
+            values,
             contexts: s.contexts(),
             b: core::array::from_fn(|i| {
                 s.expected.bases[i]

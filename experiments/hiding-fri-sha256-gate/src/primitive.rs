@@ -29,6 +29,8 @@ pub(crate) enum Kind {
     BfvKeyTransform,
     BfvBasisConvolution,
     BfvLocalFormation,
+    LockReturnedEncoding,
+    BfvLockReturnedFormation,
 }
 
 impl Kind {
@@ -54,6 +56,8 @@ impl Kind {
             Self::BfvKeyTransform => "bfv-key-transform",
             Self::BfvBasisConvolution => "bfv-basis-convolution",
             Self::BfvLocalFormation => "bfv-local-formation",
+            Self::LockReturnedEncoding => "lock-returned-encoding",
+            Self::BfvLockReturnedFormation => "bfv-lock-returned-formation",
         }
     }
 }

@@ -65,3 +65,18 @@ verification timer checks all three proofs with fresh Backends. These timers are
 not the cost of the encoding proof alone. No generated proof codec or
 network API is exposed. Production owner-key custody, global security composition,
 private BFV s/e/NTTs, freshness and consensus finality remain separate obligations.
+
+## Shared internal coefficient kernel
+
+[LockReturnedEncoding](../../locking/encoding/README.md) reuses this AIR/trace
+through a typed producer constructor. The old Selected path retains source 88,
+11 source blocks, PV100, 205 periodics and its context/profile/arithmetic. The new
+successful Return168 path binds actual canonical/certified parents, PV128 and
+21 source blocks; its distinct [formation child](../../locking/formation/README.md)
+consumes only the new exact C_enc. Old Encoding/LocalFormation proofs are not
+accepted by renaming a root or Kind.
+
+All 20 prior complete ordered JSON object lists are unchanged; compilation/strict Clippy,
+three owning oracles and three genuine new CLI compositions passed. The full 235-case suite passed after this shared-source change. See the [validation record](../../../../LOCK-RETURNED-BFV-VALIDATION.md).
+The shared kernel adds no secret custody, peer witness construction or live
+production acceptance.

@@ -1,5 +1,7 @@
 //! Closed N4/private-two-transaction proof experiment. No live SQL lock grant.
 pub(crate) mod air;
+pub(crate) mod encoding;
+pub(crate) mod formation;
 pub(in crate::opening) mod sql;
 #[cfg(test)]
 mod sql_tests;
@@ -18,7 +20,7 @@ use sha2::{Digest, Sha256};
 use statement::{Expected, Statement};
 use trace::{Plan, Registry, Transaction, Witness};
 
-struct CompositeProof {
+pub(in crate::opening) struct CompositeProof {
     source: Option<Proof<Config>>,
     locking: Proof<Config>,
 }
@@ -37,7 +39,7 @@ fn verify_composite(expected: &Expected, s: &Statement, p: &CompositeProof) -> R
     s.require_expected(expected)?;
     Backend::new(s)?.verify(s, &p.locking)
 }
-fn prove_composite(
+pub(in crate::opening) fn prove_composite(
     expected: &Expected,
     source_witness: &source_trace::Witness,
     witness: &Witness,

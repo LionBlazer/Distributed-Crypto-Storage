@@ -75,7 +75,7 @@ pub(super) struct CertificateCache {
     limit: usize,
     entry: Option<VerifiedStateCertificate>,
 }
-pub(super) struct StateLease<'a> {
+pub(in crate::opening) struct StateLease<'a> {
     certificate: &'a VerifiedStateCertificate,
 }
 impl CertificateCache {
@@ -159,7 +159,7 @@ impl StateLease<'_> {
         statement.require_expected(expected)?;
         Backend::new(statement)?.prove_with_trace(statement, trace)
     }
-    pub(super) fn verify_lock(
+    pub(in crate::opening) fn verify_lock(
         &self,
         expected: &super::locking::Expected,
         statement: &super::locking::Statement,

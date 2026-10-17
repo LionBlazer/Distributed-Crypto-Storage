@@ -82,7 +82,7 @@ pub(super) fn coefficients() -> &'static [[u32; 12]] {
         out
     })
 }
-pub(super) fn digest() -> [u8; 32] {
+pub(in crate::opening) fn digest() -> [u8; 32] {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(b"DCS/public-N4-SIMD-matrix/v1");

@@ -328,3 +328,20 @@ their original frozen source and measurements.
 The [bounded full8192 local relation](src/opening/local_formation/README.md) opens all five Basis roots and the existing SelectedEncoding root with common bounded signed noise and integer-safe equations. The [validation record](BFV-LOCAL-FORMATION-VALIDATION.md) retains the R1 lint failure, actual 20 numerical reports and one observed genuine full-composition CLI.
 
 All 212 serial behavior tests passed: the 195 earlier cases and all 17 Local cases, with no failures or ignored tests. The actual Local degree 3 differs from the unchanged declared hint 5; both model floors reached 128 per proof, without a composed-security theorem. Its owner/client-local witness, key authority, entropy, network freshness and live SQL/lock acceptance remain open. The observed 58.3s process is not an interactive SQL result or general resource/latency guarantee.
+
+## Successful lock-return encoding and formation (validated experimental relation)
+
+The distinct [Return168 bridge](src/opening/locking/encoding/README.md) connects
+actual canonical or certified locking evidence to all 8192 original scaled BFV
+plaintext coefficients. The distinct [returned formation](src/opening/locking/formation/README.md)
+opens that exact new C_enc with the shared full integer kernel and actual same-key,
+five-Basis prerequisites. Typed producer/profile bindings keep both new Kinds
+separate from old Selection88/SelectedEncoding/LocalFormation.
+
+Release/test compilation, strict Clippy, all 23 trace-free numeric calls, three
+owning oracles and three genuine CLI compositions passed. The full 235-case suite passed on that same source;
+see the [validation record](LOCK-RETURNED-BFV-VALIDATION.md) for exact
+scope, two preserved compile failures, times and sampled resources. This is an
+owner-local witness experiment; it adds no peer-only SQL execution, authority,
+fresh agreement, writer fence, projected answer or live network/lock acceptance.
+Earlier validation reports retain their original scopes.

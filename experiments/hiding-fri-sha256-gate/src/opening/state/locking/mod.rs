@@ -1,6 +1,10 @@
 //! Query-specific private locking over an ACTUALLY admitted version certificate.
 //! The lease is the source authority; this module has no direct accepting path.
 #[cfg(test)]
+mod returned_encoding_tests;
+#[cfg(test)]
+mod returned_formation_tests;
+#[cfg(test)]
 mod sql_tests;
 #[cfg(test)]
 mod tests;
@@ -19,6 +23,7 @@ use crate::opening::{
     },
 };
 use crate::primitive::{Kind, PrimitiveAir, PublicStatement};
+use p3_field::PrimeCharacteristicRing;
 use sha2::{Digest, Sha256};
 
 pub(in crate::opening) const PLAN_DOMAIN: [u8; 16] = *b"DCS/VLPLAN/N4/v1";
@@ -28,7 +33,7 @@ pub(in crate::opening) const OWNED_DOMAIN: [u8; 16] = *b"DCS/VLOWN/N4/v1!";
 /// Independently expected state and fresh control/query context. Its private
 /// typed source contract cannot be constructed by relabeling a canonical query.
 #[derive(Clone)]
-pub(super) struct Expected {
+pub(in crate::opening) struct Expected {
     inner: locked::Expected,
 }
 impl Expected {
@@ -55,7 +60,7 @@ impl Expected {
 
 /// Output commitments are untrusted until StateLease::verify_lock succeeds.
 #[derive(Clone)]
-pub(super) struct Statement {
+pub(in crate::opening) struct Statement {
     inner: locked::Statement,
 }
 impl Statement {
@@ -78,7 +83,7 @@ impl Statement {
             locked::encoded(proposed.next),
         )
     }
-    pub(super) fn require_expected(&self, expected: &Expected) -> Result<(), Error> {
+    pub(in crate::opening) fn require_expected(&self, expected: &Expected) -> Result<(), Error> {
         if self.kind() != Kind::VersionLockingSelection {
             return Err(Error::Shape);
         }
@@ -92,7 +97,7 @@ impl Statement {
         }
         Ok(())
     }
-    pub(super) fn source(&self) -> &locked::Statement {
+    pub(in crate::opening) fn source(&self) -> &locked::Statement {
         &self.inner
     }
 }
@@ -252,5 +257,72 @@ pub(crate) fn gate(mode: &str) -> Result<(), Error> {
         );
     }
     cache.clear();
+    Ok(())
+}
+
+/// Distinct bridge consumer. Cache admission proves source once; each child
+/// still verifies its actual warm lock proof before the encoding factory.
+pub(crate) fn returned_encoding_gate(mode: &str) -> Result<(), Error> {
+    use crate::opening::locking::encoding::{
+        self as encoded, statement as es, trace::Witness as EW,
+    };
+    use std::time::Instant;
+    if !matches!(mode, "security" | "prove") {
+        return Err(Error::Shape);
+    }
+    let (state, cold_witness, plain, state_salt) = super::fixture()?;
+    let sql = crate::opening::locking::sql::CompiledLockPlan::fresh(
+        "SELECT amount FROM records WHERE age>=128 OFFSET 1 LIMIT 1 FOR UPDATE SKIP LOCKED",
+    )?;
+    let (mut expected, mut witness) = sql_fixture(&state, plain, state_salt, &sql, [0xB1; 32])?;
+    witness.old.tx[1].held[0] = 4;
+    pin(&mut expected, &witness);
+    let lock = Statement::proposed(&expected, &witness)?;
+    let ee = es::Expected::certified(&expected, &lock)?;
+    let shape = es::Statement::new(ee.clone(), [Val::ZERO; 4]);
+    let ew = EW::from_lock(&shape, &witness, super::salt()?)?;
+    let es = ew.returned_statement(ee.clone());
+    crate::security(&es, "public-nonsecret-certified-successful-LockReturn168")?;
+    if mode == "security" {
+        return Ok(());
+    }
+    let started = Instant::now();
+    let proof = {
+        let witness = cold_witness;
+        let backend = Backend::new(&state)?;
+        backend.prove_with_trace(&state, || witness.trace(state.source()))?
+    };
+    let mut cache = CertificateCache::new(super::CACHE_BYTES)?;
+    cache.admit(&state, Candidate::new(state.clone(), Some(proof))?)?;
+    let cold_ms = started.elapsed().as_secs_f64() * 1000.0;
+    let lease = cache.lease(&state)?;
+    let started = Instant::now();
+    let lock_proof = lease.prove_lock(&expected, &lock, &witness)?;
+    let proof = encoded::prove_with_trace(
+        &ee,
+        &es,
+        Some(encoded::Evidence::Certified {
+            lease: &lease,
+            proof: &lock_proof,
+        }),
+        || ew.trace_returned(&es),
+    )?;
+    let proving = started.elapsed();
+    let started = Instant::now();
+    encoded::verify(
+        &ee,
+        &es,
+        Some(encoded::Evidence::Certified {
+            lease: &lease,
+            proof: &lock_proof,
+        }),
+        &proof,
+    )?;
+    println!(
+        "{{\"stage\":\"verified_experimental_certified_lock_return_encoding\",\"cold_source_ms\":{},\"proving_ms\":{},\"verification_ms\":{},\"live_sql_grant\":false}}",
+        cold_ms,
+        proving.as_secs_f64() * 1000.0,
+        started.elapsed().as_secs_f64() * 1000.0
+    );
     Ok(())
 }

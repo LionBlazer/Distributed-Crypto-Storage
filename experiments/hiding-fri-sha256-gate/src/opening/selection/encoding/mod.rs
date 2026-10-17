@@ -1,6 +1,6 @@
 //! Nonaccepting private selected-originals -> complete scaled BFV plaintext gate.
 pub(crate) mod air;
-mod matrix;
+pub(in crate::opening) mod matrix;
 pub(in crate::opening) mod statement;
 #[cfg(test)]
 mod tests;
