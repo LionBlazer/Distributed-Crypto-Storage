@@ -318,13 +318,10 @@ pub struct Evaluation {
 }
 /// Canonical binding/copy checks only; no butterfly, quotient or NTT evaluation.
 pub(crate) fn check_binding(r: &Request, o: &Output, a: &Aux) -> Result<()> {
-    if r.direction != o.direction
-        || r.direction != a.direction
-        || r.basis != o.basis
+    check_output_binding(r, o)?;
+    if r.direction != a.direction
         || r.basis != a.basis
-        || r.binding != o.binding
         || r.binding != a.binding
-        || o.input_digest != digest(&r.encode())
         || a.input_digest != o.input_digest
         || a.output_digest != digest(&o.encode())
         || a.stages.len() != r.direction.stages()
@@ -341,6 +338,18 @@ pub(crate) fn check_binding(r: &Request, o: &Output, a: &Aux) -> Result<()> {
         for row in &stage.rows {
             row.validate()?;
         }
+    }
+    Ok(())
+}
+
+/// Shared request/output framing only, without any auxiliary arithmetic or vectors.
+pub(crate) fn check_output_binding(r: &Request, o: &Output) -> Result<()> {
+    if r.direction != o.direction
+        || r.basis != o.basis
+        || r.binding != o.binding
+        || o.input_digest != digest(&r.encode())
+    {
+        return Err(Error::Binding);
     }
     Ok(())
 }

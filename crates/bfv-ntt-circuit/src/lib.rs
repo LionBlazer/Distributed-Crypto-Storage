@@ -1,7 +1,11 @@
 //! Full fixed-degree public ciphertext-derived native NTT relations, never SQL authority.
 #![forbid(unsafe_code)]
+#[cfg(any(feature = "plonky3", feature = "multistark"))]
+mod air_equation;
 mod codec;
 mod math;
+#[cfg(feature = "multistark")]
+pub mod multistark;
 mod parameters;
 #[cfg(feature = "plonky3")]
 pub mod plonky3;
