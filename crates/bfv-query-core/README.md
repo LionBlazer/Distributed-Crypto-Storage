@@ -240,3 +240,30 @@ Owning validation commands (Rust 1.99):
 cargo test --release --locked --offline -p bfv-query-core -- --test-threads=1
 cargo clippy --release --locked --offline -p bfv-query-core --all-targets -- -D warnings
 ```
+
+`PublicSetup::relinearization_material()` returns a borrowed
+`PublicRelinearizationMaterial` after the existing fixed parameter check.
+`parameters()` and `relinearization_key()` expose the exact original public byte
+slices; `geometry()` exposes the existing geometry. `keyset_id()` is the existing
+SHA256 identity of the COMPLETE setup encoding, including untouched rotation-key
+bytes. It does not decode/reorder key blobs or assemble a parameter-only subset.
+The view borrows one immutable setup and retains no cloned component buffers;
+computing its identity uses the unchanged full setup encoder. It has no secret-key,
+mutable-key, evaluator, serialization or accepting-proof API.
+
+Native owning validation passes all 93 runtime tests and the three existing
+compile-fail doctests, with zero failures or ignored cases. Strict all-target
+Clippy and explicit rustfmt also pass on Rust 1.99.0 in release/locked/offline mode,
+using a fresh `.local/target-public-relinearization-view-r1`. All existing lock
+files, setup wire and operation profile implementations remain unchanged.
+The three new public API tests cover a real non-secret Owner-generated setup and upstream key roundtrip, exact
+original/roundtrip bytes, identity changes for geometry, either key blob and
+rotation order, and opaque invalid bytes that remain inspectable while the full
+evaluator rejects them. Getters borrow component buffers; constructing the view
+temporarily encodes the complete setup to compute its existing identity, so this
+is not an allocation-free constructor or a whole-process resource guarantee.
+The caller must already trust the expected owner/setup provenance. A setup decoded
+from an untrusted sender can have a perfectly matching self-derived identity;
+that comparison supplies no owner authorization, same-secret/evaluation-key
+consistency, computation proof or fresh agreed state. A future public seeded-key
+adapter and its PB-to-NTT proof links are separate owning capabilities.

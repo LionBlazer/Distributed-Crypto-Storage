@@ -30,6 +30,8 @@ pub use indexed_update::{
     UnverifiedUpdateOutcome, UnverifiedUpdatedValues, UpdatedAmount,
 };
 pub use linear_update::{PublicUpdateEvaluator, PublicUpdateParameters};
+mod public_relinearization;
+pub use public_relinearization::PublicRelinearizationMaterial;
 
 use bfv_fixed_geometry::{DEGREE, MODULI, PLAINTEXT};
 use bincode::Options;
