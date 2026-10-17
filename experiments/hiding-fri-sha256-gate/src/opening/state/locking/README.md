@@ -109,3 +109,16 @@ rollback/MVCC/finality and cross-version identities. Warm witnesses still contai
 peer plaintext-free query execution, Owner export or production accepting API is
 added. The unchanged live hard rejections cannot accept this experiment. Full private PostgreSQL, practical end-to-end latency and the whole-process memory
 target remain unestablished; no fixed latency SLA is selected here.
+
+## Parsed SQL request boundary
+
+The normal version-locking CLI gate compiles its public nonsecret SQL through the
+[client-owned fixed N4 adapter](../../locking/README.md#sql-compiler-adapter).
+Its fresh SQL request is separate from the admitted state's version tag. Both warm
+plans retain the same complete `C_state` source, while their query context, control
+parent, predicate, strength, wait policy and bounded window are independently fixed.
+The [SQL locking-plan validation](../../../../SQL-LOCK-PLANS-VALIDATION.md) records
+the actual cold/two-warm parsed-query case and CLI, six focused new cases, owning
+rejection checks and unchanged 19 numerical reports. All 195 discovered names are
+not claimed as a full rerun. This grants no live lock, freshness, writer fence,
+BFV formation or network acceptance.

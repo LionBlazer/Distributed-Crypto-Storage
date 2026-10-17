@@ -90,6 +90,15 @@ struct Shard {
 /// This type has no constructor for a fabricated or unverified accepted result.
 #[derive(Debug)]
 pub enum AcceptedResult {}
+fn reject_locking_plan(plan: &QueryPlan) -> Result<()> {
+    if matches!(plan, QueryPlan::LockingSelect { .. }) {
+        return Err(Error::InvalidInput(
+            "Locking SELECT requires a composite source/ownership/FHE proof and fresh authorized control state; no live locking executor is implemented".into(),
+        ));
+    }
+    Ok(())
+}
+
 pub struct Database {
     name: String,
     table_id: compact_query::TableId,
@@ -289,11 +298,13 @@ impl Database {
     /// reply case is rejected; it can never produce AcceptedResult or advance heads.
     pub fn execute(&self, sql: &str) -> Result<AcceptedResult> {
         let plan = sql_plan::parse_sql(sql)?;
+        reject_locking_plan(&plan)?;
         if matches!(&plan, QueryPlan::Select { window, .. } if window.offset != 0) {
             return Err(Error::InvalidInput("The historical unverified adapter does not execute OFFSET; use the proof-backed Session".into()));
         }
         let range = match &plan {
             QueryPlan::Insert { .. } => None,
+            QueryPlan::LockingSelect { .. } => return Err(Error::MissingComputationProof),
             QueryPlan::Select { predicate, .. }
             | QueryPlan::Aggregate { predicate }
             | QueryPlan::Count { predicate }
@@ -355,6 +366,7 @@ impl Database {
                     )?;
                     (Operation::Update, prepared.request().to_vec())
                 }
+                QueryPlan::LockingSelect { .. } => return Err(Error::MissingComputationProof),
                 QueryPlan::Insert { rows } => {
                     let incoming = zeroize::Zeroizing::new(
                         rows.iter()

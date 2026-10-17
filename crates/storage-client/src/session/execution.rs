@@ -18,6 +18,8 @@ impl Session {
                 .ok_or_else(|| protocol("Missing retained mutation result"));
         }
         let plan = sql_plan::parse_sql(sql)?;
+        // A typed locking plan cannot enter ordinary SELECT/UPDATE or synchronization.
+        crate::reject_locking_plan(&plan)?;
         let read_requests = matches!(
             plan,
             QueryPlan::Select { .. }

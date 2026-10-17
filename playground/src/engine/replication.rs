@@ -439,6 +439,11 @@ pub(super) fn synchronize_peers(
 pub(super) fn admitted_range(plan: &QueryPlan) -> Result<Option<AgeRange>, LabError> {
     let predicate = match plan {
         QueryPlan::Insert { .. } => return Ok(None),
+        QueryPlan::LockingSelect { .. } => {
+            return Err(LabError::UnsupportedSql(
+                "The historical laboratory has no proof-backed row-lock executor".into(),
+            ));
+        }
         QueryPlan::Select { predicate, .. }
         | QueryPlan::Aggregate { predicate }
         | QueryPlan::Count { predicate }
@@ -511,6 +516,11 @@ pub(super) fn execute(
         QueryPlan::AddAmount { delta, .. } => Some(delta),
         QueryPlan::Select { .. } => unreachable!("row reads returned above"),
         QueryPlan::Insert { .. } => unreachable!("insert returned above"),
+        QueryPlan::LockingSelect { .. } => {
+            return Err(LabError::UnsupportedSql(
+                "Locking SELECT cannot enter ordinary encrypted arithmetic".into(),
+            ));
+        }
     };
     let Some(range) = admitted_range(&plan)? else {
         return Ok((

@@ -1,5 +1,8 @@
 //! Closed N4/private-two-transaction proof experiment. No live SQL lock grant.
 pub(crate) mod air;
+pub(in crate::opening) mod sql;
+#[cfg(test)]
+mod sql_tests;
 pub(in crate::opening) mod statement;
 #[cfg(test)]
 mod tests;
@@ -135,9 +138,35 @@ fn fixture() -> Result<(Expected, source_trace::Witness, Witness), Error> {
     expected.plan = commitment::digest(&statement::plan_fields(&expected, &witness));
     Ok((expected, source_witness, witness))
 }
+/// PUBLIC NONSECRET client setup, not an accepting source/control authority.
+fn sql_fixture(
+    compiled: &sql::CompiledLockPlan,
+) -> Result<(Expected, source_trace::Witness, Witness), Error> {
+    let (old_expected, source_witness, mut witness) = fixture()?;
+    let mut source = old_expected.source;
+    source.request = compiled.request();
+    source.open_commitment = commitment::digest(&commitment::opening_fields(
+        &source,
+        witness.salts[0],
+        &witness.plain,
+    ));
+    witness.plan = compiled.plan(witness.plan.table, witness.plan.actor)?;
+    let mut expected = compiled.expected(
+        &source,
+        old_expected.genesis,
+        old_expected.parent,
+        statement::encoded(old_expected.old),
+        [0; 32],
+    )?;
+    // Fixture client pins its actual compiled plan. Verification never chooses it.
+    expected.plan = commitment::digest(&statement::plan_fields(&expected, &witness));
+    Ok((expected, source_witness, witness))
+}
 pub(crate) fn gate(mode: &str) -> Result<(), Error> {
     use std::time::Instant;
-    let (expected, source_witness, witness) = fixture()?;
+    let compiled =
+        sql::CompiledLockPlan::fresh("SELECT amount FROM records LIMIT 2 FOR UPDATE SKIP LOCKED")?;
+    let (expected, source_witness, witness) = sql_fixture(&compiled)?;
     let s = statement::proposed(&expected, &witness)?;
     crate::security(&s, "closed-private-locking-N4-T2")?;
     if mode == "prove" {

@@ -50,3 +50,29 @@ storage bounds. Unsupported expressions, columns and clauses reject as a whole.
 
 The [fixed-record pagination validation](../../docs/fixed-select-pagination.md)
 records the implemented row window, actual proof tests and remaining boundaries.
+
+## Typed row-locking SELECT plans
+
+A single `FOR UPDATE`, `FOR NO KEY UPDATE`, `FOR SHARE` or `FOR KEY SHARE`
+produces the distinct `QueryPlan::LockingSelect` variant, never an ordinary
+SELECT. `LockingClause` retains its `LockStrength` and `LockWait`: omitted option
+means Wait; NOWAIT and SKIP LOCKED are explicit alternatives. Predicate truth,
+ordered projection and the original row window remain in the plan. No parser
+chooses an actor, key, table identity, control root or agreed version.
+
+The locking clause can precede or follow the entire LIMIT/OFFSET group. Splitting
+that group, duplicate options/clauses, OF lists, joins, aggregates, ORDER BY, FETCH
+and literal WAIT remain whole-statement errors in this fixed-record stage.
+PostgreSQL itself supports a broader grammar; this is not full PostgreSQL support.
+Sources: [PG18 SELECT locking](https://www.postgresql.org/docs/18/sql-select.html#SQL-FOR-UPDATE-SHARE)
+and its [pinned grammar](https://github.com/postgres/postgres/blob/REL_18_STABLE/src/backend/parser/gram.y)
+(`select_no_parens`, `for_locking_item`, `select_limit`).
+
+The [private locking experiment](../../experiments/hiding-fri-sha256-gate/src/opening/locking/README.md)
+consumes actual compiled plans when constructing independently expected C_plan.
+Storage-client Session/scripts and the historical lab reject locking plans before
+query I/O. Parsing is not a lock grant, transaction, computation proof or authorization.
+The [SQL locking-plan validation](../../experiments/hiding-fri-sha256-gate/SQL-LOCK-PLANS-VALIDATION.md)
+records 24 parser PASS cases, six focused experimental cases and both parsed-query
+CLI gates. All 195 names were discovered; the old 189 were not rerun. Parsing still
+confers no live grant or source/control authority.

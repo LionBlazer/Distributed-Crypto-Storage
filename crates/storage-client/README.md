@@ -522,3 +522,20 @@ live fallbacks. Typed imported catalogs keep their separate nullable Expr/index
 semantics and immutable mutation contract. This fixed-domain feature implements
 neither general typed expressions nor SQL locks/transactions or a new public
 source/completeness proof.
+
+## Recognized locking plans remain non-executable
+
+The fixed `sql-plan` front end recognizes a distinct locking SELECT contract for
+all four row strengths and default Wait/NOWAIT/SKIP LOCKED. Session, historical
+Database and whole-script preparation explicitly reject that variant before
+synchronization, source fetch, proof requests or Store. Typed RelationalSession
+keeps its existing separate unsupported-locking rejection before network I/O.
+The private N4 proof experiment consumes compiled SQL; it is no live executor.
+Ordinary owner-assisted Session arithmetic/source preparation is unchanged. Full
+source/selection/formation composition, authorized control-root history, writer
+fencing, MVCC and independently fresh agreed heads remain required before live
+locking acceptance. The [SQL locking-plan validation](../../experiments/hiding-fri-sha256-gate/SQL-LOCK-PLANS-VALIDATION.md)
+records 14 script PASS cases and both actual TLS rejection cases. Typed peers run
+in server threads; the fixed Session case uses an independent OS peer process.
+Both reject before locking-query I/O and retain the source version; fixture setup
+is separate. Historical GUI row tests and strict four-package checks also passed.

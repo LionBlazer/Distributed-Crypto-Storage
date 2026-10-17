@@ -15,6 +15,17 @@ The [measured network path](proved-sql-network.md) identifies the current worklo
 CPU budgets, proof boundary and remaining latency work. A representative larger
 workload and tail-latency objectives remain to be established.
 
+## Typed locking-plan boundary
+
+The [fixed SQL locking-plan validation](../experiments/hiding-fri-sha256-gate/SQL-LOCK-PLANS-VALIDATION.md)
+records the distinct four-strength/default-Wait/NOWAIT/SKIP plan, exact SQL/nonce
+binding, six actual focused private proof cases, both parsed-query CLI gates and
+owning parser/script/TLS/GUI checks. Existing 195 experiment names were discovered,
+not fully rerun; the old 189 and 19 numerical profiles remain preserved. Ordinary
+Session/scripts/typed catalog reject locking queries before query I/O. The closed
+N4/private two-transaction consumer grants no live FOR UPDATE, writer fence, MVCC,
+BFV formation, registry authority, fresh agreed head or finality.
+
 ## Current execution boundary
 
 The fixed-schema `storage-client::Session` accepts genuine proved row SELECT,

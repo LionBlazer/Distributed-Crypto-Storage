@@ -15,6 +15,7 @@ fhe-traits = "=0.1.1"
 fhe-util = "=0.1.1"
 rand09 = { package = "rand", version = "=0.9.2" }
 compact-store = { path = "../../crates/compact-store" }
+sql-plan = { path = "../../crates/sql-plan" }
 chacha20poly1305 = "=0.10.1"
 p3-poseidon2 = "=0.8.0"
 chacha20 = { version = "=0.9.1", features = ["zeroize"] }

@@ -4,6 +4,8 @@
 mod aggregate_measurement;
 #[path = "support/boolean_predicates.rs"]
 mod boolean_predicates;
+#[path = "support/locking_plans.rs"]
+mod locking_plans;
 #[path = "support/mutation_cancellation.rs"]
 mod mutation_cancellation;
 #[path = "support/received_version_import.rs"]

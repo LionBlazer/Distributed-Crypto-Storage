@@ -702,3 +702,30 @@ fn malformed_owner_tables_are_rejected_before_creating_keys_or_writing_peer_stat
         assert_eq!(status.journal_bytes, 0);
     }
 }
+
+#[test]
+fn typed_catalog_lock_syntax_cannot_enter_ordinary_projection_or_network_synchronization() {
+    let network = Network::new();
+    let database = import_database_dump(
+        "CREATE TABLE records (id integer NOT NULL); INSERT INTO records VALUES (1);",
+        ImportLimits::default(),
+    )
+    .unwrap();
+    let mut session =
+        RelationalSession::import(database, network.participants.clone(), test_profile()).unwrap();
+    let initial = session.version();
+    for strength in ["KEY SHARE", "SHARE", "NO KEY UPDATE", "UPDATE"] {
+        for option in ["", "NOWAIT", "SKIP LOCKED"] {
+            network.activity.lock().unwrap().clear();
+            assert!(
+                session
+                    .select(&format!(
+                        "SELECT id FROM records LIMIT 1 FOR {strength} {option}"
+                    ))
+                    .is_err()
+            );
+            assert!(network.activity.lock().unwrap().is_empty());
+            assert_eq!(session.version(), initial);
+        }
+    }
+}

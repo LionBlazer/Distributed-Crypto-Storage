@@ -1,6 +1,8 @@
 //! Query-specific private locking over an ACTUALLY admitted version certificate.
 //! The lease is the source authority; this module has no direct accepting path.
 #[cfg(test)]
+mod sql_tests;
+#[cfg(test)]
 mod tests;
 
 use super::{
@@ -166,13 +168,31 @@ fn pin(expected: &mut Expected, witness: &Witness) {
     expected.inner.plan = commitment::digest(&locked::plan_fields(&expected.inner, witness));
 }
 
+/// Same real fixture, with the plan supplied by the client SQL compiler.
+fn sql_fixture(
+    state: &StateStatement,
+    plain: [u8; 2348],
+    state_salt: [Val; 4],
+    compiled: &crate::opening::locking::sql::CompiledLockPlan,
+    parent: [u8; 32],
+) -> Result<(Expected, Witness), Error> {
+    let (mut expected, mut witness) =
+        fixture(state, plain, state_salt, compiled.request(), parent, false)?;
+    witness.plan = compiled.plan(witness.plan.table, witness.plan.actor)?;
+    pin(&mut expected, &witness);
+    Ok((expected, witness))
+}
+
 /// Numeric mode constructs bounded native fixture metadata only. Prove mode
 /// performs ONE cold source proof/admission and TWO fresh warm lock proofs.
 pub(crate) fn gate(mode: &str) -> Result<(), Error> {
     use std::time::Instant;
     let (state, source_witness, plain, state_salt) = super::fixture()?;
+    let first_sql = crate::opening::locking::sql::CompiledLockPlan::fresh(
+        "SELECT amount FROM records FOR UPDATE SKIP LOCKED LIMIT 2",
+    )?;
     let (first_expected, first_witness) =
-        fixture(&state, plain, state_salt, [0x11; 32], [0xB1; 32], false)?;
+        sql_fixture(&state, plain, state_salt, &first_sql, [0xB1; 32])?;
     let first = Statement::proposed(&first_expected, &first_witness)?;
     crate::security(&first, "version-bound-private-locking-N4-T2")?;
     if mode == "security" {
@@ -200,8 +220,11 @@ pub(crate) fn gate(mode: &str) -> Result<(), Error> {
         started.elapsed().as_secs_f64() * 1000.0,
         cache.owned_bytes()
     );
+    let second_sql = crate::opening::locking::sql::CompiledLockPlan::fresh(
+        "SELECT amount FROM records WHERE FALSE LIMIT 0 FOR SHARE NOWAIT",
+    )?;
     let (mut second_expected, mut second_witness) =
-        fixture(&state, plain, state_salt, [0x22; 32], [0xB2; 32], true)?;
+        sql_fixture(&state, plain, state_salt, &second_sql, [0xB2; 32])?;
     second_witness.old = first_witness.walk()?.next;
     second_witness.salts[1] = first_witness.salts[3];
     pin(&mut second_expected, &second_witness);

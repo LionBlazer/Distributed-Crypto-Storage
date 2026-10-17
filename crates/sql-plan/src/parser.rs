@@ -1,6 +1,9 @@
 mod predicate;
 
-use crate::{Column, Error, MAX_SQL_BYTES, Projection, QueryPlan, RowValues, RowWindow};
+use crate::{
+    Column, Error, LockStrength, LockWait, LockingClause, MAX_SQL_BYTES, Projection, QueryPlan,
+    RowValues, RowWindow,
+};
 
 /// Parses the supported fixed-schema grammar, consuming the entire input.
 /// No SQL clause is silently discarded or evaluated in plaintext as a fallback.
@@ -145,12 +148,68 @@ impl Parser {
         };
         self.expect_from_records()?;
         let predicate = self.predicate()?;
+        // PG18 gram.y select_no_parens permits FOR before or after the whole
+        // LIMIT/OFFSET group, never between its two members.
+        let before = self
+            .take("FOR")
+            .then(|| self.locking_clause())
+            .transpose()?;
         let window = self.row_window()?;
-        Ok(QueryPlan::Select {
-            predicate,
-            projection,
-            window,
+        let locking = if self.take("FOR") {
+            if before.is_some() {
+                return Err(unsupported(
+                    "multiple locking clauses are outside this fixed-table contract",
+                ));
+            }
+            Some(self.locking_clause()?)
+        } else {
+            before
+        };
+        Ok(match locking {
+            Some(locking) => QueryPlan::LockingSelect {
+                predicate,
+                projection,
+                window,
+                locking,
+            },
+            None => QueryPlan::Select {
+                predicate,
+                projection,
+                window,
+            },
         })
+    }
+    fn locking_clause(&mut self) -> Result<LockingClause, Error> {
+        let strength = if self.take("UPDATE") {
+            LockStrength::Update
+        } else if self.take("NO") {
+            self.expect("KEY")?;
+            self.expect("UPDATE")?;
+            LockStrength::NoKeyUpdate
+        } else if self.take("SHARE") {
+            LockStrength::Share
+        } else if self.take("KEY") {
+            self.expect("SHARE")?;
+            LockStrength::KeyShare
+        } else {
+            return Err(unsupported(
+                "expected UPDATE, NO KEY UPDATE, SHARE or KEY SHARE after FOR",
+            ));
+        };
+        if self.take("OF") {
+            return Err(unsupported(
+                "OF table lists are outside this single fixed-table contract",
+            ));
+        }
+        let wait = if self.take("NOWAIT") {
+            LockWait::NoWait
+        } else if self.take("SKIP") {
+            self.expect("LOCKED")?;
+            LockWait::SkipLocked
+        } else {
+            LockWait::Wait
+        };
+        Ok(LockingClause { strength, wait })
     }
     fn row_window(&mut self) -> Result<RowWindow, Error> {
         let mut window = RowWindow::default();
@@ -246,6 +305,6 @@ impl Parser {
 
 fn unsupported(reason: &str) -> Error {
     Error::UnsupportedSql(format!(
-        "{reason}. Supported: SELECT *, age, amount, COUNT(*), SUM(amount), or COUNT(*), SUM(amount) FROM records; INSERT INTO records (age, amount) VALUES (A, N) [, (A, N) ...]; UPDATE records SET amount = amount + N. Optional read/update WHERE combines age comparisons, [NOT] BETWEEN, [NOT] IN, IS [NOT] NULL and TRUE/FALSE/NULL using AND/OR/NOT and parentheses. Comparison integer literals fit i64; NULL uses SQL three-valued logic. Row SELECT accepts LIMIT integer/ALL/NULL and OFFSET integer/NULL; execution resource budgets are checked by the executor."
+        "{reason}. Supported: SELECT *, age, amount, COUNT(*), SUM(amount), or COUNT(*), SUM(amount) FROM records; INSERT INTO records (age, amount) VALUES (A, N) [, (A, N) ...]; UPDATE records SET amount = amount + N. Optional read/update WHERE combines age comparisons, [NOT] BETWEEN, [NOT] IN, IS [NOT] NULL and TRUE/FALSE/NULL using AND/OR/NOT and parentheses. Comparison integer literals fit i64; NULL uses SQL three-valued logic. Row SELECT accepts LIMIT integer/ALL/NULL and OFFSET integer/NULL. A single FOR UPDATE/NO KEY UPDATE/SHARE/KEY SHARE clause, optionally NOWAIT or SKIP LOCKED, produces a distinct plan requiring its own proof; live executors reject it. Execution resource budgets are checked by the executor."
     ))
 }

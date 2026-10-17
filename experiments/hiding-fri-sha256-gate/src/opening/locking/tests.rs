@@ -67,7 +67,7 @@ fn rehash(s: &mut Statement, trace: &mut RowMajorMatrix<Val>, rebind_plan: bool,
         }
     }
 }
-fn rebuilt_rejects(s: &Statement, trace: RowMajorMatrix<Val>) {
+pub(super) fn rebuilt_rejects(s: &Statement, trace: RowMajorMatrix<Val>) {
     assert!(!check_all_constraints(&s.air(), &trace, &s.public_values(), Some(1)).is_ok());
     let b = Backend::new(s).unwrap();
     if let Ok(proof) = p3_uni_stark::prove(&b.config, &s.air(), trace, &s.public_values()) {
@@ -111,7 +111,11 @@ fn apply(s: &mut tx::State, id: tx::TransactionId, action: tx::Action) {
         .map_or(tx::ControllerId([0x40 + id.0 as u8; 32]), |t| t.controller);
     *s = s.transition(actor, &command(s, id, action)).unwrap().state;
 }
-fn native_state(w: &mut Witness, holdings: [[u8; 4]; 2], failed: [bool; 2]) -> tx::State {
+pub(super) fn native_state(
+    w: &mut Witness,
+    holdings: [[u8; 4]; 2],
+    failed: [bool; 2],
+) -> tx::State {
     let context = tx::Context::new(
         [0xA1; 32],
         [0xC1; 16],
@@ -180,7 +184,7 @@ fn native_state(w: &mut Witness, holdings: [[u8; 4]; 2], failed: [bool; 2]) -> t
     s
 }
 /// The reference performs the actual metadata transition, not our prefix loop.
-fn oracle(w: &Witness, s: &tx::State) {
+pub(super) fn oracle(w: &Witness, s: &tx::State) {
     let ordinals: Vec<_> = (0..4)
         .filter(|i| {
             let age = w.plain[3 * i];

@@ -145,3 +145,41 @@ writer fencing and proved output re-encryption, rollback/MVCC and consensus fina
 The live Session/JobVerifier/MetadataVerifier are unchanged and cannot accept this
 candidate as FOR UPDATE/SKIP LOCKED. Owner-witness generation is not peer plaintext
 execution. No production cryptography, latency or whole-process RAM claim is made.
+
+## SQL compiler adapter
+
+`sql::CompiledLockPlan` is an immutable owner/client value constructed by the real
+[sql-plan](../../../../../crates/sql-plan/README.md) parser. Both existing Locking and
+VersionLocking CLI gates now compile their public-nonsecret SQL before constructing
+Expected/C_plan and following the genuine proof path. There is no peer-supplied AST,
+authority flag or plaintext answer. All old AIR equations, profiles, private stream
+encodings and fixtures remain separate and unchanged. This new front-end/gate
+binding passed six focused new cases and both parsed-query CLI gates. The
+[SQL locking-plan validation](../../../SQL-LOCK-PLANS-VALIDATION.md) records
+all 195 discovered names separately from the six executed cases, unchanged 19
+numerical reports and actual owning rejection checks. Historical reports retain
+their original source; no live locking acceptance is inferred.
+
+The request is SHA256(domain || LE64(SQL byte length) || exact SQL bytes || caller
+nonce32). CLI samples a fresh nonce from the existing OS-seeded RNG; tests pass
+explicit public nonces. It proves no nonce entropy or controller permission.
+Canonical C_open is reconstructed for this request; version C_state/version_tag
+is immutable and the query request is separate. Genesis/parent/C_old/C_plan and
+private actor/TableId still come from independently owned caller context.
+
+Full compiler TRUE-mask256, strength, policy and window feed the existing private
+Plan. The N4 adapter admits offset0..4 and finite limit0..4, with None interpreted
+as the known four-row source; larger values reject instead of clamping. AmountAge
+is explicitly rejected at this adapter, although the parser preserves it: the
+current relation returns fixed ORIGINAL tuples and does not attest reversed
+projected formatting. Age, Amount and AgeAmount retain their existing masks;
+no projected plaintext answer or FHE formation is inferred.
+
+SKIP LOCKED always consumes the complete four canonical source rows. Ordinary
+per-shard OFFSET+LIMIT prefixes are not a lock candidate provider. The six tested
+examples use the actual transaction-state oracle, genuine canonical source/lock
+proofs, a real cold certificate with two parsed warm queries, and a rebuilt wrong
+policy trace with independently retained C_plan. Live Session/scripts/typed catalog
+remain fail-closed; LockReturn168 is not SelectedEncoding88. Full PostgreSQL,
+writer fences, rollback data semantics, key/actor authorization and finality remain
+unfinished requirements. No practical latency or RAM result is claimed here.

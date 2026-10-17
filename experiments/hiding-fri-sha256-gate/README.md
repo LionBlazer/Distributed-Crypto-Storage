@@ -309,3 +309,16 @@ These nonaccepting owner-witness candidates add no Owner key export, authorized
 BFV/evaluation-key binding, entropy proof, complete formation, live SQL/lock grant,
 writer fence or fresh final agreement. Earlier validated profile/report facts
 remain unchanged.
+
+## Fixed SQL locking-plan consumer
+
+The canonical and version-bound locking CLI gates now consume the real
+[`sql-plan` compiler](../../crates/sql-plan/README.md) through a
+[private bounded adapter](src/opening/locking/README.md#sql-compiler-adapter).
+This normal experiment dependency does not connect a locking plan to the live peer
+executor. The [SQL locking-plan validation](SQL-LOCK-PLANS-VALIDATION.md) records actual
+142-package offline resolution, unchanged 19 numerical reports, six focused new
+experimental cases, both parsed-query CLI gates and owning parser/script/TLS/GUI
+checks. All 195 experiment names were discovered; this was not a full195 rerun.
+All previous BFV/AIR profiles remain unchanged, and historical reports retain
+their original frozen source and measurements.

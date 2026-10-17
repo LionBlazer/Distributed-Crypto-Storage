@@ -68,6 +68,29 @@ impl RowWindow {
     }
 }
 
+/// Requested SQL row strength. This value grants no ownership or authorization.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LockStrength {
+    KeyShare,
+    Share,
+    NoKeyUpdate,
+    Update,
+}
+
+/// Default WAIT is represented by the absence of a PostgreSQL option keyword.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LockWait {
+    Wait,
+    NoWait,
+    SkipLocked,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LockingClause {
+    pub strength: LockStrength,
+    pub wait: LockWait,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QueryPlan {
     Aggregate {
@@ -83,6 +106,14 @@ pub enum QueryPlan {
         predicate: Predicate,
         projection: Projection,
         window: RowWindow,
+    },
+    /// A distinct non-executable contract: ordinary SELECT consumers must reject it.
+    /// The full matching source is required before any SKIP LOCKED window.
+    LockingSelect {
+        predicate: Predicate,
+        projection: Projection,
+        window: RowWindow,
+        locking: LockingClause,
     },
     AddAmount {
         predicate: Predicate,

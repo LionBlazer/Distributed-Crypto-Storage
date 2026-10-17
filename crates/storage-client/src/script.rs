@@ -269,12 +269,6 @@ fn prepare_statement(tokens: Vec<String>, number: usize) -> Result<SqlStatement,
         }
         return Ok(SqlStatement::CreateTable { if_not_exists });
     }
-    if tokens.windows(2).any(|pair| pair == ["FOR", "UPDATE"]) {
-        return Err(invalid(
-            number,
-            "SELECT FOR UPDATE requires transactions and row locking, which are not implemented; the locking clause cannot be ignored",
-        ));
-    }
     // Keep lexical boundaries without inflating punctuation-heavy batches beyond
     // sql-plan's statement-byte limit. Separated comparison symbols must not turn
     // malformed `< =` or `> =` into a supported compound operator.
@@ -300,6 +294,12 @@ fn prepare_query(sql: String, number: usize) -> Result<SqlStatement, ScriptError
         failed_statement: number,
         completed: Vec::new(),
         source: source.into(),
+    })?;
+    // Reject every strength/policy before the script can create or store anything.
+    crate::reject_locking_plan(&plan).map_err(|source| ScriptError {
+        failed_statement: number,
+        completed: Vec::new(),
+        source,
     })?;
     Ok(SqlStatement::Query { sql, plan })
 }
@@ -646,6 +646,27 @@ mod tests {
             "SELECT * FROM records WHERE age = '18'".into(),
         ] {
             assert!(SqlScript::parse(&source).is_err());
+        }
+    }
+}
+
+#[cfg(test)]
+mod locking_plan_tests {
+    use super::*;
+    #[test]
+    fn all_lock_strengths_reject_the_entire_script_before_creation_or_prior_statement_execution() {
+        for strength in ["KEY SHARE", "SHARE", "NO KEY UPDATE", "UPDATE"] {
+            for option in ["", "NOWAIT", "SKIP LOCKED"] {
+                let script = format!(
+                    "CREATE TABLE records (age TINYINT UNSIGNED NOT NULL, amount SMALLINT UNSIGNED NOT NULL); SELECT amount FROM records FOR {strength} {option}"
+                );
+                let error = SqlScript::parse(&script).unwrap_err();
+                assert_eq!(error.failed_statement, 2);
+                assert!(error.completed.is_empty());
+                assert!(
+                    matches!(error.source,Error::InvalidInput(ref text) if text.contains("composite source/ownership/FHE proof"))
+                );
+            }
         }
     }
 }
