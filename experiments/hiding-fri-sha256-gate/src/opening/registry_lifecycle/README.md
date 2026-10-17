@@ -5,7 +5,9 @@ and all 21 new owning tests passed; see the
 [validation record](../../../PRIVATE-REGISTRY-LIFECYCLE-VALIDATION.md). It introduces
 two distinct experimental kinds:
 `registry-lifecycle-bootstrap` and `registry-lifecycle`. Neither kind is admitted
-by the existing proof wire, private Journal, SQL acceptance path or BFV producers.
+by the legacy proof wire, private Journal, SQL acceptance path or BFV producers.
+The separate [typed transport](wire/README.md) now verifies both new proof roles
+and measures complete signed Body serialization, without Journal admission.
 The validated Registry112, enrollment64, LockReturn168 and all older profiles keep
 their existing meanings. A 32-byte root is not a conversion between these types.
 
@@ -128,10 +130,10 @@ actor and advances revision.
 
 The old child wire limits are unchanged. The calculated unmasked trace is
 27,611,136 bytes, masked main trace 55,263,232 bytes and main LDE 442,105,856 bytes
-under the old backend formulas; these arrays are not process RSS. A future distinct
-typed wire needs actual full Source+child serialization and a complete Journal body
-bound under the existing 32 MiB limit. No emitter fit or composed 128-bit guarantee
-is asserted. The required peer-only encrypted computation, compact storage,
+under the old backend formulas; these arrays are not process RSS. The distinct
+[typed wire](wire/README.md) now has measured genuine full Source+child and signed
+Body serialization under the existing 32 MiB cap. This does not admit new roots to
+the Journal or establish a composed 128-bit guarantee. The required peer-only encrypted computation, compact storage,
 decentralized agreement/freshness and fast complete SQL proof remain open.
 
 ## Validated owning examples and normal entry points
@@ -143,8 +145,9 @@ failed Commit, u64 boundaries, full flags, coherent raw-SDK attacks and repaired
 positive controls. The genuine test code verifies Source, a new bootstrap, a
 foreign enrollment child under its own Expected, and a ten-command chain through
 the public composite verifier. A genuine Bytes proof is independently verified
-before its prerequisite rejection. Actual discovery lists 296 cases; this stage
-executed all 21 new and 27 prior controls. Old 275 test names/bodies remain unchanged except exhaustive
+before its prerequisite rejection. The lifecycle validation listed 296 cases and
+executed all 21 new and 27 prior controls. The subsequent typed-wire validation
+listed 304 and executed 56 leaf tests plus two contract tests. Old 275 test names/bodies remain unchanged except exhaustive
 new-Kind rejection arms.
 
 From the standalone leaf:

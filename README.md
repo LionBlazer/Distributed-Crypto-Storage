@@ -177,3 +177,9 @@ see the [validation record](experiments/hiding-fri-sha256-gate/PRIVATE-REGISTRY-
 relation remains owner-local and has no existing wire/Journal, live SQL, MVCC,
 controller-signature or encrypted data commit authority. Earlier stage reports
 retain their original scope.
+
+
+## Registry200 proof transport
+
+Registry200 now has distinct bounded proof serialization and measured complete signed Body transport. The existing Journal and live SQL acceptance still reject these new roots. See the
+[validation record](experiments/hiding-fri-sha256-gate/PRIVATE-REGISTRY-LIFECYCLE-WIRE-VALIDATION.md).

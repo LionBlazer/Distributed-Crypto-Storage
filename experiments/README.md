@@ -69,3 +69,9 @@ see the [validation record](hiding-fri-sha256-gate/PRIVATE-REGISTRY-LIFECYCLE-VA
 relation remains owner-local and has no existing wire/Journal, live SQL, MVCC,
 controller-signature or encrypted data commit authority. Earlier stage reports
 retain their original scope.
+
+
+## Registry200 proof transport
+
+The new Registry200 typed-wire candidate passed actual fresh Source/child proof verification, full signed Body transport and focused regression checks. This does not add a Journal adapter or peer SQL grant. See the
+[validation record](hiding-fri-sha256-gate/PRIVATE-REGISTRY-LIFECYCLE-WIRE-VALIDATION.md).

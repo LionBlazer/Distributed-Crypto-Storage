@@ -1,0 +1,132 @@
+//! Distinct Registry200 transport envelope. No request codec or Journal admission.
+use super::Error;
+use crate::backend::profile_digest;
+use crate::primitive::Kind;
+pub(super) const MAX_SOURCE_BYTES: usize = 20 * 1024 * 1024;
+pub(super) const MAX_REQUEST_BYTES: usize = 4096;
+pub(super) const BODY_OVERHEAD: usize = 117 + MAX_REQUEST_BYTES + 456;
+pub(super) const MAX_BUNDLE_BYTES: usize = version_journal::MAX_BODY_BYTES - BODY_OVERHEAD;
+const MAX_HEADER: usize = 88 + 64;
+pub(super) const MAX_CHILD_BYTES: usize = MAX_BUNDLE_BYTES - MAX_SOURCE_BYTES - MAX_HEADER;
+pub(super) const COMMON_HEADER: usize = 88;
+const MAGIC: &[u8; 8] = b"DCSLFPW1";
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Role {
+    Bootstrap,
+    Transition,
+}
+impl Role {
+    pub(super) fn tag(self) -> u8 {
+        match self {
+            Self::Bootstrap => 1,
+            Self::Transition => 2,
+        }
+    }
+    pub(super) fn kind(self) -> Kind {
+        match self {
+            Self::Bootstrap => Kind::RegistryLifecycleBootstrap,
+            Self::Transition => Kind::RegistryLifecycle,
+        }
+    }
+    pub(super) fn output_count(self) -> usize {
+        match self {
+            Self::Bootstrap => 1,
+            Self::Transition => 2,
+        }
+    }
+}
+/// One update and a nonempty request no larger than4096 bytes are the explicit
+/// transport reservation. This does not validate the meaning of that update.
+pub(super) fn body_length(request: usize, frame: usize) -> Result<usize, Error> {
+    if request == 0 || request > MAX_REQUEST_BYTES || frame > MAX_BUNDLE_BYTES {
+        return Err(Error::ResourceLimit);
+    }
+    let length = 117usize
+        .checked_add(request)
+        .and_then(|n| n.checked_add(456))
+        .and_then(|n| n.checked_add(frame))
+        .ok_or(Error::ResourceLimit)?;
+    if length > version_journal::MAX_BODY_BYTES {
+        return Err(Error::ResourceLimit);
+    }
+    Ok(length)
+}
+pub(super) struct Frame<'a> {
+    pub outputs: &'a [u8],
+    pub source: &'a [u8],
+    pub child: &'a [u8],
+}
+impl<'a> Frame<'a> {
+    pub(super) fn parse(role: Role, bytes: &'a [u8]) -> Result<Self, Error> {
+        if bytes.len() > MAX_BUNDLE_BYTES {
+            return Err(Error::ResourceLimit);
+        }
+        let header = bytes.get(..COMMON_HEADER).ok_or(Error::Encoding)?;
+        if &header[..8] != MAGIC
+            || header[8] != role.tag()
+            || header[9..16] != [0; 7]
+            || header[16..48] != profile_digest(Kind::CanonicalIndexOpening)
+            || header[48..80] != profile_digest(role.kind())
+        {
+            return Err(Error::Profile);
+        }
+        let source =
+            u32::from_le_bytes(header[80..84].try_into().map_err(|_| Error::Encoding)?) as usize;
+        let child =
+            u32::from_le_bytes(header[84..88].try_into().map_err(|_| Error::Encoding)?) as usize;
+        if source == 0 || child == 0 {
+            return Err(Error::Encoding);
+        }
+        if source > MAX_SOURCE_BYTES || child > MAX_CHILD_BYTES {
+            return Err(Error::ResourceLimit);
+        }
+        let output_end = COMMON_HEADER + 32 * role.output_count();
+        let source_end = output_end.checked_add(source).ok_or(Error::ResourceLimit)?;
+        let end = source_end.checked_add(child).ok_or(Error::ResourceLimit)?;
+        if end != bytes.len() {
+            return Err(Error::Encoding);
+        }
+        Ok(Self {
+            outputs: bytes
+                .get(COMMON_HEADER..output_end)
+                .ok_or(Error::Encoding)?,
+            source: bytes.get(output_end..source_end).ok_or(Error::Encoding)?,
+            child: bytes.get(source_end..end).ok_or(Error::Encoding)?,
+        })
+    }
+}
+pub(super) fn join(
+    role: Role,
+    roots: &[[u8; 32]],
+    source: &[u8],
+    child: &[u8],
+) -> Result<Vec<u8>, Error> {
+    if roots.len() != role.output_count() || source.is_empty() || child.is_empty() {
+        return Err(Error::Shape);
+    }
+    if source.len() > MAX_SOURCE_BYTES || child.len() > MAX_CHILD_BYTES {
+        return Err(Error::ResourceLimit);
+    }
+    let length = COMMON_HEADER
+        .checked_add(32 * roots.len())
+        .and_then(|n| n.checked_add(source.len()))
+        .and_then(|n| n.checked_add(child.len()))
+        .ok_or(Error::ResourceLimit)?;
+    if length > MAX_BUNDLE_BYTES {
+        return Err(Error::ResourceLimit);
+    }
+    let mut bytes = Vec::with_capacity(length);
+    bytes.extend_from_slice(MAGIC);
+    bytes.push(role.tag());
+    bytes.extend_from_slice(&[0; 7]);
+    bytes.extend_from_slice(&profile_digest(Kind::CanonicalIndexOpening));
+    bytes.extend_from_slice(&profile_digest(role.kind()));
+    bytes.extend_from_slice(&(source.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&(child.len() as u32).to_le_bytes());
+    for root in roots {
+        bytes.extend_from_slice(root);
+    }
+    bytes.extend_from_slice(source);
+    bytes.extend_from_slice(child);
+    Ok(bytes)
+}

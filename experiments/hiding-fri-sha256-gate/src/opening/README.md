@@ -408,3 +408,9 @@ see the [validation record](../../PRIVATE-REGISTRY-LIFECYCLE-VALIDATION.md) for 
 relation remains owner-local and has no existing wire/Journal, live SQL, MVCC,
 controller-signature or encrypted data commit authority. Earlier stage reports
 retain their original scope.
+
+
+## Registry200 proof transport
+
+The internal proof_codec shares fixed SDK topology and canonical bounded serialization only; each typed wire owns its role/profile/resource policy. Registry200 uses registry_lifecycle/wire and leaves the legacy wire unchanged. Actual signed Body transport has no Request200 parser, Journal admission or live SQL grant. See the
+[validation record](../../PRIVATE-REGISTRY-LIFECYCLE-WIRE-VALIDATION.md).

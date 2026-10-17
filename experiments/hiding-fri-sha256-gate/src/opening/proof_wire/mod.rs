@@ -33,6 +33,16 @@ impl From<BackendError> for Error {
     }
 }
 
+impl From<crate::opening::proof_codec::Error> for Error {
+    fn from(value: crate::opening::proof_codec::Error) -> Self {
+        match value {
+            crate::opening::proof_codec::Error::Encoding => Self::Encoding,
+            crate::opening::proof_codec::Error::ResourceLimit => Self::ResourceLimit,
+            crate::opening::proof_codec::Error::Shape => Self::Shape,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Role {
     Bootstrap,
@@ -108,12 +118,7 @@ impl<'a> Frame<'a> {
 }
 
 fn serialize(proof: &Proof<Config>, shape: &Shape, cap: usize) -> Result<Vec<u8>, Error> {
-    shape.check(proof)?;
-    let bytes = postcard::to_allocvec(proof).map_err(|_| Error::Encoding)?;
-    if bytes.len() > cap {
-        return Err(Error::ResourceLimit);
-    }
-    Ok(bytes)
+    crate::opening::proof_codec::serialize(proof, &shape.topology, cap).map_err(Error::from)
 }
 
 pub(super) fn encode(
@@ -164,25 +169,8 @@ fn join(role: Role, outputs: &[[u8; 32]], source: &[u8], child: &[u8]) -> Result
 }
 
 fn decode(bytes: &[u8], shape: &Shape, slots: usize) -> Result<Proof<Config>, Error> {
-    let (proof, trailing) = bounded_postcard::take_from_bytes::<Proof<Config>>(
-        bytes,
-        bounded_postcard::Limits {
-            max_sequence_elements: MAX_SEQUENCE_ELEMENTS,
-            max_total_elements: slots,
-        },
-    )
-    .map_err(|e| match e {
-        bounded_postcard::Error::ResourceLimit => Error::ResourceLimit,
-        bounded_postcard::Error::Encoding => Error::Encoding,
-    })?;
-    if !trailing.is_empty() {
-        return Err(Error::Encoding);
-    }
-    shape.check(&proof)?;
-    if postcard::to_allocvec(&proof).map_err(|_| Error::Encoding)? != bytes {
-        return Err(Error::Encoding);
-    }
-    Ok(proof)
+    crate::opening::proof_codec::decode(bytes, &shape.topology, MAX_SEQUENCE_ELEMENTS, slots)
+        .map_err(Error::from)
 }
 
 pub(super) fn decode_pair(

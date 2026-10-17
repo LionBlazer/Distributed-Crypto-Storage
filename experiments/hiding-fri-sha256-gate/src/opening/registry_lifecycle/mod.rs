@@ -1,4 +1,5 @@
-//! Distinct private lifecycle research relation. No wire, Journal or live grant accepts these roots.
+//! Distinct private lifecycle relation and experimental typed transport.
+//! Legacy wire, Journal admission and live grants do not accept Registry200 roots.
 mod acquire;
 pub(crate) mod air;
 pub(crate) mod bootstrap;
@@ -11,6 +12,7 @@ mod statement;
 #[cfg(test)]
 mod tests;
 mod trace;
+mod wire;
 use crate::backend::{Backend, Config, Error, Val};
 use crate::opening::trace as source_trace;
 use crate::primitive::Kind;
@@ -156,4 +158,8 @@ pub(crate) fn gate(mode: &str, bootstrap: bool) -> Result<(), Error> {
         );
     }
     Ok(())
+}
+
+pub(crate) fn wire_gate(mode: &str, bootstrap: bool) -> Result<(), Error> {
+    wire::gate(mode, bootstrap)
 }

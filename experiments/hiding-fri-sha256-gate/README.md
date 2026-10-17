@@ -403,3 +403,9 @@ see the [validation record](PRIVATE-REGISTRY-LIFECYCLE-VALIDATION.md) for 296 di
 relation remains owner-local and has no existing wire/Journal, live SQL, MVCC,
 controller-signature or encrypted data commit authority. Earlier stage reports
 retain their original scope.
+
+
+## Registry200 proof transport
+
+Distinct DCSLFPW1 Registry200 roles now serialize actual Source/child proofs and freshly verify complete signed Bodies within the unchanged 32 MiB cap. All 29 old numerical outputs remain equal; 56 leaf and two contract tests passed, with 304 discovered and 248 bodies not rerun. See the
+[validation record](PRIVATE-REGISTRY-LIFECYCLE-WIRE-VALIDATION.md).
