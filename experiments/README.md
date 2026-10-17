@@ -17,6 +17,10 @@ in ignored `.local/`, not in the library source tree.
   Its [native validation](bfv-rns-scale-proof/VALIDATION.md) includes actual SDK
   parity, genuine serialized proofs and rejection tests. Full ciphertext
   multiplication, relinearization and SQL acceptance remain separate work.
+- [bfv-ntt-proof](bfv-ntt-proof/README.md) proves complete native NTT transforms
+  across all ten fixed Q5/P5 moduli, including inverse normalization. Its
+  [native validation](bfv-ntt-proof/VALIDATION.md) covers all 20 genuine stages,
+  actual SDK parity, rebuilt-certificate attacks and explicit decoder budgets.
 - [source-primitive and opening gates](hiding-fri-sha256-gate/README.md) share an
   experimental private hiding-FRI backend. Genuine primitive proofs extend to a
   bounded private CSTORE opening and the

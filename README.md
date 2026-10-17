@@ -87,6 +87,7 @@ object; this optimization does not establish sparse disk I/O or private PIR.
 | [bfv-linear-circuit](crates/bfv-linear-circuit/README.md) | Canonical full-residue BFV addition statement for proof consumers |
 | [bfv-product-circuit](crates/bfv-product-circuit/README.md) | Canonical full-residue BFV public-polynomial product |
 | [bfv-scale-circuit](crates/bfv-scale-circuit/README.md) | Full-8192 public RNS extension/downscale arithmetic, canonical certificates and optional AIR |
+| [bfv-ntt-circuit](crates/bfv-ntt-circuit/README.md) | Full-8192 native NTT routing and inverse normalization across all ten Q5/P5 moduli |
 | [bfv-query-proof](crates/bfv-query-proof/README.md) | Genuine bounded STARK generation and independent arithmetic verification |
 | [bounded-postcard](crates/bounded-postcard/README.md) | Reusable nested-container decoding with explicit caller-owned budgets |
 | [proof-acceleration](crates/proof-acceleration/README.md) | Startup CPU/OS dispatch and bounded ABI for trusted proof kernels |
@@ -122,8 +123,11 @@ durable confirmation. Larger typed workloads, failures, WAN and tail bounds rema
 open; the latest measured million-row point UPDATE still takes about 1.0 second.
 The current SQL goal has no fixed 500 ms requirement. The separate
 [public RNS scaling experiment](experiments/bfv-rns-scale-proof/VALIDATION.md)
-proves both complete fixed-basis scaling stages, a dependency of encrypted
-ciphertext multiplication; full multiplication and relinearization remain open. The
+proves both complete fixed-basis scaling stages. The
+[native NTT experiment](experiments/bfv-ntt-proof/VALIDATION.md) also proves both
+complete transform directions for all ten Q5/P5 moduli. These are dependencies of
+encrypted ciphertext multiplication; full multiplication and relinearization
+remain open. The
 original [addition experiment](experiments/bfv-addition-proof/README.md)
 and its [measurements](docs/experiment-bfv-addition-proof.md) remain historical evidence.
 
