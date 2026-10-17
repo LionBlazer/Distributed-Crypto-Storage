@@ -81,3 +81,26 @@ fn bounded_evidence_rejects_missing_truncated_and_oversized_frames_before_sdk() 
         assert!(verify([4; 32], &expected, &bytes).is_err());
     }
 }
+
+#[test]
+fn explicit_wrong_coefficient_and_transform_claims_cannot_be_proved_by_another_opening() {
+    let coefficients = Zeroizing::new(vec![0i8; N]);
+    let witness = ProverWitness::new(coefficients, [7; 4], [11; 4]).unwrap();
+    let honest = witness.statement(descriptor());
+    for attack in 0..2 {
+        let mut claim = honest.clone();
+        if attack == 0 {
+            claim.expected.coefficients[3] += Val::ONE;
+        } else {
+            claim.transformed[3] += Val::ONE;
+        }
+        // This reaches the actual fixed Key trace/prover, not a local root comparison alone.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            prove_statement([4; 32], &claim.expected, &claim, &witness)
+        }));
+        assert!(
+            !matches!(result, Ok(Ok(_))),
+            "wrong explicit claim {attack}"
+        );
+    }
+}

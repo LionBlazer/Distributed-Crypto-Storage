@@ -1,17 +1,18 @@
 //! Independent key-root and complete public ciphertext binding; no inferred key authority.
-use super::{
-    OUTPUT_DOMAIN,
-    ciphertext::{self, CanonicalCiphertext},
-};
+use super::ciphertext::{self, CanonicalCiphertext};
 use crate::backend::{Error, Val, profile_digest};
 use crate::opening::key_transform::statement::Statement as KeyStatement;
 use crate::primitive::{Kind, PrimitiveAir, PublicStatement};
-use p3_field::{PrimeCharacteristicRing, PrimeField64};
-use sha2::{Digest, Sha256};
+use p3_field::PrimeCharacteristicRing;
 
 pub(in crate::opening) const PUBLIC_VALUES: usize = 62;
 pub(in crate::opening) const INPUT_ROOT: usize = 37;
 pub(in crate::opening) const OUTPUT_ROOT: usize = 58;
+const _: () = assert!(
+    PUBLIC_VALUES == bfv_basis_convolution::PUBLIC_VALUES
+        && INPUT_ROOT == bfv_basis_convolution::INPUT_ROOT
+        && OUTPUT_ROOT == bfv_basis_convolution::OUTPUT_ROOT
+);
 
 #[derive(Clone)]
 pub(in crate::opening) struct Expected {
@@ -71,28 +72,19 @@ impl Statement {
         }
         Ok(())
     }
+    pub(in crate::opening) fn shared(&self) -> bfv_basis_convolution::Statement {
+        bfv_basis_convolution::Statement {
+            expected: bfv_basis_convolution::Expected::from_ciphertext(
+                self.expected.key.shared(),
+                self.expected.ciphertext.clone(),
+                self.expected.request,
+            )
+            .expect("validated fixed ciphertext and descriptor"),
+            result: self.result,
+        }
+    }
     pub(in crate::opening) fn contexts(&self) -> [[Val; 8]; 2] {
-        let mut h = Sha256::new();
-        h.update(b"DCS/BFV-BASIS-CONVOLUTION-CONTEXT/v1");
-        h.update((OUTPUT_DOMAIN.len() as u32).to_le_bytes());
-        h.update(OUTPUT_DOMAIN);
-        h.update(profile_digest(Kind::BfvBasisConvolution));
-        for value in self.expected.key.public_values() {
-            h.update(value.as_canonical_u64().to_le_bytes());
-        }
-        h.update(self.expected.request);
-        h.update((self.expected.ciphertext.basis() as u32).to_le_bytes());
-        h.update(ciphertext::MODULI[self.expected.ciphertext.basis()].to_le_bytes());
-        h.update(0u32.to_le_bytes()); // fixed level0
-        for bytes in [
-            self.expected.ciphertext.parameter_bytes(),
-            self.expected.ciphertext.bytes(),
-        ] {
-            h.update((bytes.len() as u64).to_le_bytes());
-            h.update(bytes);
-        }
-        // Exact original producer role1 context and raw field encoding, not a relabelled root.
-        [self.expected.key.contexts()[1], words(&h.finalize().into())]
+        self.shared().contexts()
     }
 }
 impl PublicStatement for Statement {
@@ -100,7 +92,7 @@ impl PublicStatement for Statement {
         Kind::BfvBasisConvolution
     }
     fn air(&self) -> PrimitiveAir {
-        PrimitiveAir::BasisConvolution(Box::new(super::air::ConvolutionAir::new(self)))
+        PrimitiveAir::BasisConvolution(Box::new(super::air::ConvolutionAir::new(&self.shared())))
     }
     fn public_values(&self) -> Vec<Val> {
         words(&profile_digest(self.kind()))

@@ -62,6 +62,7 @@ impl Statement {
             transformed: self.transformed,
         }
     }
+    #[cfg(test)]
     pub(in crate::opening) fn contexts(&self) -> [[Val; 8]; 2] {
         self.shared().contexts()
     }

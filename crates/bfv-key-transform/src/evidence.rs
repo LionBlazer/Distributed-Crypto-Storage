@@ -71,6 +71,16 @@ pub fn prove(
     witness: &ProverWitness,
 ) -> Result<Evidence, Error> {
     let statement = witness.statement(expected.descriptor.clone());
+    prove_statement(full_setup_id, expected, &statement, witness)
+}
+/// Prove an explicit CLAIM using the same actual fixed relation and witness trace.
+/// The claim is not a trusted witness association or Owner authorization.
+pub fn prove_statement(
+    full_setup_id: [u8; 32],
+    expected: &Expected,
+    statement: &Statement,
+    witness: &ProverWitness,
+) -> Result<Evidence, Error> {
     statement.require_expected(expected)?;
     let air = statement.air();
     let (parameters, report) = bfv_hiding_stark::analyze(&air)?;
@@ -80,7 +90,7 @@ pub fn prove(
     let proof = bfv_hiding_stark::prove_with_config(
         &config,
         &air,
-        witness.trace(&statement)?,
+        witness.trace(statement)?,
         &public_values,
     )?;
     bfv_hiding_stark::verify_with_assessment(

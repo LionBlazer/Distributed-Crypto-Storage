@@ -9,6 +9,7 @@ publish = false
 [workspace]
 
 [dependencies]
+bfv-basis-convolution = { path = "../../crates/bfv-basis-convolution" }
 bfv-hiding-stark = { path = "../../crates/bfv-hiding-stark" }
 bfv-key-transform = { path = "../../crates/bfv-key-transform" }
 version-journal = { path = "../../crates/version-journal" }

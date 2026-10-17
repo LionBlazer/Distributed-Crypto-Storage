@@ -1,0 +1,118 @@
+//! Borrowed fixed protobuf envelope checked before upstream Poly allocation/NTT.
+//! Canonical semantic verification and exact SDK roundtrip remain mandatory afterward.
+use bfv_hiding_stark::Error;
+
+struct Cursor<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
+impl<'a> Cursor<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, offset: 0 }
+    }
+    fn byte(&mut self, expected: u8) -> Result<(), Error> {
+        if self.bytes.get(self.offset) != Some(&expected) {
+            return Err(Error::Shape);
+        }
+        self.offset += 1;
+        Ok(())
+    }
+    fn varint(&mut self) -> Result<usize, Error> {
+        let mut value = 0u64;
+        for index in 0..10 {
+            let byte = *self.bytes.get(self.offset).ok_or(Error::Shape)?;
+            self.offset += 1;
+            if index == 9 && byte > 1 {
+                return Err(Error::Shape);
+            }
+            value |= u64::from(byte & 127) << (index * 7);
+            if byte & 128 == 0 {
+                if index != 0 && byte == 0 {
+                    return Err(Error::Shape);
+                }
+                return usize::try_from(value).map_err(|_| Error::Shape);
+            }
+        }
+        Err(Error::Shape)
+    }
+    fn blob(&mut self) -> Result<&'a [u8], Error> {
+        let length = self.varint()?;
+        let end = self.offset.checked_add(length).ok_or(Error::Shape)?;
+        let bytes = self.bytes.get(self.offset..end).ok_or(Error::Shape)?;
+        self.offset = end;
+        Ok(bytes)
+    }
+    fn finished(&self) -> bool {
+        self.offset == self.bytes.len()
+    }
+}
+fn polynomial(bytes: &[u8]) -> Result<(), Error> {
+    let mut input = Cursor::new(bytes);
+    input.byte(8)?; // representation field1
+    input.byte(2)?; // exact Ntt, never NttShoup/PowerBasis
+    input.byte(16)?;
+    if input.varint()? != 8192 {
+        return Err(Error::Shape);
+    }
+    input.byte(26)?;
+    let packed = input.blob()?;
+    if packed.len() != 223232 {
+        return Err(Error::Shape);
+    }
+    // Fixed LSB-first packed rows; reject EVERY noncanonical residue before SDK NTT.
+    let mut offset = 0usize;
+    for modulus in crate::MODULI {
+        let width = (u64::BITS - (modulus - 1).leading_zeros()) as usize;
+        let length = width * crate::N / 8;
+        let row = &packed[offset..offset + length];
+        for index in 0..crate::N {
+            let bit = index * width;
+            let first = bit / 8;
+            let shift = bit % 8;
+            let count = (shift + width).div_ceil(8);
+            let word = row[first..first + count]
+                .iter()
+                .enumerate()
+                .fold(0u64, |value, (i, byte)| {
+                    value | (u64::from(*byte) << (8 * i))
+                });
+            let value = (word >> shift) & ((1u64 << width) - 1);
+            if value >= modulus {
+                return Err(Error::Shape);
+            }
+        }
+        offset += length;
+    }
+    // Proto3 false is omitted. True is exactly field4/bool1; preserve BOTH valid policies.
+    if !input.finished() {
+        input.byte(32)?;
+        input.byte(1)?;
+    }
+    if !input.finished() {
+        return Err(Error::Shape);
+    }
+    Ok(())
+}
+pub(crate) fn validate(bytes: &[u8]) -> Result<(), Error> {
+    let mut input = Cursor::new(bytes);
+    input.byte(10)?;
+    polynomial(input.blob()?)?;
+    match input.bytes.get(input.offset) {
+        Some(10) => {
+            input.byte(10)?;
+            polynomial(input.blob()?)?;
+        }
+        Some(18) => {
+            input.byte(18)?;
+            if input.blob()?.len() != 32 {
+                return Err(Error::Shape);
+            }
+        }
+        _ => return Err(Error::Shape),
+    }
+    // level0 is canonically omitted; exactly2 unseeded OR1+seed32, no extra fields.
+    if !input.finished() {
+        return Err(Error::Shape);
+    }
+    Ok(())
+}

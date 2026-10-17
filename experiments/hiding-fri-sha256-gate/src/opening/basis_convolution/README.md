@@ -92,3 +92,17 @@ or evaluation-key consistency.
 
 The six new owning cases and independent-process CLI passed real proof and client
 completion checks; see the [validation record](../../../CERTIFIED-PROJECTION-JOB-VALIDATION.md).
+
+
+## Shared implementation
+
+The AIR, complete canonical public ciphertext decoder, original profile payload and
+pure writer now delegate to [bfv-basis-convolution](../../../../../crates/bfv-basis-convolution/README.md).
+This adapter retains its historical Kind/request/fixture policy, exact old test
+bodies, allowlists and caps. The shared writer computes immutable contexts once
+outside its row loop. A new borrowed protobuf/residue gate rejects malformed
+allocation-amplifying envelopes BEFORE SDK math while preserving canonical valid
+seeded/unseeded/variable-time forms. The
+[Owner Basis validation](../../../../../crates/bfv-basis-convolution/OWNER-BASIS-VALIDATION.md)
+records the rebuilt old scenarios and actual new Owner proofs.
+The separate opaque actual Owner job is not this module's public fixture capability.

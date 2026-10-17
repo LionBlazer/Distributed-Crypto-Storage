@@ -299,3 +299,39 @@ Native validation of the optional owner-key API is recorded in
 [Owner key validation](../bfv-key-transform/OWNER-KEY-VALIDATION.md). It covers
 actual generated keys, independent fresh verification, rejection boundaries and
 observed resource limits; it does not grant live SQL acceptance.
+
+
+## Sequential owner Key and five Basis
+
+The optional `basis-proofs` feature includes `key-proofs` and adds
+`OwnerKeyAnchor::basis_job`, `OwnerBasisJob`, `BasisJobStage` and
+`PublicSetup::verify_basis_convolution`. The new direct optional
+[bfv-basis-convolution](../bfv-basis-convolution/README.md) dependency owns the exact
+reusable relation and bounded one-component codec; Core owns the actual Owner mint.
+No experiment dependency is introduced.
+
+Job construction rechecks the ORIGINAL complete setup identity, geometry and fixed
+parameters, then the COMPLETE canonical public ciphertext BEFORE a single guarded
+SDK coefficient copy. It derives one private Shat outside the actual proof trace,
+retains one fresh output salt/CsHat, and emits a newly matching real Key proof.
+Standalone Key evidence's discarded salt is never recovered. AwaitingKey then
+Basis0..4 then Complete is a local synchronous sequence; failures do not advance,
+repeated/completed/cancelled calls reject, and cancel is between calls only. No
+completed prefix is a ciphertext-formation or SQL acceptance token.
+
+After Key success the guarded coefficient witness is dropped. The job retains
+only its borrowed owner anchor, one public Key frame, public ciphertext, private
+64 KiB canonical Shat and tiny guarded salts. Each call returns ONE public Basis
+component; no aggregate proof vector/frame or parallel backend cache exists.
+Cancel/drop clears guarded private storage; native Gold/FFT/trace/LDE/PCS buffers
+are NOT promised securely erased. No private getters, Clone, Debug, serialization,
+import, callback or persistence/recovery API is added. The original setup and
+independently owner-pinned anchor remain required for fresh public verification.
+
+Executed owning tests spool public components sequentially, drop Owner/job before
+fresh independent verification, and compare all8192 outputs of each basis against
+actual SDK-key/native-prime/CRT plus independent Poseidon streams. The
+[validation record](../bfv-basis-convolution/OWNER-BASIS-VALIDATION.md) reports the
+executed rejection boundaries and sampled resources. These proofs do not establish
+formed BFV encryption, evaluation-key consistency, Source/Registry200 linkage,
+controller authority, fresh agreement, live SQL or a composed128-bit claim.

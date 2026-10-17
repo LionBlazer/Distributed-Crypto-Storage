@@ -157,3 +157,8 @@ impl PublicSetup {
 }
 #[cfg(test)]
 mod tests;
+
+#[cfg(feature = "basis-proofs")]
+mod basis_job;
+#[cfg(feature = "basis-proofs")]
+pub use basis_job::{BasisJobStage, OwnerBasisJob};

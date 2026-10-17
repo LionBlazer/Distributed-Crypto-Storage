@@ -2,6 +2,8 @@
 members = [
     "crates/bfv-hiding-stark",
     "crates/bfv-key-transform",
+    "crates/bfv-basis-convolution",
+
     "crates/relational-types",
     "crates/peer-protocol",
     "crates/compact-store",
@@ -37,6 +39,8 @@ members = [
 default-members = [
     "crates/bfv-hiding-stark",
     "crates/bfv-key-transform",
+    "crates/bfv-basis-convolution",
+
     "crates/relational-types",
     "crates/peer-protocol",
     "crates/compact-store",

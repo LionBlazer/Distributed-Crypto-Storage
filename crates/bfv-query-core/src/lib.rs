@@ -64,6 +64,7 @@ pub enum Error {
     ParameterProfile,
     WireLimit,
     BindingMismatch,
+    BasisJobStage,
     AggregateBounds,
     UpdateBounds,
     SelectBounds,
@@ -899,3 +900,6 @@ mod public_material_tests {
 mod key_anchor;
 #[cfg(feature = "key-proofs")]
 pub use key_anchor::{BfvKeyAnchor, KeyScope, OwnerKeyAnchor};
+
+#[cfg(feature = "basis-proofs")]
+pub use key_anchor::{BasisJobStage, OwnerBasisJob};

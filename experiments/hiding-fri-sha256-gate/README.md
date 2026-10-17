@@ -441,3 +441,16 @@ Owner path passed actual hiding-proof and independent verification tests.
 The [reusable Owner-key validation](../../crates/bfv-key-transform/OWNER-KEY-VALIDATION.md)
 records strict builds, all 337 old experiment tests, 103 library/integration tests,
 the 33 exact historical numeric invocations and the genuine new Owner path.
+
+
+## Reusable Basis and sequential Owner job
+
+The original Basis relation/math/profile delegates to
+[bfv-basis-convolution](../../crates/bfv-basis-convolution/README.md). Existing Kind
+and request/fixture admission stay here; no old producer allowlist or cap widens.
+A separate optional Core job produces a matching actual Owner Key and five ordered
+Basis components. Executed validation covers the extraction and real Owner job.
+Encrypted SQL replies and transport/Journal acceptance remain separate work.
+
+Executed extraction and actual Owner sequential proofs are recorded in
+[Owner Basis validation](../../crates/bfv-basis-convolution/OWNER-BASIS-VALIDATION.md).

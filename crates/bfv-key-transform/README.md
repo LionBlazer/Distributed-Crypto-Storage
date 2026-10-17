@@ -51,3 +51,20 @@ This capability does not form a ciphertext, prove evaluation-key same-secret/noi
 correctness, authorize live SQL, establish freshness/finality or close the full FHE
 query proof. The owning core test prints only public sizes and measured stage times
 during validation; these phase observations are not SQL performance claims.
+
+
+## Explicit claim and combined producer
+
+`prove_statement` is the additive low-level mathematical entry for a caller-owned
+explicit CLAIM and witness. It uses the same fixed AIR, trace, assessment,
+self-verification,208-byte frame/profile and caps. A supplied claim is not trusted
+witness association or Owner authority. Existing `prove` still derives its current
+witness statement and delegates. The new owner job can derive and retain one Shat,
+compute its claim once and use this entry without another out-of-trace native
+transform; the real Key trace still performs all proved NTT steps.
+
+The [Core Basis job](../bfv-query-core/README.md) retains a fresh
+opening privately across five ordered convolution proofs. It emits its OWN newly
+matching Key evidence, never reopens a standalone evidence's discarded salt. The
+[basis crate](../bfv-basis-convolution/README.md) verifies actual Key bytes before
+child work and pins all33 public values, including the fresh CsHat.

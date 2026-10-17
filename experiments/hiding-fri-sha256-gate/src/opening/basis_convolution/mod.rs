@@ -6,60 +6,27 @@ pub(in crate::opening) mod statement;
 mod tests;
 pub(in crate::opening) mod trace;
 
-use crate::backend::{Backend, Config, Error, TRACE_HEIGHT, Val};
+#[cfg(test)]
+use crate::backend::TRACE_HEIGHT;
+use crate::backend::{Backend, Config, Error, Val};
 use crate::opening::key_transform::{
     self, statement::SetupDescriptor, trace::Witness as KeyWitness,
 };
-use p3_field::{PrimeCharacteristicRing, PrimeField64};
+use p3_field::PrimeCharacteristicRing;
 use p3_uni_stark::Proof;
 use rand::{
     RngExt, SeedableRng,
     rngs::{StdRng, SysRng},
 };
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 use statement::{Expected, Statement};
 use trace::Witness;
 
-pub(super) use key_transform::{BLOCKS, GADGETS, HASH_ROWS, N, psi, reverse};
-pub(super) const MULTIPLY_ROW: usize = 206;
-pub(super) const FIRST_STAGE: usize = 207;
-pub(super) const SCALE_ROW: usize = 220;
-pub(super) const OUTPUT_ROW: usize = 221;
-pub(super) const OUTPUT_DOMAIN: &[u8] = b"DCS/BFV-BASIS-NEGACYCLIC-RESIDUES/v1";
-pub(super) fn hash_phase(row: usize) -> Option<(usize, usize)> {
-    if row < HASH_ROWS {
-        Some((0, row))
-    } else if (OUTPUT_ROW..OUTPUT_ROW + HASH_ROWS).contains(&row) {
-        Some((1, row - OUTPUT_ROW))
-    } else {
-        None
-    }
-}
+#[cfg(test)]
+pub(super) use bfv_basis_convolution::{FIRST_STAGE, OUTPUT_ROW, SCALE_ROW};
+pub(super) use key_transform::N;
 pub(crate) fn profile(h: &mut Sha256) {
-    h.update(b"BFV-one-basis-convolution/full-canonical-ciphertext/Goldilocks/v1");
-    h.update(OUTPUT_DOMAIN);
-    h.update(b"original-KeyTransform-role1/raw-natural-Shat/input0..205/hold205/multiply-rev13-206/inverseDIT207..219/scale-untwist220/output221..426");
-    h.update(b"five-unconditional-P2/context8-salt4-zero4-vector8192/last-active-checkpoint/degree-bound5");
-    h.update(b"fixed-upstream-params/N8192/t114689/variance10/five-qi/level0/two-Ntt/canonical-roundtrip/full-ct-SHA256/basis0..4");
-    for q in ciphertext::MODULI {
-        h.update(q.to_le_bytes());
-    }
-    for x in [
-        N,
-        GADGETS,
-        BLOCKS,
-        HASH_ROWS,
-        MULTIPLY_ROW,
-        FIRST_STAGE,
-        SCALE_ROW,
-        OUTPUT_ROW,
-        air::WIDTH,
-        statement::PUBLIC_VALUES,
-        TRACE_HEIGHT,
-    ] {
-        h.update((x as u64).to_le_bytes());
-    }
-    h.update(psi().as_canonical_u64().to_le_bytes());
+    bfv_basis_convolution::profile(h);
 }
 struct CompositeProof {
     key: Option<Proof<Config>>,

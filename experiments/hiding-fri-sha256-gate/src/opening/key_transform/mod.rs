@@ -18,9 +18,9 @@ use sha2::Sha256;
 use statement::{Expected, SetupDescriptor, Statement};
 use trace::Witness;
 
-pub(super) use bfv_key_transform::{BLOCKS, GADGETS, HASH_ROWS, N, psi, reverse, signed};
 #[cfg(test)]
-pub(super) use bfv_key_transform::{FIRST_STAGE, OUTPUT_ROW};
+pub(super) use bfv_key_transform::{FIRST_STAGE, OUTPUT_ROW, psi};
+pub(super) use bfv_key_transform::{N, signed};
 pub(crate) fn profile(hash: &mut Sha256) {
     bfv_key_transform::profile(hash);
 }

@@ -7,7 +7,7 @@ mod witness;
 use bfv_hiding_stark::{TRACE_HEIGHT, Val};
 pub use evidence::{
     Evidence, HEADER_BYTES, MAX_PROOF_BYTES, MAX_SEQUENCE_ELEMENTS, MAX_TOTAL_ELEMENTS,
-    VerifiedTransform, prove, verify,
+    VerifiedTransform, prove, prove_statement, verify,
 };
 use p3_field::{PrimeCharacteristicRing, PrimeField64, TwoAdicField};
 use sha2::{Digest, Sha256};
