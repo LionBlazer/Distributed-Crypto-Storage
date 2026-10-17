@@ -15,10 +15,12 @@ CLI proof/verification examples passed. See [validation and measurements](VALIDA
 | --- | --- |
 | [bfv-ntt-circuit](../../crates/bfv-ntt-circuit/README.md) | Fixed native roots/routing, full intermediate certificate, canonical codec and optional public AIR |
 | [bounded-postcard](../../crates/bounded-postcard/README.md) | Per-call bounded nested SDK proof decoding |
+| [bfv-arithmetic-stark](../../crates/bfv-arithmetic-stark/README.md) | Shared fixed linked configuration and actual AIR security-floor analysis |
 | Plonky3 0.8.0 | Linked Goldilocks/Poseidon2 public-preprocessing STARK |
 
-`backend` owns the exact linked configuration: extension degree 5, blowup 8 and
-192 queries, with no loader, SDK fork or private-data cache. `BoundAir` delegates
+`backend` delegates the exact linked configuration and AIR analysis to
+`bfv-arithmetic-stark`: extension degree 5, blowup 8 and 192 queries, with no
+loader, SDK fork or private-data cache. `BoundAir` delegates
 the circuit's complete evaluator and preprocessing and adds eight public words
 for the independent consumer profile. Actual SDK analysis must establish both
 individual-relation security bounds at least 128 before any proof execution.
@@ -97,3 +99,6 @@ extension/scaling, multiplication, relinearization/key switching or SQL source a
 plan proofs. Key authority, freshness, decentralized agreement and production
 answer acceptance remain separately required. No composed 128-bit or practical SQL
 latency guarantee is established.
+
+The shared-backend extraction is SOURCE ONLY pending ROOT validation. The linked
+reports above retain the actual pre-extraction builds and measurements.

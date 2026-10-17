@@ -21,6 +21,10 @@ in ignored `.local/`, not in the library source tree.
   across all ten fixed Q5/P5 moduli, including inverse normalization. Its
   [native validation](bfv-ntt-proof/VALIDATION.md) covers all 20 genuine stages,
   actual SDK parity, rebuilt-certificate attacks and explicit decoder budgets.
+- [bfv-tensor-proof](bfv-tensor-proof/README.md) proves all three complete tensor
+  components for each fixed Q5/P5 modulus. Its [validation](bfv-tensor-proof/VALIDATION.md)
+  covers upstream polynomial parity, ten genuine serialized stages, hostile
+  proofs and regression of the shared RNS/NTT backend.
 - [source-primitive and opening gates](hiding-fri-sha256-gate/README.md) share an
   experimental private hiding-FRI backend. Genuine primitive proofs extend to a
   bounded private CSTORE opening and the

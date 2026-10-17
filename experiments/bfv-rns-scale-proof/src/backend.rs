@@ -1,35 +1,14 @@
 //! Fixed, linked Plonky3 configuration and actual symbolic shape analysis.
 use bfv_scale_circuit::{Role, plonky3::ScaleAir};
 use p3_air::{Air, AirBuilder, BaseAir, BoundaryPublic};
-use p3_challenger::DuplexChallenger;
-use p3_commit::ExtensionMmcs;
-use p3_dft::Radix2DitParallel;
-use p3_field::coset::TwoAdicMultiplicativeCoset;
-use p3_field::extension::BinomialExtensionField;
-use p3_field::{Field, PrimeCharacteristicRing};
-use p3_fri::{FriParameters, TwoAdicFriPcs};
-use p3_goldilocks::{Goldilocks, Poseidon2Goldilocks, default_goldilocks_poseidon2_12};
 use p3_matrix::dense::RowMajorMatrix;
-use p3_merkle_tree::MerkleTreeMmcs;
-use p3_symmetric::{PaddingFreeSponge, TruncatedPermutation};
-use p3_uni_stark::{AirLayout, OpeningShape, ProvenSecurity, StarkConfig, StarkSecurityParams};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 
 use crate::Error;
-pub(crate) type Val = Goldilocks;
-type Perm = Poseidon2Goldilocks<12>;
-type Hash = PaddingFreeSponge<Perm, 12, 8, 4>;
-type Compress = TruncatedPermutation<Perm, 2, 4, 12>;
-type Mmcs = MerkleTreeMmcs<<Val as Field>::Packing, <Val as Field>::Packing, Hash, Compress, 2, 4>;
-type Challenge = BinomialExtensionField<Val, 5>;
-type ChallengeMmcs = ExtensionMmcs<Val, Challenge, Mmcs>;
-type Challenger = DuplexChallenger<Val, Perm, 12, 8>;
-type Pcs = TwoAdicFriPcs<Val, Radix2DitParallel<Val>, Mmcs, ChallengeMmcs>;
-pub(crate) type Config = StarkConfig<Pcs, Challenge, Challenger>;
-pub const HEIGHT: usize = 8192;
-pub(crate) const LOG_HEIGHT: usize = 13;
+pub use bfv_arithmetic_stark::HEIGHT;
+pub(crate) use bfv_arithmetic_stark::{Config, LOG_HEIGHT, Val};
 
 /// Consumer transcript binding only. All arithmetic and preprocessing remain
 /// owned by the exact library AIR; this adds eight fixed profile public words.
@@ -153,36 +132,8 @@ pub fn analyze(role: Role) -> Result<SecurityReport, Error> {
 }
 
 pub(crate) fn config(air: &BoundAir, role: Role) -> Result<(Config, SecurityReport), Error> {
-    if air.assumes_boolean_trace() || !air.public_boundary_io().is_empty() {
-        return Err(Error::SecurityProfile);
-    }
-    let perm = default_goldilocks_poseidon2_12();
-    let mmcs = Mmcs::new(Hash::new(perm.clone()), Compress::new(perm.clone()), 0);
-    let fri = FriParameters {
-        log_blowup: 3,
-        log_final_poly_len: 0,
-        max_log_arity: 1,
-        num_queries: 192,
-        batch_proof_of_work_bits: 0,
-        commit_proof_of_work_bits: 0,
-        query_proof_of_work_bits: 0,
-        mmcs: ChallengeMmcs::new(mmcs.clone()),
-    };
-    let parameters = StarkSecurityParams::from_air::<Val, Challenge, _>(
-        fri.security_regime(),
-        air,
-        AirLayout::from_air::<Val>(air),
-        TwoAdicMultiplicativeCoset::new(Val::ONE, LOG_HEIGHT).unwrap(),
-        319,
-        128,
-        1,
-        OpeningShape::new(),
-        fri.grinding_sites(),
-    );
-    let bound = ProvenSecurity::compute(&parameters, HEIGHT);
-    if bound.unique_decoding_bits < 128 || bound.list_decoding_bits < 128 {
-        return Err(Error::SecurityProfile);
-    }
+    let (config, analysis) =
+        bfv_arithmetic_stark::checked_config(air).ok_or(Error::SecurityProfile)?;
     let report = SecurityReport {
         stage: "security_public_rns_scaling",
         role: role_name(role),
@@ -190,25 +141,19 @@ pub(crate) fn config(air: &BoundAir, role: Role) -> Result<(Config, SecurityRepo
         main_width: air.width(),
         public_width: air.preprocessed_width(),
         public_values: air.num_public_values(),
-        constraints: parameters.num_constraints,
-        degree: parameters.air_max_constraint_degree,
-        quotient_chunks: parameters.num_quotient_chunks,
-        batched_functions: parameters.num_batched_functions,
+        constraints: analysis.constraints,
+        degree: analysis.degree,
+        quotient_chunks: analysis.quotient_chunks,
+        batched_functions: analysis.batched_functions,
         extension_degree: 5,
         queries: 192,
         blowup: 8,
-        unique_decoding_bits: bound.unique_decoding_bits,
-        list_decoding_bits: bound.list_decoding_bits,
+        unique_decoding_bits: analysis.unique_decoding_bits,
+        list_decoding_bits: analysis.list_decoding_bits,
         public_preprocessing_bytes: HEIGHT * air.preprocessed_width() * 8,
         main_trace_bytes: HEIGHT * air.width() * 8,
         main_lde_bytes: 8 * HEIGHT * air.width() * 8,
         public_lde_bytes: 8 * HEIGHT * air.preprocessed_width() * 8,
     };
-    Ok((
-        Config::new(
-            Pcs::new(Radix2DitParallel::default(), mmcs, fri),
-            Challenger::new(perm),
-        ),
-        report,
-    ))
+    Ok((config, report))
 }

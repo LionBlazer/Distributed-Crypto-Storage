@@ -15,12 +15,13 @@ stage proofs passed. See [validation and measurements](VALIDATION.md).
 | --- | --- |
 | [bfv-scale-circuit](../../crates/bfv-scale-circuit/README.md) | Fixed-role codecs, integer scaling, public certificate ranges and exact shared AIR |
 | [bounded-postcard](../../crates/bounded-postcard/README.md) | Resource-limited nested SDK proof decoding |
+| [bfv-arithmetic-stark](../../crates/bfv-arithmetic-stark/README.md) | Shared fixed linked configuration and actual AIR security-floor analysis |
 | Plonky3 0.8.0 | Linked Goldilocks/Poseidon2 public-preprocessing STARK, extension degree 5 |
 
-`backend` owns the fixed blowup 8 / 192-query configuration and asks the actual
-SDK analyzer for constraint degree, count, quotient chunks and both security
-bounds. It rejects either model below 128 bits; this is an individual-relation
-model, not a composition claim. `proof` owns generation, independent verifier
+`backend` delegates the fixed blowup 8 / 192-query configuration and actual
+AIR analysis to `bfv-arithmetic-stark`, preserving constraint degree, count,
+quotient chunks and both security bounds. It rejects either model below 128 bits;
+this is an individual-relation model, not a composition claim. `proof` owns generation, independent verifier
 preprocessing, the new role/profile/request-bound frame and the stage-only
 `CheckedScaling` marker. `fixture` contains explicitly public, nonsecret residues.
 The ordinary production proof loader, profiles, operations and 2 MiB frame cap are
@@ -66,3 +67,6 @@ cargo test --release --locked --offline --manifest-path experiments/bfv-rns-scal
 A successful stage proof alone does not establish encrypted predicate selection,
 source completeness, key authority, fresh agreed heads, writer fencing, a live SQL
 grant, full MulRelin correctness, bounded peer resources or practical latency.
+
+The shared-backend extraction is SOURCE ONLY pending ROOT validation. The linked
+reports above retain the actual pre-extraction builds and measurements.

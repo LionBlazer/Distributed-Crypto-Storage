@@ -33,6 +33,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
+name = "bfv-arithmetic-stark"
+version = "0.1.0"
+dependencies = [
+ "bfv-fixed-geometry",
+ "p3-air",
+ "p3-challenger",
+ "p3-commit",
+ "p3-dft",
+ "p3-field",
+ "p3-fri",
+ "p3-goldilocks",
+ "p3-maybe-rayon",
+ "p3-merkle-tree",
+ "p3-symmetric",
+ "p3-uni-stark",
+]
+
+[[package]]
 name = "bfv-fixed-geometry"
 version = "0.1.0"
 
@@ -54,20 +72,13 @@ dependencies = [
 name = "bfv-ntt-proof"
 version = "0.1.0"
 dependencies = [
+ "bfv-arithmetic-stark",
  "bfv-ntt-circuit",
  "bounded-postcard",
  "fhe-math",
  "p3-air",
- "p3-challenger",
- "p3-commit",
- "p3-dft",
  "p3-field",
- "p3-fri",
- "p3-goldilocks",
  "p3-matrix",
- "p3-maybe-rayon",
- "p3-merkle-tree",
- "p3-symmetric",
  "p3-uni-stark",
  "postcard",
  "serde",

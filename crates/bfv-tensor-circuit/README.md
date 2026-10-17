@@ -63,8 +63,10 @@ returns `TensorAir` plus 32 digest field words (profile/request/output/aux).
 The analytical layout is height 8192, one mandatory zero main column, and 61 public
 preprocessing columns: inputs16/output12/quotients12/carries21. Each row checks all
 three complete eight-digit equations. The declared degree hint is 2 (limb products
-of public polynomials); 25 constraints are expected analytically. Actual SDK degree,
-security, proof resources and runtime remain unmeasured. `TensorAir::shape` is for
+of public polynomials). The separate proof consumer confirms 25 constraints,
+degree 2 and genuine proofs for all ten bases; see its
+[native validation](../../experiments/bfv-tensor-proof/VALIDATION.md).
+`TensorAir::shape` is for
 analysis only and has no preprocessing. Consumers must require `is_prepared()` and
 an actual public matrix before proof setup. Aux/Prepared is never proof evidence.
 
@@ -84,8 +86,9 @@ cargo test --release --locked -p bfv-tensor-circuit --all-features -- --test-thr
 ```
 
 These checks validate framing, public arithmetic and actual constraint rejection;
-they do not establish upstream SDK parity or a genuine serialized proof. A separate
-proof consumer owns those gates. Existing circuit profiles and proof caps are unchanged.
+they do not themselves establish upstream SDK parity or a genuine serialized proof.
+The separate proof consumer's validation covers those gates, independent verifier
+preprocessing and hostile proofs. Existing circuit profiles and proof caps are unchanged.
 
 This stage leaves extension, NTT provenance, inverse transform, downscale,
 relinearization/evaluation-key consistency, same-key authority, source and selection

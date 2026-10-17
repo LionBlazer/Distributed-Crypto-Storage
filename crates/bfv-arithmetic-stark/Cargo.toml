@@ -1,0 +1,20 @@
+[package]
+name = "bfv-arithmetic-stark"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[dependencies]
+bfv-fixed-geometry = { path = "../bfv-fixed-geometry" }
+p3-air = "=0.8.0"
+p3-challenger = "=0.8.0"
+p3-commit = "=0.8.0"
+p3-dft = "=0.8.0"
+p3-field = "=0.8.0"
+p3-fri = "=0.8.0"
+p3-goldilocks = "=0.8.0"
+p3-maybe-rayon = { version = "=0.8.0", features = ["parallel"] }
+p3-merkle-tree = "=0.8.0"
+p3-symmetric = "=0.8.0"
+p3-uni-stark = "=0.8.0"
