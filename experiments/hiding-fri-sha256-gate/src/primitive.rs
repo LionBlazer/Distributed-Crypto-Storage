@@ -25,6 +25,7 @@ pub(crate) enum Kind {
     VersionSelection,
     SelectedEncoding,
     LockingSelection,
+    VersionLockingSelection,
 }
 
 impl Kind {
@@ -46,6 +47,7 @@ impl Kind {
             Self::VersionSelection => "version-selection",
             Self::SelectedEncoding => "selected-encoding",
             Self::LockingSelection => "locking-selection",
+            Self::VersionLockingSelection => "version-locking-selection",
         }
     }
 }

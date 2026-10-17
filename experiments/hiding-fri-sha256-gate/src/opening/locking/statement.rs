@@ -22,16 +22,23 @@ pub(super) const OWNED_DOMAIN: [u8; 16] = *b"DCS/LKOWN/N4/v1!";
 
 /// PUBLIC expected context supplied independently of the proposed proof/witness.
 /// This research caller does not establish controller authorization or finality.
+#[derive(Clone, PartialEq, Eq)]
+enum SourceContract {
+    CanonicalRequest,
+    CertifiedState { query_request: [u8; 32] },
+}
+
 #[derive(Clone)]
-pub(super) struct Expected {
-    pub(super) source: source::Statement,
-    pub(super) genesis: [u8; 32],
-    pub(super) parent: [u8; 32],
-    pub(super) old: [Val; 4],
-    pub(super) plan: [Val; 4],
+pub(in crate::opening) struct Expected {
+    contract: SourceContract,
+    pub(in crate::opening) source: source::Statement,
+    pub(in crate::opening) genesis: [u8; 32],
+    pub(in crate::opening) parent: [u8; 32],
+    pub(in crate::opening) old: [Val; 4],
+    pub(in crate::opening) plan: [Val; 4],
 }
 impl Expected {
-    pub(super) fn checked(
+    pub(in crate::opening) fn checked(
         source: &source::Statement,
         genesis: [u8; 32],
         parent: [u8; 32],
@@ -42,6 +49,7 @@ impl Expected {
             return Err(Error::Shape);
         }
         Ok(Self {
+            contract: SourceContract::CanonicalRequest,
             source: source.clone(),
             genesis,
             parent,
@@ -49,21 +57,90 @@ impl Expected {
             plan: source::decode_digest(plan)?,
         })
     }
+    pub(in crate::opening) fn for_state(
+        state: &crate::opening::state::StateStatement,
+        request: [u8; 32],
+        genesis: [u8; 32],
+        parent: [u8; 32],
+        old: [u8; 32],
+        plan: [u8; 32],
+    ) -> Result<Self, Error> {
+        let out = Self {
+            contract: SourceContract::CertifiedState {
+                query_request: request,
+            },
+            source: state.source().clone(),
+            genesis,
+            parent,
+            old: source::decode_digest(old)?,
+            plan: source::decode_digest(plan)?,
+        };
+        out.require_contract()?;
+        Ok(out)
+    }
+    fn require_contract(&self) -> Result<(), Error> {
+        use crate::opening::Relation;
+        match self.contract {
+            SourceContract::CanonicalRequest
+                if self.source.relation == Relation::CanonicalIndex =>
+            {
+                Ok(())
+            }
+            SourceContract::CertifiedState { .. }
+                if self.source.relation == Relation::StateCertificate
+                    && self.source.request == crate::opening::state::version_tag(&self.source) =>
+            {
+                Ok(())
+            }
+            _ => Err(Error::Shape),
+        }
+    }
+    pub(in crate::opening) fn kind(&self) -> Kind {
+        match self.contract {
+            SourceContract::CanonicalRequest => Kind::LockingSelection,
+            SourceContract::CertifiedState { .. } => Kind::VersionLockingSelection,
+        }
+    }
+    pub(in crate::opening) fn request(&self) -> &[u8; 32] {
+        match &self.contract {
+            SourceContract::CanonicalRequest => &self.source.request,
+            SourceContract::CertifiedState { query_request } => query_request,
+        }
+    }
+    pub(in crate::opening) fn plan_domain(&self) -> &[u8; 16] {
+        match self.contract {
+            SourceContract::CanonicalRequest => &PLAN_DOMAIN,
+            SourceContract::CertifiedState { .. } => &crate::opening::state::locking::PLAN_DOMAIN,
+        }
+    }
+    pub(in crate::opening) fn output_domain(&self, owned: bool) -> &[u8; 16] {
+        match (&self.contract, owned) {
+            (SourceContract::CanonicalRequest, true) => &OWNED_DOMAIN,
+            (SourceContract::CanonicalRequest, false) => &RETURN_DOMAIN,
+            (SourceContract::CertifiedState { .. }, true) => {
+                &crate::opening::state::locking::OWNED_DOMAIN
+            }
+            (SourceContract::CertifiedState { .. }, false) => {
+                &crate::opening::state::locking::RETURN_DOMAIN
+            }
+        }
+    }
 }
 #[derive(Clone)]
-pub(super) struct Statement {
-    pub(super) expected: Expected,
-    pub(super) returned: [Val; 4],
-    pub(super) owned: [Val; 4],
-    pub(super) next: [Val; 4],
+pub(in crate::opening) struct Statement {
+    pub(in crate::opening) expected: Expected,
+    pub(in crate::opening) returned: [Val; 4],
+    pub(in crate::opening) owned: [Val; 4],
+    pub(in crate::opening) next: [Val; 4],
 }
 impl Statement {
-    pub(super) fn checked(
+    pub(in crate::opening) fn checked(
         expected: &Expected,
         returned: [u8; 32],
         owned: [u8; 32],
         next: [u8; 32],
     ) -> Result<Self, Error> {
+        expected.require_contract()?;
         Ok(Self {
             expected: expected.clone(),
             returned: source::decode_digest(returned)?,
@@ -71,8 +148,16 @@ impl Statement {
             next: source::decode_digest(next)?,
         })
     }
-    pub(super) fn require_expected(&self, expected: &Expected) -> Result<(), Error> {
-        if self.expected.source.public_values() != expected.source.public_values()
+    pub(in crate::opening) fn require_expected(&self, expected: &Expected) -> Result<(), Error> {
+        self.expected.require_contract()?;
+        expected.require_contract()?;
+        if self.expected.contract != expected.contract
+            || self.expected.source.relation != expected.source.relation
+            || self.expected.source.request != expected.source.request
+            || self.expected.source.heads != expected.source.heads
+            || self.expected.source.packets != expected.source.packets
+            || self.expected.source.key_commitment != expected.source.key_commitment
+            || self.expected.source.open_commitment != expected.source.open_commitment
             || self.expected.genesis != expected.genesis
             || self.expected.parent != expected.parent
             || self.expected.old != expected.old
@@ -82,13 +167,13 @@ impl Statement {
         }
         Ok(())
     }
-    pub(super) fn context(&self) -> Vec<Val> {
+    pub(in crate::opening) fn context(&self) -> Vec<Val> {
         context(&self.expected)
     }
 }
 impl PublicStatement for Statement {
     fn kind(&self) -> Kind {
-        Kind::LockingSelection
+        self.expected.kind()
     }
     fn air(&self) -> PrimitiveAir {
         PrimitiveAir::Locking(Box::new(air::LockingAir::new(self)))
@@ -104,9 +189,9 @@ impl PublicStatement for Statement {
             .collect()
     }
 }
-pub(super) fn context(e: &Expected) -> Vec<Val> {
-    source::words(&profile_digest(Kind::LockingSelection))
-        .chain(source::words(&e.source.request))
+pub(in crate::opening) fn context(e: &Expected) -> Vec<Val> {
+    source::words(&profile_digest(e.kind()))
+        .chain(source::words(e.request()))
         .chain(e.source.heads.iter().flat_map(|h| source::words(h)))
         .chain(e.source.key_commitment)
         .chain(e.source.open_commitment)
@@ -114,7 +199,7 @@ pub(super) fn context(e: &Expected) -> Vec<Val> {
         .chain(source::words(&e.parent))
         .collect()
 }
-pub(super) fn registry_profile() -> [u8; 32] {
+pub(in crate::opening) fn registry_profile() -> [u8; 32] {
     let mut h = Sha256::new();
     h.update(b"DCS/private-effective-registry/N4-T2/v1");
     h.update(b"P2-12/rate8/overwrite/digest4/fixed112/old-new-same-domain");
@@ -127,7 +212,12 @@ pub(super) fn registry_profile() -> [u8; 32] {
     h.finalize().into()
 }
 /// Stable before the request: no parent/request/current heads/opening/plan here.
-pub(super) fn registry_fields(e: &Expected, w: &Witness, r: &Registry, salt: [Val; 4]) -> Vec<Val> {
+pub(in crate::opening) fn registry_fields(
+    e: &Expected,
+    w: &Witness,
+    r: &Registry,
+    salt: [Val; 4],
+) -> Vec<Val> {
     let mut out: Vec<_> = source::words(&REGISTRY_DOMAIN)
         .chain([Val::ONE])
         .chain(source::words(&registry_profile()))
@@ -149,9 +239,9 @@ pub(super) fn registry_fields(e: &Expected, w: &Witness, r: &Registry, salt: [Va
     assert_eq!(out.len(), 112);
     out
 }
-pub(super) fn plan_fields(e: &Expected, w: &Witness) -> Vec<Val> {
+pub(in crate::opening) fn plan_fields(e: &Expected, w: &Witness) -> Vec<Val> {
     let tx = &w.old.tx[usize::from(w.plan.actor)];
-    let mut out: Vec<_> = source::words(&PLAN_DOMAIN)
+    let mut out: Vec<_> = source::words(e.plan_domain())
         .chain([Val::ONE])
         .chain(context(e))
         .chain(e.old)
@@ -174,9 +264,13 @@ pub(super) fn plan_fields(e: &Expected, w: &Witness) -> Vec<Val> {
     assert_eq!(out.len(), 144);
     out
 }
-pub(super) fn output_fields(s: &Statement, w: &Witness, owned: bool) -> Result<Vec<Val>, Error> {
+pub(in crate::opening) fn output_fields(
+    s: &Statement,
+    w: &Witness,
+    owned: bool,
+) -> Result<Vec<Val>, Error> {
     let result = w.walk()?;
-    let mut out: Vec<_> = source::words(if owned { &OWNED_DOMAIN } else { &RETURN_DOMAIN })
+    let mut out: Vec<_> = source::words(s.expected.output_domain(owned))
         .chain([Val::ONE])
         .chain(s.context())
         .chain(s.expected.old)
@@ -212,7 +306,7 @@ pub(super) fn output_fields(s: &Statement, w: &Witness, owned: bool) -> Result<V
     assert_eq!(out.len(), 168);
     Ok(out)
 }
-pub(super) fn encoded(d: [Val; 4]) -> [u8; 32] {
+pub(in crate::opening) fn encoded(d: [Val; 4]) -> [u8; 32] {
     use p3_field::PrimeField64;
     let mut out = [0; 32];
     for (i, v) in d.into_iter().enumerate() {
@@ -220,7 +314,7 @@ pub(super) fn encoded(d: [Val; 4]) -> [u8; 32] {
     }
     out
 }
-pub(super) fn proposed(e: &Expected, w: &Witness) -> Result<Statement, Error> {
+pub(in crate::opening) fn proposed(e: &Expected, w: &Witness) -> Result<Statement, Error> {
     let result = w.walk()?;
     let salt = if result.outcome == 0 {
         w.salts[3]

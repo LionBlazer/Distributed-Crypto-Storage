@@ -137,3 +137,13 @@ unestablished. The 64 MiB owned cache policy is a separate local limit.
 Dependencies are the existing [opening source](../README.md),
 [Selection](../selection/README.md), shared P2/backend and pinned SDK.
 No dependency, SDK fork, Owner API, codec or production consumer is added.
+
+## Validated version-bound locking extension
+
+The new [VersionLockingSelection child](locking/README.md) adds typed StateLease
+locking proof methods. It preserves the existing cache accountant/lifetime and all
+old source/selection profiles. Full independently expected State and query/control
+context are checked before Backend/trace. Its new Kind/domains reuse shared locking
+math and stable Registry112. Seventeen numerical reports, one genuine cold/two-warm
+CLI chain and all 158 serial tests passed. The [validation record](../../../VERSION-LOCKING-VALIDATION.md)
+preserves exact timings and resource scope; live lock acceptance remains absent.

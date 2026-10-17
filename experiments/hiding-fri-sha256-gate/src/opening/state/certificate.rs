@@ -137,6 +137,39 @@ impl CertificateCache {
     }
 }
 impl StateLease<'_> {
+    /// A warm proof uses only the exclusive verified-state lease and owner-local
+    /// lock witness. Fresh heads/authorization/control-parent authority are not
+    /// supplied by this cache and remain external prerequisites.
+    pub(super) fn prove_lock(
+        &self,
+        expected: &super::locking::Expected,
+        statement: &super::locking::Statement,
+        witness: &crate::opening::locking::trace::Witness,
+    ) -> Result<Proof<Config>, Error> {
+        self.prove_lock_with_trace(expected, statement, || witness.trace(statement.source()))
+    }
+    pub(super) fn prove_lock_with_trace(
+        &self,
+        expected: &super::locking::Expected,
+        statement: &super::locking::Statement,
+        trace: impl FnOnce() -> Result<p3_matrix::dense::RowMajorMatrix<Val>, Error>,
+    ) -> Result<Proof<Config>, Error> {
+        expected.require_state(&self.certificate.statement)?;
+        statement.require_state(&self.certificate.statement)?;
+        statement.require_expected(expected)?;
+        Backend::new(statement)?.prove_with_trace(statement, trace)
+    }
+    pub(super) fn verify_lock(
+        &self,
+        expected: &super::locking::Expected,
+        statement: &super::locking::Statement,
+        proof: &Proof<Config>,
+    ) -> Result<(), Error> {
+        expected.require_state(&self.certificate.statement)?;
+        statement.require_state(&self.certificate.statement)?;
+        statement.require_expected(expected)?;
+        Backend::new(statement)?.verify(statement, proof)
+    }
     pub(super) fn source_proof_degree_bits(&self) -> usize {
         self.certificate.proof.degree_bits
     }

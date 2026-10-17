@@ -1,9 +1,9 @@
 //! Closed N4/private-two-transaction proof experiment. No live SQL lock grant.
 pub(crate) mod air;
-mod statement;
+pub(in crate::opening) mod statement;
 #[cfg(test)]
 mod tests;
-mod trace;
+pub(in crate::opening) mod trace;
 use crate::backend::{Backend, Config, Error, Val};
 use crate::opening::{Relation, commitment, fixture as source_fixture, trace as source_trace};
 use p3_uni_stark::Proof;

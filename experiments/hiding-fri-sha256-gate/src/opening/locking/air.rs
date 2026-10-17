@@ -201,7 +201,11 @@ impl LockingAir {
                 }
             }
             Stream::Plan => match f {
-                0..=3 => E::from(source::words(&statement::PLAN_DOMAIN).nth(f).unwrap()),
+                0..=3 => E::from(
+                    source::words(self.statement.expected.plan_domain())
+                        .nth(f)
+                        .unwrap(),
+                ),
                 4 => E::ONE,
                 5..=100 => E::from(self.context[f - 5]),
                 101..=104 => E::from(self.statement.expected.old[f - 101]),
@@ -223,13 +227,9 @@ impl LockingAir {
                 let owned = matches!(stream, Stream::Owned);
                 match f {
                     0..=3 => E::from(
-                        source::words(if owned {
-                            &statement::OWNED_DOMAIN
-                        } else {
-                            &statement::RETURN_DOMAIN
-                        })
-                        .nth(f)
-                        .unwrap(),
+                        source::words(self.statement.expected.output_domain(owned))
+                            .nth(f)
+                            .unwrap(),
                     ),
                     4 => E::ONE,
                     5..=100 => E::from(self.context[f - 5]),

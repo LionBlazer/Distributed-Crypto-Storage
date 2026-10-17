@@ -1,6 +1,7 @@
 //! Experimental VERSION certificate and request-specific private selection.
 //! No network/SQL accepting API, freshness cache or key-custody API.
 mod certificate;
+pub(crate) mod locking;
 mod query;
 #[cfg(test)]
 mod tests;

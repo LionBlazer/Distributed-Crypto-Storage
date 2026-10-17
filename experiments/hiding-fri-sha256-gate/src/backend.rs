@@ -145,6 +145,10 @@ pub(crate) fn profile_digest(kind: Kind) -> [u8; 32] {
             crate::opening::state::query_profile(&mut hash);
             (crate::opening::selection::air::WIDTH, 2)
         }
+        Kind::VersionLockingSelection => {
+            crate::opening::state::locking::profile(&mut hash);
+            (crate::opening::locking::air::WIDTH, 2)
+        }
         Kind::LockingSelection => {
             crate::opening::locking::profile(&mut hash);
             (crate::opening::locking::air::WIDTH, 2)

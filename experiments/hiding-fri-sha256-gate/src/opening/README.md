@@ -323,3 +323,12 @@ three genuine source-plus-locking proofs and all 146 serial tests passed. The
 [validation record](../../PRIVATE-LOCKING-VALIDATION.md) reports seconds-long fixed-fixture
 operations. Registry anchoring, lifecycle, FHE formation, writer enforcement, MVCC
 and finality remain open.
+
+## Validated version-bound locking candidate
+
+The [typed version-lock module](state/locking/README.md) reuses actual verified
+StateCertificate admission and the closed-registry locking evaluator. State source
+version tags remain distinct from fresh query/control context; old CanonicalIndex
+locking stays separate. Seventeen numerical reports, one genuine cold/two-warm
+chain and all 158 serial tests passed. This additive candidate remains nonaccepting;
+the [validation record](../../VERSION-LOCKING-VALIDATION.md) limits all observations.

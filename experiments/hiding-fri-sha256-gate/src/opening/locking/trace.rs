@@ -6,30 +6,30 @@ use p3_field::{Field, PrimeCharacteristicRing};
 use p3_matrix::dense::RowMajorMatrix;
 
 #[derive(Clone)]
-pub(super) struct Transaction {
-    pub(super) id: u32,
-    pub(super) controller: [u8; 32],
-    pub(super) sequence: u32,
-    pub(super) failed: bool,
-    pub(super) held: [u8; 4],
+pub(in crate::opening) struct Transaction {
+    pub(in crate::opening) id: u32,
+    pub(in crate::opening) controller: [u8; 32],
+    pub(in crate::opening) sequence: u32,
+    pub(in crate::opening) failed: bool,
+    pub(in crate::opening) held: [u8; 4],
 }
 #[derive(Clone)]
-pub(super) struct Registry {
-    pub(super) revision: u32,
-    pub(super) tx: [Transaction; 2],
+pub(in crate::opening) struct Registry {
+    pub(in crate::opening) revision: u32,
+    pub(in crate::opening) tx: [Transaction; 2],
 }
-pub(super) struct Plan {
-    pub(super) table: [u8; 32],
-    pub(super) mask: [u8; 32],
-    pub(super) actor: u8,
-    pub(super) mode: u8,
-    pub(super) wait: u8,
-    pub(super) offset: u8,
-    pub(super) limit: u8,
-    pub(super) projection: u8,
+pub(in crate::opening) struct Plan {
+    pub(in crate::opening) table: [u8; 32],
+    pub(in crate::opening) mask: [u8; 32],
+    pub(in crate::opening) actor: u8,
+    pub(in crate::opening) mode: u8,
+    pub(in crate::opening) wait: u8,
+    pub(in crate::opening) offset: u8,
+    pub(in crate::opening) limit: u8,
+    pub(in crate::opening) projection: u8,
 }
 impl Plan {
-    pub(super) fn checked(
+    pub(in crate::opening) fn checked(
         table: [u8; 32],
         mask: [u8; 32],
         actor: u8,
@@ -53,24 +53,24 @@ impl Plan {
         })
     }
 }
-pub(super) struct Witness {
-    pub(super) plain: [u8; 2348],
-    pub(super) old: Registry,
-    pub(super) plan: Plan,
-    pub(super) salts: [[Val; 4]; 6],
+pub(in crate::opening) struct Witness {
+    pub(in crate::opening) plain: [u8; 2348],
+    pub(in crate::opening) old: Registry,
+    pub(in crate::opening) plan: Plan,
+    pub(in crate::opening) salts: [[Val; 4]; 6],
 }
-pub(super) struct Walk {
-    pub(super) next: Registry,
-    pub(super) outcome: u8,
-    pub(super) search: [bool; 4],
-    pub(super) attempt: [bool; 4],
-    pub(super) conflict: [bool; 4],
-    pub(super) visit: [bool; 4],
-    pub(super) skip: [bool; 4],
-    pub(super) returned: [bool; 4],
-    pub(super) block: [bool; 4],
-    pub(super) candidate_revision: u32,
-    pub(super) candidate_sequence: [u32; 2],
+pub(in crate::opening) struct Walk {
+    pub(in crate::opening) next: Registry,
+    pub(in crate::opening) outcome: u8,
+    pub(in crate::opening) search: [bool; 4],
+    pub(in crate::opening) attempt: [bool; 4],
+    pub(in crate::opening) conflict: [bool; 4],
+    pub(in crate::opening) visit: [bool; 4],
+    pub(in crate::opening) skip: [bool; 4],
+    pub(in crate::opening) returned: [bool; 4],
+    pub(in crate::opening) block: [bool; 4],
+    pub(in crate::opening) candidate_revision: u32,
+    pub(in crate::opening) candidate_sequence: [u32; 2],
 }
 pub(super) fn conflicts(request: u8, held: u8) -> bool {
     match request {
@@ -94,7 +94,7 @@ pub(super) fn inverse(v: Val) -> Val {
     }
 }
 impl Witness {
-    pub(super) fn walk(&self) -> Result<Walk, Error> {
+    pub(in crate::opening) fn walk(&self) -> Result<Walk, Error> {
         let a = usize::from(self.plan.actor);
         if a > 1 {
             return Err(Error::Shape);
@@ -153,7 +153,7 @@ impl Witness {
         }
         Ok(result)
     }
-    pub(super) fn trace(&self, s: &Statement) -> Result<RowMajorMatrix<Val>, Error> {
+    pub(in crate::opening) fn trace(&self, s: &Statement) -> Result<RowMajorMatrix<Val>, Error> {
         let air = LockingAir::new(s);
         let result = self.walk()?;
         let a = usize::from(self.plan.actor);

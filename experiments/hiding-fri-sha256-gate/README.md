@@ -285,3 +285,14 @@ three genuine source-plus-locking proofs and all 146 serial tests passed. The
 [validation record](PRIVATE-LOCKING-VALIDATION.md) reports seconds-long fixed-fixture
 operations. Registry anchoring, lifecycle, FHE formation, writer enforcement, MVCC
 and finality remain open.
+
+## Validated version-bound locking candidate
+
+The [VersionLockingSelection module](src/opening/state/locking/README.md) is a new
+nonaccepting candidate. A typed lease requires actual cached VERSION
+source verification, while fresh independent request/control context binds a
+separate lock proof. Shared canonical-lock arithmetic and stable Registry112 are
+preserved. Release build, strict Clippy, all seventeen numerical reports, one
+genuine cold/two-warm chain and all 158 serial tests passed. The
+[validation record](VERSION-LOCKING-VALIDATION.md) gives one fixed observation;
+no comparative speedup, composed security or production acceptance is claimed.

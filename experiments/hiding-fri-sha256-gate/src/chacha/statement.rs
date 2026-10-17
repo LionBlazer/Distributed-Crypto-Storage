@@ -147,7 +147,8 @@ pub(crate) fn reference_output(statement: &Statement) -> [u32; WORDS] {
         | Kind::StateCertificate
         | Kind::VersionSelection
         | Kind::SelectedEncoding
-        | Kind::LockingSelection => {
+        | Kind::LockingSelection
+        | Kind::VersionLockingSelection => {
             unreachable!("SHA has a separate typed fixture")
         }
     }
