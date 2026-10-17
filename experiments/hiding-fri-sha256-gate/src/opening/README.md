@@ -414,3 +414,9 @@ retain their original scope.
 
 The internal proof_codec shares fixed SDK topology and canonical bounded serialization only; each typed wire owns its role/profile/resource policy. Registry200 uses registry_lifecycle/wire and leaves the legacy wire unchanged. Actual signed Body transport has no Request200 parser, Journal admission or live SQL grant. See the
 [validation record](../../PRIVATE-REGISTRY-LIFECYCLE-WIRE-VALIDATION.md).
+
+
+## Owner-authorized Registry200 Journal
+
+registry_lifecycle/journal now supplies the distinct Request200/Control200 owner-authorized adapter over registry_lifecycle/wire. It checks actual previous heads and proof-derived next roots. The historical Registry112 adapter and live SQL acceptance path are unchanged. See the
+[validation record](../../PRIVATE-REGISTRY-LIFECYCLE-JOURNAL-VALIDATION.md).

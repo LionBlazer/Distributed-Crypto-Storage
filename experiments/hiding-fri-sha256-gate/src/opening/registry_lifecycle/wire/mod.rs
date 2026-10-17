@@ -180,3 +180,20 @@ pub(super) fn gate(mode: &str, bootstrap: bool) -> Result<(), BackendError> {
     }
     Ok(())
 }
+
+/// Stable internal application anchor; it confers no authority or composed security claim.
+pub(super) fn contract_digest() -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(b"DCS/REGISTRY200-WIRE-CONTRACT/v1/canonical-Postcard/source-first/mandatory-pair");
+    frame::contract(&mut h);
+    h.update(crate::backend::profile_digest(Kind::CanonicalIndexOpening));
+    for n in [MAX_SEQUENCE_ELEMENTS, SOURCE_SLOTS, CHILD_SLOTS] {
+        h.update((n as u64).to_le_bytes());
+    }
+    h.finalize().into()
+}
+
+pub(super) fn maximum_bundle_bytes() -> usize {
+    frame::MAX_BUNDLE_BYTES
+}

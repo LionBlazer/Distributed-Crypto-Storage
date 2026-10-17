@@ -130,3 +130,25 @@ pub(super) fn join(
     bytes.extend_from_slice(child);
     Ok(bytes)
 }
+
+/// Fingerprint input comes from this policy, rather than a consumer copy of its limits.
+pub(super) fn contract(h: &mut sha2::Sha256) {
+    use sha2::Digest;
+    h.update(MAGIC);
+    for role in [Role::Bootstrap, Role::Transition] {
+        h.update([role.tag()]);
+        h.update((role.output_count() as u64).to_le_bytes());
+        h.update(profile_digest(role.kind()));
+    }
+    for n in [
+        COMMON_HEADER,
+        MAX_HEADER,
+        MAX_SOURCE_BYTES,
+        MAX_REQUEST_BYTES,
+        BODY_OVERHEAD,
+        MAX_BUNDLE_BYTES,
+        MAX_CHILD_BYTES,
+    ] {
+        h.update((n as u64).to_le_bytes());
+    }
+}

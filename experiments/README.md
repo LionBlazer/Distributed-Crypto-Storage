@@ -75,3 +75,9 @@ retain their original scope.
 
 The new Registry200 typed-wire candidate passed actual fresh Source/child proof verification, full signed Body transport and focused regression checks. This does not add a Journal adapter or peer SQL grant. See the
 [validation record](hiding-fri-sha256-gate/PRIVATE-REGISTRY-LIFECYCLE-WIRE-VALIDATION.md).
+
+
+## Owner-authorized Registry200 Journal
+
+Registry200 now has an owner-authorized Journal adapter with exact Request200, actual parent CAS, Source-first proof verification, durable replay and tested quota exhaustion. This remains research without a live SQL grant. See the
+[validation record](hiding-fri-sha256-gate/PRIVATE-REGISTRY-LIFECYCLE-JOURNAL-VALIDATION.md).

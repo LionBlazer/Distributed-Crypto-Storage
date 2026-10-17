@@ -183,3 +183,9 @@ retain their original scope.
 
 Registry200 now has distinct bounded proof serialization and measured complete signed Body transport. The existing Journal and live SQL acceptance still reject these new roots. See the
 [validation record](experiments/hiding-fri-sha256-gate/PRIVATE-REGISTRY-LIFECYCLE-WIRE-VALIDATION.md).
+
+
+## Owner-authorized Registry200 Journal
+
+The separate experimental Registry200 adapter now verifies actual owner-signed transitions against independently validated parent state and replays genuine proof pairs on durable reopen. Full live PostgreSQL admission remains open. See the
+[validation record](experiments/hiding-fri-sha256-gate/PRIVATE-REGISTRY-LIFECYCLE-JOURNAL-VALIDATION.md).

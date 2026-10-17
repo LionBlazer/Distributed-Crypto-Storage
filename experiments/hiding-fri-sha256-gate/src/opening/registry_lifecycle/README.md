@@ -167,3 +167,9 @@ using actual Postcard, without invoking a legacy wire decoder. Its proving timer
 includes that bootstrap prerequisite; final verification timing covers only the
 reported Source+child pair. Both fixtures are explicitly PUBLIC NONSECRET. The
 validation record gives actual timings, component sizes and observed process RAM.
+
+
+## Owner-authorized Registry200 Journal
+
+The separate journal module now admits both new proof kinds to an experimental owner-authorized Journal through canonical Request200 and exact actual-parent control CAS. It supports genuine durable reopen and quota rejection. The legacy Registry112 adapter, BFV producers and live SQL path remain separate. See the
+[validation record](../../../PRIVATE-REGISTRY-LIFECYCLE-JOURNAL-VALIDATION.md).

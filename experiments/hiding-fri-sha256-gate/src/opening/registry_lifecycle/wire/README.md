@@ -106,3 +106,9 @@ No combined 128-bit claim follows from individually checked proofs. Missing fres
 agreed heads, delegated private controller signatures, Request200/Journal admission,
 peer-only encrypted query execution, completeness of full SQL, MVCC, writer fences,
 decentralized finality and compact encrypted storage remain separate requirements.
+
+
+## Owner-authorized Registry200 Journal
+
+This module remains the typed proof transport. The separate companion journal module now parses Request200 and performs owner-authorized experimental Journal admission/reopen using these actual proof bytes; live SQL grants and decentralized fresh heads remain open. See the
+[validation record](../../../../PRIVATE-REGISTRY-LIFECYCLE-JOURNAL-VALIDATION.md).

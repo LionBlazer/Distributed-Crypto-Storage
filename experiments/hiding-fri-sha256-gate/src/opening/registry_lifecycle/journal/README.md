@@ -1,0 +1,104 @@
+# Owner-authorized Registry200 Journal experiment
+
+Validated experimental adapter for actual owner-authorized Registry200 Journal
+admission. All 14 owning tests, 56 former controls and two actual contracts passed;
+see the [validation record](../../../../PRIVATE-REGISTRY-LIFECYCLE-JOURNAL-VALIDATION.md).
+There is no live SQL grant, controller signature, production admission, global
+freshness, MVCC, writer fencing or finality guarantee.
+
+This module connects the real [version-journal](../../../../../../crates/version-journal/README.md)
+owner-authorized transition API to [Registry200](../README.md) and its distinct
+[bounded proof wire](../wire/README.md). It does not change the historical
+[Registry112 adapter](../../private_journal/README.md), its profiles or its codec.
+
+`PrivateVerifier` pins an `Application` and independently supplied genesis. Before
+SDK verification it checks exactly two sorted source/control shards, unchanged
+complete encrypted source heads, exactly one control compare-and-swap, the actual
+parent, sticky enrollment and canonical Request200. It reconstructs the typed
+Expected from that parent and verifies both original Source and child proofs
+through the existing Source-first wire verifier. It never runs the plaintext
+state machine. A verified unchanged registry root is evidence only: WAIT and
+NOWAIT cannot append or manufacture a changed control head. Failed Commit resolved
+as EndAbort is a successful mutation and remains appendable.
+
+The ordinary Journal checks the owner Ed25519 signature over the complete request,
+update and proof before calling this verifier. Calling the callback directly does
+not establish authority. Every first accepted transition body verifies the real proof pair; every durable
+reopen re-verifies all stored transition pairs. Exact already accepted block resubmission follows the
+core idempotent path without another callback. Valid fork bodies remain evidence
+under their original parent; client `Freshness` resolution is a separate policy.
+
+## Stable application and request
+
+`control.rs` owns new application/Pending/Active domains. Application pins network,
+database/key domain, both shard IDs, complete original source heads, C_key and the
+actual wire contract fingerprint (both roles, output counts, profiles and resource
+limits). It excludes genesis, query, C_open and C_cmd. Pending therefore exists
+before genesis without a fixed point. Active depends only on application,
+enrollment and Registry200 root; query, parent and nonce cannot disguise a no-op.
+
+`request.rs` owns a new exact 2716-byte encoding: magic/tag/reserved bytes, eight
+32-byte fields (genesis, parent, application, nonce, query, enrollment, C_open,
+C_cmd), then the complete 60-byte and 2384-byte source packets. Bootstrap requires
+zero C_cmd. Digest limbs are canonical. A domain-separated preproof intent fixes
+query from application, genesis, parent, nonce, enrollment and phase before
+C_open and C_cmd exist. The final owner signature binds their completed values.
+This authorizes an opaque private command commitment; it does not prove that AIR
+parses public SQL text or that an enrolled controller signed the request.
+
+`owner.rs` is a prover-side builder. `ValidatedParent::read` is an exact known
+validated protocol-parent context, not a confirmed or globally fresh client token.
+`Inputs::transition` first matches the externally retained private Registry200
+opening and salt to the actual parent C_old and enrollment, then computes C_cmd
+and enters proof generation. It cannot replace C_old with a fixture-derived root.
+The fixture encrypts source data once; each command changes only query/C_open,
+retaining the same key, packets, plaintext witness and source heads. Private state
+and salts remain owner inputs. Durable reopen restores public heads/proofs, not
+those hidden openings; their secure persistence and recovery remain open work.
+
+## Bounds and owning scenarios
+
+The core `Body::encode` enforces the unchanged complete 32 MiB body limit, including
+request, update and proof. The existing wire policy remains unchanged. A 2716-byte
+request and one control update use exactly `117 + 2716 + 456 + proof_bytes` bytes.
+No new partial proof-cap wrapper or larger Journal quota is introduced.
+
+The public nonsecret fixture streams each proof pair into a signed Body, appends,
+and drops temporary proof/encoding objects. The normal `prove` gate executes
+Bootstrap plus seven transitions: Begin, Savepoint, Acquire, RollbackTo, Release,
+FailCurrent and End with Commit intent resolved as Abort. It then appends one
+empty confirmation block, drops the durable owner, and reopens/reverifies all
+eight proof pairs. After the public fixture setup, the timer covers this entire local lineage and reopen;
+it does not measure peer-only encrypted SQL execution. Printed body sizes are
+actual full encoded Bodies, not estimates from proof-component sizes.
+
+Fourteen executed owning tests additionally cover preserved lock upgrades, failed-frame
+recovery, sparse-mask inter-owner SKIP with OFFSET, genuinely proved WAIT/NOWAIT
+no-op rejection, full compaction and ID non-reuse, signed tampering, sticky source
+and enrollment, stale CAS, detached branches, exact duplicate retry, canonical
+body/request bounds and quota exhaustion. The quota case mines distinct valid
+sibling headers for one genuine body under its original parent/genesis; every new
+sibling re-verifies the proofs before resource rejection. It checks unchanged
+validated state, accounting and disk after that rejection.
+
+Only two public bootstrap/Begin bodies are cached for tests, not a long proof
+history or verification authority. Longer scenarios are separate and streamed.
+The unchanged Journal quota is 256 MiB and retains complete bodies: continuous
+unbounded transaction history is not supported. Checkpoint/compaction protocols,
+private-owner-state durability, controller delegation and integration with fresh
+agreed live SQL remain required. Payload accounting, decoder slots and disk bytes
+are distinct from observed process RAM; actual process observations and complete disk framing are recorded in the linked
+validation report; they do not establish a whole-peer resource bound.
+
+From the repository root:
+
+```powershell
+cargo run --release --locked --manifest-path experiments/hiding-fri-sha256-gate/Cargo.toml -- security private-lifecycle-journal
+cargo run --release --locked --manifest-path experiments/hiding-fri-sha256-gate/Cargo.toml -- prove private-lifecycle-journal
+```
+
+Security mode produces three analytical individual-proof reports (canonical Source,
+new Bootstrap and Transition). It creates no trace, proof or durable append and
+makes no composed 128-bit claim. Configuration/hash analysis belongs to the
+[existing backend](../../../../src/backend.rs); canonical storage commitments belong
+to [compact-store](../../../../../../crates/compact-store/README.md).

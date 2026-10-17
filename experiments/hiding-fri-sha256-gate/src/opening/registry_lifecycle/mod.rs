@@ -1,10 +1,11 @@
 //! Distinct private lifecycle relation and experimental typed transport.
-//! Legacy wire, Journal admission and live grants do not accept Registry200 roots.
+//! Legacy Registry112 consumers and production live grants do not accept these roots.
 mod acquire;
 pub(crate) mod air;
 pub(crate) mod bootstrap;
 mod control;
 mod fixture;
+mod journal;
 mod layout;
 mod model;
 mod ranges;
@@ -162,4 +163,8 @@ pub(crate) fn gate(mode: &str, bootstrap: bool) -> Result<(), Error> {
 
 pub(crate) fn wire_gate(mode: &str, bootstrap: bool) -> Result<(), Error> {
     wire::gate(mode, bootstrap)
+}
+
+pub(crate) fn journal_gate(mode: &str) -> Result<(), Error> {
+    journal::gate(mode)
 }

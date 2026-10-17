@@ -409,3 +409,9 @@ retain their original scope.
 
 Distinct DCSLFPW1 Registry200 roles now serialize actual Source/child proofs and freshly verify complete signed Bodies within the unchanged 32 MiB cap. All 29 old numerical outputs remain equal; 56 leaf and two contract tests passed, with 304 discovered and 248 bodies not rerun. See the
 [validation record](PRIVATE-REGISTRY-LIFECYCLE-WIRE-VALIDATION.md).
+
+
+## Owner-authorized Registry200 Journal
+
+The distinct Registry200 Journal adapter passed 14 new and 56 prior leaf tests plus two actual contracts; discovery listed 318, with 248 other bodies not rerun. A genuine Bootstrap/seven-operation lineage and all eight proof pairs were reopened and reverified under unchanged quotas. See the
+[validation record](PRIVATE-REGISTRY-LIFECYCLE-JOURNAL-VALIDATION.md).
