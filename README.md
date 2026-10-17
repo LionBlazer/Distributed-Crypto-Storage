@@ -85,7 +85,9 @@ object; this optimization does not establish sparse disk I/O or private PIR.
 | [bfv-query-core](crates/bfv-query-core/README.md) | Reusable owner/public-peer BFV arithmetic and wire contracts; no storage or GUI dependency |
 | [bfv-linear-circuit](crates/bfv-linear-circuit/README.md) | Canonical full-residue BFV addition statement for proof consumers |
 | [bfv-product-circuit](crates/bfv-product-circuit/README.md) | Canonical full-residue BFV public-polynomial product |
+| [bfv-scale-circuit](crates/bfv-scale-circuit/README.md) | Full-8192 public RNS extension/downscale arithmetic, canonical certificates and optional AIR |
 | [bfv-query-proof](crates/bfv-query-proof/README.md) | Genuine bounded STARK generation and independent arithmetic verification |
+| [bounded-postcard](crates/bounded-postcard/README.md) | Reusable nested-container decoding with explicit caller-owned budgets |
 | [proof-acceleration](crates/proof-acceleration/README.md) | Startup CPU/OS dispatch and bounded ABI for trusted proof kernels |
 | [dcs-proof-kernel](apps/proof-kernel/README.md) | Fixed-profile SIMD build of the same arithmetic proof engine |
 | [dcs-launch](tools/launcher/README.md) | Single build/package/launch command for portable hosts and SIMD kernels |
@@ -114,9 +116,13 @@ Its proof-first client composition is described in [proved network SQL](docs/pro
 Private AEAD/index authentication remains owner-side; this is not an independently
 public proof of SQL/AEAD linkage. The current
 [complete-operation measurements](experiments/combined-sql/README.md) observed
-small native fixed-schema reads and writes below the requested 500 ms, including
+small native fixed-schema reads and writes below the historical 500 ms benchmark, including
 durable confirmation. Larger typed workloads, failures, WAN and tail bounds remain
-open; the latest measured million-row point UPDATE still takes about 1.0 second. The
+open; the latest measured million-row point UPDATE still takes about 1.0 second.
+The current SQL goal has no fixed 500 ms requirement. The separate
+[public RNS scaling experiment](experiments/bfv-rns-scale-proof/VALIDATION.md)
+proves both complete fixed-basis scaling stages, a dependency of encrypted
+ciphertext multiplication; full multiplication and relinearization remain open. The
 original [addition experiment](experiments/bfv-addition-proof/README.md)
 and its [measurements](docs/experiment-bfv-addition-proof.md) remain historical evidence.
 

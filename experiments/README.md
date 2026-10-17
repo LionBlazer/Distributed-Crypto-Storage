@@ -12,6 +12,11 @@ in ignored `.local/`, not in the library source tree.
 - [bfv-addition-proof](bfv-addition-proof/README.md) is a standalone, pinned Plonky3
   proof of exact BFV ciphertext addition. It verifies serialized proofs against
   independently committed public inputs; it does not accept SQL or authorize writes.
+- [bfv-rns-scale-proof](bfv-rns-scale-proof/README.md) proves both complete fixed
+  degree-8192 public RNS scaling stages with independent verifier preprocessing.
+  Its [native validation](bfv-rns-scale-proof/VALIDATION.md) includes actual SDK
+  parity, genuine serialized proofs and rejection tests. Full ciphertext
+  multiplication, relinearization and SQL acceptance remain separate work.
 - [source-primitive and opening gates](hiding-fri-sha256-gate/README.md) share an
   experimental private hiding-FRI backend. Genuine primitive proofs extend to a
   bounded private CSTORE opening and the

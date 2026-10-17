@@ -15,7 +15,9 @@ executables. The root Cargo default members select this layer only.
 | [compact-store](compact-store/README.md) | Owner keys, encrypted pages and authenticated version roots | None |
 | [bfv-linear-circuit](bfv-linear-circuit/README.md) | Canonical full-residue BFV addition relation for proof consumers | None |
 | [bfv-product-circuit](bfv-product-circuit/README.md) | Canonical full-residue BFV public-polynomial product | bfv-linear-circuit |
-| [bfv-query-proof](bfv-query-proof/README.md) | Bounded genuine arithmetic STARKs and independent verification | bfv-linear-circuit, bfv-product-circuit, proof-acceleration; bfv-query-core in tests |
+| [bfv-scale-circuit](bfv-scale-circuit/README.md) | Canonical full-8192 public RNS scaling and optional limb AIR | bfv-linear-circuit |
+| [bfv-query-proof](bfv-query-proof/README.md) | Bounded genuine arithmetic STARKs and independent verification | bfv-linear-circuit, bfv-product-circuit, bounded-postcard, proof-acceleration; bfv-query-core in tests |
+| [bounded-postcard](bounded-postcard/README.md) | Bounded generic Postcard decoding with caller-owned container budgets | None |
 | [proof-acceleration](proof-acceleration/README.md) | Shared fixed-profile ABI and startup CPU/OS kernel selection | None |
 | [bfv-query-core](bfv-query-core/README.md) | Separate owner/evaluator FHE roles and bounded wire inputs | bfv-linear-circuit, bfv-product-circuit |
 | [compact-query](compact-query/README.md) | Complete private selection and proof-first FHE query/write lifecycle | compact-store; optional bfv-query-core, bfv-query-proof |
