@@ -2,8 +2,9 @@
 
 This layer contains executable probes, measurement programs and isolated research
 candidates. It consumes [core libraries](../crates/README.md); core never imports
-this layer. Generated datasets, keys, copied candidate sources and reports stay
-in ignored `.local/`, not in the library source tree.
+this layer. Generated datasets, keys, temporary candidate copies and raw measurement
+outputs stay in ignored `.local/`. Reviewed source forks with checksum provenance
+may live here as isolated experiments; they are not core dependencies.
 
 - [core-workloads](core-workloads/README.md) owns the measurement examples formerly
   packaged with compact-store and compact-query.
@@ -25,6 +26,11 @@ in ignored `.local/`, not in the library source tree.
   without a verifier-supplied auxiliary certificate, using full SHA-512, global
   copy/range lookups and WHIR. Its [validation](bfv-ntt-witness-proof/VALIDATION.md)
   covers all twenty genuine stages, hostile programs and measured process memory.
+- [p3-multi-stark-streaming](p3-multi-stark-streaming/README.md) is an isolated,
+  checksum-pinned SDK fork with an opt-in streamed counted-lookup prover. Its
+  [validation](p3-multi-stark-streaming/VALIDATION.md) covers original verifier
+  compatibility and dense/streamed transcript parity; complete NTT batch resource
+  measurements and private SQL proofs remain separate work.
 - [bfv-tensor-proof](bfv-tensor-proof/README.md) proves all three complete tensor
   components for each fixed Q5/P5 modulus. Its [validation](bfv-tensor-proof/VALIDATION.md)
   covers upstream polynomial parity, ten genuine serialized stages, hostile
