@@ -35,6 +35,8 @@ impl StageAir {
 }
 #[derive(Clone)]
 pub struct InputOutputAir {
+    stages: usize,
+    input_bus: String,
     output_bus: String,
     public: Option<RowMajorMatrix<Val>>,
 }
@@ -64,6 +66,8 @@ impl ProgramAir {
     }
     pub(super) fn io(direction: Direction) -> Self {
         Self::Io(InputOutputAir {
+            stages: direction.stages(),
+            input_bus: data_bus(0),
             output_bus: data_bus(direction.stages()),
             public: None,
         })
@@ -73,6 +77,22 @@ impl ProgramAir {
             range,
             public: None,
         })
+    }
+    // Only the sealed complete batch constructor can select an instance namespace.
+    pub(super) fn in_batch(mut self, instance: usize) -> Self {
+        let bus = |stage| format!("dcs/bfv-ntt-witness/batch/{instance}/data/{stage}");
+        match &mut self {
+            Self::Stage(s) => {
+                s.input_bus = bus(s.index);
+                s.output_bus = bus(s.index + 1);
+            }
+            Self::Io(i) => {
+                i.input_bus = bus(0);
+                i.output_bus = bus(i.stages);
+            }
+            Self::Range(_) => {}
+        }
+        self
     }
     pub fn table_kind(&self) -> TableKind {
         match self {
@@ -238,7 +258,7 @@ impl<AB: InteractionBuilder<F = Val>> Air<AB> for ProgramAir {
             }
             Self::Io(i) => {
                 builder.assert_zero(main[0].clone());
-                builder.push_interaction(&data_bus(0), key(public[0].clone(), &public[1..5]), -2);
+                builder.push_interaction(&i.input_bus, key(public[0].clone(), &public[1..5]), -2);
                 builder.push_interaction(&i.output_bus, key(public[0].clone(), &public[5..9]), 1);
             }
             Self::Range(r) => {

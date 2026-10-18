@@ -164,3 +164,25 @@ not 64 distinct behaviors. The standalone [main-witness consumer](../../experime
 now owns actual whole-stage security analysis, all twenty genuine serialized
 proofs, hostile SDK proofs and process resource observations. Its result remains
 one public arithmetic NTT stage; it grants no MulRelin or live SQL acceptance.
+
+## Ordered independent batches
+
+The same optional `multistark` module now also exposes `BatchSpec`, `batch_shape`,
+`validate_batch` and `prepare_batch` for exactly 2, 4 or 8 ordered complete
+transforms with distinct request bindings. Directions and fixed Q5/P5 bases may
+differ. Each instance has private data bus names; the four fixed range providers
+are emitted once with checked aggregate frequencies. The original single-machine
+bus names and arithmetic remain unchanged. `PreparedBatch::witness` reuses the
+existing prover certificate writer; verification preparation accepts no Aux.
+
+The [module contract](src/multistark/README.md) describes the additive boundary.
+The standalone [batch consumer](../../experiments/bfv-ntt-batch-proof/README.md)
+owns complete statement binding, proof/security policy, framing and native gates.
+Its [native validation](../../experiments/bfv-ntt-batch-proof/VALIDATION.md) passed
+all nine owning cases and actual complete 2/4/8-operation proofs. The current core
+feature suites passed 7/9/17/20 tests; all-target strict Clippy passed for each
+selection. The consumer processes complete pairs sequentially and grants a result
+only after the whole independently supplied batch verifies. Its sampled memory
+observations are specific to that experiment. Independent batching does not
+establish a causal multiplication chain, private SQL, freshness or a whole-peer
+memory bound.

@@ -14,12 +14,14 @@ struct Block<'a, F, EF> {
 }
 
 struct CachedRow<F> {
-    location: Option<(usize, usize)>,
+    location: Option<usize>,
     values: Scratch<F>,
 }
 
 /// Not serialized, exported, or accepted by a verifier. Immutable committed table
-/// views and a bounded row scratch are the only witness storage this source owns.
+/// views and exact raw-row scratch per active ORIGINAL AIR are its only witness
+/// storage. Cache cells total2*sum(main_width+PP_width), plus metadata; this is not
+/// a process-memory measurement. No evaluated fraction or expression is cached.
 pub(crate) struct LookupFractionSource<'a, F: Field, EF: ExtensionField<F>> {
     variables: usize,
     len: usize,
@@ -28,7 +30,7 @@ pub(crate) struct LookupFractionSource<'a, F: Field, EF: ExtensionField<F>> {
     preprocessed: &'a [Option<&'a Table<F>>],
     public_values: &'a [&'a [F]],
     powers: Vec<EF>,
-    cache: RefCell<CachedRow<F>>,
+    cache: RefCell<Vec<Option<CachedRow<F>>>>,
 }
 
 impl<'a, F: Field, EF: ExtensionField<F>> LookupFractionSource<'a, F, EF> {
@@ -52,19 +54,46 @@ impl<'a, F: Field, EF: ExtensionField<F>> LookupFractionSource<'a, F, EF> {
         );
         // Preserve the dense protocol's representable logical shape without allocating it.
         Layout::array::<EF>(len).expect("lookup fraction layout overflow");
-        let challenges = Challenges::new(alpha, beta, plan.max_width, plan.num_buses);
-        let mut blocks = Vec::new();
-        let mut max_main = 0;
-        let mut max_preprocessed = 0;
-        let mut previous_end = 0;
-        for planned in &plan.instances {
+        // Validate every metadata slot and all four raw-row vectors before any
+        // cache allocation. Inactive AIRs retain None and allocate no field cells.
+        Layout::array::<Option<CachedRow<F>>>(main.len())
+            .expect("lookup cache metadata layout overflow");
+        let mut total_cells = 0usize;
+        for (position, planned) in plan.instances.iter().enumerate() {
+            assert!(
+                planned.air_index < main.len(),
+                "lookup AIR index is outside committed tables"
+            );
+            assert!(
+                !plan.instances[..position]
+                    .iter()
+                    .any(|old| old.air_index == planned.air_index),
+                "lookup cache AIR indices must be unique"
+            );
             let table = main[planned.air_index];
             assert_eq!(table.num_variables(), planned.num_variables);
-            max_main = max_main.max(table.num_polys());
-            if let Some(table) = preprocessed[planned.air_index] {
-                assert_eq!(table.num_variables(), planned.num_variables);
-                max_preprocessed = max_preprocessed.max(table.num_polys());
-            }
+            let public_width = if let Some(public) = preprocessed[planned.air_index] {
+                assert_eq!(public.num_variables(), planned.num_variables);
+                public.num_polys()
+            } else {
+                0
+            };
+            Layout::array::<F>(table.num_polys()).expect("lookup main row layout overflow");
+            Layout::array::<F>(public_width).expect("lookup public row layout overflow");
+            let cells = table
+                .num_polys()
+                .checked_add(public_width)
+                .and_then(|width| width.checked_mul(2))
+                .expect("lookup raw-row cache cell overflow");
+            total_cells = total_cells
+                .checked_add(cells)
+                .expect("lookup raw-row cache sum overflow");
+        }
+        Layout::array::<F>(total_cells).expect("lookup total raw-row cache layout overflow");
+        let challenges = Challenges::new(alpha, beta, plan.max_width, plan.num_buses);
+        let mut blocks = Vec::new();
+        let mut previous_end = 0;
+        for planned in &plan.instances {
             let height = 1usize
                 .checked_shl(
                     u32::try_from(planned.num_variables)
@@ -96,8 +125,16 @@ impl<'a, F: Field, EF: ExtensionField<F>> LookupFractionSource<'a, F, EF> {
             }
             previous_end = start;
         }
-        Layout::array::<F>(max_main).expect("lookup main row layout overflow");
-        Layout::array::<F>(max_preprocessed).expect("lookup public row layout overflow");
+        let mut cache: Vec<Option<CachedRow<F>>> = (0..main.len()).map(|_| None).collect();
+        for planned in &plan.instances {
+            cache[planned.air_index] = Some(CachedRow {
+                location: None,
+                values: Scratch::new(
+                    main[planned.air_index].num_polys(),
+                    preprocessed[planned.air_index].map_or(0, Table::num_polys),
+                ),
+            });
+        }
         Self {
             variables: plan.num_variables,
             len,
@@ -106,10 +143,7 @@ impl<'a, F: Field, EF: ExtensionField<F>> LookupFractionSource<'a, F, EF> {
             preprocessed,
             public_values,
             powers: beta.powers().take(plan.max_width).collect(),
-            cache: RefCell::new(CachedRow {
-                location: None,
-                values: Scratch::new(max_main, max_preprocessed),
-            }),
+            cache: RefCell::new(cache),
         }
     }
 }
@@ -130,8 +164,11 @@ impl<F: Field, EF: ExtensionField<F>> FractionSource<EF> for LookupFractionSourc
         let row = index - block.start;
         let table = self.main[block.air];
         let public = self.preprocessed[block.air];
-        let mut cache = self.cache.borrow_mut();
-        if cache.location != Some((block.air, row)) {
+        let mut rows = self.cache.borrow_mut();
+        let cache = rows[block.air]
+            .as_mut()
+            .expect("active lookup AIR has raw-row scratch");
+        if cache.location != Some(row) {
             let fill = |local: &mut [F], next: &mut [F], table: &Table<F>| {
                 for ((local, next), column) in local.iter_mut().zip(next).zip(table.columns()) {
                     *local = column.value(row);
@@ -148,7 +185,7 @@ impl<F: Field, EF: ExtensionField<F>> FractionSource<EF> for LookupFractionSourc
             if let Some(public) = public {
                 fill(preprocessed_local, preprocessed_next, public);
             }
-            cache.location = Some((block.air, row));
+            cache.location = Some(row);
         }
         let pp_width = public.map_or(0, Table::num_polys);
         let evaluator = LookupRowEvaluator {

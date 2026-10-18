@@ -41,12 +41,16 @@ committed AIR tables and PCS openings.
 
 ## Lifecycle and invariants
 
-The source owns only a fixed row scratch, immutable table views, plan-derived
+The source owns bounded raw-row scratch per active original AIR, immutable table views, plan-derived
 contribution metadata and alpha/beta powers. Each leaf uses the original exact
 height/declaration/bus offset, payload and multiplicity expression, public inputs,
 first/last selectors and clamped final next row. The unused tail is exactly0/1.
 Request indexes and representable allocation dimensions are checked before row
-access. This is shape validation, not a new global RAM or CPU quota.
+access. Each cache entry holds only the current/next main and preprocessing rows;
+logical field storage is `2 * sum(main_width + preprocessing_width)`. Inactive
+AIRs allocate no field cells. Cache hits still reevaluate each block's expressions,
+multiplicity, public values and bus prefix. No evaluated fraction is cached.
+This is shape validation, not a new global RAM or CPU quota.
 
 A root prepass reduces leaves by the SAME prefix-bit pairing. The first round of
 each reduced layer and the first two input rounds stream recomputed fractions.
@@ -84,13 +88,19 @@ Vec truncation is not counted as releasing capacity.
 
 This is an ARRAY calculation, not a whole-process RSS/1-2GiB PASS. Committed trace,
 preprocessing, WHIR/PCS state, keys and allocator behavior remain resident outside
-it. Streaming rounds adds further prover recomputation. Actual batch2/4/8 time,
-complete-process peak memory and proof parity still require Root measurement.
+it. Streaming rounds adds further prover recomputation. The
+[atomic NTT experiment](../bfv-ntt-batch-proof/VALIDATION.md) now records actual
+complete 2/4/8-operation runs, using sequential two-operation proof units. Those
+observations do not validate the earlier monolithic four/eight-operation policy.
 No proof cap, security floor or composition assumption is weakened to achieve fit.
 
-The [current native validation](STREAMED-ROUNDS-VALIDATION.md) passed515 dense and
-516 streamed runtime cases:1031 invocations and516 distinct cases. All existing
-test bodies are retained unchanged. Two appended tests compare every recomputed
+The [current cache validation](PER-AIR-ROW-CACHE-VALIDATION.md) passed 516 dense and
+517 streamed runtime cases: 1033 invocations and 517 distinct cases. All existing
+test bodies and raw prefixes are retained unchanged. The new cache case checks
+reversed AIR order, unequal widths/heights, preprocessing, complete proof bytes,
+challenger state and actual lookup verification. The earlier
+[streamed-round validation](STREAMED-ROUNDS-VALIDATION.md) remains its own historical
+record. Its two appended tests compare every recomputed
 reduced/folded value and quadratic round with the original dense kernels, and
 complete proof/challenger bytes at tiny and actual SIMD boundaries. The
 [earlier validation](VALIDATION.md) remains the historical record for the

@@ -1,5 +1,10 @@
 //! Main-witness semantic AIRs. Consumers own the actual multi-STARK proof and transcript.
 mod air;
+mod batch;
+pub use batch::{
+    BATCH_DESCRIPTOR, BatchShape, BatchSpec, BatchTable, PreparedBatch, batch_shape, prepare_batch,
+    validate_batch,
+};
 #[cfg(test)]
 mod tests;
 mod witness;
