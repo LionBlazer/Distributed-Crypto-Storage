@@ -42,9 +42,12 @@ other-level formats reject; no migration or compatibility path is supplied.
 
 `parameters()`, `relinearization_key()`, `geometry()`, `keyset_id()` and `seed()`
 preserve the original context. `c0_power_basis(i)` returns all five modulus rows
-for ordered decomposition index i from 0 through 4. This is not an NTT table: a verifier must
-still check 25 complete PB-to-NTT certificates before treating these as K0 inputs.
-The adapter never calls `Poly::from_bytes`, constructs a polynomial/NTT context,
+for ordered decomposition index i from 0 through 4. This is not an NTT table. A consumer
+must bind the PB-to-NTT conversion before using K0: it may verify 25 complete
+certificates, or deterministically derive verifier-owned public NTT constants once
+from the independently pinned original setup as fixed public-key preprocessing.
+The latter does not permit re-executing query-dependent c2 transforms or a MAC.
+The adapter itself never calls `Poly::from_bytes`, constructs a polynomial/NTT context,
 or executes a butterfly, scaling equation, key-switch or modular MAC.
 
 `expand_c1_ntt()` explicitly returns `UnverifiedExpandedSeededKey`, with the same
