@@ -2,9 +2,10 @@
 use super::{Expected, compiler::CompiledPrivatePredicate, trace::Witness};
 use crate::{
     backend::{Error, Val},
-    opening::{fixture as source_fixture, statement as source, trace::Witness as SourceWitness},
+    opening::{fixture as source_fixture, statement as source},
 };
 use p3_field::PrimeCharacteristicRing;
+use registry200_proof::source::circuit::Witness as SourceWitness;
 use registry200_proof::{admission::CanonicalSource, coefficient_encoding::statement::BfvBinding};
 use zeroize::Zeroizing;
 pub(super) const SQL: &str = "SELECT age, amount FROM records WHERE age IN (0, 128, 255)";

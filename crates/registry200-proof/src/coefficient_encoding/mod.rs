@@ -1,9 +1,12 @@
 //! Two private-witness coefficient encodings. Neither role grants SQL admission.
 pub mod air;
+pub mod circuit;
 pub mod commitment;
 pub mod layout;
+mod prover;
 pub mod statement;
 pub mod wire;
+pub use prover::{Evidence, prove};
 use sha2::{Digest, Sha256};
 pub const N: usize = 8192;
 pub const T: u64 = 114689;

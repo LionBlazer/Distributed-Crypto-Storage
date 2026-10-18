@@ -33,7 +33,7 @@ pub(crate) mod state;
 pub(crate) use registry200_proof::source::statement;
 #[cfg(test)]
 mod tests;
-mod trace;
+
 pub(crate) use registry200_proof::source::{
     DATA_SCHEMA, INDEX_SCHEMA, Relation, index_profile, packed_index_profile, profile,
 };

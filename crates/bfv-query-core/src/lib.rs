@@ -76,6 +76,8 @@ pub enum Error {
     BasisJobStage,
     FormationJobStage,
     TwoOperandStage,
+    ProofEpochStage,
+    EpochOperandStage,
     AggregateBounds,
     UpdateBounds,
     SelectBounds,
@@ -918,6 +920,8 @@ pub use key_anchor::{BfvKeyAnchor, KeyScope, OwnerKeyAnchor};
 #[cfg(feature = "basis-proofs")]
 pub use key_anchor::{BasisJobStage, OwnerBasisJob};
 
+#[cfg(feature = "formation-proofs")]
+pub use key_anchor::{EpochOperandStage, OwnerEpochOperandJob, OwnerProofEpoch, ProofEpochStage};
 #[cfg(feature = "formation-proofs")]
 pub use key_anchor::{FormationJobStage, OwnerFormationJob};
 #[cfg(feature = "formation-proofs")]

@@ -4161,16 +4161,19 @@ dependencies = [
 name = "registry200-proof"
 version = "0.1.0"
 dependencies = [
+ "bfv-ciphertext-formation",
  "bfv-hiding-stark",
  "bfv-key-transform",
  "compact-store",
  "p3-air",
  "p3-field",
  "p3-goldilocks",
+ "p3-matrix",
  "p3-symmetric",
  "p3-uni-stark",
  "sha2",
  "version-journal",
+ "zeroize",
 ]
 
 [[package]]

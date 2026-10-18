@@ -1,7 +1,7 @@
 //! Owning-boundary PUBLIC NONSECRET examples for the distinct periodic profile.
 use super::{
     Relation, air::OpeningAir, commitment, factorized, fixture, layout, schedule,
-    statement::Statement, trace::Witness,
+    statement::Statement,
 };
 use crate::backend::{self, Backend, TRACE_HEIGHT, Val};
 use crate::primitive::{Kind, PublicStatement};
@@ -13,6 +13,7 @@ use p3_air::{BaseAir, check_all_constraints, check_constraints};
 use p3_commit::PeriodicColumns;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_matrix::dense::RowMajorMatrix;
+use registry200_proof::source::circuit::Witness;
 use std::{borrow::Cow, mem::size_of};
 
 fn pair(relation: Relation, suffix: &[u8]) -> (Statement, Witness) {

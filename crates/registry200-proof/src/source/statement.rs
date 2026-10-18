@@ -22,6 +22,33 @@ pub struct Statement {
     pub open_commitment: [Val; 4],
 }
 impl Statement {
+    /// Rechecks mutable public geometry and complete canonical ciphertext images.
+    /// This supplies no AEAD, index, key-possession or proof authority.
+    pub fn reaudit(&self) -> Result<(), Error> {
+        if self.packets[0].len() != 60 || self.packets[1].len() != 2384 {
+            return Err(Error::Shape);
+        }
+        let heads = [
+            Commitment::decode(&self.heads[0], limits()).map_err(|_| Error::Shape)?,
+            Commitment::decode(&self.heads[1], limits()).map_err(|_| Error::Shape)?,
+        ];
+        let images: [Vec<u8>; 2] = core::array::from_fn(|i| {
+            self.heads[i]
+                .iter()
+                .chain(&self.packets[i])
+                .copied()
+                .collect()
+        });
+        Self::checked_relation(
+            self.relation,
+            [&images[0], &images[1]],
+            [&heads[0], &heads[1]],
+            self.request,
+            encode_digest(self.key_commitment),
+            encode_digest(self.open_commitment),
+        )?;
+        Ok(())
+    }
     pub fn checked(
         images: [&[u8]; 2],
         expected: [&Commitment; 2],

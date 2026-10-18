@@ -31,10 +31,17 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
 };
 const SQL: &str = "UPDATE records SET amount = amount + 1 WHERE age >= 128";
-fn conditional(sql: &str, mode: u8) -> (crate::opening::trace::Witness, Expected, Witness) {
+fn conditional(
+    sql: &str,
+    mode: u8,
+) -> (
+    registry200_proof::source::circuit::Witness,
+    Expected,
+    Witness,
+) {
     write_input::conditional(sql, mode).unwrap()
 }
-fn source_proof(e: &Expected, w: &crate::opening::trace::Witness) -> Proof<Config> {
+fn source_proof(e: &Expected, w: &registry200_proof::source::circuit::Witness) -> Proof<Config> {
     let b = Backend::new(e.source()).unwrap();
     let p = b
         .prove_with_trace(e.source(), || w.trace(e.source()))

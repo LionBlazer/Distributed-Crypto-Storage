@@ -77,15 +77,26 @@ pub fn verify(e: &Expected, bytes: &[u8]) -> Result<VerifiedEncoding, Error> {
             expected: e.clone(),
             encoded: source::statement::decode_digest(f.encoded())?,
         };
-        {
-            let backend = Backend::source(e.source_claim())?;
-            let proof = codec::decode(f.source(), &backend.shape, SEQUENCE, SOURCE_SLOTS)?;
-            backend.verify(&proof)?;
-        }
+        verify_source(e, f.source())?;
         let backend = Backend::encoding(&s)?;
         let proof = codec::decode(f.child(), &backend.shape, SEQUENCE, CHILD_SLOTS)?;
         backend.verify(&proof)?;
         Ok(VerifiedEncoding { statement: s })
+    }))
+    .map_err(|_| Error::Verification)?
+}
+
+// Shared actual verification, never a cached Boolean/receipt. All decoded Source
+// allocations and its backend die at this function boundary, including on error.
+pub(super) fn verify_source(e: &Expected, bytes: &[u8]) -> Result<(), Error> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if bytes.is_empty() || bytes.len() > MAX_SOURCE {
+            return Err(Error::ResourceLimit);
+        }
+        let backend = Backend::source(e.source_claim())?;
+        let proof = codec::decode(bytes, &backend.shape, SEQUENCE, SOURCE_SLOTS)?;
+        backend.verify(&proof)?;
+        Ok(())
     }))
     .map_err(|_| Error::Verification)?
 }

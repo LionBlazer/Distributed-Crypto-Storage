@@ -6,7 +6,7 @@ mod query;
 #[cfg(test)]
 mod tests;
 
-use super::{Relation, fixture, statement as source, trace};
+use super::{Relation, fixture, statement as source};
 use crate::backend::{Backend, Error, Val, profile_digest};
 use crate::primitive::{Kind, PrimitiveAir, PublicStatement};
 use certificate::{Candidate, CertificateCache};
@@ -15,6 +15,7 @@ use rand::{
     RngExt, SeedableRng,
     rngs::{StdRng, SysRng},
 };
+use registry200_proof::source::circuit as trace;
 use sha2::{Digest, Sha256};
 
 pub(super) const PLAN_DOMAIN: [u8; 16] = *b"DCS/VPLAN/N4/v1!";

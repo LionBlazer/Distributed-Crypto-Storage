@@ -1,37 +1,42 @@
-//! Private fixture witness. It is never serialized, cloned, Debug-printed or
-//! placed in public values. This experiment does not certify buffer erasure.
+//! Explicit owner-side private circuit witness for all five Source relations.
+//! A trace contains private data; it is mathematical input, never proof authority.
+use super::chacha as ca;
+use super::poly1305 as poly;
+use super::poly1305 as pa;
+use super::poly1305::LIMBS;
 use super::{
     air::*,
     poseidon,
     schedule::{self, Job, Mac},
     statement::Statement,
 };
-use crate::backend::{Error, TRACE_HEIGHT, Val};
-use crate::chacha::{self, air as ca};
-use crate::poly1305::{LIMBS, air as poly, arithmetic as pa};
+use bfv_hiding_stark::{Error, TRACE_HEIGHT, Val};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_matrix::dense::RowMajorMatrix;
-pub(crate) struct Witness {
-    key: [u8; 32],
-    key_salt: [Val; 4],
-    open_salt: [Val; 4],
-    ages: [u8; 4],
+use zeroize::Zeroizing;
+pub struct Witness {
+    key: Zeroizing<[u8; 32]>,
+    salts: Zeroizing<[[u64; 4]; 2]>,
+    ages: Zeroizing<[u8; 4]>,
 }
 impl Witness {
-    pub(super) fn new(
-        key: [u8; 32],
-        key_salt: [Val; 4],
-        open_salt: [Val; 4],
-        ages: [u8; 4],
-    ) -> Self {
+    pub fn new(key: [u8; 32], key_salt: [Val; 4], open_salt: [Val; 4], ages: [u8; 4]) -> Self {
         Self {
-            key,
-            key_salt,
-            open_salt,
-            ages,
+            key: Zeroizing::new(key),
+            salts: Zeroizing::new([
+                key_salt.map(|v| v.as_canonical_u64()),
+                open_salt.map(|v| v.as_canonical_u64()),
+            ]),
+            ages: Zeroizing::new(ages),
         }
     }
-    pub(crate) fn trace(&self, statement: &Statement) -> Result<RowMajorMatrix<Val>, Error> {
+    pub fn trace(&self, statement: &Statement) -> Result<RowMajorMatrix<Val>, Error> {
+        // Mathematical hostile claims may deliberately have invalid AEAD/roots.
+        // Bound all indexed packet slices before AIR construction; the typed
+        // producer separately reaudits complete canonical images.
+        if statement.packets[0].len() != 60 || statement.packets[1].len() != 2384 {
+            return Err(Error::Shape);
+        }
         let air = OpeningAir::new(statement);
         let width = statement.relation.width();
         let cols = air.columns();
@@ -39,7 +44,7 @@ impl Witness {
         let mut template = Val::zero_vec(width);
         write_bank(
             &mut template[cols.master..cols.subkey],
-            &self.key,
+            self.key.as_slice(),
             cols.packed,
         );
         for page in 0..2 {
@@ -60,10 +65,10 @@ impl Witness {
                 cols.packed,
             );
         }
-        template[cols.salts..cols.salts + 4].copy_from_slice(&self.key_salt);
-        template[cols.salts + 4..cols.width].copy_from_slice(&self.open_salt);
+        template[cols.salts..cols.salts + 4].copy_from_slice(&self.salts[0].map(Val::from_u64));
+        template[cols.salts + 4..cols.width].copy_from_slice(&self.salts[1].map(Val::from_u64));
         if statement.relation.is_canonical() {
-            super::canonical::write_template(&mut template, self.ages, cols.packed);
+            super::canonical::write_template(&mut template, *self.ages, cols.packed);
         }
         let mut states: [[u32; 16]; 7] =
             core::array::from_fn(|lane| words(air.input::<Val, _>(&template, schedule::job(lane))));
@@ -83,18 +88,14 @@ impl Witness {
                 let local = &mut row[lane * ca::WIDTH..(lane + 1) * ca::WIDTH];
                 write_words(&mut local[..512], &states[lane]);
                 if group < 6 && step < 80 {
-                    chacha::arithmetic::write_round(
-                        local,
-                        &mut states[lane],
-                        chacha::SCHEDULE[step % 8],
-                    );
+                    ca::write_round(local, &mut states[lane], ca::SCHEDULE[step % 8]);
                 }
                 if group < 6 && step == 80 {
                     let job = schedule::job(group * 7 + lane);
                     match job {
                         Job::H(_) => {
                             buffers[lane] = [0; 16];
-                            for (out, word) in chacha::HCHACHA_OUTPUT.into_iter().enumerate() {
+                            for (out, word) in ca::HCHACHA_OUTPUT.into_iter().enumerate() {
                                 buffers[lane][out] = states[lane][word];
                             }
                         }
@@ -213,11 +214,11 @@ fn complete(input: [u32; 16], h: bool) -> [u32; 16] {
     let mut state = input;
     let mut local = [Val::ZERO; ca::WIDTH];
     for step in 0..80 {
-        chacha::arithmetic::write_round(&mut local, &mut state, chacha::SCHEDULE[step % 8]);
+        ca::write_round(&mut local, &mut state, ca::SCHEDULE[step % 8]);
     }
     if h {
         let mut out = [0; 16];
-        for (i, j) in chacha::HCHACHA_OUTPUT.into_iter().enumerate() {
+        for (i, j) in ca::HCHACHA_OUTPUT.into_iter().enumerate() {
             out[i] = state[j];
         }
         out

@@ -23,6 +23,22 @@ pub(super) struct KeyMaterial {
     pub(super) statement: bfv_key_transform::Statement,
 }
 impl KeyMaterial {
+    #[cfg(feature = "formation-proofs")]
+    pub(super) fn prove_key(
+        &mut self,
+        anchor: &OwnerKeyAnchor<'_>,
+        missing_witness: Error,
+    ) -> Result<bfv_key_transform::Evidence> {
+        let evidence = bfv_key_transform::prove_statement(
+            anchor.public.full_setup_id,
+            &anchor.public.expected(),
+            &self.statement,
+            self.witness.as_ref().ok_or(missing_witness)?,
+        )
+        .map_err(backend)?;
+        self.witness = None;
+        Ok(evidence)
+    }
     // The owning constructor checks the original setup before reaching this secret copy.
     pub(super) fn new(anchor: &OwnerKeyAnchor<'_>) -> Result<Self> {
         let coefficients = secret_coefficients(anchor.owner)?;

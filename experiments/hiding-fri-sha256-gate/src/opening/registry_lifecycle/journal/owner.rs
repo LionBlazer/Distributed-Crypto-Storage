@@ -7,8 +7,9 @@ use super::super::{
 };
 use super::{Application, Control, Error, Hash, Operation, Request, Result, backend, request};
 use crate::backend::Val;
-use crate::opening::{commitment, statement as source, trace as source_trace};
+use crate::opening::{commitment, statement as source};
 use ed25519_dalek::SigningKey;
+use registry200_proof::source::circuit as source_trace;
 use version_journal::{
     AuthorizedTransition, Body, Genesis, HeadPair, HeadRef, Journal, ShardUpdate,
 };

@@ -2,6 +2,7 @@
 //! Legacy Registry112 consumers and production live grants do not accept these roots.
 pub(crate) use registry200_proof::lifecycle::air;
 pub(crate) use registry200_proof::lifecycle::bootstrap;
+use registry200_proof::source::circuit as source_trace;
 pub(crate) mod encoding;
 mod fixture;
 mod formation;
@@ -15,7 +16,7 @@ mod trace;
 mod wire;
 mod write;
 use crate::backend::{Backend, Config, Error, Val};
-use crate::opening::trace as source_trace;
+
 use crate::primitive::Kind;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_uni_stark::Proof;

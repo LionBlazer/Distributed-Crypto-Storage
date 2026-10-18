@@ -3,10 +3,13 @@
 pub mod air;
 pub mod canonical;
 pub mod chacha;
+pub mod circuit;
 pub mod commitment;
 pub mod factorized;
 pub mod layout;
 pub mod poly1305;
+mod prover;
+pub use prover::{SourceEvidence, prove};
 pub mod schedule;
 pub mod statement;
 pub use bfv_hiding_stark::poseidon;

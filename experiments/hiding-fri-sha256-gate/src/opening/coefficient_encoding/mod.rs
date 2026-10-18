@@ -5,12 +5,18 @@ mod fixture;
 mod input_formation;
 #[cfg(test)]
 mod tests;
-mod trace;
+use registry200_proof::coefficient_encoding::circuit as trace;
+#[cfg(test)]
+mod attacker;
+#[cfg(test)]
+use crate::backend::{Backend, Config};
 use crate::{
-    backend::{Backend, Config, Error},
+    backend::Error,
     primitive::{Kind, PrimitiveAir, PublicStatement},
 };
+#[cfg(test)]
 use p3_matrix::dense::RowMajorMatrix;
+#[cfg(test)]
 use p3_uni_stark::Proof;
 use registry200_proof::coefficient_encoding::statement::{Expected, Statement};
 use registry200_proof::coefficient_encoding::{Role, air::EncodingAir, wire};
@@ -29,6 +35,7 @@ impl PublicStatement for Statement {
     }
 }
 /// The Source proof is real and mandatory; the Key33 DTO is only independently pinned context.
+#[cfg(test)]
 fn prove_child_with_factory(
     e: &Expected,
     s: &Statement,
@@ -69,17 +76,13 @@ pub(crate) fn gate(mode: &str) -> Result<(), Error> {
     let f = fixture::genuine()?;
     let setup_ms = total.elapsed().as_secs_f64() * 1000.;
     let started = Instant::now();
-    let source_proof = {
-        let b = Backend::new(&f.source_statement)?;
-        let p = b.prove_with_trace(&f.source_statement, || {
-            f.source_witness.trace(&f.source_statement)
-        })?;
-        b.verify(&f.source_statement, &p)?;
-        p
-    };
+    let source_proof = registry200_proof::source::prove(
+        &registry200_proof::admission::CanonicalSource::checked_claim(&f.source_statement)?,
+        &f.source_witness,
+    )
+    .map_err(|_| Error::Verification)?;
     let source_ms = started.elapsed().as_secs_f64() * 1000.;
-    let source_bytes =
-        wire::encode_source(&f.source_statement, &source_proof).map_err(|_| Error::Shape)?;
+    let source_bytes = source_proof.into_bytes();
     let mut sizes = [0; 2];
     let mut prove_ms = [0.; 2];
     let mut verify_ms = [0.; 2];
@@ -91,11 +94,9 @@ pub(crate) fn gate(mode: &str) -> Result<(), Error> {
     .enumerate()
     {
         let started = Instant::now();
-        let s = w.statement(e);
-        let child = prove_child_with_factory(e, &s, Some(&source_proof), || w.trace(&s))?;
-        let bytes =
-            wire::encode_with_source(e, &s, &source_bytes, &child).map_err(|_| Error::Shape)?;
-        drop(child);
+        let evidence = registry200_proof::coefficient_encoding::prove(e, w, &source_bytes)
+            .map_err(|_| Error::Verification)?;
+        let (s, bytes) = evidence.into_parts();
         prove_ms[i] = started.elapsed().as_secs_f64() * 1000.;
         sizes[i] = bytes.len();
         let started = Instant::now();
@@ -107,7 +108,6 @@ pub(crate) fn gate(mode: &str) -> Result<(), Error> {
         let _opening = w.formation_opening(&decoded)?;
         verify_ms[i] = started.elapsed().as_secs_f64() * 1000.;
     }
-    drop(source_proof);
     drop(source_bytes);
     drop(f);
     println!(

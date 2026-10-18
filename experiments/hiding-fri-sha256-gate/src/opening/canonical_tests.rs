@@ -1,8 +1,6 @@
 //! PUBLIC NONSECRET owning tests for the canonical N4 relation. Invalid source
 //! cases retain real AEAD, complete public roots and correctly recomputed C_open.
-use super::{
-    Relation, air, canonical as ci, commitment, fixture, statement::Statement, trace::Witness,
-};
+use super::{Relation, air, canonical as ci, commitment, fixture, statement::Statement};
 use crate::backend::{self, Backend, TRACE_HEIGHT, Val};
 use crate::primitive::PublicStatement;
 use chacha20poly1305::{
@@ -12,6 +10,7 @@ use chacha20poly1305::{
 use p3_air::{BaseAir, check_all_constraints, check_constraints};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_matrix::dense::RowMajorMatrix;
+use registry200_proof::source::circuit::Witness;
 
 const AGES: [u8; 4] = [255, 0, 255, 128];
 fn key() -> [u8; 32] {

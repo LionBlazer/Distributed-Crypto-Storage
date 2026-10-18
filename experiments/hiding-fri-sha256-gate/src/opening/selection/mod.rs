@@ -1,5 +1,6 @@
 //! Private nonaccepting composition: authenticated canonical source FIRST, then
 //! complete bounded original-row selection. No SQL/FHE/key-custody acceptance API.
+use registry200_proof::source::circuit as source_trace;
 pub(crate) mod air;
 pub(crate) mod encoding;
 pub(super) mod statement;
@@ -8,9 +9,7 @@ mod tests;
 pub(super) mod trace;
 
 use crate::backend::{Backend, Config, Error, Val};
-use crate::opening::{
-    Relation, fixture as source_fixture, statement as source, trace as source_trace,
-};
+use crate::opening::{Relation, fixture as source_fixture, statement as source};
 use p3_uni_stark::Proof;
 use rand::{
     RngExt, SeedableRng,

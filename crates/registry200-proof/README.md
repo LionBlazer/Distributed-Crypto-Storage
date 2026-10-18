@@ -1,4 +1,4 @@
-# Registry200 proof verification
+# Registry200 proof circuits and evidence
 
 This library owns the single fixed Source-opening and Registry200 lifecycle
 circuits previously owned by the hiding-FRI experiment. It verifies actual
@@ -7,11 +7,14 @@ hiding STARKs; a profile match, owner signature or public claim is insufficient.
 | Dependency | Responsibility |
 | --- | --- |
 | [bfv-hiding-stark](../bfv-hiding-stark/README.md) | Fixed hiding suite, actual SDK assessment/verification, Poseidon gadget and bounded canonical Postcard |
+| [bfv-key-transform](../bfv-key-transform/README.md) | Typed full Key33 context and exact coefficient-vector digest ABI |
+| [bfv-ciphertext-formation](../bfv-ciphertext-formation/README.md) | Validated caller-owned encoded opening handoff; no Key or Formation proof is inferred |
 | [compact-store](../compact-store/README.md) | Complete original encrypted image/root and fixed geometry checks |
 | [version-journal](../version-journal/README.md) | Existing Body ceiling used by the original wire reservation |
 
-Pinned p3-air/field/goldilocks/symmetric/uni-stark provide the AIR, field,
-permutation and proof types; sha2 computes the preserved profile/context identities.
+Pinned p3-air/field/goldilocks/matrix/symmetric/uni-stark provide the AIR, field,
+trace, permutation and proof types; sha2 computes the preserved profile/context
+identities. zeroize guards explicitly owned byte/integer witness buffers.
 
 admission::CanonicalSource::checked checks complete original images and
 independently supplied heads, q, C_key and C_open. These checks alone do not prove
@@ -35,8 +38,11 @@ low-level row-helper preconditions; the bounded frontend rejects them first.
 
 There is one Source AIR for Bytes, Canonical, Packed, Factorized and State layouts.
 Old profiles, kind names, arithmetic and wire limits retain their exact bytes.
-Witnesses, private keys/salts, native Registry.step, trace producers, fixtures and
-CLI deployment remain outside this crate. wire::decode_and_verify_claim exposes
+The [Source circuit](src/source/README.md) owns the one mathematical trace writer
+for all five layouts and a fixed Canonical-only typed producer. The coefficient
+module likewise owns its guarded private witnesses and typed producer. Native
+Registry.step, lifecycle witnesses/producers, SQL compilation, fixtures and CLI
+deployment remain outside this crate. wire::decode_and_verify_claim exposes
 actual verified proof objects for downstream mathematical composition; it does
 not grant application permission.
 
@@ -71,7 +77,11 @@ the Formation-compatible vector root ABI. Key context is not Key proof authority
 The module's `wire` frontend owns bounded DCSCEP01 framing and actual Source-first
 pair verification, returning the complete verified Statement including C_w.
 The [experimental consumer](../../experiments/hiding-fri-sha256-gate/src/opening/coefficient_encoding/README.md)
-owns private compilation/proving and calls this verifier directly. The
+owns private compilation and fixtures, and calls the typed Core producers and
+byte verifier directly. The
+[producer/epoch validation](../../experiments/hiding-fri-sha256-gate/PRIVATE-INPUT-PRODUCER-EPOCH-VALIDATION.md)
+records executed producer regressions and input16; the reports below preserve
+their historical boundaries. The
 [executed validation](../../experiments/hiding-fri-sha256-gate/PRIVATE-COEFFICIENT-INPUT-VALIDATION.md)
 records actual degree4, individual128-bit assessments, proofs and input linkage.
 These roles do not change Registry admission or any original profile/cap/operation.

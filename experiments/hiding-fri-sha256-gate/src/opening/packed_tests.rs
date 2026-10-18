@@ -2,7 +2,6 @@
 //! negative invokes the real SDK prover/verifier, never an accepting stub.
 use super::{
     Relation, air::OpeningAir, commitment, fixture, layout, schedule, statement::Statement,
-    trace::Witness,
 };
 use crate::backend::{self, Backend, TRACE_HEIGHT, Val};
 use crate::primitive::{Kind, PublicStatement};
@@ -13,6 +12,7 @@ use chacha20poly1305::{
 use p3_air::{BaseAir, check_all_constraints, check_constraints};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_matrix::dense::RowMajorMatrix;
+use registry200_proof::source::circuit::Witness;
 
 fn pair_with(suffix: &[u8], packed: bool) -> (Statement, Witness) {
     fixture::from_suffix(

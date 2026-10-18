@@ -11,13 +11,19 @@ use p3_field::PrimeCharacteristicRing;
 use p3_uni_stark::Proof;
 use std::cell::Cell;
 
-fn cold(state: &StateStatement, witness: &crate::opening::trace::Witness) -> Proof<Config> {
+fn cold(
+    state: &StateStatement,
+    witness: &registry200_proof::source::circuit::Witness,
+) -> Proof<Config> {
     Backend::new(state)
         .unwrap()
         .prove_with_trace(state, || witness.trace(state.source()))
         .unwrap()
 }
-fn admitted(state: &StateStatement, witness: &crate::opening::trace::Witness) -> CertificateCache {
+fn admitted(
+    state: &StateStatement,
+    witness: &registry200_proof::source::circuit::Witness,
+) -> CertificateCache {
     let mut cache = CertificateCache::new(super::super::CACHE_BYTES).unwrap();
     cache
         .admit(

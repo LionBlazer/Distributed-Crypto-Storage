@@ -173,3 +173,83 @@ pub fn write_bits(destination: &mut [Val], value: u64) {
         *cell = Val::from_u64((value >> bit) & 1);
     }
 }
+
+// Shared owner-side radix row construction; these functions do not verify proofs.
+pub fn clamped_r(key: [u8; 32]) -> [u64; LIMBS] {
+    let bytes: [u8; 16] = core::array::from_fn(|byte| key[byte] & CLAMP[byte]);
+    message_limbs(bytes, 130) // No appended bit for the key.
+}
+
+pub fn folded_product(h: [u64; LIMBS], n: [u64; LIMBS], r: [u64; LIMBS]) -> [u64; LIMBS] {
+    let mut result = [0; LIMBS];
+    for (i, (h, n)) in h.into_iter().zip(n).enumerate() {
+        for (j, r) in r.into_iter().enumerate() {
+            let degree = i + j;
+            result[degree % LIMBS] += (h + n) * r * if degree >= LIMBS { 5 } else { 1 };
+        }
+    }
+    result
+}
+
+/// Normalize only five bounded u64 coefficients, folding B^5 to 5. The first
+/// pass leaves at most 215B in limb0, the second can fold at most one, and a
+/// third finishes. One extra bounded pass asserts stabilization independently.
+pub fn reduce(product: [u64; LIMBS]) -> ([u64; LIMBS], [u64; LIMBS]) {
+    let mut h = product;
+    let mut quotient = 0;
+    for _ in 0..4 {
+        for limb in 0..LIMBS - 1 {
+            let carry = h[limb] >> LIMB_BITS;
+            h[limb] &= MASK;
+            h[limb + 1] += carry;
+        }
+        let carry = h[LIMBS - 1] >> LIMB_BITS;
+        h[LIMBS - 1] &= MASK;
+        h[0] += 5 * carry;
+        quotient += carry;
+    }
+    assert!(h.into_iter().all(|value| value < RADIX));
+    let mut plus_five = h;
+    let mut carry = 5;
+    for value in &mut plus_five {
+        let sum = *value + carry;
+        *value = sum & MASK;
+        carry = sum >> LIMB_BITS;
+    }
+    if carry != 0 {
+        h = plus_five;
+        quotient += 1;
+    }
+    (h, cyclic_carries(product, h, quotient))
+}
+
+pub fn cyclic_carries(product: [u64; LIMBS], h: [u64; LIMBS], quotient: u64) -> [u64; LIMBS] {
+    let mut carry = [0; LIMBS];
+    let mut previous = 5 * quotient;
+    for limb in 0..LIMBS {
+        let numerator = product[limb] + previous - h[limb];
+        assert_eq!(numerator % RADIX, 0);
+        carry[limb] = numerator / RADIX;
+        assert!(carry[limb] < 1 << 32);
+        previous = carry[limb];
+    }
+    assert_eq!(carry[LIMBS - 1], quotient);
+    carry
+}
+
+pub fn tag_words(h: [u64; LIMBS], key: [u8; 32]) -> ([u32; 4], [bool; 4]) {
+    let mut low = [0_u32; 4];
+    for bit in 0..128 {
+        low[bit / 32] |= (((h[bit / LIMB_BITS] >> (bit % LIMB_BITS)) & 1) as u32) << (bit % 32);
+    }
+    let mut carry = false;
+    let mut carries = [false; 4];
+    for (word, value) in low.iter_mut().enumerate() {
+        let s = u32::from_le_bytes(key[16 + word * 4..20 + word * 4].try_into().unwrap());
+        let sum = u64::from(*value) + u64::from(s) + u64::from(carry);
+        *value = sum as u32;
+        carry = sum >> 32 != 0;
+        carries[word] = carry;
+    }
+    (low, carries)
+}

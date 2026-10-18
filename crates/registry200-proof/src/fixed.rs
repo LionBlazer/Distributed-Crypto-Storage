@@ -2,6 +2,7 @@ use crate::{coefficient_encoding, lifecycle, source};
 use bfv_hiding_stark::{self as engine, Config, Error, SecurityReport, Val};
 use engine::codec::Topology;
 use p3_air::{Air, AirBuilder, BaseAir};
+use p3_matrix::dense::RowMajorMatrix;
 use p3_uni_stark::{Proof, StarkSecurityParams};
 use std::borrow::Cow;
 enum FixedAir {
@@ -102,6 +103,9 @@ impl Backend {
             p,
             &self.values,
         )
+    }
+    pub(crate) fn prove(&self, trace: RowMajorMatrix<Val>) -> Result<Proof<Config>, Error> {
+        engine::prove_with_config(&self.config, &self.air, trace, &self.values)
     }
     pub fn encoding(s: &coefficient_encoding::statement::Statement) -> Result<Self, Error> {
         let role = s.expected.role();

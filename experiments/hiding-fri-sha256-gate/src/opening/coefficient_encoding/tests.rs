@@ -29,19 +29,13 @@ fn published() -> &'static Published {
     static P: OnceLock<Published> = OnceLock::new();
     P.get_or_init(|| {
         let f = fixture();
-        let b = Backend::new(&f.source_statement).unwrap();
-        let proof = b
-            .prove_with_trace(&f.source_statement, || {
-                f.source_witness.trace(&f.source_statement)
-            })
-            .unwrap();
-        b.verify(&f.source_statement, &proof).unwrap();
-        let source = wire::encode_source(&f.source_statement, &proof).unwrap();
-        drop(b);
-        let statements = [
-            f.source_encoding.statement(&f.source),
-            f.query_encoding.statement(&f.query),
-        ];
+        let proof = registry200_proof::source::prove(
+            &CanonicalSource::checked_claim(&f.source_statement).unwrap(),
+            &f.source_witness,
+        )
+        .unwrap();
+        let source = proof.into_bytes();
+        let statements = [f.source_encoding.statement(), f.query_encoding.statement()];
         let frames = core::array::from_fn(|i| {
             let w = if i == 0 {
                 &f.source_encoding
@@ -49,9 +43,9 @@ fn published() -> &'static Published {
                 &f.query_encoding
             };
             let s = &statements[i];
-            let child =
-                prove_child_with_factory(&s.expected, s, Some(&proof), || w.trace(s)).unwrap();
-            wire::encode_with_source(&s.expected, s, &source, &child).unwrap()
+            let evidence = fixed::prove(&s.expected, w, &source).unwrap();
+            require_complete(s, evidence.statement()).unwrap();
+            evidence.into_parts().1
         });
         Published {
             source,
@@ -116,7 +110,7 @@ fn actual_source(f: &fixture::Fixture) -> Proof<Config> {
     p
 }
 fn own_frame(e: &Expected, w: &trace::Witness, source: &Proof<Config>) -> (Statement, Vec<u8>) {
-    let s = w.statement(e);
+    let s = w.statement();
     let child = prove_child_with_factory(e, &s, Some(source), || w.trace(&s)).unwrap();
     let a = wire::encode_source(e.source_claim(), source).unwrap();
     let bytes = wire::encode_with_source(e, &s, &a, &child).unwrap();
@@ -142,7 +136,7 @@ fn field(t: &mut RowMajorMatrix<Val>, at: usize, v: Val) {
 fn bitfield(t: &mut RowMajorMatrix<Val>, at: usize, n: usize, v: u64) {
     let width = t.width;
     for row in t.values.chunks_exact_mut(width) {
-        trace::bits(&mut row[at..at + n], v);
+        attacker::bits(&mut row[at..at + n], v);
     }
 }
 fn raw_oracle(role: Role) -> Vec<u64> {
@@ -209,7 +203,7 @@ fn genuine_source_and_private_mask_all8192_match_actual_sdk_poly_and_formation_r
             .fold(1u128, |v, q| v * u128::from(*q) % u128::from(T));
         assert_eq!(qmod, u128::from(SCALE));
         let expected: Vec<_> = unscaled.into_iter().map(|m| m * SCALE % T).collect();
-        assert_eq!(&*w.coefficients(e.role()), &expected);
+        assert_eq!(&*w.coefficients(), &expected);
         assert_eq!(expected.len(), 8192);
         assert!(w.formation_opening(&s).is_ok());
         assert_eq!(s.values().len(), e.role().public_values());
@@ -251,7 +245,7 @@ fn empty_full_range_and_noncontiguous_hidden_masks_prove_complete_reversed_vecto
         assert_eq!(source.request, g.source_statement.request);
         let gp = actual_source(&g);
         let (s, _) = own_frame(&g.query, &g.query_encoding, &gp);
-        let words = g.query_encoding.coefficients(Role::PrivateMask);
+        let words = g.query_encoding.coefficients();
         for n in 0..N {
             let age = 255usize.saturating_sub(n);
             let yes = n < 256
@@ -334,13 +328,13 @@ fn compiler_rejects_other_sql_roles_and_owns_private_blind_nonce_and_full_query(
 fn source_values_ids_and_final_padding_remain_bound_in_coherently_rehashed_traces() {
     let f = fixture();
     let s = &published().statements[0];
-    let original = f.source_encoding.coefficients(Role::SourceAllOriginal);
+    let original = f.source_encoding.coefficients();
     for at in [DATA + 95, TABLE + 7, IDS + 31, SOURCE_SALT + 3] {
         let mut t = f.source_encoding.trace(s).unwrap();
         let v = t.values[at] + Val::ONE;
         field(&mut t, at, v);
         let mut claim = s.clone();
-        claim.encoded = trace::refresh(&claim, &mut t, &original);
+        claim.encoded = attacker::refresh(&claim, &mut t, &original);
         reject_sdk(&claim, t);
     }
     // Every scaled-weight range cell is repaired for another LEGITIMATE u16 amount.
@@ -355,7 +349,7 @@ fn source_values_ids_and_final_padding_remain_bound_in_coherently_rehashed_trace
     let mut claim = s.clone();
     let mut words = original.to_vec();
     words[11 * 512 + 128] = scaled;
-    claim.encoded = trace::refresh(&claim, &mut t, &words);
+    claim.encoded = attacker::refresh(&claim, &mut t, &words);
     reject_sdk(&claim, t);
     for omit in [true, false] {
         let mut words = original.to_vec();
@@ -369,7 +363,7 @@ fn source_values_ids_and_final_padding_remain_bound_in_coherently_rehashed_trace
         }
         let mut t = f.source_encoding.trace(s).unwrap();
         let mut claim = s.clone();
-        claim.encoded = trace::refresh(&claim, &mut t, &words);
+        claim.encoded = attacker::refresh(&claim, &mut t, &words);
         reject_sdk(&claim, t);
     }
     for n in [256, 5888, 8191] {
@@ -377,20 +371,20 @@ fn source_values_ids_and_final_padding_remain_bound_in_coherently_rehashed_trace
         words[n] = 1;
         let mut t = f.source_encoding.trace(s).unwrap();
         let mut claim = s.clone();
-        claim.encoded = trace::refresh(&claim, &mut t, &words);
+        claim.encoded = attacker::refresh(&claim, &mut t, &words);
         reject_sdk(&claim, t);
     }
     let mut t = f.source_encoding.trace(s).unwrap();
     t.values[84 * SOURCE_WIDTH + WORDS + 32 * 7] = Val::ONE;
     let mut claim = s.clone();
-    claim.encoded = trace::refresh(&claim, &mut t, &original);
+    claim.encoded = attacker::refresh(&claim, &mut t, &original);
     reject_sdk(&claim, t);
 }
 #[test]
 fn query_mask_reversal_salts_and_last_coefficient_cannot_be_repaired_into_valid_claims() {
     let f = fixture();
     let s = &published().statements[1];
-    let original = f.query_encoding.coefficients(Role::PrivateMask);
+    let original = f.query_encoding.coefficients();
     for at in [MASK, MASK + 255, COMMAND_SALT + 3] {
         let mut t = f.query_encoding.trace(s).unwrap();
         let old = t.values[at];
@@ -404,7 +398,7 @@ fn query_mask_reversal_salts_and_last_coefficient_cannot_be_repaired_into_valid_
             },
         );
         let mut claim = s.clone();
-        claim.encoded = trace::refresh(&claim, &mut t, &original);
+        claim.encoded = attacker::refresh(&claim, &mut t, &original);
         reject_sdk(&claim, t);
     }
     for n in [0, 255, 256, 8191] {
@@ -412,7 +406,7 @@ fn query_mask_reversal_salts_and_last_coefficient_cannot_be_repaired_into_valid_
         words[n] = (words[n] + 1) % T;
         let mut t = f.query_encoding.trace(s).unwrap();
         let mut claim = s.clone();
-        claim.encoded = trace::refresh(&claim, &mut t, &words);
+        claim.encoded = attacker::refresh(&claim, &mut t, &words);
         reject_sdk(&claim, t);
     }
     // Preserve the entire binary scaled shape and zero tail; only index reversal is false.
@@ -428,7 +422,7 @@ fn query_mask_reversal_salts_and_last_coefficient_cannot_be_repaired_into_valid_
         assert!(words[256..].iter().all(|v| *v == 0));
         let mut t = f.query_encoding.trace(s).unwrap();
         let mut claim = s.clone();
-        claim.encoded = trace::refresh(&claim, &mut t, &words);
+        claim.encoded = attacker::refresh(&claim, &mut t, &words);
         reject_sdk(&claim, t);
     }
     let mut t = f.query_encoding.trace(s).unwrap();
@@ -468,6 +462,17 @@ fn full_independent_source_key33_and_setup_contexts_reject_before_child_factory(
     );
     assert_eq!(called.get(), 0);
     drop(malformed);
+    // Preserve canonical topology so the byte path reaches real Source verification.
+    let mut damaged = source_proof();
+    let mut roots = damaged.commitments.trace.roots().to_vec();
+    roots[0][0] += Val::ONE;
+    damaged.commitments.trace = p3_symmetric::MerkleCap::new(roots);
+    let damaged_bytes = wire::encode_source(&f.source_statement, &damaged).unwrap();
+    assert!(matches!(
+        fixed::prove(&f.source, &f.source_encoding, &damaged_bytes),
+        Err(wire::Error::Proof(Error::Verification))
+    ));
+    drop((damaged, damaged_bytes));
     for case in 0..9 {
         let mut source = f.source_statement.clone();
         let mut key = f.source.bfv().key().clone();
@@ -485,6 +490,10 @@ fn full_independent_source_key33_and_setup_contexts_reject_before_child_factory(
         };
         if let Ok(c) = CanonicalSource::checked_claim(&source) {
             let foreign = Expected::source(&c, BfvBinding::new(setup, key)).unwrap();
+            assert!(matches!(
+                fixed::prove(&foreign, &f.source_encoding, &p.source),
+                Err(wire::Error::Proof(Error::Shape))
+            ));
             assert!(wire::verify(&foreign, &p.frames[0]).is_err());
             assert!(
                 prove_child_with_factory(&foreign, s, Some(&proof), || {
@@ -577,8 +586,8 @@ fn equal_numeric_rows_with_new_full_rowid_keep_words_but_change_independent_sour
     .unwrap();
     assert_ne!(other.source_statement.heads, f.source_statement.heads);
     assert_eq!(
-        *other.source_encoding.coefficients(Role::SourceAllOriginal),
-        *f.source_encoding.coefficients(Role::SourceAllOriginal)
+        *other.source_encoding.coefficients(),
+        *f.source_encoding.coefficients()
     );
     let p = actual_source(&other);
     let (s, bytes) = own_frame(&other.source, &other.source_encoding, &p);
@@ -722,7 +731,7 @@ fn fresh_encoding_salts_prove_but_complete_statement_and_original_opening_do_not
         let value = trace.values[at] + Val::ONE;
         field(&mut trace, at, value);
         let mut fresh = original.clone();
-        fresh.encoded = trace::refresh(&fresh, &mut trace, &w.coefficients(fresh.expected.role()));
+        fresh.encoded = attacker::refresh(&fresh, &mut trace, &w.coefficients());
         assert_ne!(fresh.encoded, original.encoded);
         let child =
             prove_child_with_factory(&fresh.expected, &fresh, Some(&proof), || Ok(trace)).unwrap();

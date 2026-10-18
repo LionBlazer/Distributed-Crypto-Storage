@@ -85,7 +85,7 @@ pub(crate) fn profile(h: &mut Sha256) {
 /// does not authenticate a production registry, controller, key or agreed head.
 pub(in crate::opening) struct Fixture {
     pub(in crate::opening) expected: super::statement::Expected,
-    pub(in crate::opening) source: crate::opening::trace::Witness,
+    pub(in crate::opening) source: registry200_proof::source::circuit::Witness,
     pub(in crate::opening) lock: super::trace::Witness,
     pub(in crate::opening) encoding_expected: Expected,
     pub(in crate::opening) statement: Statement,

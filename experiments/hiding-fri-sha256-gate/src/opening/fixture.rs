@@ -2,7 +2,6 @@
 use super::{
     DATA_SCHEMA, INDEX_SCHEMA, Relation, commitment,
     statement::{Statement, encode_digest, limits},
-    trace::Witness,
 };
 use crate::backend::{Error, Val};
 use chacha20poly1305::{
@@ -14,6 +13,7 @@ use rand::{
     RngExt, SeedableRng,
     rngs::{StdRng, SysRng},
 };
+use registry200_proof::source::circuit::Witness;
 use sha2::{Digest, Sha256};
 
 pub(crate) fn fixture() -> Result<(Statement, Witness), Error> {

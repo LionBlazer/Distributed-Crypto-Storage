@@ -1,12 +1,14 @@
 //! Two ordered public operands share one private Key opening; no SQL policy lives here.
 use super::{
     key_material::{self, KeyMaterial},
+    operand_proof::{BoundOperand, CurrentOperand, OperandProver},
     *,
 };
-use bfv_basis_convolution::{CanonicalCiphertext, Expected as BasisExpected};
-use bfv_ciphertext_formation::{
-    EncodedCommitment, EncodedOpening, Expected as FormationExpected, Prerequisites,
-};
+#[cfg(test)]
+use bfv_basis_convolution::Expected as BasisExpected;
+#[cfg(test)]
+use bfv_ciphertext_formation::Prerequisites;
+use bfv_ciphertext_formation::{EncodedCommitment, EncodedOpening, Expected as FormationExpected};
 
 /// Local positions only. The consumer independently binds their semantic roles.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,28 +39,6 @@ pub enum TwoOperandStage {
     FormationReady(Operand),
     Complete,
     Cancelled,
-}
-struct BoundOperand {
-    ciphertext: CanonicalCiphertext,
-    encoding: EncodedCommitment,
-}
-struct CurrentOperand {
-    salts: Zeroizing<[[u64; 4]; 5]>,
-    noise_salt: Zeroizing<[u64; 4]>,
-    opening: Option<EncodedOpening>,
-}
-impl CurrentOperand {
-    fn new() -> Result<Self> {
-        let mut salts = Zeroizing::new([[0; 4]; 5]);
-        for salt in salts.iter_mut() {
-            *salt = bfv_key_transform::random_salt().map_err(backend)?;
-        }
-        Ok(Self {
-            salts,
-            noise_salt: Zeroizing::new(bfv_key_transform::random_salt().map_err(backend)?),
-            opening: None,
-        })
-    }
 }
 /// Owns one guarded Shat/opening and one current operand's private W/salts.
 /// Calls are synchronous. Cancellation clears explicit buffers between calls;
@@ -125,18 +105,10 @@ impl OwnerTwoOperandScope<'_> {
         if self.stage != TwoOperandStage::AwaitingKey {
             return Err(Error::TwoOperandStage);
         }
-        let evidence = bfv_key_transform::prove_statement(
-            self.anchor.public.full_setup_id,
-            &self.anchor.public.expected(),
-            &self.material.statement,
-            self.material
-                .witness
-                .as_ref()
-                .ok_or(Error::TwoOperandStage)?,
-        )
-        .map_err(backend)?;
+        let evidence = self
+            .material
+            .prove_key(self.anchor, Error::TwoOperandStage)?;
         self.key_evidence = Some(evidence);
-        self.material.witness = None;
         self.stage = TwoOperandStage::AwaitingOperands;
         self.key_evidence()
     }
@@ -157,16 +129,8 @@ impl OwnerTwoOperandScope<'_> {
             return Err(Error::TwoOperandStage);
         }
         let [first, second] = inputs;
-        let first = BoundOperand {
-            ciphertext: CanonicalCiphertext::decode(&self.parameters, first.ciphertext, 0)
-                .map_err(backend)?,
-            encoding: first.encoding,
-        };
-        let second = BoundOperand {
-            ciphertext: CanonicalCiphertext::decode(&self.parameters, second.ciphertext, 0)
-                .map_err(backend)?,
-            encoding: second.encoding,
-        };
+        let first = BoundOperand::new(&self.parameters, first.ciphertext, first.encoding)?;
+        let second = BoundOperand::new(&self.parameters, second.ciphertext, second.encoding)?;
         self.operands = Some([first, second]);
         self.request = Some(request);
         self.stage = TwoOperandStage::Basis {
@@ -186,25 +150,15 @@ impl OwnerTwoOperandScope<'_> {
         }
         let current = self.current.as_ref().ok_or(Error::TwoOperandStage)?;
         let input = &self.operands.as_ref().ok_or(Error::TwoOperandStage)?[operand.index()];
-        let expected = BasisExpected::from_ciphertext(
-            self.material.statement.clone(),
-            input.ciphertext.for_basis(basis).map_err(backend)?,
-            self.request.ok_or(Error::TwoOperandStage)?,
-        )
-        .map_err(backend)?;
-        let witness = bfv_basis_convolution::ProverWitness::new(
-            &self.material.shat,
-            *self.material.output_salt,
-            current.salts[basis],
-        )
-        .map_err(backend)?;
-        let evidence = bfv_basis_convolution::prove(
-            self.anchor.public.full_setup_id,
-            &expected,
-            self.key_evidence()?.as_bytes(),
-            &witness,
-        )
-        .map_err(backend)?;
+        let evidence = OperandProver {
+            full_setup_id: self.anchor.public.full_setup_id,
+            material: &self.material,
+            key: self.key_evidence()?,
+            request: self.request.ok_or(Error::TwoOperandStage)?,
+            input,
+            current,
+        }
+        .prove_basis(basis)?;
         self.stage = if basis == 4 {
             TwoOperandStage::AwaitingFormation(operand)
         } else {
@@ -222,10 +176,10 @@ impl OwnerTwoOperandScope<'_> {
             return Err(Error::TwoOperandStage);
         };
         let input = &self.operands.as_ref().ok_or(Error::TwoOperandStage)?[operand.index()];
-        if opening.commitment() != &input.encoding {
-            return Err(Error::BindingMismatch);
-        }
-        self.current.as_mut().ok_or(Error::TwoOperandStage)?.opening = Some(opening);
+        self.current
+            .as_mut()
+            .ok_or(Error::TwoOperandStage)?
+            .bind_opening(input, opening)?;
         self.stage = TwoOperandStage::FormationReady(operand);
         Ok(())
     }
@@ -239,36 +193,21 @@ impl OwnerTwoOperandScope<'_> {
         let TwoOperandStage::FormationReady(operand) = self.stage else {
             return Err(Error::TwoOperandStage);
         };
-        expected.validate().map_err(backend)?;
         let input = &self.operands.as_ref().ok_or(Error::TwoOperandStage)?[operand.index()];
-        if expected.key().public_values() != self.material.statement.public_values()
-            || expected.request() != self.request.ok_or(Error::TwoOperandStage)?
-            || expected.ciphertext().bytes() != input.ciphertext.bytes()
-            || expected.ciphertext().parameter_bytes() != input.ciphertext.parameter_bytes()
-            || expected.encoding() != &input.encoding
-        {
-            return Err(Error::BindingMismatch);
-        }
         let current = self.current.as_ref().ok_or(Error::TwoOperandStage)?;
-        let witness = bfv_ciphertext_formation::ProverWitness::new(
-            current.opening.as_ref().ok_or(Error::TwoOperandStage)?,
-            &self.material.shat,
-            *current.salts,
-            *current.noise_salt,
-        )
-        .map_err(backend)?;
-        let p = Prerequisites {
-            key: self.key_evidence()?.as_bytes(),
-            bases,
-        };
-        let evidence = bfv_ciphertext_formation::prove(
-            self.anchor.public.full_setup_id,
+        let evidence = OperandProver {
+            full_setup_id: self.anchor.public.full_setup_id,
+            material: &self.material,
+            key: self.key_evidence()?,
+            request: self.request.ok_or(Error::TwoOperandStage)?,
+            input,
+            current,
+        }
+        .prove_formation(
             expected,
-            &p,
-            &witness,
-        )
-        .map_err(backend)?;
-        drop(witness);
+            bases,
+            current.opening.as_ref().ok_or(Error::TwoOperandStage)?,
+        )?;
         self.current = None;
         self.stage = match operand {
             Operand::Input0 => TwoOperandStage::Basis {

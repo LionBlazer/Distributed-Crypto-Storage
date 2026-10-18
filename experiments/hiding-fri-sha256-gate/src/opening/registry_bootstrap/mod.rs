@@ -1,4 +1,5 @@
 //! SOURCE ONLY private registry initialization, not a live lock grant.
+use registry200_proof::source::circuit as source_trace;
 pub(crate) mod air;
 pub(in crate::opening) mod statement;
 #[cfg(test)]
@@ -8,7 +9,6 @@ pub(in crate::opening) mod wire;
 use crate::backend::{Backend, Config, Error, Val};
 use crate::opening::{
     Relation, commitment, fixture as source_fixture, locking::statement as registry,
-    trace as source_trace,
 };
 use p3_matrix::dense::RowMajorMatrix;
 use p3_uni_stark::Proof;

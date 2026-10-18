@@ -11,7 +11,9 @@ grant. The separate integration paths below own the additional actual proofs.
 | Direct owner/dependency | Responsibility |
 | --- | --- |
 | [compiler](compiler.rs) / sql-plan | Privately compile fixed-schema WHERE, exact blinded SQL binding and acyclic pre-Source q |
-| [trace](trace.rs) | Own guarded caller plaintext/mask/salts, complete main trace and optional mathematical EncodedOpening |
+| [Core circuit](../../../../../crates/registry200-proof/src/coefficient_encoding/circuit.rs) | Own guarded caller plaintext/mask/salts, full Expected association, complete trace and mathematical EncodedOpening |
+| [Core producers](../../../../../crates/registry200-proof/src/coefficient_encoding/prover.rs) | Mandatory actual Source verification, child proving/self-verification and opaque bounded evidence |
+| [test attacker](attacker.rs) | Test-only coherent false trace rehashing; no production factory or admission authority |
 | [library wire](../../../../../crates/registry200-proof/src/coefficient_encoding/wire/mod.rs) | Original two-component bounded canonical frame and real Source-first verification |
 | [fixture](fixture.rs) | PUBLIC NONSECRET Source/blind vectors and genuine actual Owner public Key statement; never runtime authority |
 | [registry200-proof](../../../../../crates/registry200-proof/README.md) | Single shared Source and new coefficient AIR/statement/profile implementations |
@@ -48,9 +50,12 @@ prove evaluation keys share a secret or establish controller possession.
 The library README freezes PV append order752/772, private source field offsets,
 Cmd48, the full scaled coefficient equations and exact Formation8208 root. All
 source values and the complete packets compare before child construction. The
-consumer genuinely verifies Source before analyzing/allocating a child backend or
-invoking its trace factory. Factory callbacks only create explicit experiment
-traces; they receive no Owner/key getter and cannot replace verification.
+typed Core producer genuinely verifies Source before analyzing/allocating a child
+backend or private trace. It compares the complete constructor-captured Expected
+first. The old callback path remains test-only for genuine hostile AIR proofs;
+it receives no Owner/key getter and cannot replace verification. The producer
+extraction and the linked input16 consumer are covered by the executed
+[producer/epoch validation](../../../PRIVATE-INPUT-PRODUCER-EPOCH-VALIDATION.md).
 
 ## Evidence and lifecycle
 
@@ -78,7 +83,7 @@ public EncodedCommitment metadata without a private witness. This label is not
 verification authority. EncodedOpening remains a caller-owned
 mathematical opening; constructing it grants no SQL or Source authority.
 
-The CLI proves Source once, sequentially generates/verifies the two child frames,
+The CLI uses typed Core Source/encoding producers, proves Source once, sequentially generates/verifies the two child frames,
 drops their decoded proof buffers between roles and checks their exact Formation
 root opening. The genuine fixture separately creates/proves/verifies an actual
 Owner Key statement then drops Owner/private handle/setup; the exported pair still
@@ -119,7 +124,7 @@ cargo test --release --locked --manifest-path experiments/hiding-fri-sha256-gate
 The prove JSON stage is verified_private_coefficient_encodings. setup_and_key_ms
 includes fixture preparation: genuine Owner/setup/Key proof and fresh Key
 verification, Source encryption/commitment, compiler binding and private witness
-construction. Source proving and verification have a separate timer. Each child timer includes trace/proof/
+construction. Source proving/self-verification and bounded serialization have a separate timer. Each child timer includes mandatory fresh Source verification, trace/proof/
 self-verification and encoding; each fresh timer includes Source+child bounded
 verification, complete-statement comparison and mathematical opening validation.
 generation_through_drop_ms ends after public/private fixture and source buffers

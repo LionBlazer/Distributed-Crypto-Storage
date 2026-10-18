@@ -1,14 +1,12 @@
 //! Private producer composition for the non-admitting fixed AddAmount relation.
+use registry200_proof::source::circuit as source_trace;
 pub(super) mod compiler;
 pub(super) mod frame;
 pub(super) mod statement;
 #[cfg(test)]
 mod tests;
 pub(super) mod trace;
-use crate::{
-    backend::{Backend, Config, Error},
-    opening::trace as source_trace,
-};
+use crate::backend::{Backend, Config, Error};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_uni_stark::Proof;
 use statement::{Expected, Statement};

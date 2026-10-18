@@ -6,10 +6,11 @@ use super::{
 use crate::backend::{Error as BackendError, Val};
 use crate::opening::{
     Relation, commitment, fixture as source_fixture, locking, registry_bootstrap,
-    statement as source, trace as source_trace,
+    statement as source,
 };
 use ed25519_dalek::SigningKey;
 use p3_field::PrimeCharacteristicRing;
+use registry200_proof::source::circuit as source_trace;
 use version_journal::{
     AuthorizedTransition, Body, Genesis, HeadPair, HeadRef, Header, Journal, ProtocolProfile,
     ShardUpdate, Target,

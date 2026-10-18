@@ -6,6 +6,7 @@ rust-version = "1.99"
 publish = false
 
 [dependencies]
+bfv-ciphertext-formation = { path = "../bfv-ciphertext-formation" }
 bfv-key-transform = { path = "../bfv-key-transform" }
 bfv-hiding-stark = { path = "../bfv-hiding-stark" }
 compact-store = { path = "../compact-store" }
@@ -13,6 +14,8 @@ version-journal = { path = "../version-journal" }
 p3-air = "=0.8.0"
 p3-field = "=0.8.0"
 p3-goldilocks = "=0.8.0"
+p3-matrix = "=0.8.0"
 p3-symmetric = "=0.8.0"
 p3-uni-stark = "=0.8.0"
 sha2 = "=0.10.9"
+zeroize = "=1.9.1"

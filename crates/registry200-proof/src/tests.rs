@@ -75,6 +75,128 @@ fn mutable_low_level_claims_never_bypass_sealed_canonical_admission() {
         assert!(crate::admission::CanonicalSource::checked_claim(&wrong).is_err());
     }
 }
+
+#[test]
+fn source_circuit_rejects_mutated_packet_geometry_before_allocating_a_trace() {
+    use crate::source::circuit::Witness;
+    use bfv_hiding_stark::{Error, Val};
+    let witness = Witness::new([0x31; 32], [Val::default(); 4], [Val::default(); 4], [0; 4]);
+    let source = source_claim();
+    source.reaudit().unwrap();
+    for page in 0..2 {
+        for truncate in [false, true] {
+            let mut changed = source.clone();
+            if truncate {
+                changed.packets[page].pop();
+            } else {
+                changed.packets[page].push(0);
+            }
+            assert!(matches!(witness.trace(&changed), Err(Error::Shape)));
+            assert!(changed.reaudit().is_err());
+        }
+    }
+}
+
+#[test]
+fn private_mask_witness_owns_its_role_and_full_expected_before_source_decode() {
+    use crate::coefficient_encoding::{
+        self as encoding, Role,
+        circuit::Witness,
+        commitment,
+        statement::{BfvBinding, Expected, Statement},
+    };
+    use bfv_hiding_stark::{Error, Val};
+    use p3_field::PrimeCharacteristicRing;
+    use zeroize::Zeroizing;
+    let source = crate::admission::CanonicalSource::checked_claim(&source_claim()).unwrap();
+    let descriptor = bfv_key_transform::SetupDescriptor {
+        database: compact_store::Commitment::decode(
+            &source.claim().heads[0],
+            crate::source::statement::limits(),
+        )
+        .unwrap()
+        .database(),
+        key_domain: [0x71; 16],
+        public_setup_digest: [0x95; 32],
+        key_epoch: 1,
+    };
+    let binding = BfvBinding::new(
+        [0x53; 32],
+        bfv_key_transform::Statement {
+            expected: bfv_key_transform::Expected {
+                descriptor,
+                coefficients: [Val::ONE; 4],
+            },
+            transformed: [Val::ONE; 4],
+        },
+    );
+    let draft =
+        Expected::private_mask(&source, binding.clone(), [0xB1; 32], [0xA1; 32], [0; 32]).unwrap();
+    let mut mask = [0; 32];
+    mask[0] = 1;
+    mask[31] = 128;
+    let command = commitment::command_digest(&commitment::command_fields(
+        &draft,
+        mask,
+        [Val::from_u8(23); 4],
+    ));
+    let expected = Expected::private_mask(
+        &source,
+        binding.clone(),
+        [0xB1; 32],
+        [0xA1; 32],
+        crate::source::statement::encode_digest(command),
+    )
+    .unwrap();
+    let witness = Witness::private_mask(&expected, Zeroizing::new(mask), [23; 4], [31; 4]).unwrap();
+    let coefficients = witness.coefficients();
+    assert_eq!(coefficients.len(), 8192);
+    for (n, value) in coefficients.iter().copied().enumerate() {
+        assert_eq!(
+            value,
+            if n == 0 || n == 255 {
+                encoding::SCALE
+            } else {
+                0
+            }
+        );
+    }
+    let wrong_role = Statement {
+        expected: Expected::source(&source, binding.clone()).unwrap(),
+        encoded: [Val::ZERO; 4],
+    };
+    assert_eq!(wrong_role.expected.role(), Role::SourceAllOriginal);
+    assert!(matches!(witness.trace(&wrong_role), Err(Error::Shape)));
+    // Correct Expected proceeds to the mandatory byte verifier; no proof is fabricated.
+    assert!(matches!(
+        encoding::prove(&expected, &witness, &[]),
+        Err(encoding::wire::Error::ResourceLimit)
+    ));
+    let mut foreign_binding = binding;
+    let mut foreign_key = foreign_binding.key().clone();
+    foreign_key.transformed[3] += Val::ONE;
+    foreign_binding = BfvBinding::new(foreign_binding.full_setup(), foreign_key);
+    let foreign = Expected::private_mask(
+        &source,
+        foreign_binding,
+        [0xB1; 32],
+        [0xA1; 32],
+        crate::source::statement::encode_digest(command),
+    )
+    .unwrap();
+    assert!(matches!(
+        encoding::prove(&foreign, &witness, &[]),
+        Err(encoding::wire::Error::Proof(Error::Shape))
+    ));
+    assert!(
+        witness
+            .formation_opening(&Statement {
+                expected: foreign,
+                encoded: witness.statement().encoded
+            })
+            .is_err()
+    );
+}
 #[test]
 fn original_three_profile_bytes_and_geometry_are_preserved() {
     fn hex(d: [u8; 32]) -> String {

@@ -209,7 +209,14 @@ pub(in crate::opening::registry_lifecycle) fn produce(
 pub(in crate::opening::registry_lifecycle) fn conditional(
     sql: &str,
     mode: u8,
-) -> Result<(crate::opening::trace::Witness, Expected, Witness), Error> {
+) -> Result<
+    (
+        registry200_proof::source::circuit::Witness,
+        Expected,
+        Witness,
+    ),
+    Error,
+> {
     conditional_data(sql, mode, None)
 }
 /// Alternate PUBLIC NONSECRET source values are encrypted and genuinely proved by owning tests.
@@ -217,7 +224,14 @@ pub(in crate::opening::registry_lifecycle) fn conditional_data(
     sql: &str,
     mode: u8,
     data: Option<[u8; 12]>,
-) -> Result<(crate::opening::trace::Witness, Expected, Witness), Error> {
+) -> Result<
+    (
+        registry200_proof::source::circuit::Witness,
+        Expected,
+        Witness,
+    ),
+    Error,
+> {
     let mut f = vj(Fixture::new())?;
     if let Some(data) = data {
         let suffix = crate::opening::fixture::canonical_suffix();

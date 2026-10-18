@@ -172,3 +172,10 @@ pub use basis_job::{FormationJobStage, OwnerFormationJob};
 mod two_operand_job;
 #[cfg(feature = "formation-proofs")]
 pub use two_operand_job::{Operand, OperandInput, OwnerTwoOperandScope, TwoOperandStage};
+
+#[cfg(feature = "formation-proofs")]
+mod operand_proof;
+#[cfg(feature = "formation-proofs")]
+mod proof_epoch;
+#[cfg(feature = "formation-proofs")]
+pub use proof_epoch::{EpochOperandStage, OwnerEpochOperandJob, OwnerProofEpoch, ProofEpochStage};

@@ -1,4 +1,5 @@
 //! Nonaccepting owner-local composition. Public fixtures never substitute for peer FHE.
+use registry200_proof::source::circuit as source_trace;
 pub(crate) mod air;
 #[cfg(test)]
 mod returned_replay_tests;
@@ -11,7 +12,6 @@ use crate::backend::{Backend, Config, Error, Val};
 use crate::opening::{
     basis_convolution as basis, key_transform,
     selection::{self, encoding},
-    trace as source_trace,
 };
 use p3_uni_stark::Proof;
 use rand::{

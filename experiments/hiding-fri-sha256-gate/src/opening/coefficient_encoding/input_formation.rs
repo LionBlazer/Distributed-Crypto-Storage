@@ -1,10 +1,6 @@
 //! PUBLIC NONSECRET fixtures. Real input provenance and optional exact FHE output; no SQL grant.
 mod full_product;
-use super::{
-    Statement, compiler::CompiledPrivatePredicate, fixture, prove_child_with_factory,
-    require_complete,
-};
-use crate::backend::Backend;
+use super::{Statement, compiler::CompiledPrivatePredicate, fixture, require_complete};
 use bfv_ciphertext_formation::{EncodedCommitment, Expected as FormationExpected, Prerequisites};
 use bfv_query_core::{
     CoefficientRow, Geometry, KeyScope, Operand, OperandInput, Owner, PeerEvaluator, PublicSetup,
@@ -133,18 +129,13 @@ fn input_formation(prove_output: bool) {
     let q = f.source_statement.request;
     let expected = [f.source.clone(), f.query.clone()];
     let started = Instant::now();
-    let source_proof = {
-        let b = Backend::new(&f.source_statement).unwrap();
-        let p = b
-            .prove_with_trace(&f.source_statement, || {
-                f.source_witness.trace(&f.source_statement)
-            })
-            .unwrap();
-        b.verify(&f.source_statement, &p).unwrap();
-        p
-    };
+    let source_proof = registry200_proof::source::prove(
+        &CanonicalSource::checked_claim(&f.source_statement).unwrap(),
+        &f.source_witness,
+    )
+    .unwrap();
     let source_ms = started.elapsed().as_secs_f64() * 1000.;
-    let source_bytes = wire::encode_source(&f.source_statement, &source_proof).unwrap();
+    let source_bytes = source_proof.into_bytes();
     let source_size = source_bytes.len();
     let mut statements = Vec::new();
     let mut encoding_ms = [0.; 2];
@@ -157,10 +148,8 @@ fn input_formation(prove_output: bool) {
     .enumerate()
     {
         let started = Instant::now();
-        let s = w.statement(e);
-        let proof = prove_child_with_factory(e, &s, Some(&source_proof), || w.trace(&s)).unwrap();
-        let bytes = wire::encode_with_source(e, &s, &source_bytes, &proof).unwrap();
-        drop(proof);
+        let evidence = registry200_proof::coefficient_encoding::prove(e, w, &source_bytes).unwrap();
+        let (s, bytes) = evidence.into_parts();
         let checked = wire::verify(e, &bytes).unwrap().statement().clone();
         require_complete(&s, &checked).unwrap();
         pair_sizes[index] = bytes.len();
@@ -168,7 +157,6 @@ fn input_formation(prove_output: bool) {
         statements.push(checked);
         encoding_ms[index] = started.elapsed().as_secs_f64() * 1000.;
     }
-    drop(source_proof);
     drop(source_bytes);
     // Recompile only the SQL predicate, never rows. Independently check its complete binding.
     let compiled =

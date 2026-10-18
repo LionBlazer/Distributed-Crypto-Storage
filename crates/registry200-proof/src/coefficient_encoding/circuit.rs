@@ -1,13 +1,14 @@
 //! Explicit caller-owned private Source/mask openings; no Owner getters or private wire format.
-use super::{Expected, Statement};
-use crate::backend::{Error, TRACE_HEIGHT, Val};
+use super::statement::{Expected, Statement};
+use super::{N, Role, SCALE, T, air::EncodingAir, commitment, layout::*};
+use bfv_hiding_stark::{Error, TRACE_HEIGHT, Val};
 use p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
 use p3_matrix::dense::RowMajorMatrix;
-use registry200_proof::coefficient_encoding::{
-    N, Role, SCALE, T, air::EncodingAir, commitment, layout::*,
-};
 use zeroize::Zeroizing;
-pub(super) struct Witness {
+/// Opaque owner-side opening associated with one complete Expected and role.
+/// Its mathematical trace can contain secrets and is not an admission token.
+pub struct Witness {
+    expected: Expected,
     plain: Zeroizing<Vec<u8>>,
     mask: Zeroizing<[u8; 32]>,
     opening_salt: Zeroizing<[u64; 4]>,
@@ -19,12 +20,15 @@ fn vals(x: [u64; 4]) -> Result<[Val; 4], Error> {
     }
     Ok(x.map(Val::from_u64))
 }
-pub(super) fn bits(out: &mut [Val], v: u64) {
+fn bits(out: &mut [Val], v: u64) {
     for (i, x) in out.iter_mut().enumerate() {
         *x = Val::from_u64((v >> i) & 1);
     }
 }
 impl Witness {
+    pub(crate) fn require_expected(&self, e: &Expected) -> Result<(), Error> {
+        self.expected.require_same(e)
+    }
     pub fn source(
         e: &Expected,
         plain: Zeroizing<Vec<u8>>,
@@ -36,13 +40,16 @@ impl Witness {
         }
         let salt = vals(opening_salt)?;
         let _ = vals(encoding_salt)?;
-        if registry200_proof::source::commitment::digest(
-            &registry200_proof::source::commitment::opening_fields(e.source_claim(), salt, &plain),
-        ) != e.source_claim().open_commitment
+        if crate::source::commitment::digest(&crate::source::commitment::opening_fields(
+            e.source_claim(),
+            salt,
+            &plain,
+        )) != e.source_claim().open_commitment
         {
             return Err(Error::Shape);
         }
         Ok(Self {
+            expected: e.clone(),
             plain,
             mask: Zeroizing::new([0; 32]),
             opening_salt: Zeroizing::new(opening_salt),
@@ -64,15 +71,18 @@ impl Witness {
             return Err(Error::Shape);
         }
         Ok(Self {
+            expected: e.clone(),
             plain: Zeroizing::new(Vec::new()),
             mask,
             opening_salt: Zeroizing::new(command_salt),
             encoding_salt: Zeroizing::new(encoding_salt),
         })
     }
-    pub fn coefficients(&self, role: Role) -> Zeroizing<Vec<u64>> {
+    /// Computes caller-owned mathematical W under the constructor's fixed role.
+    /// No externally selected role can reinterpret a private-mask witness as Source.
+    pub fn coefficients(&self) -> Zeroizing<Vec<u64>> {
         let mut out = Zeroizing::new(vec![0; N]);
-        match role {
+        match self.expected.role() {
             Role::SourceAllOriginal => {
                 for i in 0..4 {
                     let age = self.plain[3 * i] as usize;
@@ -92,8 +102,9 @@ impl Witness {
         }
         out
     }
-    pub fn statement(&self, e: &Expected) -> Statement {
-        let coefficients = self.coefficients(e.role());
+    pub fn statement(&self) -> Statement {
+        let e = &self.expected;
+        let coefficients = self.coefficients();
         let fields: Vec<_> = coefficients.iter().copied().map(Val::from_u64).collect();
         Statement {
             expected: e.clone(),
@@ -104,7 +115,12 @@ impl Witness {
             ),
         }
     }
+    /// Low-level mathematical trace; deliberately permits false same-role claims
+    /// for AIR rejection tests. The typed producer checks the FULL Expected first.
     pub fn trace(&self, s: &Statement) -> Result<RowMajorMatrix<Val>, Error> {
+        if s.expected.role() != self.expected.role() {
+            return Err(Error::Shape);
+        }
         let role = s.expected.role();
         let width = role.width();
         let mut values = Val::zero_vec(width * TRACE_HEIGHT);
@@ -187,7 +203,7 @@ impl Witness {
             }
         }
         let mut trace = RowMajorMatrix::new(values, width);
-        let words = self.coefficients(role);
+        let words = self.coefficients();
         let _ = refresh(s, &mut trace, &words);
         Ok(trace)
     }
@@ -196,20 +212,17 @@ impl Witness {
         &self,
         s: &Statement,
     ) -> Result<bfv_ciphertext_formation::EncodedOpening, Error> {
+        self.require_expected(&s.expected)?;
         let c = bfv_ciphertext_formation::EncodedCommitment::new(
             s.producer_identity(),
             s.expected.encoding_context().map(|v| v.as_canonical_u64()),
             s.encoded.map(|v| v.as_canonical_u64()),
         )?;
-        bfv_ciphertext_formation::EncodedOpening::new(
-            self.coefficients(s.expected.role()),
-            *self.encoding_salt,
-            c,
-        )
+        bfv_ciphertext_formation::EncodedOpening::new(self.coefficients(), *self.encoding_salt, c)
     }
 }
-/// Rebuilt-test helper uses explicit caller-owned W; it cannot authorize a false trace.
-pub(super) fn refresh(s: &Statement, trace: &mut RowMajorMatrix<Val>, words: &[u64]) -> [Val; 4] {
+// Private row construction from the witness's role-fixed coefficients.
+fn refresh(s: &Statement, trace: &mut RowMajorMatrix<Val>, words: &[u64]) -> [Val; 4] {
     assert_eq!(words.len(), N);
     let air = EncodingAir::new(s);
     let role = s.expected.role();

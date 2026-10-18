@@ -12,7 +12,8 @@ an evaluation key, forms a ciphertext, admits a Journal mutation or grants a res
 | [Source opening expressions](../lifecycle/opening.rs) | Original salted field packing; no lifecycle operation is added |
 | [bfv-key-transform](../../../bfv-key-transform/README.md) | Existing typed Key Statement/PV33 and exact Formation-compatible vector digest ABI |
 | [bfv-hiding-stark](../../../bfv-hiding-stark/README.md) | Existing width12 Poseidon gadget and fixed hiding backend used by the consumer |
-| p3-air/field and sha2 | AIR expressions and canonical full-context labels |
+| [bfv-ciphertext-formation](../../../bfv-ciphertext-formation/README.md) | Exact validated EncodedOpening handoff, without a Formation proof or Key grant |
+| p3-air/field/matrix, zeroize and sha2 | AIR/trace expressions, guarded owned witnesses and canonical full-context labels |
 
 `statement` owns reaudited CanonicalSource, independent BfvBinding and low-level
 Expected/Statement claims. `layout` is a public circuit ABI for caller-owned trace
@@ -24,7 +25,30 @@ cryptographic verification. `wire::verify` accepts independently pinned Expected
 and bytes, returning a read-only VerifiedEncoding with the complete Statement,
 including C_w. Its private fixed backend constructs and assesses the actual AIR;
 callers supply no configuration, verification key or security report. The
-experiment owns SQL compilation, private witnesses, trace production and proving.
+experiment owns SQL compilation and fixtures. [circuit](circuit.rs) owns the
+private witness and one actual trace writer; the private producer module owns
+fixed proving and self-verification. No production callback selects a trace,
+configuration, verification key or assessment.
+
+`circuit::Witness::source` and `private_mask` capture their complete Expected and
+fixed role after validating the caller-owned opening and canonical salts.
+`coefficients()` computes guarded mathematical W under that stored role;
+`statement()` uses the same stored context. There is no caller-selected role or
+Expected parameter that can reinterpret an empty private-mask plaintext as Source.
+The explicit low-level `trace(&Statement)` rejects other roles but allows false
+same-role claims for genuine adversarial AIR tests; its output contains secrets
+and is never proof authority. Private production row refresh/bit helpers are not
+exported. The experiment retains a separate test-only coherent-attacker helper.
+
+`prove(&Expected, &circuit::Witness, source_bytes)` first requires the full captured
+Expected, including all Source691, original packets, setup, Key33, query labels and
+C_mask. It verifies real bounded canonical Source bytes and drops the decoded
+Source/backend before child assessment and trace allocation. It then proves,
+self-verifies and frames the unchanged DCSCEP01 pair. Its opaque Evidence exposes
+only the complete Statement and bounded public bytes (`into_parts` consumes it).
+Persisted bytes are reverified; no cached Boolean or evidence-object identity can
+skip Source. Executed producer and input16 checks are recorded in the
+[producer/epoch validation](../../../../experiments/hiding-fri-sha256-gate/PRIVATE-INPUT-PRODUCER-EPOCH-VALIDATION.md).
 
 ## Exact values and ownership
 

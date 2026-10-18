@@ -410,3 +410,23 @@ complete proposed ciphertext through the existing response validator, allowing
 the standalone [full multiplication graph](../../experiments/bfv-mul-relin-proof/README.md)
 consumer to bind exact encrypted output bytes. It grants no SQL/proof authority
 and introduces no dependency from Core to that experiment.
+
+## Reusable in-memory proof epoch
+
+The existing `formation-proofs` feature also provides an opaque
+[OwnerProofEpoch](src/key_anchor/proof_epoch/README.md). One actual Key33/CsHat
+opening and genuine Key proof serve exclusive sequential operand jobs, each
+with its own exact request, complete ciphertext and encoding commitment.
+`OwnerEpochOperandJob` emits ordered Basis5 plus Formation using the existing
+real prerequisite verifiers. Job completion/cancel/Drop clears only its own
+guarded W/salts; epoch cancellation/Drop clears the retained Key opening.
+The old single-operand and fixed two-operand APIs retain their semantics and
+owning assertions. Their shared private operand implementation contains no SQL
+or Source policy. No new dependency, profile, frame, cap, secret getter,
+serialization, trusted marker or recovery path is introduced.
+
+This epoch stage is source-only pending Root native validation. It enables
+private opening reuse; it does not make existing query-specific Source proofs
+reusable across SQL requests or change full-product provenance checks. Persistent
+Source certification, origin/query composition, evaluation-key same-secret
+proofs, fresh agreed heads and live SQL acceptance remain separate obligations.

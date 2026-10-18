@@ -24,14 +24,14 @@ it is not evidence of production secrecy, erasure, key anchoring or finality.
 | [shared schedule](../../../../crates/registry200-proof/src/source/schedule.rs), [layout](../../../../crates/registry200-proof/src/source/layout.rs) | Two fixed public height512 schedules/layouts, 42 jobs, 163 MAC blocks and exact absorb/capture rows |
 | [shared AIR](../../../../crates/registry200-proof/src/source/air.rs) | All cross-primitive, immutable-bank, output-buffer, header and salted-sponge constraints |
 | `source_adapter.rs` | Local PublicStatement/Kind adapter over the shared Source claim and AIR |
-| `trace.rs` | Separate nonserializable/non-Clone private witness and genuine shared-arithmetic trace generator |
+| [shared circuit](../../../../crates/registry200-proof/src/source/circuit.rs) | One nonserializable/non-Clone guarded private witness and actual trace writer for all five Source layouts |
 | `poseidon.rs` | Imports the [shared Poseidon gadget](../../../../crates/bfv-hiding-stark/src/poseidon.rs); no permutation implementation is owned here |
 | [shared commitment](../../../../crates/registry200-proof/src/source/commitment.rs) | Source-key/open encodings and shared fixed-length sponge/native fixture oracle |
 | `tests.rs` | Preserved byte-opening native/oracle, admission, genuine and rebuilt inconsistent-component cases |
 | [shared canonical relation](../../../../crates/registry200-proof/src/source/canonical.rs), `canonical_tests.rs` | Complete fixed N4 index invariant, bounded caller-owned row auxiliaries and preserved original source/rebuilt cases |
 | `packed_tests.rs` | Separate packed-profile geometry, authentic core fixture, genuine proof and rebuilt malformed-witness cases |
 
-The experiment now consumes [registry200-proof](../../../../crates/registry200-proof/README.md) for the single Source statement/AIR, schedules, arithmetic kernels and profiles. That core library uses compact-store for complete canonical roots; there is no reverse dependency.
+The experiment now consumes [registry200-proof](../../../../crates/registry200-proof/README.md) for the single Source statement/AIR, schedules, arithmetic kernels, profiles and trace writer. That core library uses compact-store for complete canonical roots; there is no reverse dependency. Its typed Canonical-only producer is used by the coefficient gate and input16 composition. Other legacy Source profiles use the same explicit mathematical writer under their existing experiment policy. This producer move remains source-only pending native validation.
 The private backend distinguishes public `PublicStatement` from the old
 self-generating public `PrimitiveStatement`. `prove_with_trace` checks exact public
 values before invoking a witness factory. No verifier-only fake trace/panic method,

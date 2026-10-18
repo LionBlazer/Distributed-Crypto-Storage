@@ -5,7 +5,6 @@ use super::{
     commitment, fixture, poseidon,
     schedule::{self, Job},
     statement::{self, Statement},
-    trace::Witness,
 };
 use crate::backend::{self, Backend, Error, TRACE_HEIGHT, Val};
 use crate::chacha::{self, air as ca};
@@ -21,6 +20,7 @@ use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::default_goldilocks_poseidon2_12;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_symmetric::Permutation;
+use registry200_proof::source::circuit::Witness;
 use std::borrow::Cow;
 fn key() -> [u8; 32] {
     core::array::from_fn(|i| i as u8)

@@ -208,7 +208,7 @@ pub(in crate::opening) fn prove_bases(
 pub(in crate::opening) struct CanonicalFixture {
     pub(in crate::opening) f: Fixture,
     parent: super::statement::Expected,
-    source: crate::opening::trace::Witness,
+    source: registry200_proof::source::circuit::Witness,
     lock: super::trace::Witness,
 }
 pub(in crate::opening) fn canonical_fixture(empty: bool) -> Result<CanonicalFixture, Error> {

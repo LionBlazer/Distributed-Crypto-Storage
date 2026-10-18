@@ -10,4 +10,6 @@ pub(crate) const BLOCK_BYTES: usize = 16;
 pub(crate) const MAX_BLOCKS: usize = 3;
 pub(crate) const MAX_SEGMENTS: usize = 3;
 pub(crate) const MAX_BYTES: usize = MAX_BLOCKS * BLOCK_BYTES;
-pub(crate) use registry200_proof::source::poly1305::{CLAMP, LIMB_BITS, LIMBS, MASK, RADIX};
+pub(crate) use registry200_proof::source::poly1305::{CLAMP, LIMB_BITS, LIMBS};
+#[cfg(test)]
+pub(crate) use registry200_proof::source::poly1305::{MASK, RADIX};

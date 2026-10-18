@@ -5,10 +5,9 @@ use super::{
     trace::Witness,
 };
 use crate::backend::{Error, Val};
-use crate::opening::{
-    Relation, commitment, fixture as source_fixture, statement as source, trace as source_trace,
-};
+use crate::opening::{Relation, commitment, fixture as source_fixture, statement as source};
 use p3_field::PrimeCharacteristicRing;
+use registry200_proof::source::circuit as source_trace;
 pub(super) const GENESIS: [u8; 32] = [0xA7; 32];
 pub(super) const PARENT: [u8; 32] = [0xB7; 32];
 const KEY: [u8; 32] = [0x71; 32];

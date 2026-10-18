@@ -1,4 +1,5 @@
 //! Closed N4/private-two-transaction proof experiment. No live SQL lock grant.
+use registry200_proof::source::circuit as source_trace;
 pub(crate) mod air;
 pub(crate) mod encoding;
 pub(crate) mod formation;
@@ -11,7 +12,7 @@ mod tests;
 pub(in crate::opening) mod trace;
 pub(in crate::opening) mod wire;
 use crate::backend::{Backend, Config, Error, Val};
-use crate::opening::{Relation, commitment, fixture as source_fixture, trace as source_trace};
+use crate::opening::{Relation, commitment, fixture as source_fixture};
 use p3_uni_stark::Proof;
 use rand::{
     RngExt, SeedableRng,

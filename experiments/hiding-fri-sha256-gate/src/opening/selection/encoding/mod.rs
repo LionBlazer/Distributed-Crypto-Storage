@@ -1,4 +1,5 @@
 //! Nonaccepting private selected-originals -> complete scaled BFV plaintext gate.
+use registry200_proof::source::circuit as source_trace;
 pub(crate) mod air;
 pub(in crate::opening) mod kernel;
 pub(in crate::opening) mod matrix;
@@ -9,7 +10,7 @@ pub(in crate::opening) mod trace;
 
 use super::{statement::Statement as Selection, trace::Witness as SelectedWitness};
 use crate::backend::{Backend, Config, Error, Val};
-use crate::opening::{statement as source, trace as source_trace};
+use crate::opening::statement as source;
 use p3_field::PrimeCharacteristicRing;
 use p3_uni_stark::Proof;
 use rand::{
