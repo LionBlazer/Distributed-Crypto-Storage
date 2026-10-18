@@ -162,3 +162,11 @@ encoding/hash preparation. An outer process timer additionally includes startup,
 CLI analysis and fixtures. No timer is whole Relin/MulRelin, an FHE peer query or
 SQL latency. These process observations establish no performance improvement or
 whole-operation resource guarantee.
+
+`CheckedStage::security_report()` borrows the actual `backend::SecurityReport`
+rebuilt by this verifier and retained only after genuine proof verification
+succeeds. It exposes the existing whole-stage bound, terms and unassessed-component
+list for explicit composition; no report is accepted from a frame or producer.
+It adds no complete-Relin, same-secret-key, SQL or freshness guarantee. The
+[full graph validation](../bfv-mul-relin-proof/VALIDATION.md) includes all twenty
+owning tests and actual use of both relinearization reports in the complete graph.

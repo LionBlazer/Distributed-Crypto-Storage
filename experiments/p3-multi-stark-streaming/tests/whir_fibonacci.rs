@@ -2596,8 +2596,7 @@ fn a_row_naming_an_entry_its_table_does_not_have_is_rejected() {
     .expect_err("a row naming an entry outside its table must be rejected");
 }
 
-
-/// The unchanged public proving API selects streamed lookup witnesses only with the feature.
+/// The feature supplies streaming capability; each batch explicitly selects its storage.
 /// The original verifier authenticates the entire proof through WHIR and closes the same sponge.
 #[cfg(feature = "streaming-lookups")]
 #[test]
@@ -2607,16 +2606,61 @@ fn streamed_lookup_full_proof_closes_the_original_pcs_transcript_and_rejects_dam
     let log_height = 6;
     let config = config_for(log_height, air.width());
     let (pk, vk) = setup(&config, &[&air], &mut challenger()).unwrap();
+    let instances = || {
+        ProverInstances::new(vec![ProverInstance::new(
+            &air,
+            Table::new(permutation_trace(1 << log_height).transpose()),
+            &pk,
+            &[],
+        )])
+    };
+    let mut resident_before = challenger();
+    let before = prove(&config, instances(), 0, &mut resident_before).unwrap();
     let mut producer = challenger();
-    let proof = prove(&config, ProverInstances::new(vec![ProverInstance::new(
-        &air, Table::new(permutation_trace(1 << log_height).transpose()), &pk, &[],
-    )]), 0, &mut producer).unwrap();
+    let proof = prove(
+        &config,
+        instances().with_lookup_materialization(p3_multi_stark::LookupMaterialization::Streaming),
+        0,
+        &mut producer,
+    )
+    .unwrap();
+    let mut resident_after = challenger();
+    let after = prove(&config, instances(), 0, &mut resident_after).unwrap();
     let bytes = postcard::to_allocvec(&proof).unwrap();
+    assert_eq!(postcard::to_allocvec(&before).unwrap(), bytes);
+    assert_eq!(postcard::to_allocvec(&after).unwrap(), bytes);
     let restored: MultiStarkProof<WhirConfigForTest> = postcard::from_bytes(&bytes).unwrap();
     let mut verifier = challenger();
-    verify(&config, VerifierInstances::new(vec![VerifierInstance::new(&air, &vk, log_height, &[])]), &restored, 0, &mut verifier).unwrap();
-    assert_eq!(producer.sample_algebra_element::<EF>(), verifier.sample_algebra_element::<EF>());
+    verify(
+        &config,
+        VerifierInstances::new(vec![VerifierInstance::new(&air, &vk, log_height, &[])]),
+        &restored,
+        0,
+        &mut verifier,
+    )
+    .unwrap();
+    let next = producer.sample_algebra_element::<EF>();
+    assert_eq!(next, verifier.sample_algebra_element::<EF>());
+    assert_eq!(next, resident_before.sample_algebra_element::<EF>());
+    assert_eq!(next, resident_after.sample_algebra_element::<EF>());
     let mut damaged = restored;
-    damaged.lookup.as_mut().unwrap().layers.last_mut().unwrap().claims.d1 += EF::ONE;
-    assert!(verify(&config, VerifierInstances::new(vec![VerifierInstance::new(&air, &vk, log_height, &[])]), &damaged, 0, &mut challenger()).is_err());
+    damaged
+        .lookup
+        .as_mut()
+        .unwrap()
+        .layers
+        .last_mut()
+        .unwrap()
+        .claims
+        .d1 += EF::ONE;
+    assert!(
+        verify(
+            &config,
+            VerifierInstances::new(vec![VerifierInstance::new(&air, &vk, log_height, &[])]),
+            &damaged,
+            0,
+            &mut challenger()
+        )
+        .is_err()
+    );
 }

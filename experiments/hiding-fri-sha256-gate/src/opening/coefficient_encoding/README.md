@@ -5,7 +5,8 @@ This non-admitting consumer proves the two distinct private-main relations in
 Every original row is encoded before any WHERE filtering. The hidden query is
 independently encoded as a reversed256-bit coefficient polynomial. No mask,
 threshold, SQL text, private blind, source plaintext or salt is serialized.
-This is not a peer SQL handler, Formation, complete MulRelin or agreed-head grant.
+The CLI pair is not a peer SQL handler, Formation, complete MulRelin or agreed-head
+grant. The separate integration paths below own the additional actual proofs.
 
 | Direct owner/dependency | Responsibility |
 | --- | --- |
@@ -97,11 +98,17 @@ pins the existing Formation digest ABI at the last coefficient. Actual degree4,
 individual128-bit assessments,32MiB pair fit and selected process resources were
 measured; source review alone was not used as a native PASS.
 
-The separate [input integration](input_formation.rs) proves one actual Key,
+The original [input integration](input_formation.rs) proves one actual Key,
 Source, both encodings, ten Basis and two Formation components against exactly
 the Prepared request operands. It runs actual private FHE on those same bytes and
 freshly rebuilds public expectations after private drop. It has no output MulRelin
 proof, fresh agreed head or SQL grant. The CLI pair still contains only Source+child.
+The new [full product path](input_formation/full_product/README.md) adds actual
+proof verification for all134 output nodes and independently repeats input16 and
+all118 output records after dropping the prover and old decoded graph. Its
+[native validation](../../../../bfv-mul-relin-proof/VALIDATION.md) records the
+complete output proof, exact ciphertext parity and resource observations. It
+still grants no fresh agreed head, network admission or whole128 guarantee.
 
 ~~~text
 hiding-fri-source-primitives security private-coefficient-encoding
@@ -119,8 +126,9 @@ generation_through_drop_ms ends after public/private fixture and source buffers
 are dropped, but excludes process startup and printing. Root must measure whole
 process RAM/time and actual frame sizes. The standalone CLI pair alone establishes
 no Source/query Formation; the separate linked test supplies those input proofs.
-No fixed latency cutoff, whole128, output MulRelin proof, freshness, live SQL,
-lock or writer permission follows from either path.
+No fixed latency cutoff, whole128, freshness, live SQL, lock or writer permission
+follows from these paths. The CLI and original input-only test do not prove the
+output; the optional full product test verifies that additional computation.
 
 The [library extraction validation](../../../COEFFICIENT-WIRE-EXTRACTION-VALIDATION.md)
 covers the preserved DCSCEP01 bytes, both genuine roles, Source-before-child-bomb

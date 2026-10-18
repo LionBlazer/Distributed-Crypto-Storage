@@ -1,7 +1,7 @@
 //! Exact query-dependent routing. Verifier calls no arithmetic evaluator here.
 use crate::{COEFFICIENTS, COMPONENTS, DEGREE, Error, Input, PreparedKey, Result};
 use bfv_ntt_circuit::{Basis, Direction};
-use bfv_relinearization_circuit::Role;
+use bfv_relinearization_circuit::{Role, routing};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Stage {
@@ -88,24 +88,22 @@ impl State {
                 )?;
                 Ok(Request::Ntt(bfv_ntt_circuit::decode_request(&bytes)?))
             }
-            2 => {
-                let bytes = bfv_relinearization_circuit::encode_request(
-                    Role::Embed,
-                    binding,
-                    key.keyset_id(),
-                    &self.inverse,
-                )?;
-                Ok(Request::Relin(bfv_relinearization_circuit::decode_request(
-                    &bytes,
-                )?))
-            }
+            2 => Ok(Request::Relin(routing::embed_request(
+                binding,
+                key.keyset_id(),
+                &self.inverse,
+            )?)),
             3 => {
-                let row = 5 * usize::from(stage.source) + usize::from(stage.target);
+                let row = routing::digit_row(
+                    &self.embedded,
+                    usize::from(stage.source),
+                    usize::from(stage.target),
+                )?;
                 let bytes = bfv_ntt_circuit::encode_request(
                     Direction::Forward,
                     Basis::new(stage.target)?,
                     binding,
-                    &self.embedded[row * DEGREE..(row + 1) * DEGREE],
+                    row,
                 )?;
                 Ok(Request::Ntt(bfv_ntt_circuit::decode_request(&bytes)?))
             }
@@ -115,30 +113,18 @@ impl State {
                 if self.digits.len() != 25 * DEGREE {
                     return Err(Error::Stage);
                 }
-                let mut values = Vec::with_capacity(85 * DEGREE);
-                for target in 0..5 {
-                    for component in 0..2 {
-                        let original = input.component(component).ok_or(Error::Shape)?;
-                        values.extend_from_slice(&original[target * DEGREE..(target + 1) * DEGREE]);
-                    }
-                    for source in 0..5 {
-                        let row = 5 * source + target;
-                        values.extend_from_slice(&self.digits[row * DEGREE..(row + 1) * DEGREE]);
-                    }
-                    for keys in [&key.c0, &key.c1] {
-                        for row in keys {
-                            values.extend_from_slice(&row[target * DEGREE..(target + 1) * DEGREE]);
-                        }
-                    }
-                }
-                let bytes = bfv_relinearization_circuit::encode_request(
-                    Role::AccumulateAndAdd,
+                Ok(Request::Relin(routing::mac_request(
                     binding,
                     key.keyset_id(),
-                    &values,
-                )?;
-                Ok(Request::Relin(bfv_relinearization_circuit::decode_request(
-                    &bytes,
+                    [
+                        input.component(0).ok_or(Error::Shape)?,
+                        input.component(1).ok_or(Error::Shape)?,
+                    ],
+                    &self.digits,
+                    [
+                        key.c0.each_ref().map(Vec::as_slice),
+                        key.c1.each_ref().map(Vec::as_slice),
+                    ],
                 )?))
             }
             _ => Err(Error::Stage),
@@ -172,15 +158,7 @@ impl State {
                 }
             }
             4 => {
-                let mut output: [Vec<u64>; 2] =
-                    core::array::from_fn(|_| Vec::with_capacity(COEFFICIENTS));
-                for (component, out) in output.iter_mut().enumerate() {
-                    for target in 0..5 {
-                        let row = 2 * target + component;
-                        out.extend_from_slice(&values[row * DEGREE..(row + 1) * DEGREE]);
-                    }
-                }
-                self.result = Some(output);
+                self.result = Some(routing::component_outputs(values)?);
                 self.digits = Vec::new();
             }
             _ => return Err(Error::Stage),

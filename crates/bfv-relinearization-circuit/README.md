@@ -9,7 +9,10 @@ SDK, core, secret-key, backend, network, callback or owner-witness dependencies.
 
 [bfv-fixed-geometry](../bfv-fixed-geometry/README.md) is the only direct project
 dependency and owns unchanged N8192/Q5. `codec` owns sealed fixed public containers;
-`profile` separates both roles; `math` evaluates all coefficients. Optional feature
+`profile` separates both roles; `math` evaluates all coefficients. The pure
+[`routing` module](src/routing/README.md) assembles complete Embed/MAC requests,
+borrows the exact digit row and transposes complete MAC outputs without arithmetic
+evaluation or proof authority. Optional feature
 `plonky3` owns the public AIR/preparation adapter; default APIs expose no P3 types.
 Consumers own actual proof configuration, transcript, full setup/key/ciphertext
 provenance, independent expected context and proof verification.
@@ -90,7 +93,10 @@ actual matrix before proof setup. Aux/Prepared is never a computation proof.
 
 Exact ordered 25 Forward-NTT links must tie Embed outputs to D. The five public
 key c0 polynomial byte payloads are PowerBasis even when their enum is NttShoup:
-25 genuine setup NTT links are needed to obtain K0. Seeded K1 is direct public NTT
+K0 requires their exact 25 forward transforms. A verifier may derive these fixed
+public setup constants once from independently pinned original setup bytes using
+bounded key parsing and the canonical NTT evaluator; arbitrary peer-provided NTT
+rows or SDK probe outputs cannot replace that derivation. Seeded K1 is direct public NTT
 PRNG material with the exact upstream seed chain. Full setup identity must be
 independently pinned; matching bytes do not prove evaluation-key same-secret
 consistency. Original c0/c1 need their producer/NTT links too; final NTT outputs
@@ -122,3 +128,7 @@ the [separate consumer](../../experiments/bfv-relinearization-proof/VALIDATION.m
 also passes actual SDK parity and genuine serialized proof gates for both roles.
 These remain individual public stages. Source certificates, key
 consistency/authority, fresh agreement, writer fences and complete SQL remain open.
+
+The shared routing extraction adds five owning source tests, pending Root's
+compilation and consumer regressions. The executed counts above describe the
+established arithmetic adapters; no new native or resource result is claimed here.

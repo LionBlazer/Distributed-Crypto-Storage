@@ -64,4 +64,15 @@ impl PreparedKey {
     pub fn original_setup_digest(&self) -> [u8; 64] {
         self.setup_digest
     }
+    /// Borrow all five ordered native-NTT Q rows for one public key component
+    /// (0 or1) and decomposition (0..5). Invalid indices return None. These are
+    /// immutable setup-derived constants, not key-validity or proof authority.
+    pub fn component(&self, component_index: usize, decomposition_index: usize) -> Option<&[u64]> {
+        match component_index {
+            0 => self.c0.get(decomposition_index),
+            1 => self.c1.get(decomposition_index),
+            _ => None,
+        }
+        .map(Vec::as_slice)
+    }
 }

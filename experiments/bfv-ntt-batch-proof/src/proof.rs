@@ -271,7 +271,8 @@ fn prove_component(
             .zip(traces)
             .map(|(a, t)| ProverInstance::new(a, Table::new(t.transpose()), &backend.prover, &[]))
             .collect(),
-    );
+    )
+    .with_lookup_materialization(p3_multi_stark::LookupMaterialization::Streaming);
     let raw = prove_with_security(
         &backend.config,
         instances,

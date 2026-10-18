@@ -8,6 +8,10 @@ publish = false
 # This experiment is deliberately outside the production workspace.
 [workspace]
 
+# Only this experiment composes the reviewed streaming arithmetic SDK.
+[patch.crates-io]
+p3-multi-stark = { path = "../p3-multi-stark-streaming" }
+
 [dependencies]
 registry200-proof = { path = "../../crates/registry200-proof" }
 registry200-journal = { path = "../../crates/registry200-journal" }
@@ -56,6 +60,12 @@ rand = { version = "=0.10.3", default-features = false, features = ["std", "std_
 sha2 = { version = "=0.10.9", features = ["compress"] }
 
 [dev-dependencies]
+bfv-mul-relin-proof = { path = "../bfv-mul-relin-proof" }
+bfv-complete-relinearization = { path = "../bfv-complete-relinearization" }
+bfv-ntt-witness-proof = { path = "../bfv-ntt-witness-proof" }
+bfv-ntt-circuit = { path = "../../crates/bfv-ntt-circuit" }
+bfv-fixed-geometry = { path = "../../crates/bfv-fixed-geometry" }
+bfv-ciphertext-wire = { path = "../../crates/bfv-ciphertext-wire" }
 transaction-state = { path = "../../crates/transaction-state" }
 
 [profile.release]

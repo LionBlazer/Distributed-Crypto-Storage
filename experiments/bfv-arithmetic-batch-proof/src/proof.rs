@@ -30,9 +30,14 @@ pub struct CheckedBatch {
     input: [u8; 64],
     output: [u8; 64],
     profile: [u8; 64],
+    report: backend::SecurityReport,
     pub verification_ms: f64,
 }
 impl CheckedBatch {
+    /// Verifier-rebuilt assessments of all three phases with their existing union bound.
+    pub fn security_report(&self) -> &backend::SecurityReport {
+        &self.report
+    }
     pub fn matches(&self, expected: &Expected) -> bool {
         self.profile == backend::profile(expected.context())
             && self.input == backend::digest(&expected.request_wire())
@@ -309,7 +314,8 @@ pub(crate) fn prove_component(
             .zip(traces)
             .map(|(a, t)| ProverInstance::new(a, Table::new(t.transpose()), &backend.prover, &[]))
             .collect(),
-    );
+    )
+    .with_lookup_materialization(p3_multi_stark::LookupMaterialization::Streaming);
     let raw = prove_with_security(
         &backend.config,
         instances,
@@ -357,11 +363,12 @@ fn verify_inner(expected: &Expected, frame: &[u8]) -> Result<CheckedBatch, Error
     for (ordinal, raw) in proofs.into_iter().enumerate() {
         reports.push(verify_component(expected, ordinal, raw)?);
     }
-    let _ = backend::summarize(reports)?;
+    let report = backend::summarize(reports)?;
     Ok(CheckedBatch {
         input: backend::digest(&expected.request_wire()),
         output: backend::digest(&expected.output_wire()),
         profile: backend::profile(expected.context()),
+        report,
         verification_ms: started.elapsed().as_secs_f64() * 1000.,
     })
 }

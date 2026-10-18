@@ -66,6 +66,13 @@ pub struct EvaluatedPrivateCoefficientPredicate {
     pub output: Vec<u8>,
     pub ct_ct_multiplications: usize,
 }
+impl EvaluatedPrivateCoefficientPredicate {
+    /// Borrow the complete proposed encrypted result, without decryption or a
+    /// computation/freshness grant. Its existing response frame is revalidated.
+    pub fn ciphertext_for_experiment(&self) -> Result<&[u8]> {
+        Ok(response_view(&self.output)?.product)
+    }
+}
 /// Values decoded from the actual completed ciphertext at an original row's target coefficients.
 #[derive(Debug, PartialEq, Eq)]
 pub struct UnverifiedCoefficientRow {

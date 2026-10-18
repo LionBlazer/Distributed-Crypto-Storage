@@ -36,7 +36,9 @@ genuine SDK proving/verification. `fixture` and
 the CLI are public non-secret research consumers, never production admission.
 Only this standalone manifest patches `p3-multi-stark` to the reviewed sibling
 [streaming SDK experiment](../p3-multi-stark-streaming/README.md), with its
-`streaming-lookups` feature. Integration adds the core-only `limb-range-air`
+`streaming-lookups` feature. Each producer explicitly selects
+`LookupMaterialization::Streaming` for its own batch; enabling the feature no
+longer changes other callers' resident default. Integration adds the core-only `limb-range-air`
 member and Scale/Tensor optional range dependencies to the root workspace and
 lockfile. The root SDK still comes from the published registry package; existing
 arithmetic profiles and frame caps remain unchanged.
@@ -209,3 +211,13 @@ history limits, nor that the whole process fits the RAM target.
 The standalone lockfile and reviewed sibling SDK are included. Reproduce with
 `cargo test --release --locked --offline --manifest-path experiments/bfv-arithmetic-batch-proof/Cargo.toml --lib -- --test-threads=1`,
 and `cargo run --release --locked --offline --manifest-path experiments/bfv-arithmetic-batch-proof/Cargo.toml -- security` / `prove`.
+
+`CheckedBatch::security_report()` borrows the verifier-owned
+`backend::SecurityReport` formed by the existing `summarize` over all three
+successfully verified phases. It retains their actual component reports and the
+existing conservative whole bound `min(component bits)-2`; it does not use
+`Generated.report` or submitted report data. Consumers can compose this whole
+bound without counting its three phases a second time. This adds no graph, SQL,
+setup-authority or freshness guarantee. The [full graph validation](../bfv-mul-relin-proof/VALIDATION.md)
+includes all twelve owning tests, the explicit per-batch streaming mode and
+actual aggregation of this report after successful verification.

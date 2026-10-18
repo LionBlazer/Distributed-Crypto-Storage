@@ -253,6 +253,7 @@ where
         proving_key,
         tables,
         instances,
+        lookup_materialization,
     } = instances.into_parts();
 
     // Every committed table must meet the scheme's padding floor.
@@ -449,6 +450,7 @@ where
             &tables,
             &preprocessed_tables,
             &public_values,
+            lookup_materialization,
             challenger,
         )
     });

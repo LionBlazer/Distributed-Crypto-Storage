@@ -1,4 +1,5 @@
-//! PUBLIC NONSECRET fixtures. Real input provenance, still no proved FHE output or SQL grant.
+//! PUBLIC NONSECRET fixtures. Real input provenance and optional exact FHE output; no SQL grant.
+mod full_product;
 use super::{
     Statement, compiler::CompiledPrivatePredicate, fixture, prove_child_with_factory,
     require_complete,
@@ -91,6 +92,15 @@ fn commitment(s: &Statement) -> EncodedCommitment {
 #[test]
 fn source_and_hidden_query_form_both_actual_fhe_inputs_under_one_key_and_reverify_after_private_drop()
  {
+    input_formation(false);
+}
+
+#[test]
+fn input16_and_all134_product_nodes_verify_exact_ciphertext_after_private_drop() {
+    input_formation(true);
+}
+
+fn input_formation(prove_output: bool) {
     let full = Instant::now();
     let files = PublicFiles::new();
     let (owner, setup) = Owner::generate(Geometry::Rows16).unwrap();
@@ -282,6 +292,7 @@ fn source_and_hidden_query_form_both_actual_fhe_inputs_under_one_key_and_reverif
         .evaluate_private_coefficient_predicate_for_experiment(&prepared.request)
         .unwrap();
     assert_eq!(evaluated.ct_ct_multiplications, 1);
+    let output_ciphertext = evaluated.ciphertext_for_experiment().unwrap().to_vec();
     let answer = owner
         .decrypt_private_coefficient_predicate_unverified_for_experiment(
             prepared.pending,
@@ -298,6 +309,7 @@ fn source_and_hidden_query_form_both_actual_fhe_inputs_under_one_key_and_reverif
         assert_eq!(r.amount, if r.present { rows[i].amount } else { 0 });
     }
     drop(evaluated);
+    let pinned_statements = statements.clone();
     drop(statements);
     drop(f);
     drop(scope);
@@ -319,7 +331,13 @@ fn source_and_hidden_query_form_both_actual_fhe_inputs_under_one_key_and_reverif
         );
         let bytes = files.read(&format!("{index}-encoding-pair"));
         assert!(wire::verify(&expected[1 - index], &bytes).is_err());
-        fresh_statements.push(wire::verify(e, &bytes).unwrap().statement().clone());
+        let statement = wire::verify(e, &bytes).unwrap().statement().clone();
+        require_complete(&pinned_statements[index], &statement).unwrap();
+        assert_eq!(
+            pinned_statements[index].producer_identity(),
+            statement.producer_identity()
+        );
+        fresh_statements.push(statement);
     }
     for index in 0..2 {
         let frames: [Vec<u8>; 5] =
@@ -371,4 +389,14 @@ fn source_and_hidden_query_form_both_actual_fhe_inputs_under_one_key_and_reverif
             "one_transport_frame":false,"output_mul_relin_proven":false,"fresh_agreed_head":false,"sql_grant":false,"composed_128_claim":false
         })
     );
+    if prove_output {
+        full_product::verify(
+            fresh,
+            anchor,
+            fresh_statements,
+            ciphertexts,
+            output_ciphertext,
+            &files,
+        );
+    }
 }

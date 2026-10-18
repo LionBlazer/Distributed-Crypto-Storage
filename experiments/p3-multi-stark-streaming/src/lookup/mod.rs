@@ -12,9 +12,9 @@
 //! GKR opens the fractions there.
 //! The zerocheck sumcheck then rebuilds the same value from the AIR's own columns.
 
-pub mod transcript;
 #[cfg(any(feature = "streaming-lookups", test))]
 mod streaming;
+pub mod transcript;
 #[cfg(any(feature = "streaming-lookups", test))]
 pub(crate) use streaming::FractionSource;
 
@@ -31,27 +31,24 @@ use p3_air::symbolic::{BaseEntry, BaseLeaf, SymbolicExpr};
 use p3_air::{Air, BaseAir, SymbolicExpression};
 use p3_challenger::FieldChallenger;
 use p3_challenger::fs::TranscriptField;
-use p3_field::{ExtensionField, Field};
-#[cfg(any(not(feature = "streaming-lookups"), test))]
 use p3_field::PackedValue;
+use p3_field::{ExtensionField, Field};
 use p3_lookup::{
     Challenges, InteractionSymbolicBuilder, Kind, Lookups, check_multiplicity_height_bound,
 };
 use p3_multilinear_util::point::Point;
 use p3_multilinear_util::poly::Poly;
-#[cfg(any(not(feature = "streaming-lookups"), test))]
 use p3_multilinear_util::poly::PolyMaybePacked;
-#[cfg(any(not(feature = "streaming-lookups"), test))]
 use p3_multilinear_util::split_eq::SplitEq;
 use p3_sumcheck::layout::Table;
 use p3_util::log2_ceil_usize;
 use thiserror::Error;
 
+use crate::fractional_gkr::{Fraction, LeafNumerator, prove_fractional_gkr};
 use crate::fractional_gkr::{
     FractionGkrError, FractionGkrOutput, FractionGkrProof, verify_fractional_gkr,
 };
-#[cfg(any(not(feature = "streaming-lookups"), test))]
-use crate::fractional_gkr::{Fraction, LeafNumerator, prove_fractional_gkr};
+use crate::instance::LookupMaterialization;
 use crate::lookup::transcript::{LookupProverTranscript, LookupShape, LookupVerifierTranscript};
 
 /// Whether a lookup expression reads one of the AIR's fixed periodic columns.
@@ -510,7 +507,6 @@ impl<EF: Field> AirLinkClaim<EF> {
     /// ```
     ///
     /// Grouping instances by height lets one equality table serve every block of a group.
-    #[cfg(any(not(feature = "streaming-lookups"), test))]
     fn evaluate_instance_claims<F: Field>(
         &self,
         plan: &LookupPlan<F>,
@@ -646,6 +642,14 @@ pub enum LookupError {
     FractionGkr(#[from] FractionGkrError),
 }
 
+/// Exactly one storage owner for one lookup reduction. The mode is prover-only;
+/// both variants feed the same transcript and commitment-bound AIR-link claims.
+#[cfg(feature = "streaming-lookups")]
+enum LookupWitness<'a, F: Field, EF: ExtensionField<F>> {
+    Resident(Fraction<Poly<F>, PolyMaybePacked<F, EF>>),
+    Streaming(crate::fractional_gkr::materialize::LookupFractionSource<'a, F, EF>),
+}
+
 /// Materialize the lookup fractions and prove that they sum to zero.
 ///
 /// The four input slices are all keyed by the AIR's position in caller order.
@@ -666,6 +670,7 @@ pub(crate) fn prove_lookup<F, EF, A, Challenger>(
     main: &[&Table<F>],
     preprocessed: &[Option<&Table<F>>],
     public_values: &[&[F]],
+    materialization: LookupMaterialization,
     challenger: &mut Challenger,
 ) -> (Option<FractionGkrProof<EF>>, LookupRuntime<EF>)
 where
@@ -704,13 +709,48 @@ where
     // Phase 3: reduce.
     // Materialize every `multiplicity / denominator` fraction.
     // Prove their padded sum is zero and open both tables at one output point.
-    #[cfg(not(feature = "streaming-lookups"))]
-    let fraction = plan.materialize_fraction(main, preprocessed, public_values, alpha, beta);
     #[cfg(feature = "streaming-lookups")]
-    let fraction = crate::fractional_gkr::materialize::LookupFractionSource::new(&plan, main, preprocessed, public_values, alpha, beta);
+    let fraction = match materialization {
+        LookupMaterialization::Resident => LookupWitness::Resident(plan.materialize_fraction(
+            main,
+            preprocessed,
+            public_values,
+            alpha,
+            beta,
+        )),
+        LookupMaterialization::Streaming => LookupWitness::Streaming(
+            crate::fractional_gkr::materialize::LookupFractionSource::new(
+                &plan,
+                main,
+                preprocessed,
+                public_values,
+                alpha,
+                beta,
+            ),
+        ),
+    };
+    #[cfg(not(feature = "streaming-lookups"))]
+    let fraction = match materialization {
+        LookupMaterialization::Resident => {
+            plan.materialize_fraction(main, preprocessed, public_values, alpha, beta)
+        }
+    };
     let (fractional_gkr, output) = transcript.reduction(|challenger| {
         #[cfg(feature = "streaming-lookups")]
-        { FractionGkrProof::<EF>::prove_from_source::<F, _>(&fraction, challenger) }
+        {
+            match &fraction {
+                LookupWitness::Resident(fraction) => prove_fractional_gkr(
+                    Fraction {
+                        n: LeafNumerator::Base(&fraction.n),
+                        d: &fraction.d,
+                    },
+                    challenger,
+                ),
+                LookupWitness::Streaming(source) => {
+                    FractionGkrProof::<EF>::prove_from_source::<F, _>(source, challenger)
+                }
+            }
+        }
         #[cfg(not(feature = "streaming-lookups"))]
         // LogUp's numerators are multiplicities, so this leaf keeps them in the base field.
         prove_fractional_gkr(
@@ -736,7 +776,14 @@ where
     #[cfg(not(feature = "streaming-lookups"))]
     let claims_by_air = air_link.evaluate_instance_claims(&plan, &fraction, theta);
     #[cfg(feature = "streaming-lookups")]
-    let claims_by_air = air_link.evaluate_streamed_instance_claims(&plan, &fraction, theta);
+    let claims_by_air = match &fraction {
+        LookupWitness::Resident(fraction) => {
+            air_link.evaluate_instance_claims(&plan, fraction, theta)
+        }
+        LookupWitness::Streaming(source) => {
+            air_link.evaluate_streamed_instance_claims(&plan, source, theta)
+        }
+    };
     debug_assert_eq!(
         claims_by_air.values().copied().sum::<EF>(),
         air_link.claimed_sum
@@ -1250,6 +1297,7 @@ mod tests {
             &[&main],
             &[None],
             &[public_values],
+            LookupMaterialization::Resident,
             &mut prover_challenger,
         );
         let lookup_proof = lookup_proof.unwrap();
@@ -1362,6 +1410,7 @@ mod tests {
             &[&main],
             &[None],
             &[public_values],
+            LookupMaterialization::Resident,
             &mut prover_challenger,
         );
         let lookup_proof = lookup_proof.unwrap();
@@ -1484,6 +1533,7 @@ mod tests {
             &[&main],
             &[None],
             &[public_values],
+            LookupMaterialization::Resident,
             &mut prover_challenger,
         );
         let lookup_proof = lookup_proof.unwrap();
@@ -1555,6 +1605,7 @@ mod tests {
             &table_refs,
             &preprocessed,
             &public_values,
+            LookupMaterialization::Resident,
             &mut prover_challenger,
         );
         let lookup_proof = lookup_proof.unwrap();
@@ -1615,6 +1666,7 @@ mod tests {
             &[&tall, &short],
             &[None, None],
             &publics,
+            LookupMaterialization::Resident,
             &mut prover_challenger,
         );
         let lookup_proof = lookup_proof.unwrap();
@@ -1716,8 +1768,14 @@ mod tests {
         let main = Table::<F>::rand(&mut rng, 1, 6);
 
         let mut prover_challenger = challenger();
-        let (proof, _) =
-            prove_lookup::<F, EF, _, _>(&[&air], &[&main], &[None], &[&[]], &mut prover_challenger);
+        let (proof, _) = prove_lookup::<F, EF, _, _>(
+            &[&air],
+            &[&main],
+            &[None],
+            &[&[]],
+            LookupMaterialization::Resident,
+            &mut prover_challenger,
+        );
         let mut proof = proof.expect("a lookup-declaring AIR produces a reduction");
         proof.layers[0].claims.n0 += EF::ONE;
 

@@ -22,7 +22,7 @@ established by this mathematical composition.
 | [bfv-relinearization-key-source](../../crates/bfv-relinearization-key-source/README.md) | Bounded seeded-only level0/0 key parsing and exact public c1 seed expansion |
 | [bfv-fixed-geometry](../../crates/bfv-fixed-geometry/README.md) | Original N8192/Q5/t114689 constants |
 | [bfv-ntt-circuit](../../crates/bfv-ntt-circuit/README.md) | Exact public setup NTT evaluation and canonical query request/output codecs |
-| [bfv-relinearization-circuit](../../crates/bfv-relinearization-circuit/README.md) | Existing Embed and AccumulateAndAdd integer relations/codecs |
+| [bfv-relinearization-circuit](../../crates/bfv-relinearization-circuit/README.md) | Existing Embed/MAC integer relations/codecs and shared pure complete-vector routing |
 | [bfv-ntt-witness-proof](../bfv-ntt-witness-proof/README.md) | Actual complete native NTT main-witness proof and bounded verifier |
 | [bfv-relinearization-multilinear-proof](../bfv-relinearization-multilinear-proof/README.md) | Actual Embed/MAC public-Aux proofs and bounded verifier |
 
@@ -32,8 +32,10 @@ the Root orchestrator. No existing primitive profile, AIR, proof cap or test bod
 is changed.
 
 `key.rs` owns immutable private-field `PreparedKey`. `input.rs` owns complete
-public `Input`. `state.rs` reconstructs the next exact request and copies complete
-endpoints. `prover.rs` owns sequential proof production; `verifier.rs` owns actual
+public `Input`. `state.rs` owns exact32 ordering and delegates Embed/MAC request
+assembly, digit-row selection and complete output transposition to the Core
+[routing module](../../crates/bfv-relinearization-circuit/src/routing/README.md).
+`prover.rs` owns sequential proof production; `verifier.rs` owns actual
 cryptographic admission. `component.rs` owns one bounded public frame. `demo.rs`
 and `spool.rs` are the explicit local measurement consumer and owned public-file
 lifecycle, with no networking, deployment discovery or SQL acceptance policy.
@@ -56,6 +58,11 @@ These are not query proofs or query re-execution. The verifier owns these consta
 it never accepts a serialized prepared-key or checked-prefix receipt. The retained
 constants occupy exactly 50*8192*8 = 3,276,800 bytes, excluding Vec/struct overhead
 and setup temporaries. There is no global or persistent key cache.
+
+`PreparedKey::component(component_index, decomposition_index)` borrows one
+immutable complete Q5 native-NTT array; component0/1 and decomposition0..4 identify
+all 50 rows. Invalid indices return None. This readonly metadata API neither
+changes setup provenance nor verifies same-secret key consistency.
 
 The local SHA512 label does not upgrade the authority of an untrusted PublicSetup
 or the caller-supplied SHA256 setup pin. The trusted original owner/application
@@ -162,3 +169,9 @@ assumptions; existing primitive numeric estimates give a conditional proof-only
 union estimate around152.4413 bits. Neither statement certifies the whole
 composition's adaptive Fiat-Shamir, outer identities, setup trust or SQL security.
 The code intentionally reports `composed_128_claim:false`.
+
+The [full graph validation](../bfv-mul-relin-proof/VALIDATION.md) records the shared
+routing extraction and readonly key accessor regressions: seven owning tests
+under retained unchanged R3 source and the genuine old32 CLI prove under final
+R4. The historical executed validation above is retained; this refactor adds no
+arithmetic, profile, frame, cap or shortened proof path.

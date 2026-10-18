@@ -270,9 +270,28 @@ where
 ///
 /// All contained instances must use the same proving key. Main trace tables are
 /// committed in this collection's order.
-pub struct ProverInstances<'a, C, A>(Vec<ProverInstance<'a, C, A>>)
+pub struct ProverInstances<'a, C, A>
 where
-    C: MultiStarkConfig;
+    C: MultiStarkConfig,
+{
+    instances: Vec<ProverInstance<'a, C, A>>,
+    lookup_materialization: LookupMaterialization,
+}
+
+/// Prover-local storage strategy for counted lookup witnesses.
+///
+/// This does not change the statement, proof, verifier, transcript, or security
+/// assessment. Enabling the feature makes streaming available; it never selects
+/// it for another batch in the same process or dependency graph.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LookupMaterialization {
+    /// Retain the original dense lookup fractions and fractional-GKR layers.
+    #[default]
+    Resident,
+    /// Recompute leaves and early fractional-GKR rounds from committed rows.
+    #[cfg(feature = "streaming-lookups")]
+    Streaming,
+}
 
 /// One AIR statement checked inside a batched proof.
 pub struct VerifierInstance<'a, C, A>
@@ -324,6 +343,8 @@ where
     pub(super) tables: Vec<Table<C::Val>>,
     /// Per-instance metadata retained for the zerocheck and openings.
     pub(super) instances: Instances<'a, C, A>,
+    /// This batch's storage strategy, independent of the public statement.
+    pub(super) lookup_materialization: LookupMaterialization,
 }
 
 impl<'a, C, A> ProverInstance<'a, C, A>
@@ -396,7 +417,7 @@ where
     type Target = [ProverInstance<'a, C, A>];
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.instances
     }
 }
 
@@ -428,7 +449,7 @@ where
 {
     pub(super) fn statement(&self) -> Instances<'a, C, A> {
         Instances(
-            self.0
+            self.instances
                 .iter()
                 .map(|instance| Instance {
                     air: instance.air,
@@ -444,19 +465,33 @@ where
     /// The order must match the AIR order used at setup.
     /// Main and preprocessed tables are committed and opened in this order.
     pub const fn new(instances: Vec<ProverInstance<'a, C, A>>) -> Self {
-        Self(instances)
+        Self {
+            instances,
+            lookup_materialization: LookupMaterialization::Resident,
+        }
+    }
+
+    /// Select counted lookup storage for this batch only.
+    ///
+    /// The default is always [`LookupMaterialization::Resident`], including when
+    /// the `streaming-lookups` feature is enabled. This option is not serialized
+    /// or included in the statement, and it cannot change verifier policy.
+    #[must_use]
+    pub const fn with_lookup_materialization(mut self, mode: LookupMaterialization) -> Self {
+        self.lookup_materialization = mode;
+        self
     }
 
     pub(super) fn proving_key(&self) -> &'a ProvingKey<C> {
         // Every instance must reference one shared proving key.
         // Adjacent-pair equality is transitively all-equal.
         assert!(
-            self.0
+            self.instances
                 .windows(2)
                 .all(|pair| core::ptr::eq(pair[0].proving_key, pair[1].proving_key)),
             "all prover instances must use the same proving key"
         );
-        self.0
+        self.instances
             .first()
             .expect("prover instances cannot be empty")
             .proving_key
@@ -467,9 +502,9 @@ where
 
         // One pass over the owned instances.
         // Read the borrowed metadata, then move the table out.
-        let mut instances = Vec::with_capacity(self.0.len());
-        let mut tables = Vec::with_capacity(self.0.len());
-        for instance in self.0 {
+        let mut instances = Vec::with_capacity(self.instances.len());
+        let mut tables = Vec::with_capacity(self.instances.len());
+        for instance in self.instances {
             instances.push(Instance {
                 air: instance.air,
                 public_values: instance.public_values,
@@ -482,6 +517,7 @@ where
             proving_key,
             tables,
             instances: Instances(instances),
+            lookup_materialization: self.lookup_materialization,
         }
     }
 }

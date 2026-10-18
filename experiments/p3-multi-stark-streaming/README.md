@@ -21,7 +21,8 @@ dependencies and lock are unchanged; this package is not a default core dependen
 
 | Owner/dependency | Responsibility |
 | --- | --- |
-| [Lookup plan/reduction](src/lookup/mod.rs) | Unchanged AIR-derived bus/contribution order, multiplicity bound and public prove dispatch |
+| [Prover batch](src/instance.rs) | Caller-local resident/streaming storage choice, excluded from the statement and verifier |
+| [Lookup plan/reduction](src/lookup/mod.rs) | Unchanged AIR-derived bus/contribution order and multiplicity bound; dispatch this batch's selected storage |
 | [Bounded leaf source](src/fractional_gkr/materialize/streaming.rs) | Reuse original symbolic row evaluation over the SAME committed main/preprocessed table views |
 | [Streamed GKR](src/fractional_gkr/streaming.rs) | Root prepass, recomputed prefix rounds and direct folded-layer allocation; original round kernels |
 | [AIR-link shares](src/lookup/streaming.rs) | Recompute private per-AIR shares from those same leaves after theta |
@@ -30,14 +31,27 @@ dependencies and lock are unchanged; this package is not a default core dependen
 | p3-challenger/security/commit | Existing transcript contracts, analytical assumptions and PCS interfaces |
 
 The published `prove`, `prove_with_backend` and `prove_with_security` signatures
-are unchanged. With no feature, the original dense implementation runs. With
-`streaming-lookups`, only the counted LogUp witness reduction and its private
-share calculation use the new path. Indexed LogUp-star, binary buses and
+are unchanged. `ProverInstances::new` always selects
+`LookupMaterialization::Resident`, including when another dependency enables
+`streaming-lookups`. The feature makes `LookupMaterialization::Streaming`
+available; a caller opts in for one batch with
+`instances.with_lookup_materialization(LookupMaterialization::Streaming)`.
+Only that batch's counted LogUp witness reduction and its private share
+calculation use the streamed path. The mode is not global, serialized, or part
+of setup, the public statement, proof profile or verification policy. Indexed LogUp-star, binary buses and
 zerocheck backend selection retain their existing implementations. There is no
 public provider, callback, trusted root, serialized prefix or checked receipt.
 The original dense GKR/materialization remain available as the parity reference.
 The unchanged verifier still authenticates terminal claims against the actual
 committed AIR tables and PCS openings.
+
+The [full graph validation](../bfv-mul-relin-proof/VALIDATION.md) executes this
+per-call selector: default/streaming library407/409 and WHIR41/42 tests pass,
+including exact Resident -> Streaming -> Resident proof/transcript parity and
+original-verifier rejection of damage. Arithmetic and atomic NTT batch consumers
+explicitly opt in and pass their owning tests; the full graph uses resident
+single NTT/relinearization batches. The historical reports below measured the
+earlier global feature dispatch and retain their own source/resource scope.
 
 ## Lifecycle and invariants
 
@@ -117,8 +131,11 @@ zerocheck. One feature-gated inherited consumer test creates a complete WHIR pro
 roundtrips its canonical bytes, closes a fresh original verifier transcript and
 rejects damage. All inherited test bodies remain intact. The three copied
 serialized compatibility fixtures are public, nonsecret upstream test inputs;
-their bytes remain unchanged. Exactly two originally ignored fixture-writing
-tests are excluded from the native gate so validation does not rewrite them.
+their bytes remain unchanged. The historical cache validation excluded two
+originally ignored fixture-writing tests. The new full-graph validation includes
+the WHIR generator under `--include-ignored`; it rewrites the experimental copy's
+public fixture to identical guarded bytes. Original registry sources/cache remain
+untouched. See that report for the exact current selections.
 
 ~~~text
 cargo test --release --locked --manifest-path experiments/p3-multi-stark-streaming/Cargo.toml --lib

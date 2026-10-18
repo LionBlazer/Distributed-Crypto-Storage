@@ -45,6 +45,7 @@ pub struct CheckedStage {
     keyset_context: [u8; 32],
     input: [u8; 64],
     output: [u8; 64],
+    report: backend::SecurityReport,
     pub timings: VerifierTimings,
 }
 impl CheckedStage {
@@ -53,6 +54,10 @@ impl CheckedStage {
     }
     pub fn keyset_context(&self) -> [u8; 32] {
         self.keyset_context
+    }
+    /// Verifier-rebuilt SDK assessment retained only after proof verification succeeds.
+    pub fn security_report(&self) -> &backend::SecurityReport {
+        &self.report
     }
     pub fn matches(&self, input: &Request, output: &Output) -> bool {
         self.role == input.role()
@@ -270,7 +275,7 @@ fn verify_inner(input: &Request, output: &Output, bytes: &[u8]) -> Result<Checke
         config,
         prover,
         verifier,
-        ..
+        report,
     } = backend;
     drop(prover);
     let start = Instant::now();
@@ -294,6 +299,7 @@ fn verify_inner(input: &Request, output: &Output, bytes: &[u8]) -> Result<Checke
         keyset_context: input.keyset_context(),
         input: backend::digest(&input.encode()),
         output: backend::digest(&out),
+        report,
         timings: VerifierTimings {
             public_setup_ms,
             proof_verification_ms: start.elapsed().as_secs_f64() * 1000.,

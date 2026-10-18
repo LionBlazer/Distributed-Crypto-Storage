@@ -92,6 +92,13 @@ reply can satisfy a codec; the Unverified result must never enter SQL admission.
 The full WHERE remains encrypted, but formal leakage/security analysis, setup
 trust and access-pattern policy are not established by fixed wire lengths.
 
+`EvaluatedPrivateCoefficientPredicate::ciphertext_for_experiment` borrows the
+complete proposed encrypted product after revalidating its existing response
+frame. This readonly view adds no proof or SQL admission. The standalone
+[full graph consumer](../../../../experiments/bfv-mul-relin-proof/README.md)
+can independently prove and verify those exact bytes without a Core dependency
+on experimental proof production.
+
 ## Owning source tests and missing proof boundary
 
 All eight new tests passed in the [native validation](../../PRIVATE-COEFFICIENT-VALIDATION.md).

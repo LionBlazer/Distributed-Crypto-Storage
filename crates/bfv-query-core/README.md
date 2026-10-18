@@ -404,3 +404,9 @@ The [executed input validation](../../experiments/hiding-fri-sha256-gate/PRIVATE
 covers the actual13-component scope, native oracles, lifetime gates and a separate
 Source/hidden-query sixteen-proof chain. No aggregate wire, raised caps or SQL
 admission is introduced; old single-job APIs remain separately tested.
+
+`EvaluatedPrivateCoefficientPredicate::ciphertext_for_experiment` borrows the
+complete proposed ciphertext through the existing response validator, allowing
+the standalone [full multiplication graph](../../experiments/bfv-mul-relin-proof/README.md)
+consumer to bind exact encrypted output bytes. It grants no SQL/proof authority
+and introduces no dependency from Core to that experiment.

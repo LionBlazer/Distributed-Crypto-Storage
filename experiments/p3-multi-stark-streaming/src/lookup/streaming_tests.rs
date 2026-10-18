@@ -175,8 +175,14 @@ fn streamed_lookup_matches_dense_proof_shares_and_all_outer_challenges() {
     let pp = [Some(&s.pp[0]), Some(&s.pp[1])];
     let values = [s.values[0].as_slice(), s.values[1].as_slice()];
     let mut selected_c = challenger();
-    let (selected, selected_state) =
-        prove_lookup::<F, EF, _, _>(&airs, &main, &pp, &values, &mut selected_c);
+    let (selected, selected_state) = prove_lookup::<F, EF, _, _>(
+        &airs,
+        &main,
+        &pp,
+        &values,
+        LookupMaterialization::Resident,
+        &mut selected_c,
+    );
     assert_eq!(
         postcard::to_allocvec(&selected.unwrap()).unwrap(),
         postcard::to_allocvec(&dense).unwrap()
@@ -501,8 +507,14 @@ fn per_air_raw_rows_preserve_reversed_mixed_shapes_block_expressions_and_transcr
     assert_eq!(checked, streamed_link);
     assert_eq!(verifier.sample_algebra_element::<EF>(), next);
     let mut selected = challenger();
-    let (selected_proof, selected_state) =
-        prove_lookup::<F, EF, _, _>(&airs, &main, &public, &values, &mut selected);
+    let (selected_proof, selected_state) = prove_lookup::<F, EF, _, _>(
+        &airs,
+        &main,
+        &public,
+        &values,
+        LookupMaterialization::Resident,
+        &mut selected,
+    );
     assert_eq!(
         postcard::to_allocvec(&selected_proof.unwrap()).unwrap(),
         postcard::to_allocvec(&dense_proof).unwrap()
@@ -513,4 +525,83 @@ fn per_air_raw_rows_preserve_reversed_mixed_shapes_block_expressions_and_transcr
     assert_eq!(selected_state.air_link, dense_link);
     assert_eq!(selected_state.claims_by_air, dense_shares);
     assert_eq!(selected.sample_algebra_element::<EF>(), next);
+}
+
+#[cfg(feature = "streaming-lookups")]
+#[test]
+fn per_call_materialization_preserves_proof_shares_and_challenges_without_cross_call_state() {
+    let scenario = Scenario::new(0xCA11);
+    let (reference, runtime, mut reference_challenger) = scenario.run(false);
+    let reference_bytes = postcard::to_allocvec(&reference).unwrap();
+    let next_challenges: [EF; 3] =
+        core::array::from_fn(|_| reference_challenger.sample_algebra_element::<EF>());
+    let airs = [&scenario.air, &scenario.air];
+    let main = [&scenario.main[0], &scenario.main[1]];
+    let preprocessed = [Some(&scenario.pp[0]), Some(&scenario.pp[1])];
+    let values = [scenario.values[0].as_slice(), scenario.values[1].as_slice()];
+
+    // A streamed proof cannot select the path of the following resident proof.
+    // These mixed-height AIRs read current/next main, PP, public values and
+    // first/last selectors, with both local and shared lookup declarations.
+    for mode in [
+        LookupMaterialization::Resident,
+        LookupMaterialization::Streaming,
+        LookupMaterialization::Resident,
+    ] {
+        let mut producer = challenger();
+        let (proof, selected) =
+            prove_lookup::<F, EF, _, _>(&airs, &main, &preprocessed, &values, mode, &mut producer);
+        let proof = proof.unwrap();
+        let LookupRuntime::Active(selected) = selected else {
+            panic!("active lookup expected");
+        };
+        assert_eq!(postcard::to_allocvec(&proof).unwrap(), reference_bytes);
+        assert_eq!(selected.air_link, runtime.air_link);
+        assert_eq!(selected.claims_by_air, runtime.claims_by_air);
+        let actual: [EF; 3] = core::array::from_fn(|_| producer.sample_algebra_element::<EF>());
+        assert_eq!(actual, next_challenges);
+
+        // The unchanged verifier closes either storage strategy's reduction.
+        let mut verifier = challenger();
+        let checked = verify_lookup::<F, EF, _, _>(&airs, &[6, 3], Some(&proof), &mut verifier)
+            .unwrap()
+            .unwrap();
+        assert_eq!(checked, runtime.air_link);
+        let actual: [EF; 3] = core::array::from_fn(|_| verifier.sample_algebra_element::<EF>());
+        assert_eq!(actual, next_challenges);
+    }
+}
+
+#[cfg(feature = "streaming-lookups")]
+#[test]
+fn both_per_call_materializations_leave_lookup_free_transcripts_untouched() {
+    struct LookupFree;
+    impl BaseAir<F> for LookupFree {
+        fn width(&self) -> usize {
+            1
+        }
+    }
+    impl<AB: AirBuilder<F = F> + InteractionBuilder> Air<AB> for LookupFree {
+        fn eval(&self, _builder: &mut AB) {}
+    }
+    let main = Table::rand(&mut SmallRng::seed_from_u64(0xFEEE), 1, 3);
+    let mut untouched = challenger();
+    let next = untouched.sample_algebra_element::<EF>();
+    for mode in [
+        LookupMaterialization::Resident,
+        LookupMaterialization::Streaming,
+    ] {
+        let mut producer = challenger();
+        let (proof, runtime) = prove_lookup::<F, EF, _, _>(
+            &[&LookupFree],
+            &[&main],
+            &[None],
+            &[&[]],
+            mode,
+            &mut producer,
+        );
+        assert!(proof.is_none());
+        assert!(matches!(runtime, LookupRuntime::Inactive));
+        assert_eq!(producer.sample_algebra_element::<EF>(), next);
+    }
 }

@@ -165,3 +165,11 @@ Prover timing separately includes certificate arithmetic, public setup, then
 trace/proof/encoding; verifier total includes bounded decode, public setup and
 SDK verification. An outer owned-process timer additionally includes startup,
 initial CLI report/setup and fixtures. No timer is a whole SQL or MulRelin timer.
+
+`CheckedNtt::security_report()` borrows the actual `backend::SecurityReport`
+rebuilt by this verifier and retained only after genuine proof verification
+succeeds. It exposes the existing whole-stage bound, terms and unassessed-component
+list for explicit composition; no report is accepted from a frame or producer.
+It adds no composed-operation, SQL, setup-authority or freshness guarantee. The
+[full graph validation](../bfv-mul-relin-proof/VALIDATION.md) includes the original
+thirteen owning tests and actual use of this report for all115 graph NTT proofs.

@@ -5,6 +5,7 @@ mod math;
 #[cfg(feature = "plonky3")]
 pub mod plonky3;
 mod profile;
+pub mod routing;
 #[cfg(test)]
 mod tests;
 pub use bfv_fixed_geometry::{DEGREE, MODULI};

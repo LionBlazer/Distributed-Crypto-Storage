@@ -288,7 +288,8 @@ fn genuine_altered_proof_is_rejected(attack: Attack) {
             .zip(traces)
             .map(|(a, t)| ProverInstance::new(a, Table::new(t.transpose()), &key, &[]))
             .collect(),
-    );
+    )
+    .with_lookup_materialization(p3_multi_stark::LookupMaterialization::Streaming);
     let raw = prove_with_security(
         &config,
         instances,

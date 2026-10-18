@@ -15,7 +15,11 @@ The unit boundary limits simultaneously retained PCS/prover state. It does not
 reduce the full eight-operation statement or permit a partial result. All three
 measured CLI sizes passed the per-process soft resource gate. This does not
 establish a whole-peer RAM bound or application-query latency. The separately
-reviewed scoped `streaming-lookups` SDK remains required. Its public contracts,
+reviewed scoped `streaming-lookups` SDK remains required. Each producer explicitly
+selects `LookupMaterialization::Streaming` for one batch; feature unification
+does not change unrelated callers' resident default. The
+[full graph validation](../bfv-mul-relin-proof/VALIDATION.md) reruns all nine owning
+tests with this selection. Its public proof contracts,
 the shared SHA512/WHIR config and the root workspace policy remain unchanged.
 
 ## Ownership and dependencies
