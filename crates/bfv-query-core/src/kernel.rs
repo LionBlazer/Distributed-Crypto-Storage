@@ -33,6 +33,19 @@ impl Kernel {
         n.products += 1;
         Ok(product)
     }
+    /// Fixed coefficient consumer: exactly the existing SDK multiply and RK path.
+    pub(super) fn coefficient_product(
+        &self,
+        a: &Ciphertext,
+        b: &Ciphertext,
+    ) -> Result<(Ciphertext, usize)> {
+        let mut counters = Counters {
+            products: 0,
+            rotations: 0,
+        };
+        let product = self.multiply(a, b, &mut counters)?;
+        Ok((product, counters.products))
+    }
     fn rotate(&self, a: &Ciphertext, shift: usize, n: &mut Counters) -> Result<Ciphertext> {
         n.rotations += 1;
         self.rotations.rotates_columns_by(a, shift).map_err(backend)

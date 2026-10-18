@@ -1,6 +1,13 @@
 //! Experimental exact owner-online BFV roles. Outputs have no computation proof.
 //! Parameters and arithmetic match the measured byte-limb probe; retrieval is external.
 mod canonical;
+mod coefficient_predicate;
+pub use coefficient_predicate::{
+    COEFFICIENT_PREDICATE_ROWS, COEFFICIENT_PREDICATE_SEMANTICS_ID, CoefficientRow,
+    EvaluatedPrivateCoefficientPredicate, PendingPrivateCoefficientPredicate,
+    PreparedPrivateCoefficientPredicate, UnverifiedCoefficientRow,
+    UnverifiedPrivateCoefficientPredicate,
+};
 #[cfg(test)]
 mod ciphertext_preflight_tests;
 mod exact_index;

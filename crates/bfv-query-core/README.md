@@ -371,3 +371,19 @@ erased by this API; returned plaintext belongs to the client. The new owning cod
 example and composed peer job passed the owning checks; see
 [executed peer validation](../../experiments/hiding-fri-sha256-gate/src/opening/registry_lifecycle/formation/job/PEER-PROJECTION-VALIDATION.md).
 This does not grant proof, freshness or SQL authority to the completion method.
+
+## Private coefficient-predicate prototype
+
+The separate [coefficient-predicate module](src/coefficient_predicate/README.md)
+keeps all four original rows and WHERE/constants encrypted using query-independent
+weighted onehot source lanes and a separate encrypted query polynomial. One actual
+SDK ciphertext product and original relinearization produce per-row masked
+presence/age/amount coefficients; the original Owner performs decryption only.
+Completion returns UnverifiedPrivateCoefficientPredicate, with no Source,
+computation/completeness, freshness or SQL admission. The existing fixed-geometry
+and ciphertext-wire dependencies own constants and borrowed canonical preflight;
+no public mask or plaintext SQL hash, new proof/profile, peer role or dependency
+is introduced. Full Source/private-query encoding+Formation and linked MulRelin
+proof remain explicit blockers. The [executed validation](PRIVATE-COEFFICIENT-VALIDATION.md)
+records all eight new actual FHE tests within 70 Core tests, affected-consumer
+regressions and the limits of the measurements. It does not grant SQL authority.
