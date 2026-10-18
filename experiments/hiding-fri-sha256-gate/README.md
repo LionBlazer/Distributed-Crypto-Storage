@@ -454,3 +454,14 @@ Encrypted SQL replies and transport/Journal acceptance remain separate work.
 
 Executed extraction and actual Owner sequential proofs are recorded in
 [Owner Basis validation](../../crates/bfv-basis-convolution/OWNER-BASIS-VALIDATION.md).
+
+## Registry200 formation composition
+
+The new [Registry200 formation](src/opening/registry_lifecycle/formation/README.md)
+research gate uses the reusable integer circuit and actual public Core Owner
+encryption/Key/five Basis APIs. Its normal prove path admits real owner-signed
+Bootstrap/Begin/Acquire history before complete Encoding136 linkage. Legacy
+Selected88/Return168 profiles, policies and test bodies remain unchanged. New
+component caps, emitter fit and sampled process resources are recorded in
+[Owner formation validation](../../crates/bfv-ciphertext-formation/OWNER-FORMATION-VALIDATION.md);
+no live SQL, FHE program completeness or agreed freshness is claimed.

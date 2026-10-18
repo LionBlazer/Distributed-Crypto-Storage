@@ -105,3 +105,11 @@ be relabelled into old Selection88/C_enc: they require distinct typed bridges.
 Proof-cache admission is not network freshness. Live ciphertext-operation proof,
 writer fencing, MVCC, private control anchoring and final agreed heads/finality
 remain separate requirements; this module does not accept live SQL or locks.
+
+## Shared integer implementation
+
+The exact evaluator and seven-stream row writer now belong to the reusable
+[formation library](../../../../../crates/bfv-ciphertext-formation/README.md).
+This adapter preserves its original profile, public values, contexts, fixture
+policy and arithmetic. The new Registry200 composition has a distinct producer
+boundary; it does not reinterpret this legacy Selected88 relation.

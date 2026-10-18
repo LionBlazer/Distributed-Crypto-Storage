@@ -59,3 +59,9 @@ From the repository root, `cargo build --release --locked` builds core default
 members. `cargo test --workspace --release --locked -- --test-threads=1` also tests
 the playground and workspace experiments. The playground architecture test rejects
 reverse dependencies, core example/binary targets and application default members.
+
+[bfv-ciphertext-formation](bfv-ciphertext-formation/README.md) owns the reusable
+fixed bounded-noise integer relation and canonical component proof. Its optional
+Core consumer keeps private Owner openings local; SQL/Journal producer authority
+remains outside the library. Its actual emitter, hostile inputs and sampled resources
+are recorded in [Owner formation validation](bfv-ciphertext-formation/OWNER-FORMATION-VALIDATION.md).

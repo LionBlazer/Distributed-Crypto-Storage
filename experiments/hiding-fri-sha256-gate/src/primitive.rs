@@ -28,6 +28,7 @@ pub(crate) enum Kind {
     VersionLockingSelection,
     BfvKeyTransform,
     BfvBasisConvolution,
+    BfvCiphertextFormation,
     BfvLocalFormation,
     LockReturnedEncoding,
     BfvLockReturnedFormation,
@@ -59,6 +60,7 @@ impl Kind {
             Self::VersionLockingSelection => "version-locking-selection",
             Self::BfvKeyTransform => "bfv-key-transform",
             Self::BfvBasisConvolution => "bfv-basis-convolution",
+            Self::BfvCiphertextFormation => "bfv-ciphertext-formation",
             Self::BfvLocalFormation => "bfv-local-formation",
             Self::LockReturnedEncoding => "lock-returned-encoding",
             Self::BfvLockReturnedFormation => "bfv-lock-returned-formation",
@@ -93,6 +95,7 @@ pub(crate) enum PrimitiveAir {
     Locking(Box<crate::opening::locking::air::LockingAir>),
     KeyTransform(Box<crate::opening::key_transform::air::TransformAir>),
     BasisConvolution(Box<crate::opening::basis_convolution::air::ConvolutionAir>),
+    CiphertextFormation(Box<bfv_ciphertext_formation::circuit::FormationAir>),
     LocalFormation(Box<crate::opening::local_formation::air::LocalAir>),
     RegistryBootstrap(Box<crate::opening::registry_bootstrap::air::BootstrapAir>),
     LifecycleBootstrap(Box<crate::opening::registry_lifecycle::bootstrap::BootstrapAir>),
@@ -112,6 +115,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Locking(air) => air.width(),
             Self::KeyTransform(air) => air.width(),
             Self::BasisConvolution(air) => air.width(),
+            Self::CiphertextFormation(air) => air.width(),
             Self::LocalFormation(air) => air.width(),
             Self::RegistryBootstrap(air) => air.width(),
             Self::LifecycleBootstrap(air) => air.width(),
@@ -131,6 +135,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Locking(air) => air.main_next_row_columns(),
             Self::KeyTransform(air) => air.main_next_row_columns(),
             Self::BasisConvolution(air) => air.main_next_row_columns(),
+            Self::CiphertextFormation(air) => air.main_next_row_columns(),
             Self::LocalFormation(air) => air.main_next_row_columns(),
             Self::RegistryBootstrap(air) => air.main_next_row_columns(),
             Self::LifecycleBootstrap(air) => air.main_next_row_columns(),
@@ -150,6 +155,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Locking(air) => air.num_public_values(),
             Self::KeyTransform(air) => air.num_public_values(),
             Self::BasisConvolution(air) => air.num_public_values(),
+            Self::CiphertextFormation(air) => air.num_public_values(),
             Self::LocalFormation(air) => air.num_public_values(),
             Self::RegistryBootstrap(air) => air.num_public_values(),
             Self::LifecycleBootstrap(air) => air.num_public_values(),
@@ -169,6 +175,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Locking(air) => air.num_periodic_columns(),
             Self::KeyTransform(air) => air.num_periodic_columns(),
             Self::BasisConvolution(air) => air.num_periodic_columns(),
+            Self::CiphertextFormation(air) => air.num_periodic_columns(),
             Self::LocalFormation(air) => air.num_periodic_columns(),
             Self::RegistryBootstrap(air) => air.num_periodic_columns(),
             Self::LifecycleBootstrap(air) => air.num_periodic_columns(),
@@ -188,6 +195,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Locking(air) => air.periodic_columns(),
             Self::KeyTransform(air) => air.periodic_columns(),
             Self::BasisConvolution(air) => air.periodic_columns(),
+            Self::CiphertextFormation(air) => air.periodic_columns(),
             Self::LocalFormation(air) => air.periodic_columns(),
             Self::RegistryBootstrap(air) => air.periodic_columns(),
             Self::LifecycleBootstrap(air) => air.periodic_columns(),
@@ -207,6 +215,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Locking(air) => air.max_constraint_degree(),
             Self::KeyTransform(air) => air.max_constraint_degree(),
             Self::BasisConvolution(air) => air.max_constraint_degree(),
+            Self::CiphertextFormation(air) => air.max_constraint_degree(),
             Self::LocalFormation(air) => air.max_constraint_degree(),
             Self::RegistryBootstrap(air) => air.max_constraint_degree(),
             Self::LifecycleBootstrap(air) => air.max_constraint_degree(),
@@ -228,11 +237,27 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for PrimitiveAir {
             Self::Locking(air) => air.eval(builder),
             Self::KeyTransform(air) => air.eval(builder),
             Self::BasisConvolution(air) => air.eval(builder),
+            Self::CiphertextFormation(air) => air.eval(builder),
             Self::LocalFormation(air) => air.eval(builder),
             Self::RegistryBootstrap(air) => air.eval(builder),
             Self::LifecycleBootstrap(air) => air.eval(builder),
             Self::Lifecycle(air) => air.eval(builder),
             Self::LifecycleEncoding(air) => air.eval(builder),
         }
+    }
+}
+
+impl PublicStatement for bfv_ciphertext_formation::Statement {
+    fn kind(&self) -> Kind {
+        Kind::BfvCiphertextFormation
+    }
+    fn air(&self) -> PrimitiveAir {
+        PrimitiveAir::CiphertextFormation(Box::new(
+            bfv_ciphertext_formation::Statement::air(self)
+                .expect("checked fixed formation statement"),
+        ))
+    }
+    fn public_values(&self) -> Vec<Val> {
+        bfv_ciphertext_formation::Statement::public_values(self)
     }
 }

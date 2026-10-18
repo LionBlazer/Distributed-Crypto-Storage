@@ -6,7 +6,8 @@ use crate::primitive::{Kind, PrimitiveAir, PublicStatement};
 use p3_field::PrimeField64;
 use sha2::{Digest, Sha256};
 
-pub(super) const PUBLIC_VALUES: usize = 44;
+#[cfg(test)]
+pub(super) use bfv_ciphertext_formation::PUBLIC_VALUES;
 #[derive(Clone)]
 pub(super) struct Expected {
     pub(super) source: source::Statement,
@@ -131,13 +132,6 @@ impl Statement {
             5 => self.expected.encoding.context(),
             _ => self.noise_context(),
         })
-    }
-}
-pub(super) fn root_offset(stream: usize) -> usize {
-    match stream {
-        0..=4 => 20 + 4 * stream,
-        5 => 16,
-        _ => 40,
     }
 }
 impl PublicStatement for Statement {

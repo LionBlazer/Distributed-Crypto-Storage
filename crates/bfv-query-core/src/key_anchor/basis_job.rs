@@ -213,3 +213,8 @@ impl PublicSetup {
 }
 #[cfg(test)]
 mod tests;
+
+#[cfg(feature = "formation-proofs")]
+mod formation_job;
+#[cfg(feature = "formation-proofs")]
+pub use formation_job::{FormationJobStage, OwnerFormationJob};

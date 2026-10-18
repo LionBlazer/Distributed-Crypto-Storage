@@ -5,7 +5,6 @@ use crate::primitive::{Kind, PrimitiveAir, PublicStatement};
 use p3_field::PrimeField64;
 use sha2::{Digest, Sha256};
 
-pub(in crate::opening) const PUBLIC_VALUES: usize = 44;
 #[derive(Clone)]
 pub(in crate::opening) struct Expected {
     pub(super) producer: returned::statement::Expected,

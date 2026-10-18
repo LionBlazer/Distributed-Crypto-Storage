@@ -12,7 +12,9 @@ pub use ciphertext::*;
 pub use evidence::*;
 use p3_field::PrimeField64;
 use sha2::{Digest, Sha256};
-pub use statement::{Expected, INPUT_ROOT, OUTPUT_ROOT, PUBLIC_VALUES, PublicInput, Statement};
+pub use statement::{
+    Expected, INPUT_ROOT, OUTPUT_ROOT, PUBLIC_VALUES, PublicInput, Statement, words,
+};
 pub use witness::ProverWitness;
 const _: () = assert!(N == bfv_fixed_geometry::DEGREE);
 pub const MULTIPLY_ROW: usize = 206;

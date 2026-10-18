@@ -162,3 +162,6 @@ mod tests;
 mod basis_job;
 #[cfg(feature = "basis-proofs")]
 pub use basis_job::{BasisJobStage, OwnerBasisJob};
+
+#[cfg(feature = "formation-proofs")]
+pub use basis_job::{FormationJobStage, OwnerFormationJob};

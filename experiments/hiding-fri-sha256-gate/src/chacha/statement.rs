@@ -151,6 +151,7 @@ pub(crate) fn reference_output(statement: &Statement) -> [u32; WORDS] {
         | Kind::VersionLockingSelection
         | Kind::BfvKeyTransform
         | Kind::BfvBasisConvolution
+        | Kind::BfvCiphertextFormation
         | Kind::BfvLocalFormation
         | Kind::LockReturnedEncoding
         | Kind::BfvLockReturnedFormation

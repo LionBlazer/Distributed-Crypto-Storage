@@ -197,3 +197,33 @@ fn verify_fixed(
     }))
     .map_err(|_| Error::Verification)?
 }
+
+/// Verify one real Key and exactly five ordered components against independently pinned FULL claims.
+/// Each proof is decoded and dropped sequentially; this never accepts an incomplete prefix.
+pub fn verify_five(
+    full_setup_id: [u8; 32],
+    expected: &[Statement; 5],
+    key: &[u8],
+    components: [&[u8]; 5],
+) -> Result<(), Error> {
+    let first = &expected[0].expected;
+    for (i, s) in expected.iter().enumerate() {
+        let e = &s.expected;
+        if e.ciphertext().basis() != i
+            || e.key().public_values() != first.key().public_values()
+            || e.request() != first.request()
+            || e.ciphertext().bytes() != first.ciphertext().bytes()
+            || e.ciphertext().parameter_bytes() != first.ciphertext().parameter_bytes()
+        {
+            return Err(Error::Shape);
+        }
+    }
+    verify_key(full_setup_id, first, key)?;
+    for (s, bytes) in expected.iter().zip(components) {
+        let verified = verify_fixed(full_setup_id, &s.expected, bytes)?;
+        if verified.statement().public_values() != s.public_values() {
+            return Err(Error::Shape);
+        }
+    }
+    Ok(())
+}

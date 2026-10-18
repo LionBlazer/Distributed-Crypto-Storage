@@ -33,6 +33,10 @@ pub(crate) fn profile_digest(kind: Kind) -> [u8; 32] {
             crate::opening::state::query_profile(&mut hash);
             (crate::opening::selection::air::WIDTH, 2)
         }
+        Kind::BfvCiphertextFormation => {
+            bfv_ciphertext_formation::profile(&mut hash);
+            (bfv_ciphertext_formation::circuit::WIDTH, 2)
+        }
         Kind::BfvKeyTransform => {
             crate::opening::key_transform::profile(&mut hash);
             (crate::opening::key_transform::air::WIDTH, 2)

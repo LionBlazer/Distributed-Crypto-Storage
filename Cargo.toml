@@ -3,6 +3,7 @@ members = [
     "crates/bfv-hiding-stark",
     "crates/bfv-key-transform",
     "crates/bfv-basis-convolution",
+    "crates/bfv-ciphertext-formation",
 
     "crates/relational-types",
     "crates/peer-protocol",
@@ -40,6 +41,7 @@ default-members = [
     "crates/bfv-hiding-stark",
     "crates/bfv-key-transform",
     "crates/bfv-basis-convolution",
+    "crates/bfv-ciphertext-formation",
 
     "crates/relational-types",
     "crates/peer-protocol",

@@ -6,6 +6,7 @@ pub(crate) mod bootstrap;
 mod control;
 pub(crate) mod encoding;
 mod fixture;
+mod formation;
 mod journal;
 mod layout;
 mod model;
@@ -172,4 +173,8 @@ pub(crate) fn journal_gate(mode: &str) -> Result<(), Error> {
 
 pub(crate) fn encoding_gate(mode: &str) -> Result<(), Error> {
     encoding::gate(mode)
+}
+
+pub(crate) fn formation_gate(mode: &str) -> Result<(), Error> {
+    formation::gate(mode)
 }

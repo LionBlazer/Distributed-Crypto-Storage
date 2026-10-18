@@ -65,6 +65,7 @@ pub enum Error {
     WireLimit,
     BindingMismatch,
     BasisJobStage,
+    FormationJobStage,
     AggregateBounds,
     UpdateBounds,
     SelectBounds,
@@ -903,3 +904,6 @@ pub use key_anchor::{BfvKeyAnchor, KeyScope, OwnerKeyAnchor};
 
 #[cfg(feature = "basis-proofs")]
 pub use key_anchor::{BasisJobStage, OwnerBasisJob};
+
+#[cfg(feature = "formation-proofs")]
+pub use key_anchor::{FormationJobStage, OwnerFormationJob};

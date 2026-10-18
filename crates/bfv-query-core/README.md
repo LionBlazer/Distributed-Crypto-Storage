@@ -335,3 +335,20 @@ actual SDK-key/native-prime/CRT plus independent Poseidon streams. The
 executed rejection boundaries and sampled resources. These proofs do not establish
 formed BFV encryption, evaluation-key consistency, Source/Registry200 linkage,
 controller authority, fresh agreement, live SQL or a composed128-bit claim.
+
+## Ciphertext formation continuation
+
+The optional `formation-proofs` feature includes `basis-proofs` and the reusable
+[formation relation](../bfv-ciphertext-formation/README.md).
+`OwnerKeyAnchor::encrypt_encoded_coefficients` accepts caller-owned scaled W, checks
+the complete original setup and fixed shape before SDK work, then uses actual
+Owner encryption. `OwnerBasisJob::into_formation` consumes only a complete job and
+an explicit private `EncodedOpening`. The opaque non-Clone/non-Debug/non-Serialize
+OwnerFormationJob rechecks actual Key/five Basis, derives common bounded noise,
+and emits one bounded component. No private getters, callbacks or import exist.
+The retained Shat/opening/salts are released on successful proof, cancel or drop;
+SDK/native field scratch is not promised erased. Cancellation is between synchronous
+calls. No owner-private persistence/recovery is added. This mathematical input is
+not Source/SQL authority, and the feature does not enable network answer acceptance.
+The [executed validation](../bfv-ciphertext-formation/OWNER-FORMATION-VALIDATION.md)
+covers actual Owner formation, hostile components and sampled process resources.

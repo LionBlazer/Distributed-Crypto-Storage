@@ -113,6 +113,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "bfv-ciphertext-formation"
+version = "0.1.0"
+dependencies = [
+ "bfv-basis-convolution",
+ "bfv-hiding-stark",
+ "bfv-key-transform",
+ "p3-air",
+ "p3-field",
+ "p3-matrix",
+ "p3-uni-stark",
+ "sha2",
+ "zeroize",
+]
+
+[[package]]
 name = "bfv-fixed-geometry"
 version = "0.1.0"
 
@@ -174,13 +189,18 @@ dependencies = [
 name = "bfv-query-core"
 version = "0.1.0"
 dependencies = [
+ "bfv-basis-convolution",
+ "bfv-ciphertext-formation",
  "bfv-fixed-geometry",
+ "bfv-hiding-stark",
+ "bfv-key-transform",
  "bfv-linear-circuit",
  "bfv-product-circuit",
  "bincode",
  "fhe",
  "fhe-math",
  "fhe-traits",
+ "p3-field",
  "rand 0.9.2",
  "serde",
  "sha2",
@@ -735,6 +755,7 @@ name = "hiding-fri-source-primitives"
 version = "0.1.0"
 dependencies = [
  "bfv-basis-convolution",
+ "bfv-ciphertext-formation",
  "bfv-hiding-stark",
  "bfv-key-transform",
  "bfv-product-circuit",

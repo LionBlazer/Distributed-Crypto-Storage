@@ -3,6 +3,7 @@ mod control;
 #[cfg(test)]
 mod encoding_tests;
 mod fixture;
+mod formation_scenario;
 mod owner;
 mod request;
 #[cfg(test)]
@@ -135,4 +136,18 @@ fn backend<T>(value: std::result::Result<T, crate::backend::Error>) -> Result<T>
 }
 pub(super) fn gate(mode: &str) -> std::result::Result<(), crate::backend::Error> {
     fixture::gate(mode)
+}
+
+pub(super) use formation_scenario::EncodingProduct as FormationEncodingProduct;
+pub(super) fn formation_input(
+    limit: u8,
+) -> std::result::Result<FormationEncodingProduct, crate::backend::Error> {
+    formation_scenario::produce(limit)
+}
+
+#[cfg(test)]
+pub(super) fn formation_input_with_alternate(
+    limit: u8,
+) -> std::result::Result<FormationEncodingProduct, crate::backend::Error> {
+    formation_scenario::produce_with_alternate(limit)
 }

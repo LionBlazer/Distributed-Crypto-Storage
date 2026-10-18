@@ -64,3 +64,16 @@ five Basis require at least87,892,992 bytes, exceeding the existing 64 MiB trans
 and 32 MiB Journal limits. No aggregate frame, network registration or quota widening
 is added here. Sequential process resources remain empirical. Six individual 128-bit
 floors imply only a 125.415-bit union floor; composed 128 is not claimed.
+
+
+## Complete component verification and digest words
+
+`verify_five` verifies one actual Key and exactly five ordered Basis components
+against independently pinned full claims, including every Key public value,
+request, complete canonical parameters/ciphertext and result. Each decoded proof
+is dropped before the next. An incomplete prefix is never sufficient.
+
+`words` exposes the existing canonical digest encoding: eight consecutive
+little-endian u32 words from a 32-byte digest, represented exactly in Goldilocks.
+The formation library reuses this public encoding; no profile, context, equation
+or verification policy changes. Neither entry point grants SQL authority.

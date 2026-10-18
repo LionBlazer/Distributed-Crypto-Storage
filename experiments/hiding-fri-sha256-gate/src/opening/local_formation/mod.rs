@@ -23,7 +23,6 @@ use statement::{Expected, Statement};
 use trace::Witness;
 
 pub(in crate::opening) const N: usize = 8192;
-pub(in crate::opening) const STREAMS: usize = 7;
 pub(in crate::opening) const Q: [u64; 5] = [
     8796092858369,
     8796092792833,

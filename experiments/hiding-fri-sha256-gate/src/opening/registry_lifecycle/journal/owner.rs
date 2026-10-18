@@ -299,3 +299,90 @@ impl Prepared<'_> {
         &self.expected.source
     }
 }
+
+/// Journal-private owning producer: private lifecycle input never becomes a peer receipt or getter.
+pub(super) struct FormationEncodingRequest<'a> {
+    pub journal: &'a mut Journal,
+    pub verifier: &'a super::PrivateVerifier,
+    pub genesis: &'a Genesis,
+    pub owner: &'a SigningKey,
+    pub sql: &'a str,
+    pub sql_nonce: Hash,
+    pub salt: [Val; 4],
+    pub timestamp: u64,
+    #[cfg(test)]
+    pub alternate_salt: Option<[Val; 4]>,
+}
+impl Prepared<'_> {
+    pub(super) fn prove_formation_encoding(
+        self,
+        input: FormationEncodingRequest<'_>,
+    ) -> Result<super::formation_scenario::EncodingProduct> {
+        use super::super::encoding;
+        // Independently retained owner input BEFORE proof production, wire decode and Journal admission.
+        let expected = self.expected.clone();
+        let witness = self.witness.clone();
+        let command = witness.command.as_ref().ok_or(Error::InvalidTransition)?;
+        let principal = usize::from(command.principal)
+            .checked_sub(1)
+            .filter(|i| *i < 2)
+            .ok_or(Error::InvalidTransition)?;
+        let compiled = backend(encoding::CompiledQuery::compile(
+            input.sql,
+            input.sql_nonce,
+            expected.source.request,
+        ))?;
+        let command_opening = encoding::CommandOpening {
+            transaction: command.transaction,
+            principal: command.principal,
+            controller: witness.controllers[principal],
+            revision: witness.old.revision,
+            sequence: command.sequence,
+            salt: witness.salts[3],
+        };
+        use crate::primitive::PublicStatement;
+        // Bind exact SQL/Command against the independently retained owner claim BEFORE mutation.
+        let claimed = backend(witness.statement(&expected))?;
+        let bound = backend(compiled.bind(&expected, &claimed, command_opening))?;
+        let produced = self.prove(input.genesis, input.owner)?;
+        let Body::Transition(t) = &produced.body else {
+            return Err(Error::InvalidTransition);
+        };
+        let (s, parent) = wire::decode_and_verify(&expected, &t.proof)
+            .map_err(|_| Error::RejectedComputationProof)?;
+        if s.public_values() != claimed.public_values() {
+            return Err(Error::RejectedComputationProof);
+        }
+        super::formation_scenario::append(
+            input.journal,
+            input.verifier,
+            expected.parent,
+            &produced.body,
+            input.timestamp,
+        )?;
+        let coefficients = backend(encoding::formation_coefficients(
+            &bound, &witness, input.salt,
+        ))?;
+        let (statement, frame, opening) = backend(encoding::prove_with_formation_opening(
+            &bound, &witness, &parent, input.salt,
+        ))?;
+        #[cfg(test)]
+        let alternate = if let Some(salt) = input.alternate_salt {
+            let (s, bytes, opening) = backend(encoding::prove_with_formation_opening(
+                &bound, &witness, &parent, salt,
+            ))?;
+            drop(opening);
+            Some((s, bytes))
+        } else {
+            None
+        };
+        Ok(super::formation_scenario::EncodingProduct {
+            statement,
+            frame,
+            opening,
+            coefficients,
+            #[cfg(test)]
+            alternate,
+        })
+    }
+}

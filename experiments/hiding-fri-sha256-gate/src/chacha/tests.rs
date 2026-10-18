@@ -290,6 +290,7 @@ fn claimed_output(statement: &Statement, trace: &RowMajorMatrix<Val>) -> [u32; W
         | Kind::VersionLockingSelection
         | Kind::BfvKeyTransform
         | Kind::BfvBasisConvolution
+        | Kind::BfvCiphertextFormation
         | Kind::BfvLocalFormation
         | Kind::LockReturnedEncoding
         | Kind::BfvLockReturnedFormation

@@ -7,10 +7,12 @@ publish = false
 
 
 [features]
+formation-proofs = ["basis-proofs", "dep:bfv-ciphertext-formation"]
 basis-proofs = ["key-proofs", "dep:bfv-basis-convolution"]
 key-proofs = ["dep:bfv-key-transform", "dep:bfv-hiding-stark", "dep:p3-field"]
 
 [dependencies]
+bfv-ciphertext-formation = { path = "../bfv-ciphertext-formation", optional = true }
 bfv-basis-convolution = { path = "../bfv-basis-convolution", optional = true }
 bfv-key-transform = { path = "../bfv-key-transform", optional = true }
 bfv-hiding-stark = { path = "../bfv-hiding-stark", optional = true }
@@ -28,6 +30,7 @@ sha2 = "=0.10.9"
 zeroize = "1"
 
 [dev-dependencies]
+p3-uni-stark = "=0.8.0"
 p3-dft = "=0.8.0"
 p3-goldilocks = "=0.8.0"
 p3-symmetric = "=0.8.0"
