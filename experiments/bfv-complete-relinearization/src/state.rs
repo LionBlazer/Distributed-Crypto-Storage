@@ -121,10 +121,12 @@ impl State {
                         input.component(1).ok_or(Error::Shape)?,
                     ],
                     &self.digits,
-                    [
-                        key.c0.each_ref().map(Vec::as_slice),
-                        key.c1.each_ref().map(Vec::as_slice),
-                    ],
+                    core::array::from_fn(|component| {
+                        core::array::from_fn(|source| {
+                            key.component(component, source)
+                                .expect("fixed prepared public key rows")
+                        })
+                    }),
                 )?))
             }
             _ => Err(Error::Stage),

@@ -327,6 +327,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "bfv-mul-relin-circuit"
+version = "0.1.0"
+dependencies = [
+ "bfv-ciphertext-wire",
+ "bfv-fixed-geometry",
+ "bfv-ntt-circuit",
+ "bfv-query-core",
+ "bfv-relinearization-circuit",
+ "bfv-relinearization-key-source",
+ "bfv-scale-circuit",
+ "bfv-tensor-circuit",
+ "fhe",
+ "fhe-math",
+ "fhe-traits",
+ "sha2",
+]
+
+[[package]]
 name = "bfv-multilinear-stark"
 version = "0.1.0"
 dependencies = [
@@ -441,6 +459,7 @@ name = "bfv-relinearization-key-source"
 version = "0.1.0"
 dependencies = [
  "bfv-fixed-geometry",
+ "bfv-ntt-circuit",
  "bfv-query-core",
  "fhe",
  "fhe-math",

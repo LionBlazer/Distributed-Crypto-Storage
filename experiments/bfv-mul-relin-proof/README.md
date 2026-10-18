@@ -13,22 +13,31 @@ unimplemented by this mathematical composition.
 | Entry/module | Responsibility and direct owners |
 | --- | --- |
 | `Provenance`, `provenance.rs` / `Verifier::verify_inputs` | Constructor pins original [PublicSetup/anchor](../../crates/bfv-query-core/README.md), full [encoding statements](../../crates/registry200-proof/src/coefficient_encoding/README.md), original ciphertexts and query; input admission actually verifies Key, Source, both encodings, ten [Basis](../../crates/bfv-basis-convolution/README.md) and two [Formation](../../crates/bfv-ciphertext-formation/README.md) proofs |
-| `GraphClaims`, `claims.rs` | Complete canonical typed proposed vectors; [NTT](../../crates/bfv-ntt-circuit/README.md), [Scale](../../crates/bfv-scale-circuit/README.md), [Tensor](../../crates/bfv-tensor-circuit/README.md) and [Relin](../../crates/bfv-relinearization-circuit/README.md) codecs |
-| `Expected`, `PreparedGraph`, `graph.rs` | Derive every request from immutable original endpoints and fixed full-vector edges; borrowed [ciphertext wire](../../crates/bfv-ciphertext-wire/README.md); immutable [PreparedKey](../bfv-complete-relinearization/README.md) and shared pure Relin routing |
+| [bfv-mul-relin-circuit](../../crates/bfv-mul-relin-circuit/README.md) | Own `GraphClaims`/`NodeOutput`, all134 fixed roles, complete vector routing, canonical codecs and original/final ciphertext bridges; claims remain unverified |
+| [bfv-relinearization-key-source](../../crates/bfv-relinearization-key-source/README.md) | Own immutable `PreparedKey` and exact original public setup preprocessing, shared with the32-node consumer |
+| `Expected`, `PreparedGraph`, `graph.rs` | Independently pin provenance/output; compute full G and every proof-specific binding; derive Core requests and construct the atomic arithmetic17 statement |
 | `Prover`, `prover.rs` | Evaluate public encrypted polynomials, then sequentially produce actual proofs; no checked result constructor |
 | `Verifier`, `verifier.rs` | Actual [NTT](../bfv-ntt-witness-proof/README.md), [Relin](../bfv-relinearization-multilinear-proof/README.md) and [atomic arithmetic17](../bfv-arithmetic-batch-proof/README.md) verification; bounded admission and output-only SDK report aggregation |
 | `profile.rs` | Bind the exact schedule, primitive profiles, grammar and lifetime limits; SHA512 graph/node domains |
 
-The fixed geometry crate owns parameter constants. `fhe`, `fhe-math` and
-`fhe-traits` decode public input ciphertexts in the prover and independently
-expand original public seeds during preparation. The graph edge verifier does
+The fixed geometry crate owns parameter constants. `fhe` and `fhe-traits` decode
+public input ciphertexts in the prover; Core independently expands original public
+seeds during bridge preparation. The graph edge verifier does
 not re-evaluate an NTT or the query. The existing Basis input verifier separately
 performs public ciphertext decoding/representation conversion and public
 preprocessing; this is not a claim of transform-free input admission.
 SHA256/SHA512 and the existing p3 field ABI
 retain their original purposes. The private workspace pins the reviewed local
-streaming p3-multi-stark dependency; core/default members have no new dependency
-on this experiment. The existing primitive AIRs and profiles are unchanged.
+streaming p3-multi-stark dependency. The new default Core graph library has no
+dependency on an experiment, proof backend or SDK fork; proof composition remains
+here. The existing primitive AIRs, profiles and local SDK policy are unchanged.
+
+`GraphClaims::encode(profile_digest())` and
+`GraphClaims::decode(profile_digest(), bytes)` use the complete independently
+expected64-byte proof profile. Core treats it as an unverified codec context,
+not a verification key or grant. This consumer always supplies its own fixed
+profile. It computes all node labels, including the seventeen arithmetic labels,
+before invoking Core routing; peer-supplied labels cannot select graph edges.
 
 ## Complete graph and endpoint bindings
 
@@ -94,7 +103,8 @@ secret public relinearization-key validity is still an explicit unmet requiremen
 
 ## Verification entry points
 
-The package tests check the full claim codec, strict record grammar and complete
+Core owning tests check the full claim codec and mathematical edges; this
+package owns proof-profile preservation, strict record grammar and complete
 proof-obligation coverage. The actual private-drop integration lives at the
 consumer that owns the Source, private predicate and Formation witnesses:
 [full product test](../hiding-fri-sha256-gate/src/opening/coefficient_encoding/input_formation/full_product.rs).
@@ -105,6 +115,9 @@ after the prover and old decoded graph have been dropped. The
 [executed validation](VALIDATION.md) records exact source/receipt identities,
 1013 configuration invocations over553 distinct owning cases, full output
 verification, measured bytes/time/resources and the remaining integration limits.
+The subsequent [Core extraction validation](CORE-EXTRACTION-VALIDATION.md) records
+all30 current owning cases, preserved old claim bytes/raw identity feed and
+genuine complete32/full134 regressions through the actual shared libraries.
 
 ```text
 cargo test --release --locked --manifest-path experiments/bfv-mul-relin-proof/Cargo.toml

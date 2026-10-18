@@ -19,7 +19,7 @@ established by this mathematical composition.
 | Dependency | Owned responsibility |
 | --- | --- |
 | [bfv-query-core](../../crates/bfv-query-core/README.md) | Original PublicSetup encoder, borrowed public material and complete setup identity |
-| [bfv-relinearization-key-source](../../crates/bfv-relinearization-key-source/README.md) | Bounded seeded-only level0/0 key parsing and exact public c1 seed expansion |
+| [bfv-relinearization-key-source](../../crates/bfv-relinearization-key-source/README.md) | Bounded seeded-only parsing, exact c1 expansion and immutable original-setup `PreparedKey` preprocessing |
 | [bfv-fixed-geometry](../../crates/bfv-fixed-geometry/README.md) | Original N8192/Q5/t114689 constants |
 | [bfv-ntt-circuit](../../crates/bfv-ntt-circuit/README.md) | Exact public setup NTT evaluation and canonical query request/output codecs |
 | [bfv-relinearization-circuit](../../crates/bfv-relinearization-circuit/README.md) | Existing Embed/MAC integer relations/codecs and shared pure complete-vector routing |
@@ -28,11 +28,13 @@ established by this mathematical composition.
 
 The direct SDK dependencies are only the independent actual-Owner demo/oracle. Core and the existing primitive libraries do not depend
 on this experiment. Its private workspace has its own lockfile, generated only by
-the Root orchestrator. No existing primitive profile, AIR, proof cap or test body
-is changed.
+the Root orchestrator. Existing primitive profiles, AIRs and proof caps are
+unchanged. Owning tests retain their scenarios and full assertions through the
+library's immutable component API and typed preparation errors.
 
-`key.rs` owns immutable private-field `PreparedKey`. `input.rs` owns complete
-public `Input`. `state.rs` owns exact32 ordering and delegates Embed/MAC request
+The key-source library owns immutable private-field `PreparedKey`; this consumer
+directly re-exports that actual type and has no local key implementation.
+`input.rs` owns complete public `Input`. `state.rs` owns exact32 ordering and delegates Embed/MAC request
 assembly, digit-row selection and complete output transposition to the Core
 [routing module](../../crates/bfv-relinearization-circuit/src/routing/README.md).
 `prover.rs` owns sequential proof production; `verifier.rs` owns actual
@@ -175,3 +177,6 @@ routing extraction and readonly key accessor regressions: seven owning tests
 under retained unchanged R3 source and the genuine old32 CLI prove under final
 R4. The historical executed validation above is retained; this refactor adds no
 arithmetic, profile, frame, cap or shortened proof path.
+The subsequent [Core extraction validation](../bfv-mul-relin-proof/CORE-EXTRACTION-VALIDATION.md)
+reruns all seven owning tests, including the genuine complete32 stream, against
+the actual key-source library owner and immutable component API.

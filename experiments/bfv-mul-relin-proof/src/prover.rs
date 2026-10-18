@@ -2,7 +2,7 @@
 use crate::{
     Error, Expected, GraphClaims, NODES, NodeOutput, PreparedGraph, Result, graph, verifier,
 };
-use bfv_complete_relinearization::PreparedKey;
+use bfv_relinearization_key_source::PreparedKey;
 use fhe::bfv::Ciphertext;
 use fhe_traits::DeserializeParametrized;
 use graph::NodeRequest;
@@ -27,14 +27,19 @@ impl Prover {
                 native.push(Vec::<u64>::from(component));
             }
         }
-        let mut claims = GraphClaims {
-            native: native.try_into().map_err(|_| Error::Statement)?,
-            nodes: Vec::with_capacity(NODES),
-        };
+        let native: [Vec<u64>; 4] = native.try_into().map_err(|_| Error::Statement)?;
+        let mut nodes = Vec::with_capacity(NODES);
         // First pass computes raw ciphertext-residue claims. Temporary bindings are
         // excluded from the graph identity; no proof or checked result exists yet.
         for node in 0..NODES {
-            let r = graph::request(&claims, key, [1; 64], node)?;
+            let binding = graph::node_binding([1; 64], key.keyset_id(), node)?;
+            let r = bfv_mul_relin_circuit::derive_request(
+                node,
+                native.each_ref().map(Vec::as_slice),
+                &nodes,
+                key,
+                binding,
+            )?;
             let out = match &r {
                 NodeRequest::Ntt(r) => NodeOutput::Ntt(
                     bfv_ntt_circuit::evaluate_with_certificate(r)
@@ -57,16 +62,25 @@ impl Prover {
                         .output,
                 ),
             };
-            claims.nodes.push(out);
+            nodes.push(out);
         }
+        let claims = GraphClaims::new(native, nodes)?;
         let identity = graph::identity(expected, &claims);
+        let (native, mut nodes) = claims.into_parts();
         // Canonical claim headers now bind the fixed graph. This only assembles
         // public mathematical statements; all proofs are produced below.
         for node in 0..NODES {
-            let request = graph::request(&claims, key, identity, node)?;
-            claims.nodes[node] = bind_claim(&request, &claims.nodes[node], node)?;
+            let binding = graph::node_binding(identity, key.keyset_id(), node)?;
+            let request = bfv_mul_relin_circuit::derive_request(
+                node,
+                native.each_ref().map(Vec::as_slice),
+                &nodes[..node],
+                key,
+                binding,
+            )?;
+            nodes[node] = bind_claim(&request, &nodes[node], node)?;
         }
-        let graph = PreparedGraph::prepare(expected, key, claims)?;
+        let graph = PreparedGraph::prepare(expected, key, GraphClaims::new(native, nodes)?)?;
         Ok(Self {
             graph,
             next: 0,
@@ -105,7 +119,7 @@ impl Prover {
             }
             generated.frame
         } else {
-            match (&self.graph.requests[node], &self.graph.claims.nodes[node]) {
+            match (&self.graph.requests[node], &self.graph.claims.nodes()[node]) {
                 (NodeRequest::Ntt(r), NodeOutput::Ntt(o)) => {
                     let g = bfv_ntt_witness_proof::prove(r).map_err(|_| Error::Proof)?;
                     if g.output.encode() != o.encode() {
@@ -139,5 +153,5 @@ fn bind_claim(r: &NodeRequest, o: &NodeOutput, node: usize) -> Result<NodeOutput
     };
     wire[40..72].copy_from_slice(&binding);
     wire[offset..offset + 32].copy_from_slice(&Sha256::digest(request));
-    NodeOutput::decode(node, &wire)
+    Ok(NodeOutput::decode_for_node(node, &wire)?)
 }

@@ -1,0 +1,22 @@
+[package]
+name = "bfv-mul-relin-circuit"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[dependencies]
+bfv-fixed-geometry = { path = "../bfv-fixed-geometry" }
+bfv-ciphertext-wire = { path = "../bfv-ciphertext-wire" }
+bfv-ntt-circuit = { path = "../bfv-ntt-circuit" }
+bfv-scale-circuit = { path = "../bfv-scale-circuit" }
+bfv-tensor-circuit = { path = "../bfv-tensor-circuit" }
+bfv-relinearization-circuit = { path = "../bfv-relinearization-circuit" }
+bfv-relinearization-key-source = { path = "../bfv-relinearization-key-source" }
+fhe = { version = "=0.1.1", default-features = false }
+fhe-math = { version = "=0.1.1", default-features = false }
+fhe-traits = "=0.1.1"
+sha2 = "=0.10.9"
+
+[dev-dependencies]
+bfv-query-core = { path = "../bfv-query-core" }

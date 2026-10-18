@@ -12,7 +12,7 @@ pub enum Error {
     RelinCircuit(bfv_relinearization_circuit::Error),
     NttProof(bfv_ntt_witness_proof::Error),
     RelinProof(bfv_relinearization_multilinear_proof::Error),
-    KeySource(bfv_relinearization_key_source::Error),
+    PreparedKey(bfv_relinearization_key_source::PreparedKeyError),
     Core(bfv_query_core::Error),
     Io(std::io::Error),
     Oracle,
@@ -36,7 +36,10 @@ conversion!(bfv_ntt_circuit::Error, NttCircuit);
 conversion!(bfv_relinearization_circuit::Error, RelinCircuit);
 conversion!(bfv_ntt_witness_proof::Error, NttProof);
 conversion!(bfv_relinearization_multilinear_proof::Error, RelinProof);
-conversion!(bfv_relinearization_key_source::Error, KeySource);
+conversion!(
+    bfv_relinearization_key_source::PreparedKeyError,
+    PreparedKey
+);
 conversion!(bfv_query_core::Error, Core);
 conversion!(std::io::Error, Io);
 pub type Result<T> = core::result::Result<T, Error>;

@@ -19,3 +19,6 @@ remain separate from this optional output path. No SQL or fresh-head acceptance 
 introduced. The [executed native validation](../../../../../../bfv-mul-relin-proof/VALIDATION.md)
 records the complete proof, source/receipt identities, timings, public stream
 sizes, process observations and remaining protocol limitations.
+The [Core extraction validation](../../../../../../bfv-mul-relin-proof/CORE-EXTRACTION-VALIDATION.md)
+reruns this genuine complete integration with shared Core claims/routing and
+public key preparation, preserving the original proof profiles and caps.

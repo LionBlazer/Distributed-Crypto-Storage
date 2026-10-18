@@ -1,6 +1,7 @@
 //! PUBLIC NONSECRET owning scenarios. No oracle result supplies a proof endpoint.
 use crate::*;
 use bfv_query_core::{Geometry, Owner, PublicSetup};
+use bfv_relinearization_key_source::PreparedKeyError;
 use sha2::{Digest, Sha256};
 
 fn id(setup: &PublicSetup) -> [u8; 32] {
@@ -26,14 +27,14 @@ fn original_owner_public_key_preprocessing_matches_all_fifty_sdk_rows_and_reject
     let key = PreparedKey::from_original(&setup, id(&setup)).unwrap();
     let sdk = demo::sdk_key_rows(&setup).unwrap();
     for (source, rows) in sdk.iter().enumerate() {
-        assert_eq!(key.c0[source], rows[0]);
-        assert_eq!(key.c1[source], rows[1]); // ALL5 Q rows/all8192, not just an impulse position.
+        assert_eq!(key.component(0, source).unwrap(), rows[0]);
+        assert_eq!(key.component(1, source).unwrap(), rows[1]); // ALL5 Q rows/all8192, not just an impulse position.
     }
     let mut wrong = id(&setup);
     wrong[31] ^= 1;
     assert!(matches!(
         PreparedKey::from_original(&setup, wrong),
-        Err(Error::KeySource(_))
+        Err(PreparedKeyError::KeySource(_))
     ));
     let material = setup.relinearization_material().unwrap();
     let rotations = changed_setup(
@@ -43,8 +44,14 @@ fn original_owner_public_key_preprocessing_matches_all_fifty_sdk_rows_and_reject
     );
     assert!(PreparedKey::from_original(&rotations, id(&setup)).is_err());
     let rotation_key = PreparedKey::from_original(&rotations, id(&rotations)).unwrap();
-    assert_eq!(rotation_key.c0, key.c0);
-    assert_eq!(rotation_key.c1, key.c1);
+    for component in 0..2 {
+        for source in 0..5 {
+            assert_eq!(
+                rotation_key.component(component, source),
+                key.component(component, source)
+            );
+        }
+    }
     assert_ne!(
         rotation_key.original_setup_digest(),
         key.original_setup_digest()
@@ -56,8 +63,15 @@ fn original_owner_public_key_preprocessing_matches_all_fifty_sdk_rows_and_reject
     *wire.last_mut().unwrap() ^= 1;
     let seeded = changed_setup(&setup, &wire, b"different public rotations");
     let seeded_key = PreparedKey::from_original(&seeded, id(&seeded)).unwrap();
-    assert_eq!(seeded_key.c0, rotation_key.c0);
-    assert_ne!(seeded_key.c1, rotation_key.c1);
+    for source in 0..5 {
+        assert_eq!(
+            seeded_key.component(0, source),
+            rotation_key.component(0, source)
+        );
+    }
+    assert!(
+        (0..5).any(|source| seeded_key.component(1, source) != rotation_key.component(1, source))
+    );
     assert!(PreparedKey::from_original(&seeded, id(&rotations)).is_err());
 }
 
@@ -81,7 +95,7 @@ fn malformed_or_unsupported_original_key_is_rejected_by_bounded_source_before_pu
         let candidate = changed_setup(&setup, &bytes, b"public unsupported key fixture");
         assert!(matches!(
             PreparedKey::from_original(&candidate, id(&candidate)),
-            Err(Error::KeySource(_))
+            Err(PreparedKeyError::KeySource(_))
         ));
     }
 }

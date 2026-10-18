@@ -8,10 +8,11 @@ publish = false
 [patch.crates-io]
 p3-multi-stark = { path = "../p3-multi-stark-streaming" }
 [dependencies]
+bfv-mul-relin-circuit = { path = "../../crates/bfv-mul-relin-circuit" }
+bfv-relinearization-key-source = { path = "../../crates/bfv-relinearization-key-source" }
 bfv-arithmetic-batch-proof = { path = "../bfv-arithmetic-batch-proof" }
 bfv-ntt-witness-proof = { path = "../bfv-ntt-witness-proof" }
 bfv-relinearization-multilinear-proof = { path = "../bfv-relinearization-multilinear-proof" }
-bfv-complete-relinearization = { path = "../bfv-complete-relinearization" }
 bfv-ntt-circuit = { path = "../../crates/bfv-ntt-circuit" }
 bfv-scale-circuit = { path = "../../crates/bfv-scale-circuit" }
 bfv-tensor-circuit = { path = "../../crates/bfv-tensor-circuit" }
@@ -24,7 +25,6 @@ registry200-proof = { path = "../../crates/registry200-proof" }
 bfv-key-transform = { path = "../../crates/bfv-key-transform" }
 bfv-basis-convolution = { path = "../../crates/bfv-basis-convolution" }
 fhe = { version = "=0.1.1", default-features = false }
-fhe-math = { version = "=0.1.1", default-features = false }
 fhe-traits = "=0.1.1"
 p3-field = "=0.8.0"
 sha2 = "=0.10.9"

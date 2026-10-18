@@ -1,10 +1,10 @@
 //! PUBLIC NONSECRET input16 -> exact full BFV product, independently reverified.
 use super::{Instant, PublicFiles, PublicSetup, Statement};
-use bfv_complete_relinearization::PreparedKey;
 use bfv_mul_relin_proof::{
     Error, Expected, GraphClaims, InputEvidence, MAX_ATTEMPTS, MAX_PROOF_BYTES, MAX_SESSION_BYTES,
     PROOF_RECORDS, Provenance, Prover, RECORD_HEADER, Verifier,
 };
+use bfv_relinearization_key_source::PreparedKey;
 
 fn verify_inputs(verifier: &mut Verifier<'_>, files: &PublicFiles) {
     // Only the original public frames survive Owner drop. No receipt bypass.
@@ -43,7 +43,7 @@ fn reject_unproved_endpoints_and_exhausted_sessions(
     let modulus = bfv_fixed_geometry::MODULI[4];
     changed_last[end - 8..].copy_from_slice(&((value + 1) % modulus).to_le_bytes());
     // This is still a completely canonical 134-node claim stream.
-    GraphClaims::decode(&changed_last).unwrap();
+    GraphClaims::decode(bfv_mul_relin_proof::profile_digest(), &changed_last).unwrap();
     assert!(
         Verifier::new(expected, key)
             .accept_claims(&changed_last)
@@ -52,7 +52,7 @@ fn reject_unproved_endpoints_and_exhausted_sessions(
     let mut changed_binding = claims.to_vec();
     // First NTT Output's binding, outside the raw coefficient identity.
     changed_binding[96 + 20 * 8192 * 8 + 8 + 40] ^= 1;
-    GraphClaims::decode(&changed_binding).unwrap();
+    GraphClaims::decode(bfv_mul_relin_proof::profile_digest(), &changed_binding).unwrap();
     assert!(
         Verifier::new(expected, key)
             .accept_claims(&changed_binding)
@@ -165,7 +165,10 @@ pub(super) fn verify(
     let key =
         PreparedKey::from_original(expected.provenance().setup(), anchor.full_setup_id()).unwrap();
     let mut prover = Prover::new(&expected, &key).unwrap();
-    let claims = prover.graph().claims().encode();
+    let claims = prover
+        .graph()
+        .claims()
+        .encode(bfv_mul_relin_proof::profile_digest());
     let identity = prover.graph().identity();
     files.write("product-claims", &claims);
     let prepare_ms = started.elapsed().as_secs_f64() * 1000.;

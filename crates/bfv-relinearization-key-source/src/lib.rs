@@ -3,9 +3,11 @@
 
 mod cursor;
 mod material;
+mod prepared;
 mod seed;
 
 pub use material::{UnverifiedSeededRelinearizationKey, decode_seeded};
+pub use prepared::{PreparedKey, PreparedKeyError};
 pub use seed::UnverifiedExpandedSeededKey;
 
 use bfv_fixed_geometry::{DEGREE, MODULI};

@@ -1,7 +1,8 @@
 # Canonical public relinearization key source
 
-This library parses public bytes and expands public randomness. Native validation
-passes all nine owning tests, strict all-target Clippy and explicit rustfmt.
+This library parses public bytes, expands public randomness and owns deterministic
+original public-key preprocessing. Native validation of the original parser/seed
+API passed all nine owning tests, strict all-target Clippy and explicit rustfmt.
 It supplies no proof, secret key access,
 complete relinearization/MulRelin operation, key authority or SQL acceptance.
 
@@ -9,6 +10,7 @@ complete relinearization/MulRelin operation, key authority or SQL acceptance.
 | --- | --- |
 | [bfv-query-core](../bfv-query-core/README.md) | Borrowed original public material and complete existing setup identity |
 | [bfv-fixed-geometry](../bfv-fixed-geometry/README.md) | Unchanged N8192 and original ordered Q5 |
+| [bfv-ntt-circuit](../bfv-ntt-circuit/README.md) | Fixed public C0 forward transforms for PreparedKey, with no proof feature |
 
 `decode_seeded(material, independently_expected_keyset_id)` consumes a borrowed
 `PublicRelinearizationMaterial` view, compares its COMPLETE setup identity first,
@@ -47,7 +49,7 @@ must bind the PB-to-NTT conversion before using K0: it may verify 25 complete
 certificates, or deterministically derive verifier-owned public NTT constants once
 from the independently pinned original setup as fixed public-key preprocessing.
 The latter does not permit re-executing query-dependent c2 transforms or a MAC.
-The adapter itself never calls `Poly::from_bytes`, constructs a polynomial/NTT context,
+The parser/seed adapter never calls `Poly::from_bytes`, constructs a polynomial/NTT context,
 or executes a butterfly, scaling equation, key-switch or modular MAC.
 
 `expand_c1_ntt()` explicitly returns `UnverifiedExpandedSeededKey`, with the same
@@ -110,3 +112,33 @@ has no such provenance merely because it hashes to its own ID. Setup signatures
 or IDs can authenticate selected bytes; they do not replace arithmetic proofs or
 prove same-secret consistency. Owner authorization, certified input formation,
 complete selection, finality/freshness and writer fences remain separate.
+
+## Immutable original key preprocessing
+
+`PreparedKey::from_original(&PublicSetup, independently_expected_id)` now owns the
+actual preprocessing previously implemented by the complete-relinearization
+experiment. The original complete identity and bounded canonical seeded key are
+checked before coefficient allocation. The retained SHA512 digest covers the
+entire unchanged original setup encoder, including rotation bytes. It performs
+exactly25 fixed PUBLIC C0 forward transforms, dropping each public Aux before the
+next, and uses the existing original seeded C1 expansion. These constants are
+query-independent; no query c2 transform or MAC is re-executed here.
+
+`keyset_id()`, `original_setup_digest()` and immutable
+`component(component_index, decomposition_index)` expose only public metadata or
+one complete5N native row family. Invalid indices return None. There is no public
+constructor from arbitrary NTT arrays, mutation, Clone, serialization, callback,
+private key getter, proof receipt or setup-authority token. The dedicated
+`PreparedKeyError` distinguishes setup, bounded source, NTT preparation, shape
+and identity failures without depending on the old experiment error type.
+
+All nine original parser/seed test bodies remain unchanged. Three added owning
+tests compare every coefficient of all50 native key rows with independent actual
+SDK impulse probes, check rotation-only/seed/independent-pin changes, and require
+malformed original keys to fail at the bounded source. The new preprocessing
+module/tests pass all twelve owning cases and strict Clippy in the
+[executed extraction validation](../../experiments/bfv-mul-relin-proof/CORE-EXTRACTION-VALIDATION.md),
+including genuine complete32/full134 consumer regressions. Historical native
+results above retain their original nine-case parser/seed scope. This
+move supplies no public evaluation-key same-secret proof, fresh head, full
+MulRelin admission or SQL permission.

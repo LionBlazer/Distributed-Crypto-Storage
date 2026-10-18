@@ -6,6 +6,7 @@ rust-version = "1.99"
 publish = false
 
 [dependencies]
+bfv-ntt-circuit = { path = "../bfv-ntt-circuit" }
 bfv-fixed-geometry = { path = "../bfv-fixed-geometry" }
 bfv-query-core = { path = "../bfv-query-core" }
 fhe-math = "=0.1.1"

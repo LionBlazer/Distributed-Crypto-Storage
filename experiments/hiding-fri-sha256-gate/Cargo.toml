@@ -61,7 +61,7 @@ sha2 = { version = "=0.10.9", features = ["compress"] }
 
 [dev-dependencies]
 bfv-mul-relin-proof = { path = "../bfv-mul-relin-proof" }
-bfv-complete-relinearization = { path = "../bfv-complete-relinearization" }
+bfv-relinearization-key-source = { path = "../../crates/bfv-relinearization-key-source" }
 bfv-ntt-witness-proof = { path = "../bfv-ntt-witness-proof" }
 bfv-ntt-circuit = { path = "../../crates/bfv-ntt-circuit" }
 bfv-fixed-geometry = { path = "../../crates/bfv-fixed-geometry" }

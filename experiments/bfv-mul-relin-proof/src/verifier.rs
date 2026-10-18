@@ -4,7 +4,7 @@ use crate::{
     Error, Expected, GraphClaims, InputEvidence, MAX_ATTEMPTS, MAX_PROOF_BYTES, MAX_SESSION_BYTES,
     NODES, NodeOutput, PROOF_RECORDS, PreparedGraph, RECORD_HEADER, Result,
 };
-use bfv_complete_relinearization::PreparedKey;
+use bfv_relinearization_key_source::PreparedKey;
 pub(crate) fn packet_node(ordinal: usize) -> Option<usize> {
     if ordinal == 0 {
         return Some(NODES);
@@ -91,7 +91,7 @@ impl<'a> Verifier<'a> {
         if self.graph.is_some() {
             return Err(Error::Stage);
         }
-        let claims = GraphClaims::decode(bytes)?;
+        let claims = GraphClaims::decode(crate::profile_digest(), bytes)?;
         let prepared = PreparedGraph::prepare(self.expected, self.key, claims)?;
         self.graph = Some(prepared);
         Ok(())
@@ -128,7 +128,7 @@ impl<'a> Verifier<'a> {
             let r = checked.security_report();
             (r.whole_security_bits, !r.unassessed_components.is_empty())
         } else {
-            match (&graph.requests[node], &graph.claims.nodes[node]) {
+            match (&graph.requests[node], &graph.claims.nodes()[node]) {
                 (NodeRequest::Ntt(r), NodeOutput::Ntt(o)) => {
                     let c = bfv_ntt_witness_proof::verify(r, o, proof).map_err(|_| Error::Proof)?;
                     if !c.matches(r, o) {
