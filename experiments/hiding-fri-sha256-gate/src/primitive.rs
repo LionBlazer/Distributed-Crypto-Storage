@@ -37,6 +37,8 @@ pub(crate) enum Kind {
     RegistryLifecycle,
     RegistryLifecycleEncoding,
     RegistryWriteImage,
+    SourceCoefficientEncoding,
+    PrivateMaskCoefficientEncoding,
 }
 
 impl Kind {
@@ -70,6 +72,8 @@ impl Kind {
             Self::RegistryLifecycle => "registry-lifecycle",
             Self::RegistryLifecycleEncoding => "registry-lifecycle-encoding",
             Self::RegistryWriteImage => "registry-write-image",
+            Self::SourceCoefficientEncoding => "source-all-original-coefficient-encoding",
+            Self::PrivateMaskCoefficientEncoding => "private-mask-coefficient-encoding",
         }
     }
 }
@@ -104,6 +108,7 @@ pub(crate) enum PrimitiveAir {
     Lifecycle(Box<crate::opening::registry_lifecycle::air::LifecycleAir>),
     LifecycleEncoding(Box<crate::opening::registry_lifecycle::encoding::air::EncodingAir>),
     WriteImage(Box<registry200_proof::write::air::WriteAir>),
+    CoefficientEncoding(Box<registry200_proof::coefficient_encoding::air::EncodingAir>),
 }
 
 impl BaseAir<Val> for PrimitiveAir {
@@ -125,6 +130,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Lifecycle(air) => air.width(),
             Self::LifecycleEncoding(air) => air.width(),
             Self::WriteImage(air) => air.width(),
+            Self::CoefficientEncoding(air) => air.width(),
         }
     }
 
@@ -146,6 +152,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Lifecycle(air) => air.main_next_row_columns(),
             Self::LifecycleEncoding(air) => air.main_next_row_columns(),
             Self::WriteImage(air) => air.main_next_row_columns(),
+            Self::CoefficientEncoding(air) => air.main_next_row_columns(),
         }
     }
 
@@ -167,6 +174,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Lifecycle(air) => air.num_public_values(),
             Self::LifecycleEncoding(air) => air.num_public_values(),
             Self::WriteImage(air) => air.num_public_values(),
+            Self::CoefficientEncoding(air) => air.num_public_values(),
         }
     }
 
@@ -188,6 +196,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Lifecycle(air) => air.num_periodic_columns(),
             Self::LifecycleEncoding(air) => air.num_periodic_columns(),
             Self::WriteImage(air) => air.num_periodic_columns(),
+            Self::CoefficientEncoding(air) => air.num_periodic_columns(),
         }
     }
 
@@ -209,6 +218,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Lifecycle(air) => air.periodic_columns(),
             Self::LifecycleEncoding(air) => air.periodic_columns(),
             Self::WriteImage(air) => air.periodic_columns(),
+            Self::CoefficientEncoding(air) => air.periodic_columns(),
         }
     }
 
@@ -230,6 +240,7 @@ impl BaseAir<Val> for PrimitiveAir {
             Self::Lifecycle(air) => air.max_constraint_degree(),
             Self::LifecycleEncoding(air) => air.max_constraint_degree(),
             Self::WriteImage(air) => air.max_constraint_degree(),
+            Self::CoefficientEncoding(air) => air.max_constraint_degree(),
         }
     }
 }
@@ -253,6 +264,7 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for PrimitiveAir {
             Self::Lifecycle(air) => air.eval(builder),
             Self::LifecycleEncoding(air) => air.eval(builder),
             Self::WriteImage(air) => air.eval(builder),
+            Self::CoefficientEncoding(air) => air.eval(builder),
         }
     }
 }

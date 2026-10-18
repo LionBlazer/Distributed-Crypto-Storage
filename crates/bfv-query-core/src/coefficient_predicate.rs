@@ -44,6 +44,23 @@ pub struct PreparedPrivateCoefficientPredicate {
     pub pending: PendingPrivateCoefficientPredicate,
     pub request: Vec<u8>,
 }
+impl PreparedPrivateCoefficientPredicate {
+    /// Borrow the exact complete original and predicate ciphertexts in that order.
+    /// This checks the prepared envelope against its private pending binding, not
+    /// encryption origin, computation, completeness or SQL authority. No SDK math runs.
+    pub fn operand_ciphertexts(&self) -> Result<[&[u8]; 2]> {
+        let view = request_view(&self.request)?;
+        if !view.labels.context.valid()
+            || view.labels.keyset_id != self.pending.keyset_id
+            || view.labels.context != self.pending.context
+            || view.labels.query != self.pending.query
+            || <[u8; 32]>::from(Sha256::digest(&self.request)) != self.pending.request_digest
+        {
+            return Err(Error::BindingMismatch);
+        }
+        Ok([view.original, view.predicate])
+    }
+}
 /// Encrypted actual SDK output. It has no computation/completeness proof.
 pub struct EvaluatedPrivateCoefficientPredicate {
     pub output: Vec<u8>,

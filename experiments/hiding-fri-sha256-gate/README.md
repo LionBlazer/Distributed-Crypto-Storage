@@ -472,3 +472,16 @@ Selected88/Return168 profiles, policies and test bodies remain unchanged. New
 component caps, emitter fit and sampled process resources are recorded in
 [Owner formation validation](../../crates/bfv-ciphertext-formation/OWNER-FORMATION-VALIDATION.md);
 no live SQL, FHE program completeness or agreed freshness is claimed.
+
+## Private all-original coefficient encoding candidate
+
+`security|prove private-coefficient-encoding` exercises the distinct new
+[Source/private-mask coefficient roles](src/opening/coefficient_encoding/README.md).
+This experimental relation links genuine Canonical Source to all original onehot
+lanes and an independently blinded private Select-mask command to reversed query
+coefficients. Full8192 scaled W and exact Formation root ABI are constrained;
+no owner-side inclusion flags or public WHERE mask replace FHE computation.
+The pair contains Source+encoding, not Key/Formation/MulRelin proof or live SQL
+admission. The [executed validation](PRIVATE-COEFFICIENT-INPUT-VALIDATION.md) records
+238 selected runtime passes,22 doctests, two contracts, actual pair sizes/resources
+and the separate sixteen-proof linkage to both real Prepared FHE inputs.

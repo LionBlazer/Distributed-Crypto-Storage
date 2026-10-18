@@ -59,3 +59,17 @@ range and predicate equations; old profiles and operations remain unchanged.
 The control wire and application do not admit it or form a new encrypted Source
 or BFV result. Actual native analysis, proofs, framing and affected tests are
 recorded in the [WriteImage validation](../../experiments/hiding-fri-sha256-gate/REGISTRY200-WRITE-IMAGE-VALIDATION.md).
+
+## Non-admitting private coefficient encoding candidate
+
+The new [coefficient encoding module](src/coefficient_encoding/README.md) owns
+separate SourceAllOriginal and PrivateMask AIRs. Both retain full Source691,
+setup identity and allKey33 as public context while original rows, masks and
+salts stay private main witnesses. The new direct dependency
+[bfv-key-transform](../bfv-key-transform/README.md) owns that typed statement and
+the Formation-compatible vector root ABI. Key context is not Key proof authority.
+The [experimental consumer](../../experiments/hiding-fri-sha256-gate/src/opening/coefficient_encoding/README.md)
+owns private compilation/proving and Source-first pair verification. The
+[executed validation](../../experiments/hiding-fri-sha256-gate/PRIVATE-COEFFICIENT-INPUT-VALIDATION.md)
+records actual degree4, individual128-bit assessments, proofs and input linkage.
+These roles do not change Registry admission or any original profile/cap/operation.

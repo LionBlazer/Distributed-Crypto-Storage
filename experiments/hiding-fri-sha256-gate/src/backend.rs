@@ -57,6 +57,15 @@ pub(crate) fn profile_digest(kind: Kind) -> [u8; 32] {
             crate::opening::state::locking::profile(&mut hash);
             (crate::opening::locking::air::WIDTH, 2)
         }
+        Kind::SourceCoefficientEncoding | Kind::PrivateMaskCoefficientEncoding => {
+            let role = if kind == Kind::SourceCoefficientEncoding {
+                registry200_proof::coefficient_encoding::Role::SourceAllOriginal
+            } else {
+                registry200_proof::coefficient_encoding::Role::PrivateMask
+            };
+            registry200_proof::coefficient_encoding::profile(role, &mut hash);
+            (role.width(), 2)
+        }
         Kind::RegistryWriteImage => {
             registry200_proof::write::profile(&mut hash);
             (registry200_proof::write::layout::WIDTH, 2)

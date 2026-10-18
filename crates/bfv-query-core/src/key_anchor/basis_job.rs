@@ -1,7 +1,7 @@
 //! Actual Owner scope for one Key and five ordered Basis components; no SQL admission.
+use super::key_material::{self, KeyMaterial};
 use super::*;
 use bfv_basis_convolution::{CanonicalCiphertext, Expected as BasisExpected};
-use p3_field::PrimeField64;
 use zeroize::Zeroize;
 
 /// Local synchronous progress, never proof authority or network freshness.
@@ -52,60 +52,27 @@ impl<'owner> OwnerKeyAnchor<'owner> {
         request: [u8; 32],
         ciphertext: &[u8],
     ) -> Result<OwnerBasisJob<'job>> {
-        original.checked_parameters()?;
-        if original.geometry != self.owner.geometry
-            || keyset_id(original)? != self.owner.keyset_id
-            || self.public.full_setup_id != self.owner.keyset_id
-            || <[u8; 32]>::from(Sha256::digest(&original.parameters))
-                != self.public.parameter_digest
-        {
-            return Err(Error::BindingMismatch);
-        }
+        key_material::check_original(self, original)?;
         let ciphertext =
             CanonicalCiphertext::decode(&original.parameters, ciphertext, 0).map_err(backend)?;
-        let coefficients = secret_coefficients(self.owner)?;
-        let input = bfv_key_transform::input_commitment(
-            &self.public.descriptor(),
-            &coefficients,
-            *self.input_salt,
-        )
-        .map_err(backend)?;
-        if input != self.public.coefficients {
-            return Err(Error::BindingMismatch);
-        }
+        let KeyMaterial {
+            shat,
+            output_salt,
+            witness: key_witness,
+            statement: key_statement,
+        } = KeyMaterial::new(self)?;
         let mut salts = Zeroizing::new([[0u64; 4]; 6]);
-        for salt in salts.iter_mut() {
+        salts[0] = *output_salt;
+        for salt in &mut salts[1..] {
             *salt = bfv_key_transform::random_salt().map_err(backend)?;
         }
-        // One native Shat derivation outside the actual Key trace (whose NTT steps remain real).
-        let signed: Vec<_> = coefficients
-            .iter()
-            .copied()
-            .map(bfv_key_transform::signed)
-            .collect();
-        let evaluations = bfv_key_transform::circuit::oracle(&signed);
-        drop(signed);
-        let shat: Zeroizing<Vec<u64>> =
-            Zeroizing::new(evaluations.iter().map(|v| v.as_canonical_u64()).collect());
-        let mut key_statement = bfv_key_transform::Statement {
-            expected: self.public.expected(),
-            transformed: [bfv_hiding_stark::Val::ZERO; 4],
-        };
-        key_statement.transformed = bfv_key_transform::circuit::digest(
-            key_statement.contexts()[1],
-            salts[0].map(bfv_hiding_stark::Val::from_u64),
-            &evaluations,
-        );
-        drop(evaluations);
-        let key_witness =
-            ProverWitness::new(coefficients, *self.input_salt, salts[0]).map_err(backend)?;
         Ok(OwnerBasisJob {
             anchor: self,
             ciphertext,
             request,
             shat,
             salts,
-            key_witness: Some(key_witness),
+            key_witness,
             key_statement,
             key_evidence: None,
             stage: BasisJobStage::AwaitingKey,

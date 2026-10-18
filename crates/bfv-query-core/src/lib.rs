@@ -75,6 +75,7 @@ pub enum Error {
     BindingMismatch,
     BasisJobStage,
     FormationJobStage,
+    TwoOperandStage,
     AggregateBounds,
     UpdateBounds,
     SelectBounds,
@@ -919,3 +920,5 @@ pub use key_anchor::{BasisJobStage, OwnerBasisJob};
 
 #[cfg(feature = "formation-proofs")]
 pub use key_anchor::{FormationJobStage, OwnerFormationJob};
+#[cfg(feature = "formation-proofs")]
+pub use key_anchor::{Operand, OperandInput, OwnerTwoOperandScope, TwoOperandStage};

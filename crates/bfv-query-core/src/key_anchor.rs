@@ -161,7 +161,14 @@ mod tests;
 #[cfg(feature = "basis-proofs")]
 mod basis_job;
 #[cfg(feature = "basis-proofs")]
+mod key_material;
+#[cfg(feature = "basis-proofs")]
 pub use basis_job::{BasisJobStage, OwnerBasisJob};
 
 #[cfg(feature = "formation-proofs")]
 pub use basis_job::{FormationJobStage, OwnerFormationJob};
+
+#[cfg(feature = "formation-proofs")]
+mod two_operand_job;
+#[cfg(feature = "formation-proofs")]
+pub use two_operand_job::{Operand, OperandInput, OwnerTwoOperandScope, TwoOperandStage};

@@ -1,0 +1,123 @@
+//! Non-admitting Source/private-query coefficient evidence; no SQL execution or network role.
+mod compiler;
+mod fixture;
+mod frame;
+#[cfg(test)]
+mod input_formation;
+#[cfg(test)]
+mod tests;
+mod trace;
+use crate::{
+    backend::{Backend, Config, Error},
+    primitive::{Kind, PrimitiveAir, PublicStatement},
+};
+use p3_matrix::dense::RowMajorMatrix;
+use p3_uni_stark::Proof;
+use registry200_proof::coefficient_encoding::statement::{Expected, Statement};
+use registry200_proof::coefficient_encoding::{Role, air::EncodingAir};
+impl PublicStatement for Statement {
+    fn kind(&self) -> Kind {
+        match self.expected.role() {
+            Role::SourceAllOriginal => Kind::SourceCoefficientEncoding,
+            Role::PrivateMask => Kind::PrivateMaskCoefficientEncoding,
+        }
+    }
+    fn air(&self) -> PrimitiveAir {
+        PrimitiveAir::CoefficientEncoding(Box::new(EncodingAir::new(self)))
+    }
+    fn public_values(&self) -> Vec<crate::backend::Val> {
+        self.values()
+    }
+}
+/// The Source proof is real and mandatory; the Key33 DTO is only independently pinned context.
+fn prove_child_with_factory(
+    e: &Expected,
+    s: &Statement,
+    source: Option<&Proof<Config>>,
+    factory: impl FnOnce() -> Result<RowMajorMatrix<crate::backend::Val>, Error>,
+) -> Result<Proof<Config>, Error> {
+    s.require_expected(e)?;
+    Backend::new(e.source_claim())?.verify(e.source_claim(), source.ok_or(Error::Verification)?)?;
+    let backend = Backend::new(s)?;
+    let proof = backend.prove_with_trace(s, factory)?;
+    backend.verify(s, &proof)?;
+    Ok(proof)
+}
+pub(crate) fn gate(mode: &str) -> Result<(), Error> {
+    use std::time::Instant;
+    if mode == "security" {
+        let f = fixture::shape()?;
+        crate::security(&f.source_statement, "public-shape-no-admission")?;
+        crate::security(
+            &Statement {
+                expected: f.source.clone(),
+                encoded: [crate::backend::Val::default(); 4],
+            },
+            "public-shape-no-admission",
+        )?;
+        return crate::security(
+            &Statement {
+                expected: f.query.clone(),
+                encoded: [crate::backend::Val::default(); 4],
+            },
+            "public-shape-no-admission",
+        );
+    }
+    if mode != "prove" {
+        return Err(Error::Shape);
+    }
+    let total = Instant::now();
+    let f = fixture::genuine()?;
+    let setup_ms = total.elapsed().as_secs_f64() * 1000.;
+    let started = Instant::now();
+    let source_proof = {
+        let b = Backend::new(&f.source_statement)?;
+        let p = b.prove_with_trace(&f.source_statement, || {
+            f.source_witness.trace(&f.source_statement)
+        })?;
+        b.verify(&f.source_statement, &p)?;
+        p
+    };
+    let source_ms = started.elapsed().as_secs_f64() * 1000.;
+    let source_bytes =
+        frame::source_bytes(&f.source_statement, &source_proof).map_err(|_| Error::Shape)?;
+    let mut sizes = [0; 2];
+    let mut prove_ms = [0.; 2];
+    let mut verify_ms = [0.; 2];
+    for (i, (e, w)) in [
+        (&f.source, &f.source_encoding),
+        (&f.query, &f.query_encoding),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let started = Instant::now();
+        let s = w.statement(e);
+        let child = prove_child_with_factory(e, &s, Some(&source_proof), || w.trace(&s))?;
+        let bytes =
+            frame::encode_with_source(e, &s, &source_bytes, &child).map_err(|_| Error::Shape)?;
+        drop(child);
+        prove_ms[i] = started.elapsed().as_secs_f64() * 1000.;
+        sizes[i] = bytes.len();
+        let started = Instant::now();
+        let decoded = frame::decode_and_verify(e, &bytes).map_err(|_| Error::Verification)?;
+        require_complete(&s, &decoded)?;
+        let _opening = w.formation_opening(&decoded)?;
+        verify_ms[i] = started.elapsed().as_secs_f64() * 1000.;
+    }
+    drop(source_proof);
+    drop(source_bytes);
+    drop(f);
+    println!(
+        "{}",
+        serde_json::json!({"stage":"verified_private_coefficient_encodings","source_width":Role::SourceAllOriginal.width(),"query_width":Role::PrivateMask.width(),"source_pv":752,"query_pv":772,"setup_and_key_ms":setup_ms,"source_prove_verify_ms":source_ms,"child_prove_encode_ms":prove_ms,"fresh_decode_verify_and_opening_ms":verify_ms,"pair_frame_bytes":sizes,"generation_through_drop_ms":total.elapsed().as_secs_f64()*1000.,"sql_grant":false,"formation_proven":false,"key_proof_in_pair":false,"composed_128_claim":false})
+    );
+    Ok(())
+}
+fn require_complete(a: &Statement, b: &Statement) -> Result<(), Error> {
+    a.require_expected(&b.expected)?;
+    if a.values() != b.values() {
+        return Err(Error::Shape);
+    }
+    Ok(())
+}

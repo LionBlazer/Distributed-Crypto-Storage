@@ -3,6 +3,7 @@
 //! and salted commitment links are constrained inside one hiding relation.
 pub(crate) use registry200_proof::source::air;
 pub(crate) mod basis_convolution;
+pub(crate) mod coefficient_encoding;
 mod source_adapter;
 pub(crate) use registry200_proof::source::canonical;
 use registry200_proof::source::layout;

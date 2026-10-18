@@ -12,6 +12,20 @@ pub struct EncodedOpening {
     pub(crate) commitment: EncodedCommitment,
 }
 impl EncodedOpening {
+    /// Public mathematical commitment only; this exposes neither W nor its salt
+    /// and establishes no producer, Source or SQL authority.
+    ///
+    /// ```compile_fail
+    /// use bfv_ciphertext_formation::EncodedOpening;
+    /// fn forbidden(opening: EncodedOpening) { let _ = opening.w; }
+    /// ```
+    /// ```compile_fail
+    /// use bfv_ciphertext_formation::EncodedOpening;
+    /// fn forbidden(opening: EncodedOpening) { let _ = opening.salt; }
+    /// ```
+    pub fn commitment(&self) -> &EncodedCommitment {
+        &self.commitment
+    }
     pub fn new(
         w: Zeroizing<Vec<u64>>,
         salt: [u64; 4],

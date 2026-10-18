@@ -1,6 +1,7 @@
 //! Bounded cryptographic Registry200 evidence. Application admission is separate.
 #![forbid(unsafe_code)]
 pub mod admission;
+pub mod coefficient_encoding;
 pub mod lifecycle;
 pub mod source;
 pub mod wire;

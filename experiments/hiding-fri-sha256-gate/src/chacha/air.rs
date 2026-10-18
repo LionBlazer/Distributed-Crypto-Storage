@@ -175,6 +175,8 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for ChaChaAir {
             | Kind::RegistryLifecycle
             | Kind::RegistryLifecycleEncoding
             | Kind::RegistryWriteImage
+            | Kind::SourceCoefficientEncoding
+            | Kind::PrivateMaskCoefficientEncoding
             | Kind::RegistryBootstrap => {
                 unreachable!("separate typed SHA AIR")
             }

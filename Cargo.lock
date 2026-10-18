@@ -4030,6 +4030,7 @@ name = "registry200-proof"
 version = "0.1.0"
 dependencies = [
  "bfv-hiding-stark",
+ "bfv-key-transform",
  "compact-store",
  "p3-air",
  "p3-field",

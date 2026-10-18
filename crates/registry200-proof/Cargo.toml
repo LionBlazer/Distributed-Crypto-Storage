@@ -6,6 +6,7 @@ rust-version = "1.99"
 publish = false
 
 [dependencies]
+bfv-key-transform = { path = "../bfv-key-transform" }
 bfv-hiding-stark = { path = "../bfv-hiding-stark" }
 compact-store = { path = "../compact-store" }
 version-journal = { path = "../version-journal" }

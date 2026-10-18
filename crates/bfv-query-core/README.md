@@ -383,7 +383,24 @@ Completion returns UnverifiedPrivateCoefficientPredicate, with no Source,
 computation/completeness, freshness or SQL admission. The existing fixed-geometry
 and ciphertext-wire dependencies own constants and borrowed canonical preflight;
 no public mask or plaintext SQL hash, new proof/profile, peer role or dependency
-is introduced. Full Source/private-query encoding+Formation and linked MulRelin
-proof remain explicit blockers. The [executed validation](PRIVATE-COEFFICIENT-VALIDATION.md)
+is introduced. That stage has no input provenance proof; the separate experiment
+below now links those inputs. Complete output MulRelin and live integration remain
+open. The [executed validation](PRIVATE-COEFFICIENT-VALIDATION.md)
 records all eight new actual FHE tests within 70 Core tests, affected-consumer
 regressions and the limits of the measurements. It does not grant SQL authority.
+
+## Shared Key opening for two operands
+
+The existing `formation-proofs` feature adds the opaque
+[two-operand Owner scope](src/key_anchor/two_operand_job/README.md). It proves one
+Key followed by two ordered Basis5 + Formation chains, keeping the same private
+Shat/CsHat and binding each complete original ciphertext and public encoding
+commitment independently. `PreparedPrivateCoefficientPredicate::operand_ciphertexts`
+borrows the exact existing request operands after pending digest/label checks;
+the scope never encrypts a substitute input. Input0/Input1 are generic local
+positions, not SQL/Registry authority. Complete clears explicit private material
+and retains one borrowable public Key frame; terminal cancel clears it too.
+The [executed input validation](../../experiments/hiding-fri-sha256-gate/PRIVATE-COEFFICIENT-INPUT-VALIDATION.md)
+covers the actual13-component scope, native oracles, lifetime gates and a separate
+Source/hidden-query sixteen-proof chain. No aggregate wire, raised caps or SQL
+admission is introduced; old single-job APIs remain separately tested.

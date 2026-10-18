@@ -78,6 +78,63 @@ fn forged_response(wire: &[u8], product: &[u8]) -> Vec<u8> {
 }
 
 #[test]
+fn borrowed_operands_are_exact_prepared_bytes_and_mutated_envelopes_are_rejected() {
+    let (owner, evaluator) = setup();
+    let original = owner
+        .encrypt_original_coefficient_rows_for_experiment(&rows())
+        .unwrap();
+    let mut prepared = owner
+        .prepare_private_coefficient_predicate_for_experiment(
+            context(),
+            [0x79; 32],
+            &original,
+            &mask([0, 128, 255]),
+        )
+        .unwrap();
+    let view = request_view(&prepared.request).unwrap();
+    let operands = prepared.operand_ciphertexts().unwrap();
+    assert_eq!(operands, [view.original, view.predicate]);
+    assert_eq!(operands[0], original.as_slice());
+    assert_eq!(operands[0].as_ptr(), view.original.as_ptr());
+    assert_eq!(operands[1].as_ptr(), view.predicate.as_ptr());
+    // The same request still drives actual FHE and its original pending completion.
+    let evaluated = evaluator
+        .evaluate_private_coefficient_predicate_for_experiment(&prepared.request)
+        .unwrap();
+    let original_request = prepared.request.clone();
+    for at in [
+        0,
+        10,
+        16,
+        48,
+        80,
+        96,
+        208,
+        320,
+        324,
+        REQUEST_HEADER,
+        original_request.len() - 1,
+    ] {
+        prepared.request[at] ^= 1;
+        assert!(
+            prepared.operand_ciphertexts().is_err(),
+            "mutated request byte {at}"
+        );
+        prepared.request.copy_from_slice(&original_request);
+    }
+    prepared.request.push(0);
+    assert!(prepared.operand_ciphertexts().is_err());
+    prepared.request.pop();
+    let answer = owner
+        .decrypt_private_coefficient_predicate_unverified_for_experiment(
+            prepared.pending,
+            &evaluated.output,
+        )
+        .unwrap();
+    assert_eq!(answer.rows, expected(&rows(), &mask([0, 128, 255])));
+}
+
+#[test]
 fn all_four_original_ordinals_come_from_one_actual_private_fhe_product() {
     let full = Instant::now();
     let generation = Instant::now();
