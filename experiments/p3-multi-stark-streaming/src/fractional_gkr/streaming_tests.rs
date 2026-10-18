@@ -330,3 +330,132 @@ fn unrepresentable_stream_shape_rejects_before_reading_witness_or_changing_trans
         );
     }
 }
+
+#[test]
+fn recomputed_prefix_folds_match_dense_layers_and_quadratic_rounds_at_every_index() {
+    let nonbase = EF::from_basis_coefficients_fn(|i| if i == 1 { F::ONE } else { F::ZERO });
+    let challenges = [EF::from_u8(3) + nonbase, EF::from_u8(5) + nonbase.double()];
+    let lambda = EF::from_u8(7) + nonbase;
+    for variables in 2..=9 {
+        let (n, d) = balanced(variables);
+        let denominator = PolyMaybePacked::Scalar(d.clone());
+        let source = Tables(Fraction {
+            n: LeafNumerator::Base(&n),
+            d: &denominator,
+        });
+        let half = n.num_evals() / 2;
+        for depth in 0..=variables - 2 {
+            // Dense old kernels are the independent reference for both rational
+            // prefix reduction and fixing variables inside each of its two halves.
+            let mut dense = SplitFraction {
+                n0: Poly::new(
+                    n.as_slice()[..half]
+                        .iter()
+                        .copied()
+                        .map(EF::from)
+                        .collect::<Vec<_>>(),
+                ),
+                n1: Poly::new(
+                    n.as_slice()[half..]
+                        .iter()
+                        .copied()
+                        .map(EF::from)
+                        .collect::<Vec<_>>(),
+                ),
+                d0: Poly::new(d.as_slice()[..half].to_vec()),
+                d1: Poly::new(d.as_slice()[half..].to_vec()),
+            };
+            for _ in 0..depth {
+                dense = dense.reduce();
+            }
+            let maximum = 2usize.min(variables - depth - 1);
+            for folds in 0..=maximum {
+                if folds != 0 {
+                    let r = challenges[folds - 1];
+                    dense.n0.fix_prefix_var_mut(r);
+                    dense.n1.fix_prefix_var_mut(r);
+                    dense.d0.fix_prefix_var_mut(r);
+                    dense.d1.fix_prefix_var_mut(r);
+                }
+                let expected = dense
+                    .n0
+                    .as_slice()
+                    .iter()
+                    .copied()
+                    .zip(dense.d0.as_slice().iter().copied())
+                    .chain(
+                        dense
+                            .n1
+                            .as_slice()
+                            .iter()
+                            .copied()
+                            .zip(dense.d1.as_slice().iter().copied()),
+                    );
+                for (index, value) in expected.enumerate() {
+                    assert_eq!(
+                        folded(&source, depth, &challenges[..folds], index),
+                        value,
+                        "variables {variables}, depth {depth}, folds {folds}, index {index}"
+                    );
+                }
+                let remaining = variables - depth - folds;
+                if remaining > 1 {
+                    let point = Point::new(
+                        (0..remaining - 1)
+                            .map(|i| EF::from_usize(i + 11) + nonbase)
+                            .collect(),
+                    );
+                    let fraction = SplitFractionMaybePacked::<F, EF>::Scalar(SplitFraction {
+                        n0: dense.n0.clone(),
+                        d0: dense.d0.clone(),
+                        n1: dense.n1.clone(),
+                        d1: dense.d1.clone(),
+                    });
+                    let reference = Layer::new(fraction, &point).round_polys(lambda);
+                    assert_eq!(
+                        streamed_round(
+                            &source,
+                            depth,
+                            &challenges[..folds],
+                            point.as_slice(),
+                            lambda
+                        ),
+                        reference,
+                        "quadratic variables {variables}, depth {depth}, folds {folds}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn double_streamed_rounds_preserve_complete_transcripts_at_tiny_and_packed_boundaries() {
+    // Materialization now starts after two input folds and one reduced-layer fold.
+    // Select the constant cases and both sides of the actual target's SIMD boundary.
+    let lanes = log2_strict_usize(<F as Field>::Packing::WIDTH);
+    let mut cases = Vec::from([2, 3, lanes + 2, lanes + 3, lanes + 4]);
+    cases.sort_unstable();
+    cases.dedup();
+    for variables in cases {
+        let (n, d) = balanced(variables);
+        let scalar = PolyMaybePacked::Scalar(d.clone());
+        agreement(
+            Fraction {
+                n: LeafNumerator::Base(&n),
+                d: &scalar,
+            },
+            challenger(),
+        );
+        if variables >= lanes {
+            let packed = PolyMaybePacked::<F, EF>::Packed(d.pack::<F, EF>());
+            agreement(
+                Fraction {
+                    n: LeafNumerator::Base(&n),
+                    d: &packed,
+                },
+                challenger(),
+            );
+        }
+    }
+}

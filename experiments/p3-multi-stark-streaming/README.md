@@ -23,7 +23,7 @@ dependencies and lock are unchanged; this package is not a default core dependen
 | --- | --- |
 | [Lookup plan/reduction](src/lookup/mod.rs) | Unchanged AIR-derived bus/contribution order, multiplicity bound and public prove dispatch |
 | [Bounded leaf source](src/fractional_gkr/materialize/streaming.rs) | Reuse original symbolic row evaluation over the SAME committed main/preprocessed table views |
-| [Streamed GKR](src/fractional_gkr/streaming.rs) | Root prepass, one requested reduced layer, direct first leaf fold; original round kernels |
+| [Streamed GKR](src/fractional_gkr/streaming.rs) | Root prepass, recomputed prefix rounds and direct folded-layer allocation; original round kernels |
 | [AIR-link shares](src/lookup/streaming.rs) | Recompute private per-AIR shares from those same leaves after theta |
 | p3-air/lookup/field | Existing symbolic expressions, finite-field and counted lookup semantics |
 | p3-multilinear-util/sumcheck | Existing scalar/packed polynomials, layout and equality/folding kernels |
@@ -48,13 +48,16 @@ first/last selectors and clamped final next row. The unused tail is exactly0/1.
 Request indexes and representable allocation dimensions are checked before row
 access. This is shape validation, not a new global RAM or CPU quota.
 
-A root prepass reduces leaves by the SAME prefix-bit pairing. For each subsequent
-root-to-input bracket, the prover regenerates only that current four-array layer;
-its consumption drops those arrays before the next layer. Packed arrays are filled
-directly without a full scalar clone. The first input round streams the leaves;
-its equality vector is dropped before the folded arrays are allocated. Private
-per-AIR link shares are regenerated after theta using split equality factors,
-not rematerialized leaves. No witness data is spooled to disk.
+A root prepass reduces leaves by the SAME prefix-bit pairing. The first round of
+each reduced layer and the first two input rounds stream recomputed fractions.
+Already drawn challenges fix the same prefix variables inside both rational
+halves. Only the remaining current layer becomes four arrays; its consumption
+drops them before the next layer. Packed arrays are filled directly without a
+full scalar clone. Each streamed round's equality vector is dropped before these
+folded arrays are allocated. Tiny layers already reduced to constants close
+directly without constructing an empty-point Layer. Private per-AIR link shares
+are regenerated after theta using split equality factors, not rematerialized
+leaves. No witness data is spooled to disk.
 
 The complete original statement/commitments still precede alpha/beta. Root
 numerator/denominator checks, lambda, round polynomials, challenges, closing
@@ -69,22 +72,31 @@ query proof.
 
 For Goldilocks/EF5 and a padded lookup cube N=2^24, the original dense leaves cost
 48N bytes and all reduced layers80N-160 bytes:2,147,483,488B before equality,
-trace/PCS data and allocator overhead. The new largest current layer has four
-quarter-length EF arrays:40N=671,088,640B. Its equality suffix costs at most
-5N=83,886,080B. The separately lived first input equality costs10N bytes and is
-dropped before that layer. Thus the principal GKR arrays have a provisional
-45N=754,974,720B bound, plus bounded packing scratch, plan/row metadata and
-O(log(N)^2) proof messages. Vec truncation is not counted as releasing capacity.
+trace/PCS data and allocator overhead. After two streamed input rounds, the four
+current arrays have at most N/8 extension elements each:20N bytes. The largest
+reduced layer reaches the same size after its first streamed round. The remaining
+equality suffix costs at most2.5N bytes. The first and second input-round equality
+arrays cost10N and5N bytes respectively and die before fraction materialization.
+Thus the principal GKR arrays have a provisional22.5N bound:377,487,360B at2^24
+or754,974,720B at2^25, plus bounded packing scratch, plan/row metadata and
+O(log(N)^2) proof messages. Tiny constant arrays have fixed additional storage;
+Vec truncation is not counted as releasing capacity.
 
 This is an ARRAY calculation, not a whole-process RSS/1-2GiB PASS. Committed trace,
 preprocessing, WHIR/PCS state, keys and allocator behavior remain resident outside
-it. Regenerating layers adds prover work, approximately one leaf pass per layer;
-actual batch4 time and complete-process memory still require Root measurement.
+it. Streaming rounds adds further prover recomputation. Actual batch2/4/8 time,
+complete-process peak memory and proof parity still require Root measurement.
 No proof cap, security floor or composition assumption is weakened to achieve fit.
 
-The [native validation](VALIDATION.md) passed513 dense and514 streamed runtime
-cases:1027 invocations and514 distinct cases, including all11 added cases.
-Tests compare dense/streamed proof bytes, openings and final challenges for tiny,
+The [current native validation](STREAMED-ROUNDS-VALIDATION.md) passed515 dense and
+516 streamed runtime cases:1031 invocations and516 distinct cases. All existing
+test bodies are retained unchanged. Two appended tests compare every recomputed
+reduced/folded value and quadratic round with the original dense kernels, and
+complete proof/challenger bytes at tiny and actual SIMD boundaries. The
+[earlier validation](VALIDATION.md) remains the historical record for the
+previous one-input-round implementation.
+
+Existing tests compare dense/streamed proof bytes, openings and final challenges for tiny,
 scalar, packed, base and genuinely extension-valued numerators, including binary
 interpolation nodes and actual Goldilocks/EF5. Matched fraction pairs are permuted
 so cancellation occurs only at the full root; direct rational subtree sums assert

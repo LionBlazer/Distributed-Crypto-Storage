@@ -74,22 +74,50 @@ fn split_from_fn<F: Field, EF: ExtensionField<F>>(
     }
 }
 
-/// First leaf-layer round without retaining its input. This equality vector is
-/// dropped before the four folded extension arrays are allocated.
-fn leaf_round<EF: Field>(
+/// Read a reduced layer after already sampled prefix folds, leaving the outer
+/// rational-pair branch unfixed. Each fold removes the next bit inside both halves.
+fn folded<EF: Field>(
     source: &impl FractionSource<EF>,
-    point: &Point<EF>,
+    depth: usize,
+    challenges: &[EF],
+    index: usize,
+) -> (EF, EF) {
+    if let Some((&challenge, previous)) = challenges.split_last() {
+        let variables = source.num_variables() - depth - previous.len();
+        let quarter = 1usize << (variables - 2);
+        let base = if index < quarter {
+            index
+        } else {
+            index + quarter
+        };
+        let (n0, d0) = folded(source, depth, previous, base);
+        let (n1, d1) = folded(source, depth, previous, base + quarter);
+        (n0 + challenge * (n1 - n0), d0 + challenge * (d1 - d0))
+    } else {
+        reduced(source, depth, index)
+    }
+}
+
+/// Equality-stripped quadratic round over a recomputed layer. Its equality array
+/// dies on return, before any current-layer fraction arrays are materialized.
+fn streamed_round<EF: Field>(
+    source: &impl FractionSource<EF>,
+    depth: usize,
+    challenges: &[EF],
+    point: &[EF],
     lambda: EF,
 ) -> [EF; 2] {
-    let quarter = 1usize << (source.num_variables() - 2);
-    let eq = Poly::new_from_point(&point.as_slice()[1..], EF::ONE);
+    let variables = source.num_variables() - depth - challenges.len();
+    debug_assert_eq!(point.len(), variables - 1);
+    let quarter = 1usize << (variables - 2);
+    let eq = Poly::new_from_point(&point[1..], EF::ONE);
     let node = EF::interpolation_node(2);
     let mut out = [EF::ZERO; 2];
     for i in 0..quarter {
-        let (n00, d00) = source.leaf(i);
-        let (n01, d01) = source.leaf(i + quarter);
-        let (n10, d10) = source.leaf(i + 2 * quarter);
-        let (n11, d11) = source.leaf(i + 3 * quarter);
+        let (n00, d00) = folded(source, depth, challenges, i);
+        let (n01, d01) = folded(source, depth, challenges, i + quarter);
+        let (n10, d10) = folded(source, depth, challenges, i + 2 * quarter);
+        let (n11, d11) = folded(source, depth, challenges, i + 3 * quarter);
         let gate = |n0, n1, d0, d1| d1 * n0 + d0 * n1 + lambda * d0 * d1;
         out[0] += eq.as_slice()[i] * gate(n00, n10, d00, d10);
         out[1] += eq.as_slice()[i]
@@ -115,7 +143,7 @@ impl<EF: Field> FractionGkrProof<EF> {
         Challenger: FieldChallenger<F>,
     {
         let num_variables = source.num_variables();
-        let len = checked_len::<EF>(num_variables);
+        checked_len::<EF>(num_variables);
         let (n0, d0) = reduced(source, num_variables - 1, 0);
         let (n1, d1) = reduced(source, num_variables - 1, 1);
         let root_claims = SplitFraction { n0, d0, n1, d1 };
@@ -148,88 +176,53 @@ impl<EF: Field> FractionGkrProof<EF> {
             claims: root_claims,
         });
 
-        // Rebuild precisely the layer required by the next proof bracket. A consumed
-        // layer's owned arrays are dropped by into_claims before the next one is built.
-        for variables in 2..num_variables {
-            let half = 1usize << (variables - 1);
+        // Stream the first round of every reduced layer and the first two input
+        // rounds. Only the smaller, already folded current layer becomes arrays.
+        for variables in 2..=num_variables {
             let depth = num_variables - variables;
-            let fraction = split_from_fn::<F, EF>(half, |i| reduced(source, depth, i));
+            let streamed = (if depth == 0 { 2usize } else { 1 }).min(variables - 1);
             let lambda = transcript.begin_layer();
             let mut normalized_sum = numerator + lambda * denominator;
-            let mut layer = Layer::new(fraction, &point);
             let mut round_polys = Vec::with_capacity(point.num_variables());
             let mut round_point = Vec::with_capacity(point.num_variables());
-            for round in 0..point.num_variables() {
+            let mut equality_prefix = EF::ONE;
+            for round in 0..streamed {
                 let coordinate = point[round];
-                let quadratic_evals = layer.round_polys(lambda);
+                let quadratic_evals = streamed_round(
+                    source,
+                    depth,
+                    &round_point,
+                    &point.as_slice()[round..],
+                    lambda,
+                );
                 let (round_poly, q_sum) = restore_equality_factor(
                     quadratic_evals,
                     normalized_sum,
                     coordinate,
-                    layer.eq_prefix,
+                    equality_prefix,
                     &interpolator,
                 );
                 let challenge = transcript.round(&round_poly);
                 round_polys.push(round_poly);
                 round_point.push(challenge);
                 normalized_sum = interpolator.eval(&quadratic_evals, q_sum, challenge);
-                layer.fold(coordinate, challenge);
-            }
-            let claims = layer.into_claims();
-            debug_assert_eq!(normalized_sum, claims.gate(lambda));
-            let branch = transcript.end_layer(&claims);
-            numerator = claims.n0 + branch * (claims.n1 - claims.n0);
-            denominator = claims.d0 + branch * (claims.d1 - claims.d0);
-            round_point.insert(0, branch);
-            point = Point::new(round_point);
-            layer_proofs.push(FractionGkrLayerProof {
-                round_polys,
-                claims,
-            });
-        }
-
-        // A one-variable input has already closed at the root; there is no leaf sumcheck.
-        if num_variables > 1 {
-            let lambda = transcript.begin_layer();
-            let mut normalized_sum = numerator + lambda * denominator;
-            let mut round_polys = Vec::with_capacity(point.num_variables());
-            let mut round_point = Vec::with_capacity(point.num_variables());
-            let coordinate = point[0];
-            let quadratic_evals = leaf_round(source, &point, lambda);
-            let (round_poly, q_sum) = restore_equality_factor(
-                quadratic_evals,
-                normalized_sum,
-                coordinate,
-                EF::ONE,
-                &interpolator,
-            );
-            let challenge = transcript.round(&round_poly);
-            round_polys.push(round_poly);
-            round_point.push(challenge);
-            normalized_sum = interpolator.eval(&quadratic_evals, q_sum, challenge);
-            let quarter = len / 4;
-            let fraction = split_from_fn::<F, EF>(quarter, |i| {
-                let base = if i < quarter { i } else { i + quarter };
-                let (n0, d0) = source.leaf(base);
-                let (n1, d1) = source.leaf(base + quarter);
-                (n0 + challenge * (n1 - n0), d0 + challenge * (d1 - d0))
-            });
-            let claims = if point.num_variables() == 1 {
-                // The streamed first round already leaves four constants. Layer::new
-                // requires an unfixed coordinate, so close this tiny case directly.
-                let constants = fraction.unpack();
-                SplitFraction {
-                    n0: constants.n0.as_constant().unwrap(),
-                    d0: constants.d0.as_constant().unwrap(),
-                    n1: constants.n1.as_constant().unwrap(),
-                    d1: constants.d1.as_constant().unwrap(),
-                }
-            } else {
-                let suffix = point.get_subpoint_over_range(1..);
-                let mut layer = Layer::new(fraction, &suffix);
-                layer.eq_prefix =
+                equality_prefix *=
                     (EF::ONE - coordinate) + challenge * (coordinate.double() - EF::ONE);
-                for round in 1..point.num_variables() {
+            }
+
+            // The streamed round's equality storage has already been dropped.
+            // Four arrays of at most max(N/8, 1) extension elements are written directly.
+            let half = 1usize << (variables - streamed - 1);
+            let fraction = split_from_fn::<F, EF>(half, |i| folded(source, depth, &round_point, i));
+            let claims = if streamed == point.num_variables() {
+                // n2/n3 input and v2 reduced layers are four constants already.
+                // Layer::new needs a remaining coordinate; none exists here.
+                fraction.unpack().into_constants()
+            } else {
+                let suffix = point.get_subpoint_over_range(streamed..);
+                let mut layer = Layer::new(fraction, &suffix);
+                layer.eq_prefix = equality_prefix;
+                for round in streamed..point.num_variables() {
                     let coordinate = point[round];
                     let quadratic_evals = layer.round_polys(lambda);
                     let (round_poly, q_sum) = restore_equality_factor(
