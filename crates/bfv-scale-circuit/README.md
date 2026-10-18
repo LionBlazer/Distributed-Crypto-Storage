@@ -106,3 +106,16 @@ cargo test --release --locked -p bfv-scale-circuit --features plonky3
 A natural-order label is a caller contract, not a proof of NTT/program/source
 linkage. These stages alone establish no same-key authority, ciphertext-product
 pipeline, entropy, source/selection completeness, fresh agreement or live SQL.
+
+## Compact main-witness adapter
+
+The new optional `multistark` feature adds a distinct PV0 machine with 160
+range-checked main columns and only canonical input/output limbs in public
+preprocessing. Its private equation kernel is shared with the existing adapter;
+old profiles, frames and public-auxiliary semantics are preserved. See the
+[module contract](src/multistark/README.md) for trusted transcript binding,
+shared support ownership and exact layouts. The
+[executed validation](../../experiments/bfv-arithmetic-batch-proof/VALIDATION.md)
+records all four feature configurations and the complete arithmetic consumer's
+genuine positive/hostile proofs. The earlier validation statements above retain
+their original public-auxiliary adapter scope.

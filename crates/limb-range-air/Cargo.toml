@@ -1,0 +1,13 @@
+[package]
+name = "limb-range-air"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[dependencies]
+p3-air = "=0.8.0"
+p3-field = "=0.8.0"
+p3-goldilocks = "=0.8.0"
+p3-lookup = "=0.8.0"
+p3-matrix = "=0.8.0"

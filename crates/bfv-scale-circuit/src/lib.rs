@@ -1,8 +1,12 @@
 //! Fixed full-degree public PowerBasis RNS scaling, never SQL/key/proof authority.
 #![forbid(unsafe_code)]
+#[cfg(any(feature = "plonky3", feature = "multistark"))]
+mod air_equation;
 mod codec;
 mod constants;
 mod math;
+#[cfg(feature = "multistark")]
+pub mod multistark;
 #[cfg(feature = "plonky3")]
 pub mod plonky3;
 #[cfg(test)]

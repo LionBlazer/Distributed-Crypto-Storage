@@ -247,13 +247,18 @@ pub struct Evaluation {
     pub output: Output,
     pub aux: Aux,
 }
+/// Exact public statement binding only, without an auxiliary certificate.
+pub(crate) fn check_output_binding(r: &Request, o: &Output) -> Result<()> {
+    if r.basis != o.basis || r.binding != o.binding || o.input_digest != digest(&r.encode()) {
+        return Err(Error::Binding);
+    }
+    Ok(())
+}
 /// Canonical range/binding checks only, never tensor multiplication or quotient evaluation.
 pub(crate) fn check_binding(r: &Request, o: &Output, a: &Aux) -> Result<()> {
-    if r.basis != o.basis
-        || r.basis != a.basis
-        || r.binding != o.binding
+    check_output_binding(r, o)?;
+    if r.basis != a.basis
         || r.binding != a.binding
-        || o.input_digest != digest(&r.encode())
         || a.input_digest != o.input_digest
         || a.output_digest != digest(&o.encode())
         || a.rows.len() != DEGREE

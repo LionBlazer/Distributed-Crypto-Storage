@@ -1,7 +1,11 @@
 //! Complete public NTT-domain BFV tensor arithmetic, never relinearization or SQL authority.
 #![forbid(unsafe_code)]
+#[cfg(any(feature = "plonky3", feature = "multistark"))]
+mod air_equation;
 mod codec;
 mod math;
+#[cfg(feature = "multistark")]
+pub mod multistark;
 #[cfg(feature = "plonky3")]
 pub mod plonky3;
 mod profile;

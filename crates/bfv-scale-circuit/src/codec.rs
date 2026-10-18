@@ -250,20 +250,25 @@ pub struct Evaluation {
     pub output: Output,
     pub aux: Aux,
 }
+/// Public statement checks only; no auxiliary or scaler arithmetic is needed.
+pub(crate) fn check_output_binding(r: &Request, o: &Output) -> Result<()> {
+    if r.role != o.role || r.binding != o.binding || o.input_digest != digest(&r.encode()) {
+        return Err(Error::Binding);
+    }
+    if r.role == Role::Extend5To10 && o.coefficients[..5 * DEGREE] != r.input {
+        return Err(Error::Binding);
+    }
+    Ok(())
+}
 /// Only exact identity/canonical-copy checks; never S/v/W/scaler/quotient evaluation.
 pub(crate) fn check_binding(r: &Request, o: &Output, a: &Aux) -> Result<()> {
-    if r.role != o.role
-        || r.role != a.role
-        || r.binding != o.binding
+    check_output_binding(r, o)?;
+    if r.role != a.role
         || r.binding != a.binding
-        || o.input_digest != digest(&r.encode())
         || a.input_digest != o.input_digest
         || a.output_digest != digest(&o.encode())
         || a.rows.len() != DEGREE
     {
-        return Err(Error::Binding);
-    }
-    if r.role == Role::Extend5To10 && o.coefficients[..5 * DEGREE] != r.input {
         return Err(Error::Binding);
     }
     for row in &a.rows {

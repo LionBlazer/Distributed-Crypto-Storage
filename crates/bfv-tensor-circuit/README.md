@@ -8,8 +8,10 @@ complete vectors. This is a tensor stage, not MulRelin or SQL acceptance.
 
 ## Module boundary
 
-The only direct project dependency is [bfv-fixed-geometry](../bfv-fixed-geometry/README.md),
-which owns the unchanged degree and ordered ten-modulus basis. This module owns a
+The default arithmetic dependency is [bfv-fixed-geometry](../bfv-fixed-geometry/README.md),
+which owns the unchanged degree and ordered ten-modulus basis. The optional
+`multistark` feature also uses [limb-range-air](../limb-range-air/README.md),
+which owns the fixed shared range supports and checked histogram accounting. This module owns a
 sealed basis index instead of depending on the separate NTT library merely for a
 type. `codec` owns bounded public frames; `profile` binds this distinct operation;
 `math` evaluates complete vectors and public auxiliaries. The optional `plonky3`
@@ -82,7 +84,7 @@ Clippy checks and explicit rustfmt checks pass. Reproduce from the repository ro
 
 ```sh
 cargo test --release --locked -p bfv-tensor-circuit --no-default-features -- --test-threads=1
-cargo test --release --locked -p bfv-tensor-circuit --all-features -- --test-threads=1
+cargo test --release --locked -p bfv-tensor-circuit --features plonky3 -- --test-threads=1
 ```
 
 These checks validate framing, public arithmetic and actual constraint rejection;
@@ -93,3 +95,16 @@ preprocessing and hostile proofs. Existing circuit profiles and proof caps are u
 This stage leaves extension, NTT provenance, inverse transform, downscale,
 relinearization/evaluation-key consistency, same-key authority, source and selection
 completeness, fresh agreed state, writer fences and live SQL guarantees unresolved.
+
+## Compact main-witness adapter
+
+The optional `multistark` feature adds a distinct PV0 machine with 54 main
+certificate limbs and mandatory fixed range lookups. Only complete canonical
+inputs/outputs enter its public preprocessing. The private integer kernel is
+shared with the existing adapter; old profiles, codecs and public-auxiliary
+semantics are preserved. The [module contract](src/multistark/README.md) documents
+trusted transcript/namespace binding and support sharing. The
+[executed validation](../../experiments/bfv-arithmetic-batch-proof/VALIDATION.md)
+records all four feature configurations, actual SDK oracles and genuine positive/
+hostile proofs for the complete arithmetic consumer. The earlier validation above
+retains its original public-auxiliary adapter scope.

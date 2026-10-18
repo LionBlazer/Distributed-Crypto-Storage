@@ -457,11 +457,13 @@ version = "0.1.0"
 dependencies = [
  "bfv-fixed-geometry",
  "ethnum",
+ "limb-range-air",
  "num-bigint 0.4.8",
  "num-traits",
  "p3-air",
  "p3-field",
  "p3-goldilocks",
+ "p3-lookup",
  "p3-matrix",
  "sha2",
 ]
@@ -471,9 +473,11 @@ name = "bfv-tensor-circuit"
 version = "0.1.0"
 dependencies = [
  "bfv-fixed-geometry",
+ "limb-range-air",
  "p3-air",
  "p3-field",
  "p3-goldilocks",
+ "p3-lookup",
  "p3-matrix",
  "sha2",
 ]
@@ -2354,6 +2358,17 @@ dependencies = [
  "libc",
  "plain",
  "redox_syscall 0.9.4",
+]
+
+[[package]]
+name = "limb-range-air"
+version = "0.1.0"
+dependencies = [
+ "p3-air",
+ "p3-field",
+ "p3-goldilocks",
+ "p3-lookup",
+ "p3-matrix",
 ]
 
 [[package]]
