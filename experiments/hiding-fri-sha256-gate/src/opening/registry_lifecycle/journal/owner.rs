@@ -318,6 +318,14 @@ impl Prepared<'_> {
         self,
         input: FormationEncodingRequest<'_>,
     ) -> Result<super::formation_scenario::EncodingProduct> {
+        self.prove_formation_encoding_with_state(input)
+            .map(|(product, _)| product)
+    }
+    /// Same genuine producer, with its owner-local next state retained by the journal owner.
+    pub(super) fn prove_formation_encoding_with_state(
+        self,
+        input: FormationEncodingRequest<'_>,
+    ) -> Result<(super::formation_scenario::EncodingProduct, PrivateState)> {
         use super::super::encoding;
         // Independently retained owner input BEFORE proof production, wire decode and Journal admission.
         let expected = self.expected.clone();
@@ -376,13 +384,17 @@ impl Prepared<'_> {
         } else {
             None
         };
-        Ok(super::formation_scenario::EncodingProduct {
-            statement,
-            frame,
-            opening,
-            coefficients,
-            #[cfg(test)]
-            alternate,
-        })
+        let next_private = produced.private;
+        Ok((
+            super::formation_scenario::EncodingProduct {
+                statement,
+                frame,
+                opening,
+                coefficients,
+                #[cfg(test)]
+                alternate,
+            },
+            next_private,
+        ))
     }
 }

@@ -1,6 +1,8 @@
 //! PUBLIC NONSECRET owner/client fixture. Keys never enter a peer argument.
 use super::*;
 use crate::opening::locking::{sql::CompiledLockPlan, statement::PlanOpening};
+#[cfg(test)]
+pub(super) use crate::opening::peer_process::PublicPeer;
 use crate::opening::{
     basis_convolution as basis, key_transform, local_formation, selection::encoding,
 };
@@ -151,7 +153,7 @@ pub(super) fn gate(peer_executable: &std::path::Path) -> Result<()> {
         .collect::<String>();
     let request_id = peer.last_request_id()?;
     let peer_pid = peer.pid();
-    let completion = peer.finish()?;
+    let completion = peer.finish().map_err(Error::from)?;
     println!(
         "{}",
         serde_json::json!({
@@ -165,127 +167,6 @@ pub(super) fn gate(peer_executable: &std::path::Path) -> Result<()> {
         })
     );
     Ok(())
-}
-
-/// Owned local TLS/custody fixture, NOT an independent OS process or consensus.
-#[cfg(test)]
-pub(super) struct PublicPeer {
-    server: peer_runtime::RunningServer,
-    pub(super) remote: RemotePeer,
-    pub(super) traces: std::sync::Arc<std::sync::Mutex<Vec<peer_runtime::Trace>>>,
-    // Drop AFTER the stopped server releases its Store directory lock on Windows.
-    _directory: OwnedDirectory,
-}
-pub(super) fn identity() -> peer_runtime::Identity {
-    use rcgen::{CertificateParams, ExtendedKeyUsagePurpose, KeyPair, KeyUsagePurpose};
-    let mut params = CertificateParams::new(vec!["dcs-peer".into()]).unwrap();
-    params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
-    params.extended_key_usages = vec![
-        ExtendedKeyUsagePurpose::ServerAuth,
-        ExtendedKeyUsagePurpose::ClientAuth,
-    ];
-    let key = KeyPair::generate().unwrap();
-    let certificate = params.self_signed(&key).unwrap();
-    peer_runtime::Identity {
-        certificate: certificate.der().to_vec(),
-        private_key_pkcs8: key.serialize_der(),
-    }
-}
-#[cfg(test)]
-impl PublicPeer {
-    pub(super) fn start(bundle: &peer_runtime::RawBundle) -> Result<Self> {
-        use std::sync::{Arc, Mutex};
-        let directory = OwnedDirectory::new()?;
-        let owner = identity();
-        let connector = peer_runtime::Connector::permissionless(&owner)?;
-        let server = peer_runtime::PeerServer::bind(
-            peer_runtime::Bootstrap {
-                identity: identity(),
-                authority: Vec::new(),
-                owner: owner.fingerprint(),
-                node_id: 1,
-                quota_bytes: 64 * 1024 * 1024,
-                listen: "127.0.0.1:0".parse().map_err(|_| Error::Binding)?,
-            },
-            &directory.path.join("peer"),
-        )?
-        .spawn()?;
-        let traces = Arc::new(Mutex::new(Vec::new()));
-        let observed = traces.clone();
-        let remote =
-            RemotePeer::new(server.endpoint.clone(), connector).with_trace(Arc::new(move |t| {
-                if let Ok(mut traces) = observed.lock() {
-                    traces.push(t);
-                }
-            }));
-        let peer = Self {
-            _directory: directory,
-            server,
-            remote,
-            traces,
-        };
-        let expected = *bundle
-            .target_version()
-            .map_err(|_| Error::Binding)?
-            .object();
-        match peer.remote.call(Request::Store(bundle.clone()))? {
-            Response::Stored(info) if info.id == expected => Ok(peer),
-            _ => Err(Error::UnexpectedReply),
-        }
-    }
-    pub(super) fn last_request_id(&self) -> Result<u64> {
-        self.traces
-            .lock()
-            .map_err(|_| Error::Binding)?
-            .last()
-            .map(|t| t.request_id)
-            .ok_or(Error::Binding)
-    }
-}
-#[cfg(test)]
-impl Drop for PublicPeer {
-    fn drop(&mut self) {
-        self.server.stop();
-    }
-}
-
-// Exclusive-create ownership is retained even if later TLS/setup construction
-// fails. Resolve and check the immediate absolute target before recursive cleanup.
-pub(super) struct OwnedDirectory {
-    path: std::path::PathBuf,
-    base: std::path::PathBuf,
-}
-impl Drop for OwnedDirectory {
-    fn drop(&mut self) {
-        if let Ok(resolved) = self.path.canonicalize()
-            && resolved == self.path
-            && resolved.parent() == Some(self.base.as_path())
-        {
-            let _ = std::fs::remove_dir_all(resolved);
-        }
-    }
-}
-#[cfg(test)]
-impl PublicPeer {
-    pub(super) fn corrupt_index_tail(&self, object: [u8; 32]) -> Result<()> {
-        use std::io::{Read, Seek, SeekFrom, Write};
-        let name = object
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>()
-            + ".object2";
-        let mut file = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(self._directory.path.join("peer").join(name))?;
-        file.seek(SeekFrom::End(-1))?;
-        let mut byte = [0];
-        file.read_exact(&mut byte)?;
-        file.seek(SeekFrom::End(-1))?;
-        file.write_all(&[byte[0] ^ 1])?;
-        file.sync_all()?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -377,30 +258,4 @@ pub(in crate::opening) fn form_returned_fixture(
         },
         client,
     ))
-}
-
-impl OwnedDirectory {
-    pub(super) fn new() -> Result<Self> {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../.local/certified-projection-job-fixtures");
-        std::fs::create_dir_all(&base)?;
-        let base = base.canonicalize()?;
-        let path = base.join(format!(
-            "{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_err(|_| Error::Binding)?
-                .as_nanos()
-        ));
-        std::fs::create_dir(&path)?;
-        Ok(Self {
-            path: path.canonicalize()?,
-            base,
-        })
-    }
-    pub(super) fn peer_path(&self) -> std::path::PathBuf {
-        self.path.join("peer")
-    }
 }

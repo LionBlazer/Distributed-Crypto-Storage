@@ -352,3 +352,22 @@ calls. No owner-private persistence/recovery is added. This mathematical input i
 not Source/SQL authority, and the feature does not enable network answer acceptance.
 The [executed validation](../bfv-ciphertext-formation/OWNER-FORMATION-VALIDATION.md)
 covers actual Owner formation, hostile components and sampled process resources.
+
+
+## Exact public projection completion
+
+`Owner::decrypt_public_select_unverified_for_experiment(request, response)` decodes
+an existing exact public-projection response using the original Owner. It checks
+full keyset/context/projection/geometry/operation and complete canonical ciphertext
+before actual SDK decryption, then returns all 8192 caller-owned SIMD slots. It
+creates no pending token, re-encrypts no fields and performs no proof, freshness,
+SQL or authorization check. Generic Core has no Journal or experiment dependency.
+
+The strict raw ciphertext boundary is owned by
+[bfv-ciphertext-wire](../bfv-ciphertext-wire/README.md), a direct dependency used by
+`checked_ciphertext` before SDK allocation. The completion codec and public encoder
+reuse its unchanged fixed ciphertext cap. Native/SDK scratch is not securely
+erased by this API; returned plaintext belongs to the client. The new owning codec
+example and composed peer job passed the owning checks; see
+[executed peer validation](../../experiments/hiding-fri-sha256-gate/src/opening/registry_lifecycle/formation/job/PEER-PROJECTION-VALIDATION.md).
+This does not grant proof, freshness or SQL authority to the completion method.

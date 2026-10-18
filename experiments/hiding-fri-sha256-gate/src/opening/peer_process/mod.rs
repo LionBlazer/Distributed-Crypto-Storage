@@ -1,8 +1,10 @@
 //! One explicitly named dcs-peer process, existing framed bootstrap and parent EOF lifetime.
-use super::{
-    Error, Result,
-    fixture::{OwnedDirectory, identity},
-};
+pub(in crate::opening) use directory::OwnedDirectory;
+pub(in crate::opening) use identity::identity;
+mod directory;
+mod identity;
+#[cfg(test)]
+mod testing;
 use peer_runtime::{
     Bootstrap, Connector, Endpoint, RawBundle, RemotePeer, Request, Response, Trace,
 };
@@ -14,10 +16,36 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
+#[cfg(test)]
+pub(in crate::opening) use testing::PublicPeer;
+#[derive(Debug)]
+pub(in crate::opening) enum Error {
+    Binding,
+    #[cfg(test)]
+    UnexpectedReply,
+    Io(io::Error),
+}
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Binding => f.write_str("Invalid experiment peer process binding"),
+            #[cfg(test)]
+            Self::UnexpectedReply => f.write_str("Unexpected experiment peer reply"),
+            Self::Io(e) => write!(f, "{e}"),
+        }
+    }
+}
+impl std::error::Error for Error {}
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self {
+        Self::Io(e)
+    }
+}
+pub(in crate::opening) type Result<T> = std::result::Result<T, Error>;
 const LOG_CAP: usize = 64 * 1024;
 const ENDPOINT_CAP: u64 = 4096;
 
-pub(super) fn checked_executable(path: &Path) -> Result<PathBuf> {
+pub(in crate::opening) fn checked_executable(path: &Path) -> Result<PathBuf> {
     if !path.is_absolute() || !path.is_file() {
         return Err(Error::Binding);
     }
@@ -52,10 +80,10 @@ struct OwnedChild {
     stdout: Option<JoinHandle<io::Result<Captured>>>,
     stderr: Option<JoinHandle<io::Result<Captured>>>,
 }
-pub(super) struct Completion {
-    pub(super) code: i32,
-    pub(super) stdout: String,
-    pub(super) stderr: String,
+pub(in crate::opening) struct Completion {
+    pub(in crate::opening) code: i32,
+    pub(in crate::opening) stdout: String,
+    pub(in crate::opening) stderr: String,
 }
 impl OwnedChild {
     fn stop(&mut self) -> io::Result<(ExitStatus, bool, Captured, Captured)> {
@@ -116,15 +144,15 @@ impl Drop for OwnedChild {
     }
 }
 /// Client process supervisor only; peer receives public/encrypted request bytes.
-pub(super) struct ProcessPeer {
+pub(in crate::opening) struct ProcessPeer {
     child: OwnedChild,
-    pub(super) remote: RemotePeer,
+    pub(in crate::opening) remote: RemotePeer,
     traces: Arc<Mutex<Vec<Trace>>>,
     // Last field drops after the child has released every file/Store lock.
     _directory: OwnedDirectory,
 }
 impl ProcessPeer {
-    pub(super) fn start(executable: &Path, bundle: &RawBundle) -> Result<Self> {
+    pub(in crate::opening) fn start(executable: &Path, bundle: &RawBundle) -> Result<Self> {
         let executable = checked_executable(executable)?;
         let directory = OwnedDirectory::new()?;
         let owner = identity();
@@ -229,10 +257,10 @@ impl ProcessPeer {
             Err(error) => Err(peer.child.failure(error)),
         }
     }
-    pub(super) fn pid(&self) -> u32 {
+    pub(in crate::opening) fn pid(&self) -> u32 {
         self.child.child.id()
     }
-    pub(super) fn last_request_id(&self) -> Result<u64> {
+    pub(in crate::opening) fn last_request_id(&self) -> Result<u64> {
         self.traces
             .lock()
             .map_err(|_| Error::Binding)?
@@ -240,12 +268,19 @@ impl ProcessPeer {
             .map(|row| row.request_id)
             .ok_or(Error::Binding)
     }
-    pub(super) fn finish(&mut self) -> Result<Completion> {
+    pub(in crate::opening) fn finish(&mut self) -> Result<Completion> {
         match self.remote.call(Request::Shutdown) {
             Ok(Response::Done) => {}
             Ok(_) => return Err(self.child.failure("Unexpected peer Shutdown reply")),
             Err(error) => return Err(self.child.failure(error)),
         }
+        self.wait_for_exit()
+    }
+    /// End the owned daemon through the existing sole-stdin EOF contract.
+    pub(in crate::opening) fn finish_on_eof(&mut self) -> Result<Completion> {
+        self.wait_for_exit()
+    }
+    fn wait_for_exit(&mut self) -> Result<Completion> {
         let (status, forced, out, err) = self.child.stop()?;
         if forced || !status.success() || out.total > LOG_CAP as u64 || err.total > LOG_CAP as u64 {
             return Err(Error::Io(io::Error::other(format!(

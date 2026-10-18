@@ -178,3 +178,13 @@ pub(crate) fn encoding_gate(mode: &str) -> Result<(), Error> {
 pub(crate) fn formation_gate(mode: &str) -> Result<(), Error> {
     formation::gate(mode)
 }
+
+pub(crate) fn peer_projection_gate(
+    mode: &str,
+    executable: &std::path::Path,
+) -> Result<(), crate::backend::Error> {
+    formation::job::gate(mode, executable).map_err(|error| {
+        eprintln!("Registry200 peer projection: {error}");
+        crate::backend::Error::Verification
+    })
+}

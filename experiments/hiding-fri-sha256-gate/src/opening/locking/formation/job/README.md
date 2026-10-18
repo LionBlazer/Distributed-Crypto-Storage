@@ -12,11 +12,12 @@ introduced.
   and `Prepared::finish`. `VerifiedEncryptedProjection` contains checked arithmetic,
   its exact canonical output and the restored encrypted response.
 - `fixture.rs` creates explicitly PUBLIC NONSECRET source, plan, control and BFV
-  inputs, keeps the client key in the Basis fixture capability and owns a temporary
-  ciphertext directory. A server-thread helper exists only under `cfg(test)` for
-  owning corruption tests. The key and witnesses are never peer-call arguments.
-- `process.rs` owns the explicitly named independent `dcs-peer` CLI child, existing
-  framed TLS bootstrap, bounded endpoint/log readers and shutdown/kill/join lifetime.
+  inputs and keeps the client key in the Basis fixture capability. The shared
+  peer lifecycle owns exclusive directories and its explicit `cfg(test)` TLS host
+  for owning corruption tests. The key and witnesses are never peer-call arguments.
+- [Shared peer lifecycle](../../../peer_process/README.md) owns the explicitly named
+  independent `dcs-peer` CLI child, existing bounded TLS bootstrap/readers and
+  Shutdown/EOF/kill/join lifetime. This adapter imports that single implementation.
 - `tests.rs` and the owning `state/locking/certified_job_tests.rs` own compiler provenance, prerequisite rejection, genuine foreign
   proof, complete arithmetic, real TLS and late physical-corruption cases.
 

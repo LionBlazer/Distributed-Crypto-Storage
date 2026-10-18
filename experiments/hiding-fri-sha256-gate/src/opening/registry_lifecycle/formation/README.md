@@ -67,3 +67,13 @@ integer attacks and canonical/nested/budget hostile frames. The
 [executed validation](../../../../../../crates/bfv-ciphertext-formation/OWNER-FORMATION-VALIDATION.md)
 records all 460 runtime scenarios, 15 compile-fail examples, real proof fit and
 sampled resources, with the remaining admission boundaries explicit.
+
+
+## Ciphertext-only public projection consumer
+
+The [Registry200 peer projection job](job/README.md) re-verifies this complete
+input, performs an existing actual peer public-polynomial FHE operation and checks
+its exact arithmetic proof. It preserves the original caller-owned Owner for
+explicitly unverified codec/decryption completion. This measured composition has
+[executed validation](job/PEER-PROJECTION-VALIDATION.md) and grants no live locking
+SQL or network finality.

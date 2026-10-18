@@ -72,6 +72,14 @@ impl PublicStatement for Statement {
 }
 
 impl Statement {
+    pub(in crate::opening::registry_lifecycle) fn projection_producer(
+        &self,
+    ) -> &lifecycle::Statement {
+        &self.expected.producer
+    }
+    pub(in crate::opening::registry_lifecycle) fn projection_identity(&self) -> ([u8; 32], u8) {
+        (self.expected.sql_identity, self.expected.projection)
+    }
     pub(in crate::opening) fn formation_expected(&self) -> &Expected {
         &self.expected
     }

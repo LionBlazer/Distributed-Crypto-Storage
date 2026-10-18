@@ -19,6 +19,7 @@ pub(crate) mod key_transform;
 pub(crate) mod locking;
 #[cfg(test)]
 mod packed_tests;
+pub(crate) mod peer_process;
 mod poseidon;
 mod proof_codec;
 mod proof_wire;

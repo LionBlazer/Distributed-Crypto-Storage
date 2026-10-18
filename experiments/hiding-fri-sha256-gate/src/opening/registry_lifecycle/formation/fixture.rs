@@ -81,7 +81,8 @@ pub(super) fn gate(mode: &str) -> Result<(), Error> {
     );
     Ok(())
 }
-/// Public-only product after all private Owner/handle/job material has been dropped.
+/// Public-only product, retaining no Owner, private handle, opening or job.
+/// The original caller may separately retain its Owner for eventual client decryption.
 pub(super) struct PublicProduct {
     pub expected: Expected,
     pub setup_bytes: Vec<u8>,
@@ -105,17 +106,31 @@ pub(super) fn produce_from_encoding(
     product: super::super::journal::FormationEncodingProduct,
     generation: Instant,
 ) -> Result<PublicProduct, Error> {
+    let (owner, setup) = Owner::generate(Geometry::Rows16).map_err(|_| Error::Shape)?;
+    let mut produced = produce_for_owner(&owner, &setup, product, generation)?;
+    drop(owner);
+    drop(setup);
+    // Preserve the existing standalone gate's complete private-owner lifetime.
+    produced.generation_ms = generation.elapsed().as_secs_f64() * 1000.0;
+    Ok(produced)
+}
+/// Same actual producer, borrowing an original caller-owned Owner. No key is returned.
+pub(super) fn produce_for_owner(
+    owner: &Owner,
+    setup: &PublicSetup,
+    product: super::super::journal::FormationEncodingProduct,
+    generation: Instant,
+) -> Result<PublicProduct, Error> {
     let (encoded, encoding_frame, opening, w) = (
         product.statement,
         product.frame,
         product.opening,
         product.coefficients,
     );
-    let (owner, setup) = Owner::generate(Geometry::Rows16).map_err(|_| Error::Shape)?;
     let setup_bytes = setup.to_bytes().map_err(|_| Error::Shape)?;
     let handle = owner
         .key_anchor(
-            &setup,
+            setup,
             KeyScope {
                 database: encoded.formation_source().heads[0][8..24]
                     .try_into()
@@ -127,11 +142,11 @@ pub(super) fn produce_from_encoding(
         .map_err(|_| Error::Shape)?;
     let anchor = handle.public_anchor().clone();
     let ciphertext = handle
-        .encrypt_encoded_coefficients(&setup, &w)
+        .encrypt_encoded_coefficients(setup, &w)
         .map_err(|_| Error::Shape)?;
     let request = encoded.formation_source().request;
     let mut job = handle
-        .basis_job(&setup, request, &ciphertext)
+        .basis_job(setup, request, &ciphertext)
         .map_err(|_| Error::Shape)?;
     let key = job
         .prove_key()
@@ -162,8 +177,6 @@ pub(super) fn produce_from_encoding(
     let evidence = super::prove(&expected, &encoding_frame, &mut formation, &p)?.into_bytes();
     drop(formation);
     drop(handle);
-    drop(owner);
-    drop(setup);
     drop(w);
     let generation_ms = generation.elapsed().as_secs_f64() * 1000.0;
     Ok(PublicProduct {

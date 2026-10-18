@@ -351,7 +351,7 @@ fn public_projection(
 // Pinned level-zero codec: 8192*(43+43+44+44+44)/8 = 223232 bytes/poly;
 // two unseeded polys plus their protobuf overhead fit 446494 bytes. A seeded
 // ciphertext is smaller. Bound incoming bytes before upstream decode or copying.
-const MAX_PUBLIC_SELECT_CIPHERTEXT_BYTES: usize = 512 * 1024;
+const MAX_PUBLIC_SELECT_CIPHERTEXT_BYTES: usize = bfv_ciphertext_wire::MAX_CIPHERTEXT_BYTES;
 
 pub(super) fn encode_public_select(
     parameters: &Arc<BfvParameters>,
@@ -476,6 +476,8 @@ fn response(request: Request, projected: Vec<u8>) -> Result<Vec<u8>> {
         projected,
     })
 }
+
+mod public_completion;
 
 #[cfg(test)]
 mod public_tests;

@@ -5,6 +5,8 @@ mod encoding_tests;
 mod fixture;
 mod formation_scenario;
 mod owner;
+mod projection_context;
+mod projection_scenario;
 mod request;
 #[cfg(test)]
 mod tests;
@@ -150,4 +152,14 @@ pub(super) fn formation_input_with_alternate(
     limit: u8,
 ) -> std::result::Result<FormationEncodingProduct, crate::backend::Error> {
     formation_scenario::produce_with_alternate(limit)
+}
+
+pub(super) use projection_context::ProjectionContext;
+
+pub(super) use projection_scenario::ProjectionHistory;
+pub(super) fn projection_input(
+    limit: u8,
+    other_limit: u8,
+) -> std::result::Result<(ProjectionHistory, FormationEncodingProduct), crate::backend::Error> {
+    projection_scenario::produce(limit, other_limit)
 }

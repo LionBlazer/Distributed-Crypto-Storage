@@ -1,5 +1,6 @@
 //! Actual-owner BFV formation linked to full Registry200 encoding evidence; no SQL admission.
-mod fixture;
+pub(in crate::opening::registry_lifecycle) mod fixture;
+pub(in crate::opening) mod job;
 mod statement;
 #[cfg(test)]
 mod tests;

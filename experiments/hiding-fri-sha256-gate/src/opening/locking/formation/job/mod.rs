@@ -1,7 +1,7 @@
 //! Nonaccepting source-certified input -> real ciphertext-only BFV public projection.
 //! Client-bound same-C_plan public projection; no SQL permission/freshness/key authority.
 pub(in crate::opening) mod fixture;
-mod process;
+use crate::opening::peer_process as process;
 #[cfg(test)]
 mod tests;
 use super::{Prerequisites, returned, statement as formation};
@@ -38,6 +38,17 @@ impl std::fmt::Display for Error {
     }
 }
 impl std::error::Error for Error {}
+impl From<crate::opening::peer_process::Error> for Error {
+    fn from(e: crate::opening::peer_process::Error) -> Self {
+        match e {
+            crate::opening::peer_process::Error::Binding => Self::Binding,
+            #[cfg(test)]
+            crate::opening::peer_process::Error::UnexpectedReply => Self::UnexpectedReply,
+            crate::opening::peer_process::Error::Io(e) => Self::Io(e),
+        }
+    }
+}
+
 impl From<InputError> for Error {
     fn from(e: InputError) -> Self {
         Self::Input(e)
