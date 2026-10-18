@@ -150,19 +150,41 @@ pub(in crate::opening) struct ProcessPeer {
     traces: Arc<Mutex<Vec<Trace>>>,
     // Last field drops after the child has released every file/Store lock.
     _directory: OwnedDirectory,
+    owner: peer_transport::Identity,
+    quota: u64,
 }
 impl ProcessPeer {
     pub(in crate::opening) fn start(executable: &Path, bundle: &RawBundle) -> Result<Self> {
+        let mut peer = Self::spawn(executable, 64 * 1024 * 1024)?;
+        let object = *bundle
+            .target_version()
+            .map_err(|_| Error::Binding)?
+            .object();
+        match peer.remote.call(Request::Store(bundle.clone())) {
+            Ok(Response::Stored(info)) if info.id == object => Ok(peer),
+            Ok(_) => Err(peer.child.failure("Unexpected peer Store reply")),
+            Err(error) => Err(peer.child.failure(error)),
+        }
+    }
+
+    /// Spawn-only control consumer: no dummy object or BFV setup is installed.
+    pub(in crate::opening) fn spawn(executable: &Path, quota: u64) -> Result<Self> {
+        Self::spawn_in(executable, OwnedDirectory::new()?, identity(), quota)
+    }
+    fn spawn_in(
+        executable: &Path,
+        directory: OwnedDirectory,
+        owner: peer_transport::Identity,
+        quota: u64,
+    ) -> Result<Self> {
         let executable = checked_executable(executable)?;
-        let directory = OwnedDirectory::new()?;
-        let owner = identity();
         let connector = Connector::permissionless(&owner)?;
         let config = Bootstrap {
             identity: identity(),
             authority: Vec::new(),
             owner: owner.fingerprint(),
             node_id: 1,
-            quota_bytes: 64 * 1024 * 1024,
+            quota_bytes: quota,
             listen: "127.0.0.1:0".parse().map_err(|_| Error::Binding)?,
         };
         let expected_peer = config.identity.fingerprint();
@@ -240,6 +262,8 @@ impl ProcessPeer {
             remote,
             traces,
             _directory: directory,
+            owner,
+            quota,
         };
         match peer.remote.call(Request::Probe) {
             Ok(Response::Alive { node_id: 1, pid })
@@ -247,18 +271,33 @@ impl ProcessPeer {
             Ok(_) => return Err(peer.child.failure("Unexpected peer Probe reply/PID")),
             Err(error) => return Err(peer.child.failure(error)),
         }
-        let object = *bundle
-            .target_version()
-            .map_err(|_| Error::Binding)?
-            .object();
-        match peer.remote.call(Request::Store(bundle.clone())) {
-            Ok(Response::Stored(info)) if info.id == object => Ok(peer),
-            Ok(_) => Err(peer.child.failure("Unexpected peer Store reply")),
-            Err(error) => Err(peer.child.failure(error)),
+        Ok(peer)
+    }
+    /// Reopens the same participant directory only after its owned process exited.
+    pub(in crate::opening) fn restart(mut self, executable: &Path) -> Result<Self> {
+        if self.child.child.try_wait()?.is_none() {
+            return Err(Error::Binding);
         }
+        let Self {
+            child,
+            remote: _,
+            traces: _,
+            _directory,
+            owner,
+            quota,
+        } = self;
+        drop(child);
+        Self::spawn_in(executable, _directory, owner, quota)
     }
     pub(in crate::opening) fn pid(&self) -> u32 {
         self.child.child.id()
+    }
+    /// Completed application-frame observations; TLS/OS framing is outside this count.
+    pub(in crate::opening) fn observed_io(&self) -> Result<(u64, u64)> {
+        let traces = self.traces.lock().map_err(|_| Error::Binding)?;
+        Ok(traces.iter().fold((0, 0), |(a, b), t| {
+            (a + t.request_bytes, b + t.response_bytes)
+        }))
     }
     pub(in crate::opening) fn last_request_id(&self) -> Result<u64> {
         self.traces

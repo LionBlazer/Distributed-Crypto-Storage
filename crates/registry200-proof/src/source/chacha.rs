@@ -1,11 +1,30 @@
-//! Shared bounded Cha quarter-round constraints; schedule/input/output binding belongs to callers.
-use super::air::{ADD, CARRY, XOR};
-use super::{BITS, SCHEDULE, WORDS};
-use crate::backend::Val;
+//! One fixed quarter-round constraint/row ABI; no key or prover ownership.
+use bfv_hiding_stark::Val;
 use p3_air::{AirBuilder, utils::pack_bits_le};
 use p3_field::PrimeCharacteristicRing;
+pub const WORDS: usize = 16;
+pub const BITS: usize = 32;
+pub const QUARTER_ROUNDS: usize = 80;
+pub const SCHEDULE: [[usize; 4]; 8] = [
+    [0, 4, 8, 12],
+    [1, 5, 9, 13],
+    [2, 6, 10, 14],
+    [3, 7, 11, 15],
+    [0, 5, 10, 15],
+    [1, 6, 11, 12],
+    [2, 7, 8, 13],
+    [3, 4, 9, 14],
+];
+pub const CONSTANTS: [u32; 4] = [0x6170_7865, 0x3320_646e, 0x7962_2d32, 0x6b20_6574];
+pub const HCHACHA_OUTPUT: [usize; 8] = [0, 1, 2, 3, 12, 13, 14, 15];
+pub const ADD: usize = WORDS * BITS;
+pub const XOR: usize = ADD + 4 * BITS;
+pub const CARRY: usize = XOR + 4 * BITS;
+pub const FEEDFORWARD_CARRY: usize = CARRY + 4;
+pub const WIDTH: usize = FEEDFORWARD_CARRY + WORDS;
+pub const PERIODIC_COLUMNS: usize = SCHEDULE.len();
 
-pub(crate) fn updated_bits<AB: AirBuilder<F = Val>>(
+pub fn updated_bits<AB: AirBuilder<F = Val>>(
     builder: &mut AB,
     row: &[AB::Var],
     selectors: &[AB::Expr; 8],
@@ -72,7 +91,7 @@ pub(crate) fn updated_bits<AB: AirBuilder<F = Val>>(
     result
 }
 
-pub(crate) fn write_round(row: &mut [Val], state: &mut [u32; 16], indices: [usize; 4]) {
+pub fn write_round(row: &mut [Val], state: &mut [u32; 16], indices: [usize; 4]) {
     let [a, b, c, d] = indices.map(|index| state[index]);
     let mut sum = [0; 4];
     let mut xor = [0; 4];
@@ -86,11 +105,11 @@ pub(crate) fn write_round(row: &mut [Val], state: &mut [u32; 16], indices: [usiz
     (sum[3], carry[3]) = sum[1].overflowing_add(xor[2].rotate_left(8));
     xor[3] = xor[1].rotate_left(12) ^ sum[3];
     for operation in 0..4 {
-        super::air::write_bits(
+        write_bits(
             &mut row[ADD + operation * BITS..ADD + (operation + 1) * BITS],
             sum[operation],
         );
-        super::air::write_bits(
+        write_bits(
             &mut row[XOR + operation * BITS..XOR + (operation + 1) * BITS],
             xor[operation],
         );
@@ -102,5 +121,11 @@ pub(crate) fn write_round(row: &mut [Val], state: &mut [u32; 16], indices: [usiz
             .zip([sum[2], xor[3].rotate_left(7), sum[3], xor[2].rotate_left(8)])
     {
         state[index] = word;
+    }
+}
+
+pub fn write_bits(destination: &mut [Val], word: u32) {
+    for (bit, value) in destination.iter_mut().enumerate() {
+        *value = Val::from_u32((word >> bit) & 1);
     }
 }

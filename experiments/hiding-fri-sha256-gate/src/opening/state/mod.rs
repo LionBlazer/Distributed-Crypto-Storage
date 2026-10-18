@@ -17,7 +17,6 @@ use rand::{
 };
 use sha2::{Digest, Sha256};
 
-pub(super) const STATE_DOMAIN: [u8; 16] = *b"DCS/STATE/N4/v1!";
 pub(super) const PLAN_DOMAIN: [u8; 16] = *b"DCS/VPLAN/N4/v1!";
 pub(super) const SELECT_DOMAIN: [u8; 16] = *b"DCS/VSEL/N4/v1!!";
 const CACHE_BYTES: usize = 64 * 1024 * 1024;
@@ -86,13 +85,7 @@ pub(super) fn version_tag(statement: &source::Statement) -> [u8; 32] {
     hash.update(source::encode_digest(statement.key_commitment));
     hash.finalize().into()
 }
-pub(crate) fn certificate_profile(hash: &mut Sha256) {
-    hash.update(b"DCS/experimental/state-certificate/N4/v1/no-freshness-SQL-acceptance");
-    hash.update(profile_digest(Kind::PackedCanonicalIndexOpening));
-    hash.update(STATE_DOMAIN);
-    hash.update(b"version-tag=SHA256(profile/full-canonical-images/C_key)/no-query-request");
-    hash.update(b"same-packed-AEAD-canonical-index/independent-C_key/state87+587+6");
-}
+pub(crate) use registry200_proof::source::certificate_profile;
 pub(crate) fn query_profile(hash: &mut Sha256) {
     hash.update(b"DCS/experimental/version-selection/N4/v1/no-freshness-SQL-acceptance");
     hash.update(profile_digest(Kind::StateCertificate));

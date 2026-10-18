@@ -74,6 +74,11 @@ pub enum Request {
     FetchReadImage(crate::ReadImageRequest),
     /// Owner-only fixed-geometry padded ciphertext upload; existing tags remain stable.
     StoreDelta(crate::StoreDeltaRequest),
+    /// Owner-only exact Registry200 application pins; no BFV setup/SQL grant.
+    InitRegistryJournal {
+        genesis: Vec<u8>,
+        application: Vec<u8>,
+    },
 }
 impl Request {
     pub fn name(&self) -> &'static str {
@@ -87,6 +92,7 @@ impl Request {
             Self::Evaluate { .. } => "fhe",
             Self::Prove { .. } => "fhe-proof",
             Self::InitJournal { .. } => "journal-init",
+            Self::InitRegistryJournal { .. } => "registry-journal-init",
             Self::JournalBlocks { .. } => "journal-sync",
             Self::PublishBlock { .. } => "journal-publish",
             Self::MineBlock { .. } => "journal-mine",

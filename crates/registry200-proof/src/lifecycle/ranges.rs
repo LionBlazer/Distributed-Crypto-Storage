@@ -1,15 +1,15 @@
 //! Canonical fixed images and unsigned comparisons, without 64-bit Gold recomposition.
-use super::{layout::*, model};
-use crate::backend::Val;
+use super::layout::*;
+use bfv_hiding_stark::Val;
 use p3_air::{AirBuilder, utils::pack_bits_le};
 use p3_field::{Algebra, PrimeCharacteristicRing};
-pub(super) fn pack<E: Algebra<Val>, T: Copy + Into<E>>(row: &[T], at: usize, n: usize) -> E {
+pub fn pack<E: Algebra<Val>, T: Copy + Into<E>>(row: &[T], at: usize, n: usize) -> E {
     pack_bits_le(row[at..at + n].iter().copied())
 }
-pub(super) fn code<E: Algebra<Val>, T: Copy + Into<E>>(row: &[T], at: usize, n: usize) -> E {
+pub fn code<E: Algebra<Val>, T: Copy + Into<E>>(row: &[T], at: usize, n: usize) -> E {
     (0..n).map(|m| row[at + m].into() * E::from_usize(m)).sum()
 }
-pub(super) fn increment<AB: AirBuilder<F = Val>>(
+pub fn increment<AB: AirBuilder<F = Val>>(
     b: &mut AB,
     row: &[AB::Var],
     old: [AB::Expr; 2],
@@ -48,7 +48,7 @@ fn comparison<AB: AirBuilder<F = Val>>(
         b.assert_bool(difference);
     }
 }
-pub(super) fn canonical<AB: AirBuilder<F = Val>>(b: &mut AB, row: &[AB::Var]) {
+pub fn canonical<AB: AirBuilder<F = Val>>(b: &mut AB, row: &[AB::Var]) {
     for state in [OLD, NEW] {
         for v in &row[state..state + STATE] {
             b.assert_bool(*v);
@@ -145,7 +145,7 @@ pub(super) fn canonical<AB: AirBuilder<F = Val>>(b: &mut AB, row: &[AB::Var]) {
         for r in 0..4 {
             for a in 1..5 {
                 for c in 1..5 {
-                    if model::conflicts(a as u8, c as u8) {
+                    if super::conflicts(a as u8, c as u8) {
                         b.assert_zero(row[held(bases[0], r, a)] * row[held(bases[1], r, c)]);
                     }
                 }

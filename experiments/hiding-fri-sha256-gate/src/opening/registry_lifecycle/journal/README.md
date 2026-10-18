@@ -1,17 +1,21 @@
 # Owner-authorized Registry200 Journal experiment
 
-Validated experimental adapter for actual owner-authorized Registry200 Journal
-admission. All 14 owning tests, 56 former controls and two actual contracts passed;
-see the [validation record](../../../../PRIVATE-REGISTRY-LIFECYCLE-JOURNAL-VALIDATION.md).
-There is no live SQL grant, controller signature, production admission, global
-freshness, MVCC, writer fencing or finality guarantee.
+The historical local adapter passed 14 owning tests, 56 former controls and two
+contracts; see its [validation record](../../../../PRIVATE-REGISTRY-LIFECYCLE-JOURNAL-VALIDATION.md).
+This module now owns private preparation and PUBLIC NONSECRET scenarios for the
+extracted [registry200-journal](../../../../../../crates/registry200-journal/README.md)
+application and [registry200-proof](../../../../../../crates/registry200-proof/README.md)
+verifier. The real-peer control route is covered by its
+[validation record](../../../../REGISTRY200-PEER-CONTROL-VALIDATION.md).
+It grants no live SQL, controller possession, global
+freshness, MVCC, writer fencing or finality.
 
-This module connects the real [version-journal](../../../../../../crates/version-journal/README.md)
-owner-authorized transition API to [Registry200](../README.md) and its distinct
-[bounded proof wire](../wire/README.md). It does not change the historical
-[Registry112 adapter](../../private_journal/README.md), its profiles or its codec.
+The owner-side builders consume the real
+[version-journal](../../../../../../crates/version-journal/README.md) transition API.
+The historical [Registry112 adapter](../../private_journal/README.md), profiles and
+codec retain their separate meanings.
 
-`PrivateVerifier` pins an `Application` and independently supplied genesis. Before
+`RegistryVerifier` pins an `Application` and independently supplied genesis. Before
 SDK verification it checks exactly two sorted source/control shards, unchanged
 complete encrypted source heads, exactly one control compare-and-swap, the actual
 parent, sticky enrollment and canonical Request200. It reconstructs the typed
@@ -30,14 +34,16 @@ under their original parent; client `Freshness` resolution is a separate policy.
 
 ## Stable application and request
 
-`control.rs` owns new application/Pending/Active domains. Application pins network,
+The shared [control module](../../../../../../crates/registry200-journal/src/control.rs)
+owns the application/Pending/Active domains. Application pins network,
 database/key domain, both shard IDs, complete original source heads, C_key and the
 actual wire contract fingerprint (both roles, output counts, profiles and resource
 limits). It excludes genesis, query, C_open and C_cmd. Pending therefore exists
 before genesis without a fixed point. Active depends only on application,
 enrollment and Registry200 root; query, parent and nonce cannot disguise a no-op.
 
-`request.rs` owns a new exact 2716-byte encoding: magic/tag/reserved bytes, eight
+The shared [request module](../../../../../../crates/registry200-journal/src/request.rs)
+owns the exact 2716-byte encoding: magic/tag/reserved bytes, eight
 32-byte fields (genesis, parent, application, nonce, query, enrollment, C_open,
 C_cmd), then the complete 60-byte and 2384-byte source packets. Bootstrap requires
 zero C_cmd. Digest limbs are canonical. A domain-separated preproof intent fixes
@@ -64,7 +70,7 @@ request and one control update use exactly `117 + 2716 + 456 + proof_bytes` byte
 No new partial proof-cap wrapper or larger Journal quota is introduced.
 
 The public nonsecret fixture streams each proof pair into a signed Body, appends,
-and drops temporary proof/encoding objects. The normal `prove` gate executes
+and drops temporary proof/encoding objects. The preserved local `prove private-lifecycle-journal` gate executes
 Bootstrap plus seven transitions: Begin, Savepoint, Acquire, RollbackTo, Release,
 FailCurrent and End with Commit intent resolved as Abort. It then appends one
 empty confirmation block, drops the durable owner, and reopens/reverifies all
@@ -72,7 +78,7 @@ eight proof pairs. After the public fixture setup, the timer covers this entire 
 it does not measure peer-only encrypted SQL execution. Printed body sizes are
 actual full encoded Bodies, not estimates from proof-component sizes.
 
-Fourteen executed owning tests additionally cover preserved lock upgrades, failed-frame
+The prior local validation ran fourteen owning tests covering preserved lock upgrades, failed-frame
 recovery, sparse-mask inter-owner SKIP with OFFSET, genuinely proved WAIT/NOWAIT
 no-op rejection, full compaction and ID non-reuse, signed tampering, sticky source
 and enrollment, stale CAS, detached branches, exact duplicate retry, canonical
@@ -99,8 +105,9 @@ cargo run --release --locked --manifest-path experiments/hiding-fri-sha256-gate/
 
 Security mode produces three analytical individual-proof reports (canonical Source,
 new Bootstrap and Transition). It creates no trace, proof or durable append and
-makes no composed 128-bit claim. Configuration/hash analysis belongs to the
-[existing backend](../../../../src/backend.rs); canonical storage commitments belong
+makes no composed 128-bit claim. The individual fixed assessment uses the shared
+[proof library](../../../../../../crates/registry200-proof/README.md) and the
+experiment Kind [backend](../../../../src/backend.rs); canonical storage commitments belong
 to [compact-store](../../../../../../crates/compact-store/README.md).
 
 
@@ -108,3 +115,37 @@ to [compact-store](../../../../../../crates/compact-store/README.md).
 
 A test-only consumer now takes an actual accepted owner-signed Bootstrap/Begin/Acquire history through exact SQL binding, original proof-pair decode and fresh three-proof encoding evidence verification. Production Journal admission and Body/history quotas are unchanged. See the
 [validation record](../../../../PRIVATE-REGISTRY-LIFECYCLE-ENCODING-VALIDATION.md).
+
+
+## Two-process control consumer
+
+The concrete verifier/control/request implementation now lives in
+[registry200-journal](../../../../../../crates/registry200-journal/README.md).
+This module owns only private preparation and PUBLIC NONSECRET scenarios.
+peer_control.rs uses the shared OS-process supervisor without a dummy BFV object,
+explicit 512 MiB participant quotas and unchanged 32 MiB Body/256 MiB Journal limits.
+It generates four actual signed Source+Lifecycle bodies, transfers real mined
+headers/bodies between two OS peers, observes durable persistence before losing an
+ACK, retries exact retained bytes, reopens BOTH peers, fetches/re-verifies their actual histories, and exercises a valid
+same-root sibling/reorganization. Successful proofs do not make a historical
+Acquire current after End or a losing branch fresh.
+
+After Root builds the real daemon, set DCS_PEER_EXE to its absolute path.
+The new exact owning test is
+opening::registry_lifecycle::journal::peer_control::tests::actual_two_os_peers_verify_sync_reopen_retry_and_reorganization.
+The explicit CLI is:
+
+~~~powershell
+cargo run --release --locked --manifest-path experiments/hiding-fri-sha256-gate/Cargo.toml -- prove registry200-peer-control $env:DCS_PEER_EXE
+~~~
+
+The test is not skipped when the executable is missing. The CLI full timer includes
+fixture generation, proof production, all RPC/sync/reopen/fork/EOF work.
+owner_generation_ms covers the four actual outer transition producer calls;
+transition_generation_calls counts those invocations, not primitive STARK proofs.
+Application I/O counters are snapshots before Shutdown/EOF, excluding TLS/OS and
+bootstrap framing; they are not total wire/process traffic. Public body sizes/PIDs
+and process lifecycle are recorded in the
+[two-peer validation report](../../../../REGISTRY200-PEER-CONTROL-VALIDATION.md),
+which states their measurement scope. Private owner openings remain outside peers.
+No SQL, writer, controller-possession, MVCC or global finality grant is made.

@@ -1,25 +1,30 @@
-//! Shared canonical radix26 state, cyclic reduction and tag arithmetic.
-use super::{CLAMP, LIMB_BITS, LIMBS, RADIX};
-use crate::backend::Val;
+//! One fixed radix26 constraint/row ABI; no private witness ownership.
+use bfv_hiding_stark::Val;
 use p3_air::{AirBuilder, utils::pack_bits_le};
 use p3_field::PrimeCharacteristicRing;
+pub const LIMBS: usize = 5;
+pub const LIMB_BITS: usize = 26;
+pub const RADIX: u64 = 1 << LIMB_BITS;
+pub const MASK: u64 = RADIX - 1;
+pub const CLAMP: [u8; 16] = [
+    255, 255, 255, 15, 252, 255, 255, 15, 252, 255, 255, 15, 252, 255, 255, 15,
+];
+pub const STATE: usize = 130;
+pub const CARRY: usize = STATE;
+pub const CANONICAL: usize = CARRY + 160;
+pub const CANONICAL_CARRY: usize = CANONICAL + STATE;
+pub const TAG: usize = CANONICAL_CARRY + LIMBS;
+pub const WIDTH: usize = TAG + 4;
 
-pub(crate) const STATE: usize = 130;
-pub(crate) const CARRY: usize = STATE;
-pub(crate) const CANONICAL: usize = CARRY + 160;
-pub(crate) const CANONICAL_CARRY: usize = CANONICAL + STATE;
-pub(crate) const TAG: usize = CANONICAL_CARRY + LIMBS;
-pub(crate) const WIDTH: usize = TAG + 4;
-
-pub(crate) struct Cells<'a, T> {
-    pub(crate) state: &'a [T],
-    pub(crate) carry: &'a [T],
-    pub(crate) canonical: &'a [T],
-    pub(crate) canonical_carry: &'a [T],
-    pub(crate) tag: &'a [T],
+pub struct Cells<'a, T> {
+    pub state: &'a [T],
+    pub carry: &'a [T],
+    pub canonical: &'a [T],
+    pub canonical_carry: &'a [T],
+    pub tag: &'a [T],
 }
 impl<'a, T> Cells<'a, T> {
-    pub(crate) fn packed(row: &'a [T]) -> Self {
+    pub fn packed(row: &'a [T]) -> Self {
         assert_eq!(row.len(), WIDTH);
         Self {
             state: &row[..STATE],
@@ -30,17 +35,17 @@ impl<'a, T> Cells<'a, T> {
         }
     }
 }
-pub(crate) struct Step<E> {
-    pub(crate) updated: [E; LIMBS],
-    pub(crate) key: [E; 256],
-    pub(crate) message: [E; LIMBS],
-    pub(crate) active: E,
-    pub(crate) finalize: E,
+pub struct Step<E> {
+    pub updated: [E; LIMBS],
+    pub key: [E; 256],
+    pub message: [E; LIMBS],
+    pub active: E,
+    pub finalize: E,
     // Boundary selectors need not be Boolean; do not infer this from finalize.
-    pub(crate) inactive_tag: E,
-    pub(crate) tag: [E; 4],
+    pub inactive_tag: E,
+    pub tag: [E; 4],
 }
-pub(crate) fn limbs<E: PrimeCharacteristicRing, T: Into<E> + Copy>(bits: &[T]) -> [E; LIMBS] {
+pub fn limbs<E: PrimeCharacteristicRing, T: Into<E> + Copy>(bits: &[T]) -> [E; LIMBS] {
     core::array::from_fn(|limb| {
         pack_bits_le(
             bits[limb * LIMB_BITS..(limb + 1) * LIMB_BITS]
@@ -49,7 +54,7 @@ pub(crate) fn limbs<E: PrimeCharacteristicRing, T: Into<E> + Copy>(bits: &[T]) -
         )
     })
 }
-pub(crate) fn evaluate<AB: AirBuilder<F = Val>>(
+pub fn evaluate<AB: AirBuilder<F = Val>>(
     builder: &mut AB,
     cells: Cells<'_, AB::Var>,
     step: Step<AB::Expr>,
@@ -132,7 +137,7 @@ pub(crate) fn evaluate<AB: AirBuilder<F = Val>>(
     }
 }
 
-pub(crate) fn write_canonical(
+pub fn write_canonical(
     state: &mut [Val],
     canonical: &mut [Val],
     carries: &mut [Val],
@@ -140,13 +145,31 @@ pub(crate) fn write_canonical(
 ) {
     let mut carry = 5;
     for (limb, value) in h.into_iter().enumerate() {
-        super::air::write_bits(&mut state[limb * LIMB_BITS..(limb + 1) * LIMB_BITS], value);
+        write_bits(&mut state[limb * LIMB_BITS..(limb + 1) * LIMB_BITS], value);
         let sum = value + carry;
-        super::air::write_bits(
+        write_bits(
             &mut canonical[limb * LIMB_BITS..(limb + 1) * LIMB_BITS],
-            sum & super::MASK,
+            sum & MASK,
         );
         carry = sum >> LIMB_BITS;
         carries[limb] = Val::from_u64(carry);
+    }
+}
+
+pub fn message_limbs(message: [u8; 16], appended_bit: usize) -> [u64; LIMBS] {
+    let mut result = [0; LIMBS];
+    for bit in 0..128 {
+        result[bit / LIMB_BITS] |=
+            u64::from((message[bit / 8] >> (bit % 8)) & 1) << (bit % LIMB_BITS);
+    }
+    if appended_bit < STATE {
+        result[appended_bit / LIMB_BITS] += 1 << (appended_bit % LIMB_BITS);
+    }
+    result
+}
+pub fn write_bits(destination: &mut [Val], value: u64) {
+    assert!(destination.len() <= 32 && value < (1_u64 << destination.len()));
+    for (bit, cell) in destination.iter_mut().enumerate() {
+        *cell = Val::from_u64((value >> bit) & 1);
     }
 }

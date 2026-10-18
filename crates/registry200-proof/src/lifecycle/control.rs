@@ -3,7 +3,7 @@ use super::{
     layout::*,
     ranges::{increment, pack},
 };
-use crate::backend::Val;
+use bfv_hiding_stark::Val;
 use p3_air::AirBuilder;
 use p3_field::PrimeCharacteristicRing;
 fn selected<AB: AirBuilder<F = Val>>(row: &[AB::Var], part: usize) -> AB::Expr {
@@ -16,7 +16,7 @@ fn selected_word<AB: AirBuilder<F = Val>>(row: &[AB::Var], part: usize) -> AB::E
         .map(|t| row[ACTOR + t] * pack::<AB::Expr, _>(row, slot(OLD, t) + part, 32))
         .sum()
 }
-pub(super) fn eval<AB: AirBuilder<F = Val>>(b: &mut AB, row: &[AB::Var], parent: [Val; 8]) {
+pub fn eval<AB: AirBuilder<F = Val>>(b: &mut AB, row: &[AB::Var], parent: [Val; 8]) {
     for v in &row[OP..COMPARE] {
         b.assert_bool(*v);
     }

@@ -4,8 +4,20 @@ use version_journal::{Body, DurableJournal, Genesis, Header};
 
 pub(super) struct Network {
     pub(super) journal: DurableJournal,
-    verifier: Arc<JobVerifier>,
+    verifier: Arc<ApplicationVerifier>,
     mining: BTreeMap<[u8; 32], u64>,
+}
+enum ApplicationVerifier {
+    Jobs(Arc<JobVerifier>),
+    Registry(Box<registry200_journal::RegistryVerifier>),
+}
+impl version_journal::TransitionVerifier for ApplicationVerifier {
+    fn verify(&self, s: version_journal::TransitionStatement<'_>) -> version_journal::Result<()> {
+        match self {
+            Self::Jobs(v) => version_journal::TransitionVerifier::verify(v.as_ref(), s),
+            Self::Registry(v) => version_journal::TransitionVerifier::verify(v.as_ref(), s),
+        }
+    }
 }
 struct ProofPermit<'a>(&'a AtomicBool);
 impl<'a> ProofPermit<'a> {
@@ -167,6 +179,64 @@ pub(super) fn dispatch(shared: &Arc<Shared>, request: Request) -> Result<Respons
                 }
                 state.store.register_journal(network)?;
                 (state.store.journal_path(&network), verifier)
+            };
+            let exists = path.exists();
+            let reservation = DiskReservation::new(
+                shared,
+                if exists {
+                    0
+                } else {
+                    genesis.encode().map_err(crypto)?.len() as u64 + 76
+                },
+            )?;
+            let journal = if exists {
+                DurableJournal::open(
+                    &path,
+                    genesis,
+                    crate::OBJECT_PROFILE_ID,
+                    seconds(),
+                    verifier.as_ref(),
+                )
+            } else {
+                DurableJournal::create(&path, genesis, crate::OBJECT_PROFILE_ID)
+            }
+            .map_err(crypto)?;
+            shared.state.lock().map_err(io_error)?.journals.insert(
+                network,
+                Arc::new(Mutex::new(Network {
+                    journal,
+                    verifier: Arc::new(ApplicationVerifier::Jobs(verifier)),
+                    mining: BTreeMap::new(),
+                })),
+            );
+            drop(reservation);
+            Ok(Response::JournalReady(network))
+        }
+        Request::InitRegistryJournal {
+            genesis,
+            application,
+        } => {
+            let _permit = ProofPermit::acquire(&shared.proof_busy)?;
+            // Bounded exact descriptor and genesis/application checks precede any disk registration.
+            let descriptor =
+                registry200_journal::ApplicationDescriptor::decode(&application).map_err(crypto)?;
+            let application = descriptor.application().map_err(crypto)?;
+            let genesis = Genesis::decode(&genesis).map_err(crypto)?;
+            let verifier = Arc::new(ApplicationVerifier::Registry(Box::new(
+                registry200_journal::RegistryVerifier::new(application, &genesis)
+                    .map_err(crypto)?,
+            )));
+            let network = genesis.id().map_err(crypto)?;
+            let path = {
+                let mut state = shared.state.lock().map_err(io_error)?;
+                if state.journals.contains_key(&network) {
+                    return Ok(Response::JournalReady(network));
+                }
+                if state.journals.len() >= 8 {
+                    return Err(RemoteError::ResourceLimit);
+                }
+                state.store.register_journal(network)?;
+                state.store.journal_path(&network)
             };
             let exists = path.exists();
             let reservation = DiskReservation::new(

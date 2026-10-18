@@ -25,7 +25,7 @@ for exact scope and observed process resources.
 
 Direct dependencies are the existing [source opening](../README.md),
 [private registry encoding](../locking/README.md), [Poseidon gadget](../poseidon.rs),
-[fixed schedule](../schedule.rs), [statement contract](../../primitive.rs) and
+[fixed schedule](../../../../../crates/registry200-proof/src/source/schedule.rs), [statement contract](../../primitive.rs) and
 [checked hiding backend](../../backend.rs). `transaction-state` is already a dev-only
 dependency and supplies a native test oracle; the verifier does not rerun it.
 There are no dependency or lock changes.

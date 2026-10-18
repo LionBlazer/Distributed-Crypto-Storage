@@ -16,7 +16,7 @@ This is a genuine-proof candidate, not a live SQL lock grant.
 | tests.rs | Independent metadata oracle, native/AIR cases and genuine/rebuilt proof cases |
 
 The implementation reuses the existing [P2 gadget](../poseidon.rs),
-[canonical source statement](../statement.rs) and private shared backend. The
+[canonical source statement](../../../../../crates/registry200-proof/src/source/statement.rs) and private shared backend. The
 only added direct dependency is dev-only
 [transaction-state](../../../../../crates/transaction-state/README.md), used for
 actual `State::transition` comparisons. Its authenticated metadata adapter is not

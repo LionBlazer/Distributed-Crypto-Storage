@@ -6,6 +6,7 @@ rust-version = "1.99"
 publish = false
 
 [dependencies]
+registry200-journal = { path = "../registry200-journal" }
 peer-transport = { path = "../peer-transport" }
 bfv-query-core = { path = "../bfv-query-core" }
 bfv-query-proof = { path = "../bfv-query-proof" }

@@ -5,17 +5,17 @@ use super::{
     layout::CanonicalColumns,
     schedule,
 };
-use crate::backend::{TRACE_HEIGHT, Val};
+use bfv_hiding_stark::{TRACE_HEIGHT, Val};
 use p3_air::{AirBuilder, utils::pack_bits_le};
 use p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
 
-pub(super) const AGES: usize = air::WIDTH;
-pub(super) const PERMUTATION: usize = AGES + 32;
-pub(super) const SORT: usize = PERMUTATION + 16;
-pub(super) const HEADER: usize = SORT + 3 * 10;
-pub(super) const IDENTITY: usize = HEADER + 8 * 4 * 11;
-pub(super) const TABLE_HALF: usize = IDENTITY + 11;
-pub(crate) const WIDTH: usize = TABLE_HALF + 1;
+pub const AGES: usize = air::WIDTH;
+pub const PERMUTATION: usize = AGES + 32;
+pub const SORT: usize = PERMUTATION + 16;
+pub const HEADER: usize = SORT + 3 * 10;
+pub const IDENTITY: usize = HEADER + 8 * 4 * 11;
+pub const TABLE_HALF: usize = IDENTITY + 11;
+pub const WIDTH: usize = TABLE_HALF + 1;
 const _: () = assert!(WIDTH == 11521 && WIDTH - air::WIDTH == 442);
 
 #[derive(Clone, Copy)]
@@ -35,7 +35,7 @@ fn header_slot(schedule: schedule::Schedule, row: usize, slot: usize) -> Option<
         _ => None,
     }
 }
-pub(super) fn columns(packed: bool) -> CanonicalColumns {
+pub fn columns(packed: bool) -> CanonicalColumns {
     if packed {
         CanonicalColumns::new(true)
     } else {
@@ -69,7 +69,7 @@ fn popcount<AB: AirBuilder<F = Val>>(
         .sum()
 }
 
-pub(super) fn evaluate<AB: AirBuilder<F = Val>>(
+pub fn evaluate<AB: AirBuilder<F = Val>>(
     air: &OpeningAir,
     b: &mut AB,
     row: &[AB::Var],
@@ -285,7 +285,7 @@ fn write_bits(out: &mut [Val], value: u16) {
         *cell = Val::from_u16((value >> bit) & 1);
     }
 }
-pub(super) fn write_template(row: &mut [Val], ages: [u8; 4], packed: bool) {
+pub fn write_template(row: &mut [Val], ages: [u8; 4], packed: bool) {
     let c = columns(packed);
     for (i, value) in ages.into_iter().enumerate() {
         write_bits(&mut row[c.ages + i * 8..c.ages + (i + 1) * 8], value as u16);
@@ -303,7 +303,7 @@ pub(super) fn write_template(row: &mut [Val], ages: [u8; 4], packed: bool) {
         row[start + 9] = inverse(Val::from_u8(difference));
     }
 }
-pub(super) fn write_row(air: &OpeningAir, row: &mut [Val], physical: usize, half: &mut Val) {
+pub fn write_row(air: &OpeningAir, row: &mut [Val], physical: usize, half: &mut Val) {
     let packed = air.columns().packed;
     let c = columns(packed);
     let schedule = air.schedule();

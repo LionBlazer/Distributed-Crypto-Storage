@@ -1,29 +1,28 @@
+use super::profile_digest;
 use super::{DATA_BYTES, DATA_SCHEMA, INDEX_BYTES, INDEX_SCHEMA, Relation};
-use crate::backend::{Error, Val, profile_digest};
-use crate::primitive::{Kind, PrimitiveAir, PublicStatement};
+use bfv_hiding_stark::{Error, Val};
 use compact_store::{Commitment, Layout, Limits, VerifiedSnapshotBytes};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
-pub(crate) const HEADS: usize = 16;
-#[cfg(test)]
-pub(crate) const PACKETS: usize = 72;
-pub(crate) const KEY_COMMITMENT: usize = 683;
-pub(crate) const OPEN_COMMITMENT: usize = 687;
-pub(crate) const PUBLIC_VALUES: usize = 691;
+pub const HEADS: usize = 16;
+pub const PACKETS: usize = 72;
+pub const KEY_COMMITMENT: usize = 683;
+pub const OPEN_COMMITMENT: usize = 687;
+pub const PUBLIC_VALUES: usize = 691;
 
-/// Checked PUBLIC statement only: no key, salt, plaintext or trace method.
+/// PUBLIC mathematical claim only: no key, salt, plaintext or trace method.
 /// Expected heads and the stable key commitment must be authorized independently.
 /// Canonical/root validation supplies no consensus, custody or logical-index proof.
 #[derive(Clone)]
-pub(crate) struct Statement {
-    pub(super) relation: Relation,
-    pub(super) request: [u8; 32],
-    pub(super) heads: [[u8; 112]; 2],
-    pub(super) packets: [Vec<u8>; 2],
-    pub(super) key_commitment: [Val; 4],
-    pub(super) open_commitment: [Val; 4],
+pub struct Statement {
+    pub relation: Relation,
+    pub request: [u8; 32],
+    pub heads: [[u8; 112]; 2],
+    pub packets: [Vec<u8>; 2],
+    pub key_commitment: [Val; 4],
+    pub open_commitment: [Val; 4],
 }
 impl Statement {
-    pub(crate) fn checked(
+    pub fn checked(
         images: [&[u8]; 2],
         expected: [&Commitment; 2],
         request: [u8; 32],
@@ -32,7 +31,7 @@ impl Statement {
     ) -> Result<Self, Error> {
         Self::checked_relation(Relation::Bytes, images, expected, request, key, opening)
     }
-    pub(super) fn checked_relation(
+    pub fn checked_relation(
         relation: Relation,
         images: [&[u8]; 2],
         expected: [&Commitment; 2],
@@ -81,14 +80,14 @@ impl Statement {
             open_commitment: decode_digest(opening)?,
         })
     }
-    pub(super) fn nonce(&self, page: usize) -> [u8; 24] {
+    pub fn nonce(&self, page: usize) -> [u8; 24] {
         self.packets[page][8..32].try_into().unwrap()
     }
-    pub(super) fn ciphertext(&self, page: usize) -> &[u8] {
+    pub fn ciphertext(&self, page: usize) -> &[u8] {
         let n = if page == 0 { DATA_BYTES } else { INDEX_BYTES };
         &self.packets[page][32..32 + n]
     }
-    pub(super) fn tag(&self, page: usize) -> [u32; 4] {
+    pub fn tag(&self, page: usize) -> [u32; 4] {
         let p = &self.packets[page];
         core::array::from_fn(|w| {
             u32::from_le_bytes(
@@ -98,7 +97,7 @@ impl Statement {
             )
         })
     }
-    pub(super) fn aad(&self, page: usize) -> Vec<u8> {
+    pub fn aad(&self, page: usize) -> Vec<u8> {
         let mut out = b"compact-store/page-aead/v1".to_vec();
         let h = &self.heads[page];
         out.extend_from_slice(&h[8..56]);
@@ -108,7 +107,7 @@ impl Statement {
         assert_eq!(out.len(), 106);
         out
     }
-    pub(super) fn mac_block(&self, page: usize, block: usize) -> [u8; 16] {
+    pub fn mac_block(&self, page: usize, block: usize) -> [u8; 16] {
         let cipher = self.ciphertext(page);
         let blocks = cipher.len().div_ceil(16);
         if block < 7 {
@@ -125,15 +124,9 @@ impl Statement {
         }
     }
 }
-impl PublicStatement for Statement {
-    fn kind(&self) -> Kind {
-        self.relation.kind()
-    }
-    fn air(&self) -> PrimitiveAir {
-        PrimitiveAir::Opening(Box::new(super::air::OpeningAir::new(self)))
-    }
-    fn public_values(&self) -> Vec<Val> {
-        words(&profile_digest(self.kind()))
+impl Statement {
+    pub fn values(&self) -> Vec<Val> {
+        words(&profile_digest(self.relation))
             .chain(words(&self.request))
             .chain(self.heads.iter().flat_map(|h| words(h)))
             .chain(self.packets.iter().flat_map(|p| words(p)))
@@ -142,7 +135,7 @@ impl PublicStatement for Statement {
             .collect()
     }
 }
-pub(super) fn words(bytes: &[u8]) -> impl Iterator<Item = Val> + '_ {
+pub fn words(bytes: &[u8]) -> impl Iterator<Item = Val> + '_ {
     assert_eq!(bytes.len() % 4, 0);
     bytes
         .as_chunks::<4>()
@@ -150,7 +143,7 @@ pub(super) fn words(bytes: &[u8]) -> impl Iterator<Item = Val> + '_ {
         .iter()
         .map(|b| Val::from_u32(u32::from_le_bytes(*b)))
 }
-pub(super) fn decode_digest(bytes: [u8; 32]) -> Result<[Val; 4], Error> {
+pub fn decode_digest(bytes: [u8; 32]) -> Result<[Val; 4], Error> {
     let mut out = [Val::ZERO; 4];
     for (v, b) in out.iter_mut().zip(bytes.as_chunks::<8>().0) {
         let n = u64::from_le_bytes(*b);
@@ -161,14 +154,14 @@ pub(super) fn decode_digest(bytes: [u8; 32]) -> Result<[Val; 4], Error> {
     }
     Ok(out)
 }
-pub(super) fn encode_digest(digest: [Val; 4]) -> [u8; 32] {
+pub fn encode_digest(digest: [Val; 4]) -> [u8; 32] {
     let mut out = [0; 32];
     for (b, v) in out.as_chunks_mut::<8>().0.iter_mut().zip(digest) {
         *b = v.as_canonical_u64().to_le_bytes();
     }
     out
 }
-pub(super) fn limits() -> Limits {
+pub fn limits() -> Limits {
     Limits {
         max_rows: 2336,
         max_pages: 1,

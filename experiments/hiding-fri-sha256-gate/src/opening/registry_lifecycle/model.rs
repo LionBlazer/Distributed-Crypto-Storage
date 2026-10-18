@@ -125,15 +125,7 @@ pub(super) struct Step {
     pub returned: [bool; 4],
     pub block: [bool; 4],
 }
-pub(super) fn conflicts(request: u8, held: u8) -> bool {
-    match request {
-        1 => held == 4,
-        2 => held >= 3,
-        3 => held >= 2,
-        4 => held != 0,
-        _ => false,
-    }
-}
+pub(super) use registry200_proof::lifecycle::conflicts;
 impl Registry {
     pub fn require_canonical(&self) -> Result<(), Error> {
         if self.transactions.len() > 2 || self.allocator > self.revision {

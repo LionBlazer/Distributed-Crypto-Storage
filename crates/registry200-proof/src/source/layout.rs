@@ -1,6 +1,6 @@
 //! Two fixed experiment-owned layouts. No wire, dynamic layout or production API.
 #[derive(Clone, Copy)]
-pub(super) struct Columns {
+pub struct Columns {
     pub packed: bool,
     pub buffers: usize,
     pub banks: usize,
@@ -16,15 +16,15 @@ pub(super) struct Columns {
     pub width: usize,
 }
 impl Columns {
-    pub(super) const fn new(packed: bool) -> Self {
-        let buffers = 7 * crate::chacha::air::WIDTH;
+    pub const fn new(packed: bool) -> Self {
+        let buffers = 7 * super::chacha::WIDTH;
         let banks = buffers + 7 * if packed { 16 } else { 512 };
         let master = banks;
         let subkey = master + if packed { 8 } else { 256 };
         let polykey = subkey + if packed { 16 } else { 512 };
         let polykey_bits = polykey + if packed { 16 } else { 512 };
         let poly = polykey_bits + if packed { 256 } else { 0 };
-        let poseidon = poly + crate::poly1305::arithmetic::WIDTH;
+        let poseidon = poly + super::poly1305::WIDTH;
         let checkpoint = poseidon + super::poseidon::WIDTH;
         let carry = checkpoint + 12;
         let salts = carry + 2;
@@ -44,16 +44,16 @@ impl Columns {
             width: salts + 8,
         }
     }
-    pub(super) const fn key_stride(self) -> usize {
+    pub const fn key_stride(self) -> usize {
         if self.packed { 8 } else { 256 }
     }
-    pub(super) const fn buffer_stride(self) -> usize {
+    pub const fn buffer_stride(self) -> usize {
         if self.packed { 16 } else { 512 }
     }
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct CanonicalColumns {
+pub struct CanonicalColumns {
     pub ages: usize,
     pub permutation: usize,
     pub sort: usize,
@@ -63,7 +63,7 @@ pub(super) struct CanonicalColumns {
     pub width: usize,
 }
 impl CanonicalColumns {
-    pub(super) const fn new(packed: bool) -> Self {
+    pub const fn new(packed: bool) -> Self {
         let ages = Columns::new(packed).width;
         let permutation = ages + 32;
         let sort = permutation + 16;
@@ -83,7 +83,7 @@ impl CanonicalColumns {
         }
     }
 }
-pub(crate) const PACKED_WIDTH: usize = CanonicalColumns::new(true).width;
+pub const PACKED_WIDTH: usize = CanonicalColumns::new(true).width;
 const _: () = {
     assert!(Columns::new(false).width == 11079);
     assert!(CanonicalColumns::new(false).width == 11521);

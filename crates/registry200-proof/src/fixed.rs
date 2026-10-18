@@ -1,0 +1,105 @@
+use crate::{lifecycle, source};
+use bfv_hiding_stark::{self as engine, Config, Error, SecurityReport, Val};
+use engine::codec::Topology;
+use p3_air::{Air, AirBuilder, BaseAir};
+use p3_uni_stark::{Proof, StarkSecurityParams};
+use std::borrow::Cow;
+enum FixedAir {
+    Source(Box<source::air::OpeningAir>),
+    Bootstrap(Box<lifecycle::bootstrap::BootstrapAir>),
+    Lifecycle(Box<lifecycle::air::LifecycleAir>),
+}
+macro_rules! dispatch { ($s:expr,$m:ident $(,$a:expr)*)=>{match $s {FixedAir::Source(a)=>a.$m($($a),*),FixedAir::Bootstrap(a)=>a.$m($($a),*),FixedAir::Lifecycle(a)=>a.$m($($a),*)}}; }
+impl BaseAir<Val> for FixedAir {
+    fn width(&self) -> usize {
+        dispatch!(self, width)
+    }
+    fn num_public_values(&self) -> usize {
+        dispatch!(self, num_public_values)
+    }
+    fn main_next_row_columns(&self) -> Vec<usize> {
+        dispatch!(self, main_next_row_columns)
+    }
+    fn num_periodic_columns(&self) -> usize {
+        dispatch!(self, num_periodic_columns)
+    }
+    fn periodic_columns(&self) -> Cow<'_, [Vec<Val>]> {
+        dispatch!(self, periodic_columns)
+    }
+    fn max_constraint_degree(&self) -> Option<usize> {
+        dispatch!(self, max_constraint_degree)
+    }
+}
+impl<AB: AirBuilder<F = Val>> Air<AB> for FixedAir {
+    fn eval(&self, b: &mut AB) {
+        dispatch!(self, eval, b)
+    }
+}
+pub(crate) struct Backend {
+    air: FixedAir,
+    values: Vec<Val>,
+    config: Config,
+    parameters: StarkSecurityParams,
+    report: SecurityReport,
+    pub shape: Topology,
+}
+impl Backend {
+    fn new(air: FixedAir, values: Vec<Val>, wanted: (usize, usize)) -> Result<Self, Error> {
+        let (parameters, report) = engine::analyze(&air)?;
+        let report = report.require_target()?;
+        if (air.width(), air.num_public_values()) != wanted
+            || values.len() != wanted.1
+            || air.preprocessed_width() != 0
+            || air.main_next_row_columns().is_empty()
+            || report.degree > 5
+            || !(2..=16).contains(&report.quotient_chunks)
+        {
+            return Err(Error::Shape);
+        }
+        let shape =
+            Topology::checked(wanted.0, report.quotient_chunks).map_err(|_| Error::Shape)?;
+        Ok(Self {
+            air,
+            values,
+            parameters,
+            report,
+            shape,
+            config: engine::config()?,
+        })
+    }
+    pub fn source(s: &source::Statement) -> Result<Self, Error> {
+        if s.relation != source::Relation::CanonicalIndex {
+            return Err(Error::Shape);
+        }
+        Self::new(
+            FixedAir::Source(Box::new(source::air::OpeningAir::new(s))),
+            s.values(),
+            (11521, 691),
+        )
+    }
+    pub fn child(s: &lifecycle::statement::Statement) -> Result<Self, Error> {
+        if s.expected.is_bootstrap() {
+            Self::new(
+                FixedAir::Bootstrap(Box::new(lifecycle::bootstrap::BootstrapAir::new(s))),
+                s.values(),
+                (1082, 104),
+            )
+        } else {
+            Self::new(
+                FixedAir::Lifecycle(Box::new(lifecycle::air::LifecycleAir::new(s))),
+                s.values(),
+                (6741, 116),
+            )
+        }
+    }
+    pub fn verify(&self, p: &Proof<Config>) -> Result<(), Error> {
+        engine::verify_with_assessment(
+            &self.config,
+            &self.air,
+            &self.parameters,
+            self.report,
+            p,
+            &self.values,
+        )
+    }
+}

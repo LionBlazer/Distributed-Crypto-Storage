@@ -1,14 +1,14 @@
 //! Fixed domain/length encodings only; never a variable-length commitment API.
+use super::profile_digest;
 use super::{
     KEY_DOMAIN, OPEN_DOMAIN, VERSION,
     statement::{Statement, words},
 };
-use crate::backend::{Val, profile_digest};
-use crate::primitive::PublicStatement;
+use bfv_hiding_stark::Val;
 use p3_field::PrimeCharacteristicRing;
 use p3_goldilocks::default_goldilocks_poseidon2_12;
 use p3_symmetric::Permutation;
-pub(super) fn key_fields(head: &[u8; 112], key: [u8; 32], salt: [Val; 4]) -> Vec<Val> {
+pub fn key_fields(head: &[u8; 112], key: [u8; 32], salt: [Val; 4]) -> Vec<Val> {
     words(&KEY_DOMAIN)
         .chain([Val::from_u32(VERSION), Val::from_u8(32)])
         .chain(words(&head[8..40]))
@@ -17,9 +17,9 @@ pub(super) fn key_fields(head: &[u8; 112], key: [u8; 32], salt: [Val; 4]) -> Vec
         .chain([Val::ZERO; 6])
         .collect()
 }
-pub(super) fn prefix(statement: &Statement, salt: [Val; 4]) -> Vec<Val> {
+pub fn prefix(statement: &Statement, salt: [Val; 4]) -> Vec<Val> {
     let domain = if statement.relation == super::Relation::StateCertificate {
-        super::state::STATE_DOMAIN
+        super::STATE_DOMAIN
     } else {
         OPEN_DOMAIN
     };
@@ -29,7 +29,7 @@ pub(super) fn prefix(statement: &Statement, salt: [Val; 4]) -> Vec<Val> {
             Val::from_u8(12),
             Val::from_u16(2336),
         ])
-        .chain(words(&profile_digest(statement.kind())))
+        .chain(words(&profile_digest(statement.relation)))
         .chain(words(&statement.request))
         .chain(statement.heads.iter().flat_map(|h| words(h)))
         .chain(statement.key_commitment)
@@ -38,7 +38,7 @@ pub(super) fn prefix(statement: &Statement, salt: [Val; 4]) -> Vec<Val> {
     assert_eq!(out.len(), 87);
     out
 }
-pub(super) fn opening_fields(statement: &Statement, salt: [Val; 4], plain: &[u8]) -> Vec<Val> {
+pub fn opening_fields(statement: &Statement, salt: [Val; 4], plain: &[u8]) -> Vec<Val> {
     assert_eq!(plain.len(), 2348);
     let mut out = prefix(statement, salt);
     out.extend(words(plain));
@@ -46,7 +46,7 @@ pub(super) fn opening_fields(statement: &Statement, salt: [Val; 4], plain: &[u8]
     assert_eq!(out.len(), 680);
     out
 }
-pub(super) fn digest(fields: &[Val]) -> [Val; 4] {
+pub fn digest(fields: &[Val]) -> [Val; 4] {
     assert!(matches!(fields.len(), 32 | 64 | 88 | 112 | 144 | 168 | 680));
     let perm = default_goldilocks_poseidon2_12();
     let mut state = [Val::ZERO; 12];

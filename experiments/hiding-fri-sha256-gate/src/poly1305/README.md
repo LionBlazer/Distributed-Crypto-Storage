@@ -23,13 +23,14 @@ belong to their recorded source, not this extension.
 | File | Owned responsibility |
 | --- | --- |
 | `statement.rs` | Checked raw/padded layout, fixed public inputs, statement identity, pinned independent oracle |
-| `arithmetic.rs` | Shared canonical state, bounded cyclic product/tag constraints and canonical witness writer |
+| [shared arithmetic](../../../../crates/registry200-proof/src/source/poly1305.rs) | Single canonical state, bounded cyclic product/tag constraints and caller-owned row writer; imported by mod.rs |
 | `air.rs` | Boolean radix constraints, bounded witness generator, exact public schedule, canonical state and final tag |
 | `tests.rs` | Public oracle examples, genuine proofs and rebuilt malicious-proof rejection tests |
 | `mod.rs` | Explicit experiment policy, radix and standard clamp constants |
 
-Direct consumers are sibling private `primitive.rs` dispatch, `backend.rs` profile
-calculation and the fixed `opening/` relation using the same arithmetic. This module reuses that one backend's OS-seeded
+Direct consumers are sibling private `primitive.rs` dispatch and `backend.rs`
+profile calculation. This module imports registry200-proof::source::poly1305;
+the shared Source AIR uses that same implementation. It reuses the backend's OS-seeded
 RNGs, hiding PCS/MMCS, shape checks and both numerical security floors; no backend
 or validator is copied. Oracle dependencies are exact `poly1305=0.8.0` with its
 `zeroize` feature and `universal-hash=0.5.1`, already available in local source.

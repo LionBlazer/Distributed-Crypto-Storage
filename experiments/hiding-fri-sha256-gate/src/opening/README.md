@@ -7,9 +7,7 @@ records exact scope, failures, artifacts and external observation limits. This
 module now also contains a validated bounded canonical N4 index relation: nine
 actual numerical cases, one genuine proof and all60 serial tests passed. Its
 [separate report](../../CANONICAL-INDEX-VALIDATION.md) records exact current
-source and limitations. This module is a private consumer inside the [standalone experiment](../../README.md),
-with no production accepting API, Owner-key exporter/importer, wire format or SQL
-connection.
+source and limitations. This module is a private producer consumer inside the [standalone experiment](../../README.md). The extracted verifier has a distinct private-control peer application; neither boundary grants SQL acceptance or exports Owner keys.
 
 The candidate links one private master key to authentication/decryption of BOTH
 complete CSTORE packets, then binds every decrypted byte to a fresh salted
@@ -21,19 +19,19 @@ it is not evidence of production secrecy, erasure, key anchoring or finality.
 
 | File | Responsibility |
 | --- | --- |
-| `statement.rs` | Complete canonical core audits, exact independent heads/geometry, immutable public values and canonical commitment decoding |
+| [shared statement](../../../../crates/registry200-proof/src/source/statement.rs) | Complete canonical core audits, exact independent heads/geometry, public values and canonical commitment decoding |
 | `fixture.rs` | Known nonsecret RustCrypto-encrypted source fixtures and fixture-only canonical writer |
-| `schedule.rs`, `layout.rs` | Two fixed public height512 schedules/layouts, 42 jobs, 163 MAC blocks and exact absorb/capture rows |
-| `air.rs` | All cross-primitive, immutable-bank, output-buffer, header and salted-sponge constraints |
+| [shared schedule](../../../../crates/registry200-proof/src/source/schedule.rs), [layout](../../../../crates/registry200-proof/src/source/layout.rs) | Two fixed public height512 schedules/layouts, 42 jobs, 163 MAC blocks and exact absorb/capture rows |
+| [shared AIR](../../../../crates/registry200-proof/src/source/air.rs) | All cross-primitive, immutable-bank, output-buffer, header and salted-sponge constraints |
+| `source_adapter.rs` | Local PublicStatement/Kind adapter over the shared Source claim and AIR |
 | `trace.rs` | Separate nonserializable/non-Clone private witness and genuine shared-arithmetic trace generator |
-| `poseidon.rs` | Internal native-equivalent pinned width12 permutation gadget |
-| `commitment.rs` | Source-key/open encodings and shared fixed-length sponge/native fixture oracle |
+| `poseidon.rs` | Imports the [shared Poseidon gadget](../../../../crates/bfv-hiding-stark/src/poseidon.rs); no permutation implementation is owned here |
+| [shared commitment](../../../../crates/registry200-proof/src/source/commitment.rs) | Source-key/open encodings and shared fixed-length sponge/native fixture oracle |
 | `tests.rs` | Preserved byte-opening native/oracle, admission, genuine and rebuilt inconsistent-component cases |
-| `canonical.rs`, `canonical_tests.rs` | Complete fixed N4 index invariant, bounded witness auxiliaries and preserved original source/rebuilt cases |
+| [shared canonical relation](../../../../crates/registry200-proof/src/source/canonical.rs), `canonical_tests.rs` | Complete fixed N4 index invariant, bounded caller-owned row auxiliaries and preserved original source/rebuilt cases |
 | `packed_tests.rs` | Separate packed-profile geometry, authentic core fixture, genuine proof and rebuilt malformed-witness cases |
 
-The only project-library edge is experiment -> [compact-store](../../../../crates/compact-store/README.md)
-for the existing complete canonical parser/root checker. There is no reverse edge.
+The experiment now consumes [registry200-proof](../../../../crates/registry200-proof/README.md) for the single Source statement/AIR, schedules, arithmetic kernels and profiles. That core library uses compact-store for complete canonical roots; there is no reverse dependency.
 The private backend distinguishes public `PublicStatement` from the old
 self-generating public `PrimitiveStatement`. `prove_with_trace` checks exact public
 values before invoking a witness factory. No verifier-only fake trace/panic method,
@@ -426,3 +424,12 @@ registry_lifecycle/journal now supplies the distinct Request200/Control200 owner
 
 registry_lifecycle/encoding binds successful Result144 returned flags to compact original tuples, all RowId words and all 8192 coefficients. It requires both actual original proofs before its backend and preserves legacy producer contracts. See the
 [validation record](../../PRIVATE-REGISTRY-LIFECYCLE-ENCODING-VALIDATION.md).
+
+
+## Current implementation ownership
+
+The circuit/public statement files listed above now live under
+[registry200-proof/source](../../../../crates/registry200-proof/src/source/mod.rs).
+This module imports that actual implementation; only private Witness/trace,
+fixtures, gates and the local Kind trait adapter remain here. Existing packed,
+state and old encoding consumers use the same moved math without a profile cast.

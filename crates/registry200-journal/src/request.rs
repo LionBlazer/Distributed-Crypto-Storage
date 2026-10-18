@@ -1,27 +1,27 @@
 //! Canonical Request200. It authorizes an opaque C_cmd, not public SQL parsing.
 use super::{Error, Hash, Result, control::Application};
-use crate::opening::{Relation, statement as source};
 use compact_store::Commitment;
+use registry200_proof::source::{Relation, statement as source};
 use sha2::{Digest, Sha256};
 const MAGIC: &[u8; 8] = b"DCSLFJ01";
-pub(super) const REQUEST_BYTES: usize = 272 + 60 + 2384;
+pub const REQUEST_BYTES: usize = 272 + 60 + 2384;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Operation {
+pub enum Operation {
     Bootstrap,
     Transition,
 }
 #[derive(Clone)]
-pub(super) struct Request {
-    pub(super) operation: Operation,
-    pub(super) genesis: Hash,
-    pub(super) parent: Hash,
-    pub(super) application: Hash,
-    pub(super) nonce: Hash,
-    pub(super) query: Hash,
-    pub(super) enrollment: Hash,
-    pub(super) opening: Hash,
-    pub(super) command: Hash,
-    pub(super) packets: [Vec<u8>; 2],
+pub struct Request {
+    pub operation: Operation,
+    pub genesis: Hash,
+    pub parent: Hash,
+    pub application: Hash,
+    pub nonce: Hash,
+    pub query: Hash,
+    pub enrollment: Hash,
+    pub opening: Hash,
+    pub command: Hash,
+    pub packets: [Vec<u8>; 2],
 }
 impl Operation {
     fn tag(self) -> u8 {
@@ -32,7 +32,7 @@ impl Operation {
     }
 }
 /// Chosen before C_open/C_cmd; all excluded values are bound by the final owner signature.
-pub(super) fn intent_query(
+pub fn intent_query(
     app: &Application,
     genesis: Hash,
     parent: Hash,
@@ -51,7 +51,7 @@ pub(super) fn intent_query(
     h.finalize().into()
 }
 impl Request {
-    pub(super) fn encode(&self) -> Result<Vec<u8>> {
+    pub fn encode(&self) -> Result<Vec<u8>> {
         if self.packets[0].len() != 60
             || self.packets[1].len() != 2384
             || (self.operation == Operation::Bootstrap && self.command != [0; 32])
@@ -81,7 +81,7 @@ impl Request {
         out.extend_from_slice(&self.packets[1]);
         Ok(out)
     }
-    pub(super) fn decode(bytes: &[u8]) -> Result<Self> {
+    pub fn decode(bytes: &[u8]) -> Result<Self> {
         if bytes.len() != REQUEST_BYTES || &bytes[..8] != MAGIC || bytes[9..16] != [0; 7] {
             return Err(Error::InvalidEncoding);
         }
@@ -108,7 +108,7 @@ impl Request {
         }
         Ok(out)
     }
-    pub(super) fn source(&self, app: &Application) -> Result<source::Statement> {
+    pub fn source(&self, app: &Application) -> Result<source::Statement> {
         let data = Commitment::decode(&app.source.data, source::limits())
             .map_err(|_| Error::InvalidEncoding)?;
         let index = Commitment::decode(&app.source.index, source::limits())

@@ -6,11 +6,13 @@ measurements and all eight owning tests passed; see the
 [validation record](../../../../PRIVATE-REGISTRY-LIFECYCLE-WIRE-VALIDATION.md). It is not a Journal
 adapter, SQL acceptance path, controller authorization or live lock grant.
 
-[mod.rs](mod.rs) owns the typed encode/verify API and normal measurement gates;
-[frame.rs](frame.rs) owns this frame and its budgets; [transport.rs](transport.rs)
+[mod.rs](mod.rs) imports the actual
+[shared wire API](../../../../../../crates/registry200-proof/src/wire/mod.rs)
+and owns normal measurement gates;
+[frame.rs](../../../../../../crates/registry200-proof/src/wire/frame.rs) owns this frame and its budgets; [transport.rs](transport.rs)
 is a PUBLIC NONSECRET signed Body example. [tests.rs](tests.rs) owns adversarial
-transport and actual proof examples. The shared internal
-[SDK codec](../../proof_codec.rs) checks canonical bounded Postcard and fixed SDK
+transport and actual proof examples. The shared
+[SDK codec](../../../../../../crates/bfv-hiding-stark/src/codec.rs) checks canonical bounded Postcard and fixed SDK
 topology. The [legacy policy](../../proof_wire/README.md) keeps its old DCSLKPW1
 roles, Kind whitelist, profiles, byte/slot caps and test bodies.
 

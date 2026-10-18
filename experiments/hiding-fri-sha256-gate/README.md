@@ -82,19 +82,26 @@ formation, SQL acceptance or a cross-request state certificate.
 | `opening/` | Shared fixed private whole-pair opening, validated byte relation and bounded canonical N4 index relation |
 | `poly1305/` | Checked small-message layout, canonical radix AIR, public oracle and validated adversarial tests |
 
+The current experiment directly consumes
+[registry200-proof](../../crates/registry200-proof/README.md) for the single shared
+Source/lifecycle circuits, profiles and wire, and
+[registry200-journal](../../crates/registry200-journal/README.md) for its concrete
+application/control/request. The [two-peer control validation](REGISTRY200-PEER-CONTROL-VALIDATION.md)
+records the extraction, preserved profiles and real process consumer.
+
 The standalone workspace depends on pinned P3 0.8.0, Rand 0.10.3 and RustCrypto
 SHA-256 0.10.9, ChaCha20 0.9.1, Poly1305 0.8.0 and UniversalHash 0.5.1.
 P3's VCS pin is `a21e3ed42905040ad49c519e402f018381c12d0c`; ChaCha20's is
-`b5d39c45c45df97335f4b6effb853cde97810de1`. The current manifest also uses local
+`b5d39c45c45df97335f4b6effb853cde97810de1`. The historical opening candidate also used local
 compact-store for its complete canonical checker, XChaCha20Poly1305 0.10.1 for the
 known fixture oracle and native P3 Poseidon2 helpers. There is no reverse library
 edge. Fixture buffers/SDK matrices do not gain a production key-custody contract.
 
-The isolated lock has 82 packages: 75 prior registry records remain exact; five
+That candidate's isolated lock had 82 packages: 75 prior registry records remained exact; five
 pinned registry records and local compact-store were added by an audited offline
 resolution. Its only changed old active edge is crypto-common to rand_core 0.6.4;
 all 19 P3 records remain pinned. Earlier 76-package/33-test lock and validation
-records below retain their own historical meaning. No root dependency changed.
+records below retain their own historical meaning. No root dependency changed in that stage.
 
 Related contracts: [private source proofs](../../docs/private-lock-source-proof.md),
 [production arithmetic](../../crates/bfv-query-proof/README.md), and

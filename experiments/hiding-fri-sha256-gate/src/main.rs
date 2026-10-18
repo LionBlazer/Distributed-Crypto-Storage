@@ -22,9 +22,20 @@ fn run() -> Result<(), Error> {
     if !(2..=3).contains(&arguments.len()) || !matches!(arguments[0].as_str(), "security" | "prove")
     {
         eprintln!(
-            "usage: hiding-fri-source-primitives <security|prove> <sha256|hchacha20|chacha20|poly1305-raw|poly1305-padded|pair-opening|canonical-index-opening|selection-opening|packed-canonical-index-opening|factorized-packed-canonical-index-opening|state-certificate|version-selection|selected-encoding|locking-selection|version-locking-selection|bfv-key-transform|bfv-basis-convolution|bfv-local-formation|bfv-lock-returned-formation|lock-returned-encoding|version-lock-returned-encoding|registry-bootstrap|registry-lifecycle-bootstrap|registry-lifecycle|registry-lifecycle-bootstrap-wire|registry-lifecycle-wire|registry-bootstrap-wire|locking-selection-wire|private-control-journal|private-lifecycle-journal|registry-lifecycle-encoding|registry-lifecycle-formation|certified-projection-job|registry200-peer-projection> [empty: Poly1305 security only]; prove certified-projection-job <absolute-dcs-peer-exe>"
+            "usage: hiding-fri-source-primitives <security|prove> <sha256|hchacha20|chacha20|poly1305-raw|poly1305-padded|pair-opening|canonical-index-opening|selection-opening|packed-canonical-index-opening|factorized-packed-canonical-index-opening|state-certificate|version-selection|selected-encoding|locking-selection|version-locking-selection|bfv-key-transform|bfv-basis-convolution|bfv-local-formation|bfv-lock-returned-formation|lock-returned-encoding|version-lock-returned-encoding|registry-bootstrap|registry-lifecycle-bootstrap|registry-lifecycle|registry-lifecycle-bootstrap-wire|registry-lifecycle-wire|registry-bootstrap-wire|locking-selection-wire|private-control-journal|private-lifecycle-journal|registry-lifecycle-encoding|registry-lifecycle-formation|certified-projection-job|registry200-peer-projection|registry200-peer-control> [empty: Poly1305 security only]; prove certified-projection-job <absolute-dcs-peer-exe>"
         );
         return Err(Error::Shape);
+    }
+    if arguments[1] == "registry200-peer-control" {
+        if (arguments[0] == "security" && arguments.len() != 2)
+            || (arguments[0] == "prove" && arguments.len() != 3)
+        {
+            return Err(Error::Shape);
+        }
+        return opening::registry_lifecycle::peer_control_gate(
+            &arguments[0],
+            arguments.get(2).map(std::path::Path::new),
+        );
     }
     if arguments[1] == "registry200-peer-projection" {
         if arguments.len() != 3 || arguments[0] != "prove" {

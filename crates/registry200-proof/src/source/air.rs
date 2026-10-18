@@ -1,3 +1,6 @@
+use super::chacha as ca;
+use super::chacha;
+use super::poly1305::{self as pa, LIMBS};
 use super::{
     DATA_BYTES, commitment,
     layout::Columns,
@@ -5,29 +8,26 @@ use super::{
     schedule::{self, Job, Mac},
     statement::{self, PUBLIC_VALUES, Statement},
 };
-use crate::backend::{TRACE_HEIGHT, Val};
-use crate::chacha::{self, air as ca};
-use crate::poly1305::{LIMBS, arithmetic as pa};
-use crate::primitive::PublicStatement;
+use bfv_hiding_stark::{TRACE_HEIGHT, Val};
 use p3_air::{Air, AirBuilder, BaseAir, WindowAccess, utils::pack_bits_le};
 use p3_field::{Algebra, PrimeCharacteristicRing};
 use std::{borrow::Cow, sync::OnceLock};
-pub(crate) const LANES: usize = 7;
-pub(crate) const BUFFERS: usize = LANES * ca::WIDTH;
-pub(crate) const BANKS: usize = BUFFERS + LANES * 512;
-pub(crate) const MASTER: usize = BANKS;
-pub(crate) const SUBKEY: usize = MASTER + 256;
-pub(crate) const POLYKEY: usize = SUBKEY + 512;
-pub(crate) const POLY: usize = POLYKEY + 512;
-pub(crate) const POSEIDON: usize = POLY + pa::WIDTH;
-pub(crate) const CHECKPOINT: usize = POSEIDON + poseidon::WIDTH;
-pub(crate) const CARRY: usize = CHECKPOINT + 12;
-pub(crate) const SALTS: usize = CARRY + 2;
-pub(crate) const WIDTH: usize = SALTS + 8;
+pub const LANES: usize = 7;
+pub const BUFFERS: usize = LANES * ca::WIDTH;
+pub const BANKS: usize = BUFFERS + LANES * 512;
+pub const MASTER: usize = BANKS;
+pub const SUBKEY: usize = MASTER + 256;
+pub const POLYKEY: usize = SUBKEY + 512;
+pub const POLY: usize = POLYKEY + 512;
+pub const POSEIDON: usize = POLY + pa::WIDTH;
+pub const CHECKPOINT: usize = POSEIDON + poseidon::WIDTH;
+pub const CARRY: usize = CHECKPOINT + 12;
+pub const SALTS: usize = CARRY + 2;
+pub const WIDTH: usize = SALTS + 8;
 const _: () = assert!(WIDTH == 11079);
 
-pub(crate) struct OpeningAir {
-    pub(super) source: Statement,
+pub struct OpeningAir {
+    pub source: Statement,
     values: [Val; PUBLIC_VALUES],
     key_prefix: [Val; 14],
     open_prefix: [Val; 83],
@@ -35,11 +35,11 @@ pub(crate) struct OpeningAir {
     public_schedule: OnceLock<Vec<Vec<Val>>>,
 }
 impl OpeningAir {
-    pub(crate) fn new(source: &Statement) -> Self {
+    pub fn new(source: &Statement) -> Self {
         Self {
             public_schedule: OnceLock::new(),
             source: source.clone(),
-            values: source.public_values().try_into().unwrap(),
+            values: source.values().try_into().unwrap(),
             key_prefix: commitment::key_fields(&source.heads[0], [0; 32], [Val::ZERO; 4])[..14]
                 .try_into()
                 .unwrap(),
@@ -48,7 +48,7 @@ impl OpeningAir {
                 .unwrap(),
             mac_fields: core::array::from_fn(|row| match schedule::mac(row) {
                 Mac::Block { page, block } => {
-                    crate::poly1305::air::message_limbs(source.mac_block(page, block), 128)
+                    super::poly1305::message_limbs(source.mac_block(page, block), 128)
                         .map(Val::from_u64)
                 }
                 _ => [Val::ZERO; 5],
@@ -61,7 +61,7 @@ impl OpeningAir {
     ) -> E {
         rows.map(|r| selectors[r].clone()).sum()
     }
-    pub(super) fn columns(&self) -> Columns {
+    pub fn columns(&self) -> Columns {
         if self.source.relation.packed() {
             Columns::new(true)
         } else {
@@ -82,7 +82,7 @@ impl OpeningAir {
             }
         }
     }
-    pub(super) fn schedule(&self) -> schedule::Schedule {
+    pub fn schedule(&self) -> schedule::Schedule {
         schedule::Schedule::new(self.source.relation.packed())
     }
     fn key_word<E: Algebra<Val>, T: Copy + Into<E>>(
@@ -104,7 +104,7 @@ impl OpeningAir {
     /// Packed source bits are read only at CURRENT81, while lane4 contains
     /// the genuinely constrained counter1 output. Retained-bit profiles use
     /// their ordinary buffer path at CURRENT80.
-    pub(super) fn age_source_bit<E: Algebra<Val>, T: Copy + Into<E>>(
+    pub fn age_source_bit<E: Algebra<Val>, T: Copy + Into<E>>(
         &self,
         row: &[T],
         byte: usize,
@@ -255,7 +255,7 @@ impl OpeningAir {
             b.assert_zero((AB::Expr::ONE - normal_feed.clone()) * *carry);
         }
     }
-    pub(super) fn input<E: Algebra<Val>, T: Copy + Into<E>>(&self, row: &[T], job: Job) -> [E; 16] {
+    pub fn input<E: Algebra<Val>, T: Copy + Into<E>>(&self, row: &[T], job: Job) -> [E; 16] {
         let cols = self.columns();
         let (page, h, counter) = match job {
             Job::H(page) => (page, true, 0),
@@ -284,11 +284,7 @@ impl OpeningAir {
             )),
         })
     }
-    pub(super) fn plain_word<E: Algebra<Val>, T: Copy + Into<E>>(
-        &self,
-        row: &[T],
-        word: usize,
-    ) -> E {
+    pub fn plain_word<E: Algebra<Val>, T: Copy + Into<E>>(&self, row: &[T], word: usize) -> E {
         let cols = self.columns();
         if cols.packed {
             let (_, lane, slot) = schedule::plain_location(word);
@@ -298,7 +294,7 @@ impl OpeningAir {
             sum + self.plain_bit::<E, _>(row, word * 4 + bit / 8, bit % 8) * E::from_u64(1 << bit)
         })
     }
-    pub(super) fn plain_bit<E: Algebra<Val>, T: Copy + Into<E>>(
+    pub fn plain_bit<E: Algebra<Val>, T: Copy + Into<E>>(
         &self,
         row: &[T],
         byte: usize,
@@ -316,7 +312,7 @@ impl OpeningAir {
         let s: E = row[cols.buffers + lane * 512 + slot * 32 + (byte % 4) * 8 + bit].into();
         c.clone() + s.clone() - c * s * E::TWO
     }
-    pub(super) fn stream_field<E: Algebra<Val>, T: Copy + Into<E>>(
+    pub fn stream_field<E: Algebra<Val>, T: Copy + Into<E>>(
         &self,
         row: &[T],
         key: bool,
@@ -434,7 +430,7 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for OpeningAir {
         for lane in 0..LANES {
             let offset = lane * ca::WIDTH;
             let local = &row[offset..offset + ca::WIDTH];
-            let updated = chacha::arithmetic::updated_bits(builder, local, &qr);
+            let updated = chacha::updated_bits(builder, local, &qr);
             for group in 0..if cols.packed { 1 } else { 6 } {
                 let job = schedule::job(7 * group + lane);
                 let input = self.input::<AB::Expr, _>(row, job);

@@ -1,9 +1,9 @@
 //! Full four-row conflict/prefix walker. No owner-computed answer is an AIR substitute.
 use super::{layout::*, ranges::pack};
-use crate::backend::{TRACE_HEIGHT, Val};
+use bfv_hiding_stark::{TRACE_HEIGHT, Val};
 use p3_air::AirBuilder;
 use p3_field::PrimeCharacteristicRing;
-pub(super) fn eval<AB: AirBuilder<F = Val>>(
+pub fn eval<AB: AirBuilder<F = Val>>(
     b: &mut AB,
     row: &[AB::Var],
     next: &[AB::Var],

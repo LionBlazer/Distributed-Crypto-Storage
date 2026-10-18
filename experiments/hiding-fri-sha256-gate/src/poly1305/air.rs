@@ -81,13 +81,6 @@ impl Poly1305Air {
     }
 }
 
-pub(crate) fn write_bits(destination: &mut [Val], value: u64) {
-    assert!(destination.len() <= 32 && value < (1_u64 << destination.len()));
-    for (bit, cell) in destination.iter_mut().enumerate() {
-        *cell = Val::from_u64((value >> bit) & 1);
-    }
-}
-
 /// The H+5 comparator is populated on EVERY row, including inactive padding.
 pub(crate) fn write_state(row: &mut [Val], state: [u64; LIMBS]) {
     let (state_cells, rest) = row.split_at_mut(STATE);
@@ -99,18 +92,6 @@ pub(crate) fn write_state(row: &mut [Val], state: [u64; LIMBS]) {
 pub(crate) fn clamped_r(key: [u8; 32]) -> [u64; LIMBS] {
     let bytes: [u8; 16] = core::array::from_fn(|byte| key[byte] & CLAMP[byte]);
     message_limbs(bytes, 130) // No appended bit for the key.
-}
-
-pub(crate) fn message_limbs(message: [u8; 16], appended_bit: usize) -> [u64; LIMBS] {
-    let mut result = [0; LIMBS];
-    for bit in 0..128 {
-        result[bit / LIMB_BITS] |=
-            u64::from((message[bit / 8] >> (bit % 8)) & 1) << (bit % LIMB_BITS);
-    }
-    if appended_bit < STATE {
-        result[appended_bit / LIMB_BITS] += 1 << (appended_bit % LIMB_BITS);
-    }
-    result
 }
 
 pub(crate) fn folded_product(h: [u64; LIMBS], n: [u64; LIMBS], r: [u64; LIMBS]) -> [u64; LIMBS] {
@@ -333,3 +314,4 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for Poly1305Air {
         }
     }
 }
+pub(crate) use registry200_proof::source::poly1305::{message_limbs, write_bits};

@@ -317,6 +317,7 @@ fn dispatch(
             | Request::Shutdown
             | Request::Copy { .. }
             | Request::InitJournal { .. }
+            | Request::InitRegistryJournal { .. }
             | Request::CollectJournal { .. }
     );
     if privileged && remote != shared.owner {
@@ -337,6 +338,7 @@ fn dispatch(
             | Request::Evaluate { .. }
             | Request::Prove { .. }
             | Request::InitJournal { .. }
+            | Request::InitRegistryJournal { .. }
             | Request::JournalBlocks { .. }
             | Request::PublishBlock { .. }
             | Request::MineBlock { .. }
@@ -431,6 +433,7 @@ fn dispatch(
         | Request::Evaluate { .. }
         | Request::Prove { .. }
         | Request::InitJournal { .. }
+        | Request::InitRegistryJournal { .. }
         | Request::JournalBlocks { .. }
         | Request::PublishBlock { .. }
         | Request::MineBlock { .. }

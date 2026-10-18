@@ -8,7 +8,7 @@ executables. The root Cargo default members select this layer only.
 | Library | Responsibility | Direct project dependencies |
 | --- | --- | --- |
 | [peer-transport](peer-transport/README.md) | Authenticated TLS/TCP and bounded frames | None |
-| [peer-runtime](peer-runtime/README.md) | Peer-owned custody, proving, work/journal RPC and copies | peer-transport, compact-store, bfv-query-core, bfv-query-proof, version-journal |
+| [peer-runtime](peer-runtime/README.md) | Peer-owned custody, proving, work/journal RPC and copies | peer-transport, compact-store, bfv-query-core, bfv-query-proof, version-journal, registry200-journal |
 | [storage-client](storage-client/README.md) | Proof-first SQL acceptance, typed catalogs, owner-finalized writes and confirmed freshness | peer-runtime, compact-query, compact-store, sql-plan, relational-types, bfv-query-core, version-journal |
 | [relational-types](relational-types/README.md) | Owner-side typed schema, lossless SQL dump validation and SELECT plans | None |
 | [sql-plan](sql-plan/README.md) | Parse the supported SQL subset into typed plans | None |
@@ -31,6 +31,8 @@ executables. The root Cargo default members select this layer only.
 | [proof-acceleration](proof-acceleration/README.md) | Shared fixed-profile ABI and startup CPU/OS kernel selection | None |
 | [bfv-query-core](bfv-query-core/README.md) | Separate owner/evaluator FHE roles, bounded wire inputs and optional private key anchor | bfv-fixed-geometry, bfv-linear-circuit, bfv-product-circuit; optional bfv-key-transform, bfv-hiding-stark, bfv-basis-convolution |
 | [compact-query](compact-query/README.md) | Complete private selection and proof-first FHE query/write lifecycle | compact-store; optional bfv-query-core, bfv-query-proof |
+| [registry200-proof](registry200-proof/README.md) | Shared Source/Lifecycle circuits and genuine bounded fixed-profile verification | bfv-hiding-stark, compact-store, version-journal |
+| [registry200-journal](registry200-journal/README.md) | Exact owner-authorized private-control application with actual parent CAS | registry200-proof, compact-store, version-journal |
 | [version-journal](version-journal/README.md) | Bounded cumulative-work forks, authorization, freshness and durable metadata | None |
 | [transaction-state](transaction-state/README.md) | Bounded public transaction/row-lock control state, signed intents and metadata-only witnesses | version-journal |
 | [replica-store](replica-store/README.md) | Ciphertext custody, placement and local atomic repair | compact-store |

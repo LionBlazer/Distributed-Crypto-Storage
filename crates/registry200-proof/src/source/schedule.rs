@@ -1,13 +1,13 @@
 //! Fixed public schedule. All tables use the full power-of-two height512.
-use crate::backend::{TRACE_HEIGHT, Val};
+use bfv_hiding_stark::{TRACE_HEIGHT, Val};
 use p3_field::PrimeCharacteristicRing;
-pub(crate) const JOB_ROWS: usize = 81;
+pub const JOB_ROWS: usize = 81;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Job {
+pub enum Job {
     H(usize),
     Cha { page: usize, counter: u32 },
 }
-pub(crate) fn job(index: usize) -> Job {
+pub fn job(index: usize) -> Job {
     match index {
         0 => Job::H(0),
         1 => Job::H(1),
@@ -29,10 +29,10 @@ pub(crate) fn job(index: usize) -> Job {
         },
     }
 }
-pub(crate) const fn boundary(group: usize) -> usize {
+pub const fn boundary(group: usize) -> usize {
     group * JOB_ROWS + 80
 }
-pub(crate) fn absorb(row: usize) -> Option<(bool, usize)> {
+pub fn absorb(row: usize) -> Option<(bool, usize)> {
     match row {
         0..=3 => Some((true, row)),
         4..=13 => Some((false, row - 4)),
@@ -45,11 +45,11 @@ pub(crate) fn absorb(row: usize) -> Option<(bool, usize)> {
         _ => None,
     }
 }
-pub(crate) const CAPTURES: [usize; 5] = [86, 176, 257, 338, 419];
-pub(crate) fn capture(row: usize) -> Option<usize> {
+pub const CAPTURES: [usize; 5] = [86, 176, 257, 338, 419];
+pub fn capture(row: usize) -> Option<usize> {
     CAPTURES.iter().position(|r| *r == row)
 }
-pub(crate) fn plain_location(word: usize) -> (usize, usize, usize) {
+pub fn plain_location(word: usize) -> (usize, usize, usize) {
     if word < 3 {
         (0, 4, word)
     } else {
@@ -59,12 +59,12 @@ pub(crate) fn plain_location(word: usize) -> (usize, usize, usize) {
     }
 }
 #[derive(Clone, Copy)]
-pub(crate) enum Mac {
+pub enum Mac {
     Block { page: usize, block: usize },
     Final(usize),
     Idle,
 }
-pub(crate) fn mac(row: usize) -> Mac {
+pub fn mac(row: usize) -> Mac {
     match row {
         0..=8 => Mac::Block {
             page: 0,
@@ -81,7 +81,7 @@ pub(crate) fn mac(row: usize) -> Mac {
 }
 /// One selector per physical row avoids non-power-of-two periods or secret schedules.
 /// Source-derived inputs are selected by the same verifier-owned public statement.
-pub(crate) fn columns() -> Vec<Vec<Val>> {
+pub fn columns() -> Vec<Vec<Val>> {
     (0..TRACE_HEIGHT)
         .map(|selected| {
             (0..TRACE_HEIGHT)
@@ -94,37 +94,37 @@ pub(crate) fn columns() -> Vec<Vec<Val>> {
 /// The original retained-bit profile remains 81 rows per group. The packed
 /// profile uses one additional bit-state row to range-bind feedforward output.
 #[derive(Clone, Copy)]
-pub(super) struct Schedule {
+pub struct Schedule {
     packed: bool,
 }
 impl Schedule {
-    pub(super) const fn new(packed: bool) -> Self {
+    pub const fn new(packed: bool) -> Self {
         Self { packed }
     }
-    pub(super) const fn job_rows(self) -> usize {
+    pub const fn job_rows(self) -> usize {
         if self.packed { 82 } else { JOB_ROWS }
     }
-    pub(super) const fn boundary(self, group: usize) -> usize {
+    pub const fn boundary(self, group: usize) -> usize {
         if self.packed {
             group * self.job_rows() + self.job_rows() - 1
         } else {
             boundary(group)
         }
     }
-    pub(super) const fn final_absorb(self) -> usize {
+    pub const fn final_absorb(self) -> usize {
         499 + if self.packed { 6 } else { 0 }
     }
-    pub(super) fn captures(self) -> [usize; 5] {
+    pub fn captures(self) -> [usize; 5] {
         core::array::from_fn(|i| CAPTURES[i] + if self.packed { i + 1 } else { 0 })
     }
-    pub(super) fn capture(self, row: usize) -> Option<usize> {
+    pub fn capture(self, row: usize) -> Option<usize> {
         if self.packed {
             self.captures().iter().position(|r| *r == row)
         } else {
             capture(row)
         }
     }
-    pub(super) fn absorb(self, row: usize) -> Option<(bool, usize)> {
+    pub fn absorb(self, row: usize) -> Option<(bool, usize)> {
         if !self.packed {
             return absorb(row);
         }

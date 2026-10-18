@@ -1,55 +1,38 @@
-//! Actual bounded Source+Registry200 proofs. Independent Expected is never on wire.
-mod frame;
+//! Experiment producer/gates around the real shared bounded verifier.
 #[cfg(test)]
 mod tests;
 mod transport;
+#[cfg(test)]
 use super::{
     CompositeProof,
+    statement::{self, Statement},
+};
+use super::{
     fixture::Fixture,
     prove,
-    statement::{self, Expected, Phase, Statement},
+    statement::{Expected, Phase},
 };
-use crate::backend::{Error as BackendError, analyze};
-use crate::opening::{
-    proof_codec::{self, Topology},
-    statement::decode_digest,
-};
-use crate::primitive::{Kind, PublicStatement};
-use frame::{Frame, Role};
+use crate::backend::Error as BackendError;
+#[cfg(test)]
+use crate::opening::proof_codec;
+#[cfg(test)]
+use crate::primitive::PublicStatement;
+#[cfg(test)]
+use crate::{backend::analyze, opening::proof_codec::Topology, primitive::Kind};
+#[cfg(test)]
 use p3_air::BaseAir;
-use p3_field::PrimeCharacteristicRing;
-const MAX_SEQUENCE_ELEMENTS: usize = 16384;
-const SOURCE_SLOTS: usize = 24 * 1024 * 1024;
-const CHILD_SLOTS: usize = 16 * 1024 * 1024;
-#[derive(Debug, PartialEq, Eq)]
-pub(in crate::opening) enum Error {
-    Encoding,
-    ResourceLimit,
-    Profile,
-    Shape,
-    Proof(BackendError),
-    Verification,
-}
-impl From<BackendError> for Error {
-    fn from(error: BackendError) -> Self {
-        Self::Proof(error)
-    }
-}
-impl From<proof_codec::Error> for Error {
-    fn from(error: proof_codec::Error) -> Self {
-        match error {
-            proof_codec::Error::Encoding => Self::Encoding,
-            proof_codec::Error::ResourceLimit => Self::ResourceLimit,
-            proof_codec::Error::Shape => Self::Shape,
-        }
-    }
-}
-fn role(e: &Expected) -> Role {
-    match e.phase {
-        Phase::Bootstrap => Role::Bootstrap,
-        Phase::Transition { .. } => Role::Transition,
-    }
-}
+#[cfg(test)]
+use registry200_proof::wire::frame::Role;
+use registry200_proof::wire::frame::{self, Frame};
+#[cfg(test)]
+use registry200_proof::wire::{CHILD_SLOTS, MAX_SEQUENCE_ELEMENTS, SOURCE_SLOTS};
+pub(in crate::opening) use registry200_proof::wire::{
+    Error, encode_claim as encode, verify_claim as verify,
+};
+pub(super) use registry200_proof::wire::{
+    decode_and_verify_claim as decode_and_verify, maximum_bundle_bytes, role,
+};
+#[cfg(test)]
 fn topology(s: &impl PublicStatement) -> Result<Topology, Error> {
     let wanted = match s.kind() {
         Kind::CanonicalIndexOpening => (11521, 691),
@@ -70,68 +53,6 @@ fn topology(s: &impl PublicStatement) -> Result<Topology, Error> {
         return Err(Error::Shape);
     }
     Topology::checked(wanted.0, report.quotient_chunks).map_err(Error::from)
-}
-/// Original typed pair only. No caller-provided dimensions or proof fallback.
-pub(in crate::opening) fn encode(
-    e: &Expected,
-    s: &Statement,
-    p: &CompositeProof,
-) -> Result<Vec<u8>, Error> {
-    s.require_expected(e)?;
-    let role = role(e);
-    let source = proof_codec::serialize(
-        p.source.as_ref().ok_or(Error::Shape)?,
-        &topology(&e.source)?,
-        frame::MAX_SOURCE_BYTES,
-    )?;
-    let child = proof_codec::serialize(&p.child, &topology(s)?, frame::MAX_CHILD_BYTES)?;
-    let mut outputs = vec![statement::encoded(s.next)];
-    if role == Role::Transition {
-        outputs.push(statement::encoded(s.result));
-    }
-    frame::join(role, &outputs, &source, &child)
-}
-pub(in crate::opening) fn verify(e: &Expected, bytes: &[u8]) -> Result<Statement, Error> {
-    decode_and_verify(e, bytes).map(|(statement, _)| statement)
-}
-pub(super) fn decode_and_verify(
-    e: &Expected,
-    bytes: &[u8],
-) -> Result<(Statement, CompositeProof), Error> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        e.require_contract()?;
-        let role = role(e);
-        let frame = Frame::parse(role, bytes)?;
-        let roots = frame.outputs.as_chunks::<32>().0;
-        let s = Statement {
-            expected: e.clone(),
-            next: decode_digest(roots[0])?,
-            result: if role == Role::Transition {
-                decode_digest(roots[1])?
-            } else {
-                [crate::backend::Val::ZERO; 4]
-            },
-        };
-        let source = proof_codec::decode(
-            frame.source,
-            &topology(&e.source)?,
-            MAX_SEQUENCE_ELEMENTS,
-            SOURCE_SLOTS,
-        )?;
-        let child = proof_codec::decode(
-            frame.child,
-            &topology(&s)?,
-            MAX_SEQUENCE_ELEMENTS,
-            CHILD_SLOTS,
-        )?;
-        let p = CompositeProof {
-            source: Some(source),
-            child,
-        };
-        super::verify(e, &s, &p)?;
-        Ok((s, p))
-    }))
-    .map_err(|_| Error::Verification)?
 }
 pub(super) fn gate(mode: &str, bootstrap: bool) -> Result<(), BackendError> {
     if !matches!(mode, "security" | "prove") {
@@ -185,21 +106,4 @@ pub(super) fn gate(mode: &str, bootstrap: bool) -> Result<(), BackendError> {
         );
     }
     Ok(())
-}
-
-/// Stable internal application anchor; it confers no authority or composed security claim.
-pub(super) fn contract_digest() -> [u8; 32] {
-    use sha2::{Digest, Sha256};
-    let mut h = Sha256::new();
-    h.update(b"DCS/REGISTRY200-WIRE-CONTRACT/v1/canonical-Postcard/source-first/mandatory-pair");
-    frame::contract(&mut h);
-    h.update(crate::backend::profile_digest(Kind::CanonicalIndexOpening));
-    for n in [MAX_SEQUENCE_ELEMENTS, SOURCE_SLOTS, CHILD_SLOTS] {
-        h.update((n as u64).to_le_bytes());
-    }
-    h.finalize().into()
-}
-
-pub(super) fn maximum_bundle_bytes() -> usize {
-    frame::MAX_BUNDLE_BYTES
 }

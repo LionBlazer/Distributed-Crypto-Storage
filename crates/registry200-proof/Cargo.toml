@@ -1,0 +1,17 @@
+[package]
+name = "registry200-proof"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[dependencies]
+bfv-hiding-stark = { path = "../bfv-hiding-stark" }
+compact-store = { path = "../compact-store" }
+version-journal = { path = "../version-journal" }
+p3-air = "=0.8.0"
+p3-field = "=0.8.0"
+p3-goldilocks = "=0.8.0"
+p3-symmetric = "=0.8.0"
+p3-uni-stark = "=0.8.0"
+sha2 = "=0.10.9"

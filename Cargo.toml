@@ -1,6 +1,8 @@
 [workspace]
 members = [
     "crates/bfv-hiding-stark",
+    "crates/registry200-proof",
+    "crates/registry200-journal",
     "crates/bfv-key-transform",
     "crates/bfv-basis-convolution",
     "crates/bfv-ciphertext-formation",
@@ -40,6 +42,8 @@ members = [
 ]
 default-members = [
     "crates/bfv-hiding-stark",
+    "crates/registry200-proof",
+    "crates/registry200-journal",
     "crates/bfv-key-transform",
     "crates/bfv-basis-convolution",
     "crates/bfv-ciphertext-formation",

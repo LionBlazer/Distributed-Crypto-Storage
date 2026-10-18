@@ -9,6 +9,8 @@ publish = false
 [workspace]
 
 [dependencies]
+registry200-proof = { path = "../../crates/registry200-proof" }
+registry200-journal = { path = "../../crates/registry200-journal" }
 bfv-ciphertext-formation = { path = "../../crates/bfv-ciphertext-formation" }
 bfv-basis-convolution = { path = "../../crates/bfv-basis-convolution" }
 bfv-hiding-stark = { path = "../../crates/bfv-hiding-stark" }

@@ -5,14 +5,16 @@ use super::{
     ranges::{self, code, pack},
     statement::{self, Phase, Statement},
 };
-use crate::backend::{TRACE_HEIGHT, Val};
-use crate::opening::{commitment, poseidon, schedule, statement as source};
-use crate::primitive::PublicStatement;
+use crate::{
+    poseidon,
+    source::{commitment, schedule, statement as source},
+};
+use bfv_hiding_stark::{TRACE_HEIGHT, Val};
 use p3_air::{Air, AirBuilder, BaseAir, WindowAccess};
 use p3_field::{Algebra, PrimeCharacteristicRing};
 use std::{borrow::Cow, sync::OnceLock};
 #[derive(Clone, Copy)]
-pub(super) enum Stream {
+pub enum Stream {
     Source,
     Enrollment,
     Old,
@@ -20,7 +22,7 @@ pub(super) enum Stream {
     New,
     Result,
 }
-pub(super) fn absorb(r: usize) -> Option<(Stream, usize)> {
+pub fn absorb(r: usize) -> Option<(Stream, usize)> {
     match r {
         0..=84 => Some((Stream::Source, r)),
         85..=92 => Some((Stream::Enrollment, r - 85)),
@@ -31,11 +33,11 @@ pub(super) fn absorb(r: usize) -> Option<(Stream, usize)> {
         _ => None,
     }
 }
-pub(super) fn reset(r: usize) -> bool {
+pub fn reset(r: usize) -> bool {
     matches!(r, 0 | 85 | 93 | 118 | 138 | 163)
 }
-pub(crate) struct LifecycleAir {
-    pub(super) statement: Statement,
+pub struct LifecycleAir {
+    pub statement: Statement,
     values: [Val; statement::STEP_VALUES],
     source_prefix: Vec<Val>,
     enrollment_prefix: Vec<Val>,
@@ -44,10 +46,10 @@ pub(crate) struct LifecycleAir {
     periodics: OnceLock<Vec<Vec<Val>>>,
 }
 impl LifecycleAir {
-    pub(super) fn new(s: &Statement) -> Self {
+    pub fn new(s: &Statement) -> Self {
         Self {
             statement: s.clone(),
-            values: s.public_values().try_into().unwrap(),
+            values: s.values().try_into().unwrap(),
             source_prefix: commitment::prefix(&s.expected.source, [Val::ZERO; 4]),
             enrollment_prefix: statement::stable_prefix(&s.expected, true),
             registry_prefix: statement::stable_prefix(&s.expected, false),
@@ -90,7 +92,7 @@ impl LifecycleAir {
             _ => unreachable!(),
         }
     }
-    pub(super) fn field<E: Algebra<Val>, T: Copy + Into<E>>(
+    pub fn field<E: Algebra<Val>, T: Copy + Into<E>>(
         &self,
         row: &[T],
         stream: Stream,

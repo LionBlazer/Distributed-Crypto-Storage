@@ -1,0 +1,12 @@
+[package]
+name = "registry200-journal"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[dependencies]
+registry200-proof = { path = "../registry200-proof" }
+compact-store = { path = "../compact-store" }
+version-journal = { path = "../version-journal" }
+sha2 = "=0.10.9"

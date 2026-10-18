@@ -13,6 +13,7 @@ client acceptance.
 | [bfv-query-proof](../bfv-query-proof/README.md) | Actual STARK generation/verification for every BFV residue |
 | [proof-acceleration](../proof-acceleration/README.md) | Pure bounded CPU-worker policy, without enabling its loader |
 | [version-journal](../version-journal/README.md) | Pinned work/profile validation, ancestry, authorization and durable ordering |
+| [registry200-journal](../registry200-journal/README.md) | Fixed Registry200 application, canonical descriptor/request and genuine Source/Lifecycle admission |
 
 `PeerServer::bind` owns its TCP endpoint and a caller-provided directory lock;
 `run` serves it and `spawn` creates a supervised server. The process deployment is
@@ -552,3 +553,22 @@ token permits only exact positional reuse in the same container. Compaction
 writes a fresh container, audits it before unlinking the old owned container,
 and audits the survivor again. This is not a crash/reopen, namespace-race,
 production GC, quota or SQL guarantee.
+
+
+## Distinct Registry200 control admission
+
+InitRegistryJournal is a new appended owner-only request, separate from the
+unchanged BFV InitJournal/InstallSetup route. Its bounded canonical descriptor and
+independently pinned Genesis construct the concrete
+[registry200-journal](../registry200-journal/README.md) verifier before directory
+registration. Network owns a closed Jobs/Registry verifier enum; unknown
+descriptors cannot fall back to Jobs. Mining validates the actual signed proof
+before work, publishing validates/syncs before state publication, neighbor relays
+use the same publication path, and reopen re-verifies stored proofs. One existing
+heavy-work permit and all transport/Body/history/quota policies remain unchanged.
+
+This is private-control admission only. It does not execute private peer SQL
+predicates, link data mutations to held RowIds or establish agreed global
+freshness. Storage-client LockingSelect remains rejected. The
+[validation record](../../experiments/hiding-fri-sha256-gate/REGISTRY200-PEER-CONTROL-VALIDATION.md)
+records the actual two-process control flow and observation limits.

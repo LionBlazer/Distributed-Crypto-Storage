@@ -5,23 +5,25 @@ and all 21 new owning tests passed; see the
 [validation record](../../../PRIVATE-REGISTRY-LIFECYCLE-VALIDATION.md). It introduces
 two distinct experimental kinds:
 `registry-lifecycle-bootstrap` and `registry-lifecycle`. Neither kind is admitted
-by the legacy proof wire, private Journal, SQL acceptance path or BFV producers.
+by the legacy proof wire, Registry112 private Journal, SQL acceptance path or BFV producers.
 The separate [typed transport](wire/README.md) now verifies both new proof roles
 and measures complete signed Body serialization, without Journal admission.
 The validated Registry112, enrollment64, LockReturn168 and all older profiles keep
 their existing meanings. A 32-byte root is not a conversion between these types.
 
 The reusable production libraries do not depend on this experiment. Direct module
-dependencies are the [canonical Source relation](../README.md), its private
-[Poseidon gadget](../poseidon.rs), the fixed [backend](../../backend.rs), and the
-SDK AIR/prover. It also uses [primitive contracts](../../primitive.rs) and the
-shared [digest byte codec](../locking/statement.rs), without Registry112 conversion.
+dependencies are [registry200-proof](../../../../../crates/registry200-proof/README.md)
+for the single shared Source/lifecycle math, ranges and digest codec, the private
+[Source producer](../README.md), [backend adapter](../../backend.rs), and SDK
+AIR/prover. Local [statement.rs](statement.rs) builds private witness fields;
+[primitive contracts](../../primitive.rs) adapt the shared math without Registry112 conversion.
 The `transaction-state` dependency is used only by the independent
 owning-test oracle. That native state machine is never called by a verifier.
 
 ## Public boundary and authority
 
-[Expected and Statement](statement.rs) pin the complete canonical Source statement,
+[Expected and Statement](../../../../../crates/registry200-proof/src/lifecycle/statement.rs)
+pin the complete canonical Source statement,
 its exact request, both full heads and packets, C_key, C_open, genesis, parent and
 new principal enrollment. Transition Expected additionally pins C_old and C_cmd.
 `verify` in [mod.rs](mod.rs) verifies the genuine canonical Source proof first,
@@ -103,10 +105,10 @@ C_cmd still has to be independently pinned by the authorized caller.
 
 ## AIR and resource boundary
 
-[layout.rs](layout.rs), [ranges.rs](ranges.rs), [control.rs](control.rs),
-[acquire.rs](acquire.rs) and [air.rs](air.rs) define a calculated 6741-column,
+[layout.rs](../../../../../crates/registry200-proof/src/lifecycle/layout.rs), [ranges.rs](../../../../../crates/registry200-proof/src/lifecycle/ranges.rs), [control.rs](../../../../../crates/registry200-proof/src/lifecycle/control.rs),
+[acquire.rs](../../../../../crates/registry200-proof/src/lifecycle/acquire.rs) and [air.rs](../../../../../crates/registry200-proof/src/lifecycle/air.rs) define a calculated 6741-column,
 512-row transition relation with 116 public values and 512 periodic columns. The
-separate [bootstrap AIR](bootstrap.rs) has 1082 columns and 104 public values.
+separate [bootstrap AIR](../../../../../crates/registry200-proof/src/lifecycle/bootstrap.rs) has 1082 columns and 104 public values.
 The actual bootstrap report has 4,996 constraints/degree 3; transition has
 26,562 constraints/degree 5. Both have 16 quotient chunks and individual unique/list
 floors of 128. The validation record separates array sizes, actual process
@@ -179,3 +181,13 @@ The separate journal module now admits both new proof kinds to an experimental o
 
 The child encoding module consumes the exact canonical Source and PV116 lifecycle proof pair, matches client SQL through the shared unchanged Command160 codec, and proves a separate PV136 encoding commitment. It does not grant live locks or form a ciphertext. See the
 [validation record](../../../PRIVATE-REGISTRY-LIFECYCLE-ENCODING-VALIDATION.md).
+
+
+## Reusable verifier ownership
+
+[registry200-proof](../../../../../crates/registry200-proof/README.md) now owns the
+actual shared Source/Lifecycle AIRs, public claims, exact profiles and bounded
+wire verifier. This experiment keeps private witness/model/trace and producer
+field builders in statement.rs. The concrete application has moved to
+[registry200-journal](../../../../../crates/registry200-journal/README.md); actual
+peer control admission is distinct from legacy Registry112 and live SQL.

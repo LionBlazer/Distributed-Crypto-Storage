@@ -10,13 +10,11 @@ use crate::backend::{TRACE_HEIGHT, Val};
 use crate::primitive::Kind;
 use crate::statement::ID_WORDS;
 
-pub(crate) const ADD: usize = WORDS * BITS;
-pub(crate) const XOR: usize = ADD + 4 * BITS;
-pub(crate) const CARRY: usize = XOR + 4 * BITS;
-pub(crate) const FEEDFORWARD_CARRY: usize = CARRY + 4;
-pub(crate) const WIDTH: usize = FEEDFORWARD_CARRY + WORDS;
-pub(crate) const PERIODIC_COLUMNS: usize = SCHEDULE.len();
-
+pub(crate) use registry200_proof::source::chacha::{
+    ADD, FEEDFORWARD_CARRY, PERIODIC_COLUMNS, WIDTH,
+};
+#[cfg(test)]
+pub(crate) use registry200_proof::source::chacha::{CARRY, XOR};
 const _: () = {
     assert!(WIDTH == 788);
     assert!(QUARTER_ROUNDS == 10 * SCHEDULE.len());
@@ -57,12 +55,6 @@ impl ChaChaAir {
             }
         }
         RowMajorMatrix::new(values, WIDTH)
-    }
-}
-
-pub(crate) fn write_bits(destination: &mut [Val], word: u32) {
-    for (bit, value) in destination.iter_mut().enumerate() {
-        *value = Val::from_u32((word >> bit) & 1);
     }
 }
 
@@ -188,3 +180,4 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for ChaChaAir {
         }
     }
 }
+pub(crate) use registry200_proof::source::chacha::write_bits;

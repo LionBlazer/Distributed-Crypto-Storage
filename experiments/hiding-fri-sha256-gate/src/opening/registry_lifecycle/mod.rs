@@ -1,16 +1,13 @@
 //! Distinct private lifecycle relation and experimental typed transport.
 //! Legacy Registry112 consumers and production live grants do not accept these roots.
-mod acquire;
-pub(crate) mod air;
-pub(crate) mod bootstrap;
-mod control;
+pub(crate) use registry200_proof::lifecycle::air;
+pub(crate) use registry200_proof::lifecycle::bootstrap;
 pub(crate) mod encoding;
 mod fixture;
 mod formation;
 mod journal;
-mod layout;
+use registry200_proof::lifecycle::layout;
 mod model;
-mod ranges;
 mod statement;
 #[cfg(test)]
 mod tests;
@@ -21,20 +18,10 @@ use crate::opening::trace as source_trace;
 use crate::primitive::Kind;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_uni_stark::Proof;
-use sha2::{Digest, Sha256};
+pub(super) use registry200_proof::wire::CompositeProof;
+pub(super) use registry200_proof::wire::verify_pair as verify;
 use statement::{Expected, Statement};
 use trace::Witness;
-pub(super) struct CompositeProof {
-    source: Option<Proof<Config>>,
-    child: Proof<Config>,
-}
-pub(super) fn verify(e: &Expected, s: &Statement, p: &CompositeProof) -> Result<(), Error> {
-    e.require_contract()?;
-    // No cache flag, owner-local state evaluator, plaintext registry or receipt enters verification.
-    Backend::new(&e.source)?.verify(&e.source, p.source.as_ref().ok_or(Error::Verification)?)?;
-    s.require_expected(e)?;
-    Backend::new(s)?.verify(s, &p.child)
-}
 fn prove_child_with_trace(
     e: &Expected,
     s: &Statement,
@@ -69,35 +56,7 @@ pub(super) fn prove(
 pub(crate) fn air_width() -> usize {
     layout::WIDTH
 }
-pub(crate) fn profile(h: &mut Sha256, bootstrap: bool) {
-    h.update(b"DCS/private-registry-lifecycle/v2/N4-T2-D2/owner-authorized-externally/canonical-source-first/no-live-grant");
-    h.update(statement::enrollment_profile());
-    h.update(statement::registry_profile());
-    if bootstrap {
-        h.update(b"Source680/Enrollment64/EMPTYRegistry200/revision0/allocator0/no112cast");
-    } else {
-        h.update(b"Source680/Enrollment64/Old200/Command160/New200/Result144/181absorbs");
-        h.update(b"Begin/Acquire/FailCurrent/Savepoint/RollbackTo/Release/End/u64-limb-carries-and-borrows/newest-exact-name/compact-by-ID/failed-EndAbort/no-MVCC/no-controller-signature");
-    }
-    for n in [
-        if bootstrap {
-            bootstrap::WIDTH
-        } else {
-            layout::WIDTH
-        },
-        if bootstrap {
-            statement::BOOTSTRAP_VALUES
-        } else {
-            statement::STEP_VALUES
-        },
-        512,
-        2,
-        4,
-        2,
-    ] {
-        h.update((n as u64).to_le_bytes());
-    }
-}
+pub(crate) use registry200_proof::lifecycle::profile;
 pub(crate) fn gate(mode: &str, bootstrap: bool) -> Result<(), Error> {
     if !matches!(mode, "security" | "prove") {
         return Err(Error::Shape);
@@ -187,4 +146,11 @@ pub(crate) fn peer_projection_gate(
         eprintln!("Registry200 peer projection: {error}");
         crate::backend::Error::Verification
     })
+}
+
+pub(crate) fn peer_control_gate(
+    mode: &str,
+    executable: Option<&std::path::Path>,
+) -> Result<(), Error> {
+    journal::peer_control_gate(mode, executable)
 }

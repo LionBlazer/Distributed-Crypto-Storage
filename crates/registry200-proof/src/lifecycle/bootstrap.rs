@@ -1,28 +1,30 @@
 //! Three complete fixed streams, one genuine Poseidon gadget on every row.
 use super::statement::{self, Statement};
-use crate::backend::{TRACE_HEIGHT, Val};
-use crate::opening::{commitment, poseidon, schedule};
-use crate::primitive::PublicStatement;
+use crate::{
+    poseidon,
+    source::{commitment, schedule},
+};
+use bfv_hiding_stark::{TRACE_HEIGHT, Val};
 use p3_air::{Air, AirBuilder, BaseAir, WindowAccess, utils::pack_bits_le};
 use p3_field::{Algebra, PrimeCharacteristicRing};
 use std::{borrow::Cow, sync::OnceLock};
 
-pub(super) const CHECKPOINT: usize = poseidon::WIDTH;
-pub(super) const WORDS: usize = CHECKPOINT + 12;
-pub(super) const TABLE: usize = WORDS + 256;
-pub(super) const IDS: usize = TABLE + 8;
-pub(super) const CONTROLLERS: usize = IDS + 32;
-pub(super) const SALTS: usize = CONTROLLERS + 512;
-pub(super) const INVERSES: usize = SALTS + 12;
-pub(crate) const WIDTH: usize = INVERSES + 2;
+pub const CHECKPOINT: usize = poseidon::WIDTH;
+pub const WORDS: usize = CHECKPOINT + 12;
+pub const TABLE: usize = WORDS + 256;
+pub const IDS: usize = TABLE + 8;
+pub const CONTROLLERS: usize = IDS + 32;
+pub const SALTS: usize = CONTROLLERS + 512;
+pub const INVERSES: usize = SALTS + 12;
+pub const WIDTH: usize = INVERSES + 2;
 const _: () = assert!(WIDTH == 1082);
 #[derive(Clone, Copy)]
-pub(super) enum Stream {
+pub enum Stream {
     Source,
     Enrollment,
     Registry,
 }
-pub(super) fn absorb(row: usize) -> Option<(Stream, usize)> {
+pub fn absorb(row: usize) -> Option<(Stream, usize)> {
     match row {
         0..=84 => Some((Stream::Source, row)),
         85..=92 => Some((Stream::Enrollment, row - 85)),
@@ -30,13 +32,13 @@ pub(super) fn absorb(row: usize) -> Option<(Stream, usize)> {
         _ => None,
     }
 }
-pub(super) fn reset(row: usize) -> bool {
+pub fn reset(row: usize) -> bool {
     matches!(row, 0 | 85 | 93)
 }
 fn packed<E: Algebra<Val>, T: Copy + Into<E>>(row: &[T], start: usize) -> E {
     pack_bits_le(row[start..start + 32].iter().copied())
 }
-pub(crate) struct BootstrapAir {
+pub struct BootstrapAir {
     values: [Val; statement::BOOTSTRAP_VALUES],
     source_prefix: Vec<Val>,
     enrollment_prefix: Vec<Val>,
@@ -44,16 +46,16 @@ pub(crate) struct BootstrapAir {
     periodics: OnceLock<Vec<Vec<Val>>>,
 }
 impl BootstrapAir {
-    pub(super) fn new(s: &Statement) -> Self {
+    pub fn new(s: &Statement) -> Self {
         Self {
-            values: s.public_values().try_into().unwrap(),
+            values: s.values().try_into().unwrap(),
             source_prefix: commitment::prefix(&s.expected.source, [Val::ZERO; 4]),
             enrollment_prefix: statement::stable_prefix(&s.expected, true),
             registry_prefix: statement::stable_prefix(&s.expected, false),
             periodics: OnceLock::new(),
         }
     }
-    pub(super) fn field<E: Algebra<Val>, T: Copy + Into<E>>(
+    pub fn field<E: Algebra<Val>, T: Copy + Into<E>>(
         &self,
         row: &[T],
         stream: Stream,
