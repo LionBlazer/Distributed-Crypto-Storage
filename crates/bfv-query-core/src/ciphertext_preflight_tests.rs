@@ -108,3 +108,62 @@ fn public_projection_rejects_tiny_polynomial_amplification_under_valid_metadata(
         Err(Error::InvalidShape)
     ));
 }
+
+#[test]
+fn borrowed_power_basis_rows_match_every_sdk_coefficient_for_all_wire_forms() {
+    use bfv_ciphertext_wire::{SecondComponent, StoredPowerBasis, parse};
+    use fhe_math::rq::Representation;
+
+    let parameters = official_parameters().unwrap();
+    let key = SecretKey::random(&parameters, &mut rand::rng());
+    let plaintext =
+        Plaintext::try_encode(&[1u64, 114688, 73][..], Encoding::simd(), &parameters).unwrap();
+    let seeded: Ciphertext = key.try_encrypt(&plaintext, &mut rand::rng()).unwrap();
+    let unseeded = Ciphertext::new(seeded.iter().cloned().collect(), &parameters).unwrap();
+    let seeded_proto = fhe::proto::bfv::Ciphertext::from(&seeded);
+    let unseeded_proto = fhe::proto::bfv::Ciphertext::from(&unseeded);
+    assert_eq!(seeded_proto.c.len(), 1);
+    assert_eq!(seeded_proto.seed.len(), 32);
+    assert_eq!(unseeded_proto.c.len(), 2);
+
+    let check = |wire: &[u8]| {
+        let view = parse(wire).unwrap();
+        assert_eq!(view.original_bytes(), wire);
+        // Independent SDK decoding and inverse conversion supply the oracle;
+        // no expected row is calculated by the borrowed packed-bit iterator.
+        let decoded = Ciphertext::from_bytes(wire, &parameters).unwrap();
+        let compare = |component: usize, stored: StoredPowerBasis<'_>| {
+            let mut power_basis = decoded[component].clone();
+            power_basis.change_representation(Representation::PowerBasis);
+            for basis in 0..MODULI.len() {
+                let actual: Vec<u64> = stored.row(basis).unwrap().collect();
+                let expected = power_basis.coefficients().row(basis).to_vec();
+                assert_eq!(actual.len(), DEGREE);
+                assert_eq!(actual, expected, "component {component}, Q{basis}");
+            }
+        };
+        compare(0, view.c0());
+        match view.second() {
+            SecondComponent::Stored(polynomial) => compare(1, polynomial),
+            SecondComponent::Seed(seed) => {
+                assert_eq!(seed.as_slice(), seeded_proto.seed.as_slice());
+            }
+        }
+    };
+    for first in [false, true] {
+        let polynomial = variable_time(seeded_proto.c[0].clone(), first);
+        check(&envelope(
+            std::slice::from_ref(&polynomial),
+            Some(&seeded_proto.seed),
+        ));
+        for second in [false, true] {
+            check(&envelope(
+                &[
+                    variable_time(unseeded_proto.c[0].clone(), first),
+                    variable_time(unseeded_proto.c[1].clone(), second),
+                ],
+                None,
+            ));
+        }
+    }
+}

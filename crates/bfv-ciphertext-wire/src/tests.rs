@@ -178,3 +178,191 @@ fn nonminimal_overflowing_truncated_and_oversized_lengths_reject() {
         Err(WireError::ResourceLimit)
     );
 }
+
+// Public, non-secret coefficient fixtures. This bit writer is independent of the
+// library's packed-row reader; expected values are chosen before serialization.
+fn public_coefficient(component: usize, basis: usize, index: usize) -> u64 {
+    match index {
+        0 => 0,
+        1 => 1,
+        2 => MODULI[basis] - 1,
+        last if last == DEGREE - 1 => MODULI[basis] - 1 - component as u64,
+        _ => (index as u64 * 257) + basis as u64 * 17 + component as u64 * 3,
+    }
+}
+fn patterned_polynomial(component: usize, variable_time: bool) -> Vec<u8> {
+    // set_residue's existing fixture convention has no optional suffix.
+    let mut bytes = polynomial(DEGREE, 2, false);
+    for basis in 0..MODULI.len() {
+        for index in 0..DEGREE {
+            set_residue(
+                &mut bytes,
+                basis,
+                index,
+                public_coefficient(component, basis, index),
+            );
+        }
+    }
+    if variable_time {
+        bytes.extend([32, 1]);
+    }
+    bytes
+}
+
+#[test]
+fn complete_view_reads_all_power_basis_rows_with_both_and_mixed_stored_policies() {
+    for first_policy in [false, true] {
+        for second_policy in [false, true] {
+            // Arrange: both complete packed polynomials carry distinct known values.
+            let wire = envelope(
+                &[
+                    patterned_polynomial(0, first_policy),
+                    patterned_polynomial(1, second_policy),
+                ],
+                None,
+            );
+
+            // Act: the same strict parser returns only borrowed read-only views.
+            let view = parse(&wire).unwrap();
+            let SecondComponent::Stored(second) = view.second() else {
+                panic!("an unseeded wire must expose the stored second polynomial");
+            };
+
+            // Assert: the Ntt tag does not reinterpret the stored PB coefficients.
+            assert!(std::ptr::eq(view.original_bytes(), wire.as_slice()));
+            for (component, (stored, policy)) in
+                [(view.c0(), first_policy), (second, second_policy)]
+                    .into_iter()
+                    .enumerate()
+            {
+                assert_eq!(stored.allow_variable_time(), policy);
+                assert_eq!(stored.packed_bytes().len(), PACKED_POLYNOMIAL_BYTES);
+                for basis in 0..MODULI.len() {
+                    let mut row = stored.row(basis).unwrap();
+                    assert_eq!(row.len(), DEGREE);
+                    for (index, actual) in row.by_ref().enumerate() {
+                        assert_eq!(
+                            actual,
+                            public_coefficient(component, basis, index),
+                            "component {component}, basis {basis}, coefficient {index}"
+                        );
+                    }
+                    assert_eq!(row.len(), 0);
+                    assert_eq!(row.next(), None);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn seeded_view_borrows_the_exact_original_seed_without_inventing_c1_rows() {
+    let seed = core::array::from_fn::<_, 32, _>(|i| i as u8);
+    for policy in [false, true] {
+        let wire = envelope(&[patterned_polynomial(0, policy)], Some(&seed));
+
+        let view = parse(&wire).unwrap();
+
+        let SecondComponent::Seed(borrowed) = view.second() else {
+            panic!("the original seeded form must stay seeded");
+        };
+        assert_eq!(borrowed, &seed);
+        assert!(std::ptr::eq(
+            borrowed.as_slice(),
+            &wire[wire.len() - seed.len()..],
+        ));
+        assert!(std::ptr::eq(view.original_bytes(), wire.as_slice()));
+        assert_eq!(view.c0().allow_variable_time(), policy);
+        for basis in 0..MODULI.len() {
+            let row = view.c0().row(basis).unwrap();
+            assert_eq!(row.len(), DEGREE);
+            for (index, value) in row.enumerate() {
+                assert_eq!(value, public_coefficient(0, basis, index));
+            }
+        }
+    }
+}
+
+#[test]
+fn row_outlives_a_short_lived_view_and_is_exact_sized_fused_and_index_bounded() {
+    fn borrowed_row(bytes: &[u8]) -> Coefficients<'_> {
+        let view = parse(bytes).unwrap();
+        view.c0().row(4).unwrap()
+    }
+    fn exact_and_fused<I: ExactSizeIterator<Item = u64> + core::iter::FusedIterator>(row: I) -> I {
+        row
+    }
+    let wire = envelope(&[patterned_polynomial(0, false)], Some(&[9; 32]));
+
+    // The view and polynomial handles have ended their scope; only wire is retained.
+    let mut row = exact_and_fused(borrowed_row(&wire));
+
+    assert_eq!(row.size_hint(), (DEGREE, Some(DEGREE)));
+    assert_eq!(row.next(), Some(0));
+    assert_eq!(row.len(), DEGREE - 1);
+    assert_eq!(row.last(), Some(public_coefficient(0, 4, DEGREE - 1)));
+
+    let mut exhausted = borrowed_row(&wire);
+    assert_eq!(exhausted.by_ref().count(), DEGREE);
+    assert_eq!(exhausted.size_hint(), (0, Some(0)));
+    for _ in 0..3 {
+        assert_eq!(exhausted.next(), None);
+    }
+    let stored = parse(&wire).unwrap().c0();
+    for invalid in [MODULI.len(), MODULI.len() + 1, DEGREE, usize::MAX] {
+        assert!(
+            stored.row(invalid).is_none(),
+            "invalid modulus index {invalid}"
+        );
+    }
+}
+
+#[test]
+fn complete_view_rejects_a_noncanonical_last_coefficient_at_every_q_and_component() {
+    let zero = polynomial(DEGREE, 2, false);
+    for (basis, modulus) in MODULI.into_iter().enumerate() {
+        for component in 0..2 {
+            let mut polynomials = [zero.clone(), zero.clone()];
+            set_residue(&mut polynomials[component], basis, DEGREE - 1, modulus - 1);
+            let valid = envelope(&polynomials, None);
+            let view = parse(&valid).unwrap();
+            let stored = match (component, view.second()) {
+                (0, _) => view.c0(),
+                (1, SecondComponent::Stored(stored)) => stored,
+                _ => unreachable!("the fixture has two stored polynomials"),
+            };
+            assert_eq!(stored.row(basis).unwrap().last(), Some(modulus - 1));
+
+            set_residue(&mut polynomials[component], basis, DEGREE - 1, modulus);
+            let invalid = envelope(&polynomials, None);
+            assert!(matches!(parse(&invalid), Err(WireError::InvalidEncoding)));
+            if component == 0 {
+                let seeded = envelope(&polynomials[..1], Some(&[7; 32]));
+                assert!(matches!(parse(&seeded), Err(WireError::InvalidEncoding)));
+            }
+        }
+    }
+}
+
+#[test]
+fn complete_view_requires_canonical_second_component_and_final_eof() {
+    let first = patterned_polynomial(0, true);
+    let mut malformed_second = polynomial(DEGREE, 2, false);
+    malformed_second.extend([32, 0]); // explicit false is not canonical proto3.
+    let invalid_second = envelope(&[first.clone(), malformed_second], None);
+    assert!(matches!(
+        parse(&invalid_second),
+        Err(WireError::InvalidEncoding)
+    ));
+
+    let valid = envelope(std::slice::from_ref(&first), Some(&[5; 32]));
+    for suffix in [[24, 0], [24, 1], [32, 1], [18, 0]] {
+        let mut trailing = valid.clone();
+        trailing.extend(suffix);
+        assert!(matches!(parse(&trailing), Err(WireError::InvalidEncoding)));
+    }
+    assert!(matches!(
+        parse(&vec![0; MAX_CIPHERTEXT_BYTES + 1]),
+        Err(WireError::ResourceLimit)
+    ));
+}

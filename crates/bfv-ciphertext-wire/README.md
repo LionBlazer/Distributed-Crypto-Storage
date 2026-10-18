@@ -1,11 +1,13 @@
 # Fixed BFV ciphertext wire
 
-This library checks the borrowed canonical protobuf wire before an SDK decoder can
-allocate polynomials or perform NTT work. Its only dependency is
+This library checks the borrowed canonical protobuf wire and exposes its stored
+PowerBasis rows before an SDK decoder can allocate polynomials or perform NTT
+work. Its only dependency is
 [bfv-fixed-geometry](../bfv-fixed-geometry/README.md); it has no SDK, proof backend,
 protobuf decoder, key, fixture or network dependency.
 
-`validate(&[u8])` allocates no heap storage and retains no input. It first applies a
+`parse(&[u8])` allocates no heap storage and returns a sealed read-only
+`CiphertextView` borrowing the complete original wire. It first applies a
 512 KiB byte limit, then accepts exactly the fixed level-zero N8192/five-Q grammar:
 two unseeded NTT polynomials, or one NTT polynomial plus seed32. Each polynomial
 contains 223232 packed power-basis bytes. Every residue is checked against its own
@@ -14,50 +16,70 @@ both valid. Explicit defaults, unknown/duplicate/reordered fields, nonminimal or
 overflowing varints, other degrees/representations/levels, extra components and
 trailing bytes reject. `WireError` distinguishes the outer byte limit from invalid
 encoding. Geometry and byte limits cannot be selected by a submitted message.
+Every field, residue, flag and the final EOF is checked before a complete view
+is returned. `validate(&[u8])` delegates to this same parser and discards the view;
+it retains its existing byte limits and error variants.
+
+## Public borrowed API
+
+`CiphertextView::original_bytes` preserves the exact complete input, including
+the original seeded or unseeded form. `c0` returns a `StoredPowerBasis` handle;
+`second` returns `SecondComponent::Stored` or `SecondComponent::Seed(&[u8; 32])`.
+The seed is only borrowed public data. It is not expanded into a polynomial, and
+there is no stored c1 variable-time flag in the seeded form.
+
+`StoredPowerBasis::packed_bytes` borrows all five packed rows and
+`allow_variable_time` returns that polynomial's original bool policy. The Ntt
+tag2 is wire metadata: the packed payload is **PowerBasis**, never native NTT
+coefficients. `row(0..4)` reads exactly 8192 canonical u64 coefficients in natural
+coefficient order at the fixed Q index. An invalid modulus index returns None.
+The zero-allocation iterator implements `ExactSizeIterator` and `FusedIterator`;
+its lifetime follows the original buffer, so a short-lived view need not be
+retained. All fields and constructors are private and no mutable bytes are exposed.
+
+```rust
+use bfv_ciphertext_wire::{Coefficients, SecondComponent, WireError, parse};
+
+fn first_power_basis_row(bytes: &[u8]) -> Result<Coefficients<'_>, WireError> {
+    let view = parse(bytes)?;
+    // Q0 is fixed by bfv-fixed-geometry; no caller-selected modulus is created.
+    Ok(view.c0().row(0).expect("fixed Q0 index"))
+}
+
+fn is_seeded(bytes: &[u8]) -> Result<bool, WireError> {
+    Ok(matches!(parse(bytes)?.second(), SecondComponent::Seed(_)))
+}
+```
+
+`preflight` owns the one canonical grammar and complete validation. `view` owns
+the immutable handles and the shared lazy packed-row iterator. Neither module
+deserializes an SDK Poly, transforms a row or constructs a seed-derived c1.
 
 The algorithm is extracted from the existing Basis decoder. Basis and Core map its
 errors into their own APIs, then retain the actual SDK decoding and semantic checks.
 Passing this gate is not an encryption, key-ownership, computation, freshness or SQL
-proof. It does not replace SDK deserialization or its canonical roundtrip.
+proof. It does not construct an SDK value; existing Core/Basis consumers retain
+their SDK semantic and canonical-roundtrip checks. A
+consumer still needs the complete Source/Encoding/Key/Basis/Formation prerequisites,
+actual linked computation proofs and an independent freshness decision before any
+completed SQL admission. The parser supplies no authority token or private-key access.
 
-Synthetic wire tests are explicitly public and non-secret. Actual SDK interoperability
-belongs to the Basis/Core consumers, and the dcs-peer test exercises malformed input
-under real stored heads and an installed setup.
+Synthetic wire tests are explicitly public and non-secret. API tests cover all 8192
+values at every Q index, mixed stored bool policies, original seeded bytes, final
+residue boundaries, invalid indices and borrowed iterator lifetime/fusion. Core
+also compares every returned coefficient with independent actual SDK decoding and
+PowerBasis conversion in all six seeded/unseeded bool-policy forms. The dcs-peer
+test exercises malformed input over TLS against a separate peer process with real
+stored heads and an installed setup. The [executed validation](VALIDATION.md)
+records 19 distinct runtime cases, two compile-fail examples and strict Clippy.
+The earlier preflight-only run remains unchanged in
+[PREFLIGHT-VALIDATION.md](PREFLIGHT-VALIDATION.md).
 
 Owning commands for the orchestrator:
 
 ```sh
 cargo test --release --locked --offline -p bfv-ciphertext-wire
 cargo test --release --locked --offline -p bfv-query-core ciphertext_preflight_tests
-cargo test --release --locked --offline -p bfv-basis-convolution borrowed_preflight
+cargo test --release --locked --offline -p bfv-basis-convolution --lib
 cargo test --release --locked --offline -p dcs-peer --test process_transport ciphertext_preflight
 ```
-
-
-## Executed validation
-
-Release/offline/locked validation on Rust 1.99.0, Windows MSVC and native CPU flags
-passed 115 runtime tests: all 5 wire tests, all 5 Basis tests, 103 Core unit and
-integration tests, and 2 actual process/TLS tests. All 8 newly declared cases were
-discovered in the newly built binaries and executed. Fifteen Core doctests, the
-requirements mirror and the core dependency/target contract also passed. The default
-Core build and strict Clippy for the affected libraries, peer runtime, peer app and
-research consumer passed. Existing AIRs, proof profiles and old test bodies are
-unchanged; unrelated historical cryptographic suites were not all rerun.
-
-The hostile TLS case installs an actual setup and stored object with matching
-heads, verifies genuine public-product proofs before and after the malformed
-request, and decrypts the final encrypted response with the original Owner. The
-2299 tiny degree8/NttShoup records occupy 524172 bytes, below the 512 KiB cap; the
-peer returns the Core InvalidShape error and remains usable. This is arithmetic
-admission coverage, not SQL selection or key-authority evidence.
-
-The test harness and its independent daemon were sampled separately and at aligned
-instants. In this hostile case, the daemon's sampled OS peak working set was
-169160704 bytes and the maximum sampled concurrent working set was 213913600 bytes.
-Across the selected runtime suite, the maximum sampled working set was 1325486080
-bytes, sampled private bytes 1327448064, and sampled OS peak working set 1326907392.
-The observer recorded 1414 per-process samples from 14 owned PIDs. Its nominal
-100 ms delay is not the actual interval: the largest aligned gap was 1139.4924 ms.
-No sampled 1792 MiB per-process or 1200 s per-command soft fuse fired. These are
-observations of these tests, not a hard memory bound or live SQL latency result.

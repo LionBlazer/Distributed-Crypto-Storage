@@ -1,10 +1,12 @@
-//! Borrowed canonical wire preflight for the fixed level-zero BFV ciphertext.
-//! Passing this gate is not SDK deserialization, encryption evidence or key authority.
+//! Borrowed canonical wire and stored PowerBasis rows for the fixed BFV ciphertext.
+//! Parsing is not SDK deserialization, encryption evidence or key authority.
 #![forbid(unsafe_code)]
 
 mod preflight;
+mod view;
 
-pub use preflight::validate;
+pub use preflight::{parse, validate};
+pub use view::{CiphertextView, Coefficients, SecondComponent, StoredPowerBasis};
 
 /// Complete ciphertext wire limit, checked before parsing any protobuf field.
 pub const MAX_CIPHERTEXT_BYTES: usize = 512 * 1024;
