@@ -1,6 +1,8 @@
 //! Public-fixture, actual OS-process/TLS/FHE tests; no simulated transport or GUI.
 #[path = "support/borrowed_custody.rs"]
 mod borrowed_custody;
+#[path = "support/ciphertext_preflight.rs"]
+mod ciphertext_preflight;
 #[path = "support/compute_custody.rs"]
 mod compute_custody;
 #[path = "support/received_version.rs"]

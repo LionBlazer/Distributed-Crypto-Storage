@@ -9,6 +9,7 @@ publish = false
 bfv-hiding-stark = { path = "../bfv-hiding-stark" }
 bfv-key-transform = { path = "../bfv-key-transform" }
 bfv-fixed-geometry = { path = "../bfv-fixed-geometry" }
+bfv-ciphertext-wire = { path = "../bfv-ciphertext-wire" }
 fhe = "=0.1.1"
 fhe-math = "=0.1.1"
 fhe-traits = "=0.1.1"

@@ -18,6 +18,7 @@ bfv-key-transform = { path = "../bfv-key-transform", optional = true }
 bfv-hiding-stark = { path = "../bfv-hiding-stark", optional = true }
 p3-field = { version = "=0.8.0", optional = true }
 bfv-fixed-geometry = { path = "../bfv-fixed-geometry" }
+bfv-ciphertext-wire = { path = "../bfv-ciphertext-wire" }
 bfv-linear-circuit = { path = "../bfv-linear-circuit" }
 bfv-product-circuit = { path = "../bfv-product-circuit" }
 fhe = "=0.1.1"

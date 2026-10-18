@@ -9,23 +9,10 @@ use p3_field::PrimeCharacteristicRing;
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, OnceLock};
 
-pub const MODULI: [u64; 5] = [
-    8796092858369,
-    8796092792833,
-    17592186028033,
-    17592185438209,
-    17592184717313,
-];
-pub const PLAINTEXT: u64 = 114689;
+pub use bfv_fixed_geometry::{MODULI, PLAINTEXT};
 pub const VARIANCE: usize = 10;
 pub const MAX_PARAMETER_BYTES: usize = 1024;
-// Pinned codec: 8192*(43+43+44+44+44)/8 = 223232 coefficient bytes/poly.
-// Rq adds repr(2)+degree(3)+bytes tag/len(4)+variable-time(<=2) = <=11.
-// Ct adds tag/len(4) per poly: <=2*(223232+11+4)=446494 at level0.
-// Seeded form has one such poly + seed tag/len/32 = 223281. Both fit this cap.
-pub const MAX_CIPHERTEXT_BYTES: usize = 512 * 1024;
-pub const MAX_CANONICAL_UNSEEDED_BYTES: usize = 2 * (223232 + 11 + 4);
-const _: () = assert!(MAX_CIPHERTEXT_BYTES >= MAX_CANONICAL_UNSEEDED_BYTES);
+pub use bfv_ciphertext_wire::{MAX_CANONICAL_UNSEEDED_BYTES, MAX_CIPHERTEXT_BYTES};
 
 pub fn parameters() -> Arc<BfvParameters> {
     static PARAMETERS: OnceLock<Arc<BfvParameters>> = OnceLock::new();
@@ -62,7 +49,7 @@ impl CanonicalCiphertext {
         {
             return Err(Error::Shape);
         }
-        crate::preflight::validate(bytes)?;
+        crate::preflight::validate(bytes).map_err(|_| Error::Shape)?;
         let par = parameters();
         // No attacker-supplied parameter builder/deserializer can allocate a different N.
         if parameters_bytes != par.to_bytes() {

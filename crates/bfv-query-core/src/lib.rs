@@ -1,6 +1,8 @@
 //! Experimental exact owner-online BFV roles. Outputs have no computation proof.
 //! Parameters and arithmetic match the measured byte-limb probe; retrieval is external.
 mod canonical;
+#[cfg(test)]
+mod ciphertext_preflight_tests;
 mod exact_index;
 mod indexed_insert;
 mod indexed_select;
@@ -614,6 +616,9 @@ impl PeerEvaluator {
     }
 }
 fn checked_ciphertext(wire: &[u8], parameters: &Arc<BfvParameters>) -> Result<Ciphertext> {
+    // Bound the exact two-polynomial protobuf shape and all packed residues before
+    // the SDK can allocate/transform a repeated tiny polynomial against N8192.
+    bfv_ciphertext_wire::validate(wire).map_err(|_| Error::InvalidShape)?;
     let ct = Ciphertext::from_bytes(wire, parameters).map_err(backend)?;
     if ct.len() != 2
         || ct

@@ -3,7 +3,7 @@
 mod ciphertext;
 pub mod circuit;
 mod evidence;
-mod preflight;
+use bfv_ciphertext_wire as preflight;
 mod statement;
 mod witness;
 use bfv_hiding_stark::TRACE_HEIGHT;

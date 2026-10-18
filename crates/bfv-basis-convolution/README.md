@@ -77,3 +77,15 @@ is dropped before the next. An incomplete prefix is never sufficient.
 little-endian u32 words from a 32-byte digest, represented exactly in Goldilocks.
 The formation library reuses this public encoding; no profile, context, equation
 or verification policy changes. Neither entry point grants SQL authority.
+
+
+## Shared ciphertext preflight
+
+The borrowed protobuf gate and its fixed ciphertext byte limits now belong to
+[bfv-ciphertext-wire](../bfv-ciphertext-wire/README.md), a pure dependency on
+fixed geometry. Basis maps that gate into its existing Shape error and retains
+its actual SDK decoding, complete residue/context checks and exact roundtrip.
+The accepted grammar, proof profile, mathematical relation and old test bodies
+are unchanged. The extraction, Core shape gate and actual-process rejection
+coverage passed the [recorded release validation](../bfv-ciphertext-wire/README.md#executed-validation).
+Earlier validation records remain historical measurements.

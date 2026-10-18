@@ -97,6 +97,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 name = "bfv-basis-convolution"
 version = "0.1.0"
 dependencies = [
+ "bfv-ciphertext-wire",
  "bfv-fixed-geometry",
  "bfv-hiding-stark",
  "bfv-key-transform",
@@ -125,6 +126,13 @@ dependencies = [
  "p3-uni-stark",
  "sha2",
  "zeroize",
+]
+
+[[package]]
+name = "bfv-ciphertext-wire"
+version = "0.1.0"
+dependencies = [
+ "bfv-fixed-geometry",
 ]
 
 [[package]]
@@ -191,6 +199,7 @@ version = "0.1.0"
 dependencies = [
  "bfv-basis-convolution",
  "bfv-ciphertext-formation",
+ "bfv-ciphertext-wire",
  "bfv-fixed-geometry",
  "bfv-hiding-stark",
  "bfv-key-transform",

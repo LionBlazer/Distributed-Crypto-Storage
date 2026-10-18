@@ -1,0 +1,9 @@
+[package]
+name = "bfv-ciphertext-wire"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91.1"
+publish = false
+
+[dependencies]
+bfv-fixed-geometry = { path = "../bfv-fixed-geometry" }
