@@ -14,6 +14,8 @@ mod received_version_import;
 mod rpc_observation;
 #[path = "support/select_pagination.rs"]
 mod select_pagination;
+#[path = "support/sql_capabilities.rs"]
+mod sql_capabilities;
 #[path = "support/static_aggregate.rs"]
 mod static_aggregate;
 #[path = "support/static_update.rs"]

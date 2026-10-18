@@ -1,12 +1,11 @@
-//! Public validation of exact FHE jobs and owner-finalized root publication.
-//! Private authenticated selection and AEAD writeback remain designated-client work.
+//! Public validation of exact FHE arithmetic jobs.
+//! SQL mutation admission is closed until complete source/formation/writeback proofs exist.
 use std::{
     collections::{BTreeSet, VecDeque},
     sync::{Arc, Mutex},
 };
 
 use bfv_query_core::{PublicUpdateEvaluator, PublicUpdateParameters};
-use compact_store::Commitment;
 use sha2::{Digest, Sha256};
 use version_journal::{HeadPair, ShardState, TransitionStatement, TransitionVerifier};
 
@@ -299,7 +298,7 @@ impl JobVerifier {
     }
     /// Derives the exact canonical input from the caller's trusted original job,
     /// verifies its serialized proof, and retains that successful verification for
-    /// later journal validation. The returned arithmetic marker does not establish
+    /// raw arithmetic reuse. The returned arithmetic marker does not establish
     /// authenticated SQL selection, authorization, head agreement or freshness.
     pub fn check_job(
         &self,
@@ -331,6 +330,7 @@ impl JobVerifier {
             .insert(key);
         Ok(())
     }
+    #[cfg(test)]
     fn verify_arithmetic(&self, input: &[u8], reply: &ProofReply) -> version_journal::Result<()> {
         let key = self.arithmetic_key(input, reply);
         if self
@@ -370,126 +370,13 @@ fn crypto(error: impl std::fmt::Display) -> RemoteError {
     RemoteError::Cryptography(error.to_string())
 }
 impl TransitionVerifier for JobVerifier {
-    fn verify(&self, statement: TransitionStatement<'_>) -> version_journal::Result<()> {
-        let bad = version_journal::Error::RejectedComputationProof;
-        if statement.application_commitment != self.application_commitment {
-            return Err(bad);
-        }
-        let manifest = MutationManifest::decode(statement.request).map_err(|_| bad.clone())?;
-        let evidence = MutationEvidence::decode(statement.proof).map_err(|_| bad.clone())?;
-        if manifest.previous_shards != statement.previous_shards
-            || evidence.jobs.len() != manifest.jobs.len()
-        {
-            return Err(bad);
-        }
-        for update in statement.updates {
-            if !manifest.jobs.iter().any(|job| job.shard == update.id) {
-                return Err(bad);
-            }
-            if manifest.operation == Operation::Update {
-                check_head_change(
-                    update.old,
-                    update.new,
-                    manifest.operation,
-                    statement.database,
-                    None,
-                )
-                .map_err(|_| bad.clone())?;
-            }
-        }
-        if manifest.operation == Operation::Insert
-            && (statement.updates.len() != manifest.jobs.len()
-                || statement
-                    .updates
-                    .iter()
-                    .zip(&manifest.jobs)
-                    .any(|(update, job)| update.id != job.shard))
-        {
-            return Err(bad);
-        }
-        for (job, proof) in manifest.jobs.iter().zip(&evidence.jobs) {
-            let old = manifest
-                .previous_shards
-                .iter()
-                .find(|s| s.id == job.shard)
-                .ok_or_else(|| bad.clone())?;
-            let context = if manifest.operation == Operation::Insert {
-                let metadata = self
-                    .evaluator
-                    .insert_metadata(&job.request)
-                    .map_err(|_| bad.clone())?;
-                let update = statement
-                    .updates
-                    .iter()
-                    .find(|update| update.id == job.shard)
-                    .ok_or_else(|| bad.clone())?;
-                check_head_change(
-                    update.old,
-                    update.new,
-                    manifest.operation,
-                    statement.database,
-                    Some((metadata.existing_rows, metadata.incoming_rows)),
-                )
-                .map_err(|_| bad.clone())?;
-                metadata.context
-            } else {
-                self.evaluator
-                    .request_context(&job.request)
-                    .map_err(|_| bad.clone())?
-            };
-            if context.data_head() != old.heads.data || context.index_head() != old.heads.index {
-                return Err(bad);
-            }
-            let input = self
-                .circuit_request(manifest.operation, &job.request)
-                .map_err(|_| bad.clone())?;
-            self.verify_arithmetic(&input, proof)?;
-        }
-        Ok(())
+    fn verify(&self, _statement: TransitionStatement<'_>) -> version_journal::Result<()> {
+        // Addition/product correctness does not prove the source selection,
+        // ciphertext input formation or the new encrypted data/index images.
+        // Every Jobs transition is INSERT or UPDATE. Reject before consulting
+        // cached arithmetic, on Mine, Publish and durable replay alike.
+        Err(version_journal::Error::RejectedComputationProof)
     }
-}
-
-fn check_head_change(
-    old: HeadPair,
-    new: HeadPair,
-    operation: Operation,
-    database: [u8; 16],
-    insert_counts: Option<(usize, usize)>,
-) -> Result<(), RemoteError> {
-    for (before, after, data) in [(old.data, new.data, true), (old.index, new.index, false)] {
-        let old = Commitment::decode(&before, crate::store::custody_limits()).map_err(crypto)?;
-        let new = Commitment::decode(&after, crate::store::custody_limits()).map_err(crypto)?;
-        if old.database() != database
-            || new.database() != database
-            || old.key_domain() != new.key_domain()
-            || old.layout().schema != new.layout().schema
-            || old.layout().row_width != new.layout().row_width
-            || old.layout().rows_per_page != new.layout().rows_per_page
-            || old.revision().checked_add(1) != Some(new.revision())
-        {
-            return Err(RemoteError::Integrity);
-        }
-        if operation == Operation::Update && old.layout() != new.layout() {
-            return Err(RemoteError::Integrity);
-        }
-        if operation == Operation::Insert && data {
-            let (existing, incoming) = insert_counts.ok_or(RemoteError::Integrity)?;
-            if old.layout().row_count != existing as u64
-                || incoming == 0
-                || old.layout().row_count.checked_add(incoming as u64)
-                    != Some(new.layout().row_count)
-            {
-                return Err(RemoteError::Integrity);
-            }
-        }
-        if operation == Operation::Insert
-            && !data
-            && new.layout().row_count < old.layout().row_count
-        {
-            return Err(RemoteError::Integrity);
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -688,7 +575,7 @@ mod tests {
         assert_eq!(verifier.verified.lock().unwrap().entries.len(), 1);
     }
     #[test]
-    fn cached_arithmetic_still_requires_original_heads_and_pinned_application_parameters() {
+    fn cached_genuine_arithmetic_cannot_authorize_a_sql_mutation() {
         use bfv_query_core::{Geometry, Owner, QueryContext, SelectedField};
         use version_journal::{HeadRef, ShardUpdate};
 
@@ -765,8 +652,11 @@ mod tests {
             next_state_root: [9; 32],
         };
 
-        // A genuine arithmetic cache hit still runs every surrounding rule.
-        assert!(verifier.verify(TransitionStatement { ..statement }).is_ok());
+        // A genuine checked arithmetic proof is insufficient for any data CAS.
+        assert_eq!(
+            verifier.verify(TransitionStatement { ..statement }),
+            Err(version_journal::Error::RejectedComputationProof)
+        );
         assert!(
             verifier
                 .verify(TransitionStatement {
@@ -815,8 +705,8 @@ mod tests {
     fn typed_byte_reads_require_their_exact_proved_operation_and_original_request() {
         use bfv_query_core::{Geometry, Owner, QueryContext};
         // Public fixture bytes stand in for an owner's authenticated page. This
-        // boundary proves arithmetic; catalog completeness/freshness is checked
-        // independently by the storage client before accepting a SQL result.
+        // boundary proves arithmetic only. It does not admit a SQL result or
+        // certify source completeness, ciphertext formation or freshness.
         let (owner, setup) = Owner::generate(Geometry::Rows256).unwrap();
         let verifier = JobVerifier::new(setup.update_parameters().unwrap()).unwrap();
         let prepared = owner

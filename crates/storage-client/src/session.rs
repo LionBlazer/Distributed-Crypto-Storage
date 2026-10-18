@@ -12,6 +12,8 @@ use version_journal::{
 };
 mod aggregate;
 mod agreement;
+#[cfg(test)]
+mod capability_tests;
 mod execution;
 mod insert;
 mod pending;

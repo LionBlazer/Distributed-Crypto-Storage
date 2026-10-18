@@ -9,15 +9,60 @@ evaluator answering SQL and no dependency on the playground or its fixtures.
 | --- | --- |
 | [sql-plan](../sql-plan/README.md) | Typed statement plans, without plaintext execution |
 | [relational-types](../relational-types/README.md) | Typed schemas, complete dump validation and schema-bound SELECT plans |
-| [compact-query](../compact-query/README.md) | Complete authenticated selection, proof-first BFV completion and compact finalization |
+| [compact-query](../compact-query/README.md) | Explicit owner-side index/AEAD and arithmetic experiments |
 | [compact-store](../compact-store/README.md) | Exact trusted heads and bounded canonical formats |
 | [proof-acceleration](../proof-acceleration/README.md) | Pure bounded CPU-worker policy, without the loader feature |
 | [peer-runtime](../peer-runtime/README.md) | Remote object transfer, FHE replies, copies and metrics |
 | [bfv-query-core](../bfv-query-core/README.md) | Public parameter descriptor |
-| [bfv-query-proof](../bfv-query-proof/README.md) | Genuine checked statement capability retained until fresh completion |
+| [bfv-query-proof](../bfv-query-proof/README.md) | Arithmetic-only exact input/output marker |
 | [version-journal](../version-journal/README.md) | Work, signatures, confirmed heads and ancestry |
 
-## Typed imported catalogs
+## Current SQL admission
+
+The [bounded native gate](SQL-CAPABILITY-VALIDATION.md) validates refusal and raw
+protocol behavior; the full SQL-success suite is **not green**. SQL-facing
+`Session::execute`, `Database::execute` and typed
+`RelationalSession::select` reject SELECT, aggregates, INSERT and additive UPDATE.
+This includes empty sources, false predicates, LIMIT 0 and zero deltas. The guard
+runs before pending mutation recovery, journal synchronization or peer I/O.
+Recognized locking plans retain their existing explicit rejection.
+
+The current arithmetic proofs certify the exact supplied encrypted operands.
+They do not establish the complete source-bound FHE predicate/completeness and
+ciphertext-input formation relations. Mutation admission also lacks the proved
+link from the arithmetic output to the new AEAD data/index images. Owner-local
+exact filtering and a signed root update cannot replace these required relations.
+
+`SqlScript::parse` preflights every statement before execution. A mixed script
+containing any unavailable query/mutation rejects before CREATE or earlier work.
+CREATE-only empty provisioning remains available. Initial owner-input provisioning
+via `Session::create` and typed `RelationalSession::import` remains distinct from
+query execution. Existing explicit `inspect_rows` is an owner diagnostic, never a
+network SQL answer or a live fallback.
+
+`resume_pending` refuses both retained mutation kinds before I/O and leaves the
+exact record intact. It cannot safely publish old unproved SQL writes. The peer's
+shared Jobs transition verifier rejects both INSERT and UPDATE on Mine, Publish
+and durable reopen, including genuine cached arithmetic and valid signatures.
+Old Jobs mutation histories therefore fail closed on reopen; no migration,
+alternate application or recovery fallback is supplied. Empty confirmations and
+separate Registry200 control admission remain distinct.
+
+Raw Core/compact-query/peer arithmetic APIs remain research boundaries. No flag
+enables SQL acceptance. Full SQL, encrypted predicates, agreed distributed
+freshness, transaction data overlays and atomic proven writer fences remain open.
+See [the exact test impact and unfinished SQL coverage](SQL-CAPABILITY-COVERAGE.md).
+WHERE and its constants must remain hidden under requirement 2; a public predicate
+polynomial is not an approved replacement for the missing private FHE relation.
+
+## Historical internal pipeline (SQL admission closed)
+
+The following retained descriptions document the previous internal implementation,
+grammar and resource observations. They are not a list of currently executable
+SQL capabilities. The entry guards above block these SQL success paths; raw
+mathematical/custody mechanisms still have their independent tests.
+
+### Typed imported catalogs
 
 `relational::RelationalSession::import(database, participants, profile)` imports a
 validated multi-table `relational_types::ImportedDatabase` as a new encrypted
@@ -117,7 +162,7 @@ starts processes or supplies local consensus parameters. Owner restart/key recov
 publicly verifiable AEAD-to-FHE conversion, production consensus and representative
 end-to-end performance measurements remain open.
 
-## Two-column verified network path
+### Two-column verified network path
 
 `Session::create(name, rows, participants, profile)` encrypts owner input, stores it
 on real peers, creates an Ed25519 write authority and pins the genesis/profile.
@@ -364,7 +409,7 @@ trailing U+0020. NULL placement remains independent of sort direction. Original
 encoded field bytes are projected unchanged by the genuine proof path. Older
 index formats reject; there is no migration or implicit locale collation.
 
-## Security and lifecycle limits
+### Security and lifecycle limits
 
 This is the owner-online exact-index model. The owner authenticates private complete
 selection and compact AEAD finalization; public journal validation proves exact FHE
@@ -405,7 +450,7 @@ These small local fixtures do not establish a general latency, RAM or consensus
 guarantee. The record preserves full workloads, failed-peer observations, exact
 artifacts and reproduction; earlier measurements remain in the linked history.
 
-## Verification
+### Verification
 
 From the repository root:
 
@@ -440,7 +485,7 @@ complete objects. Identity-map changes do not change the public FHE profile. The
 custody RPC/application namespace is specified below; SQL locking and finality
 remain unimplemented.
 
-## Custody object profile
+### Custody object profile
 
 The client uses [randomized object profile 2](../../docs/salted-custody-objects.md).
 Creation/import stage all new object nonces before their first Store. Mutation
@@ -467,7 +512,7 @@ concurrently, no executor is added, and `Limits` keeps the same hard decode caps
 There is no reuse of a server audit or cross-RPC validation cache; wire/profile,
 proof, admission and freshness rules are unchanged. No timing gain is claimed.
 
-## Static initial UPDATE source
+### Static initial UPDATE source
 
 Before proof preparation, private `session/writeback` freezes each shard's
 recipient transports from public geometry and committed known holders. UPDATE
@@ -498,7 +543,7 @@ cancellation follows the query RPC contract. This does not establish global
 cancellation across legacy Full-source or journal phases, public source
 completeness, SQL locks or a new latency guarantee.
 
-## Boolean conditions on the writable fixed table
+### Boolean conditions on the writable fixed table
 
 Live `Session` row SELECT, COUNT/SUM and additive UPDATE accept bounded age-only
 boolean WHERE expressions, including AND/OR/NOT, parentheses, comparisons,
@@ -524,7 +569,7 @@ semantics and immutable mutation contract. This fixed-domain feature implements
 neither general typed expressions nor SQL locks/transactions or a new public
 source/completeness proof.
 
-## Recognized locking plans remain non-executable
+### Recognized locking plans remain non-executable
 
 The fixed `sql-plan` front end recognizes a distinct locking SELECT contract for
 all four row strengths and default Wait/NOWAIT/SKIP LOCKED. Session, historical

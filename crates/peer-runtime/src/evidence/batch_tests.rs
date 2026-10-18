@@ -6,7 +6,7 @@ use compact_store::{Layout, Limits};
 use version_journal::{HeadRef, ShardUpdate};
 
 #[test]
-fn one_manifest_requires_every_proved_batch_and_each_exact_authorized_row_delta() {
+fn genuine_complete_insert_arithmetic_does_not_authorize_new_encrypted_images() {
     let database = [87; 16];
     let store = compact_store::Owner::generate(database).unwrap();
     let limits = Limits::default();
@@ -96,10 +96,14 @@ fn one_manifest_requires_every_proved_batch_and_each_exact_authorized_row_delta(
             shard: id,
             request: prepared.request,
         });
-        proofs.push(ProofReply {
+        let reply = ProofReply {
             output: genuine.output().to_vec(),
             proof: genuine.proof().to_vec(),
-        });
+        };
+        verifier
+            .check_job(Operation::Insert, &jobs.last().unwrap().request, &reply)
+            .unwrap();
+        proofs.push(reply);
         updates.push(ShardUpdate {
             id,
             old,
@@ -136,7 +140,10 @@ fn one_manifest_requires_every_proved_batch_and_each_exact_authorized_row_delta(
         next_state_root: [8; 32],
     };
 
-    assert!(verifier.verify(TransitionStatement { ..statement }).is_ok());
+    assert_eq!(
+        verifier.verify(TransitionStatement { ..statement }),
+        Err(version_journal::Error::RejectedComputationProof)
+    );
     assert!(
         verifier
             .verify(TransitionStatement {

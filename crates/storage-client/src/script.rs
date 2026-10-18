@@ -1,5 +1,5 @@
-//! Bounded client-side script planning. Every read/write is still executed and
-//! proved by Session; this module never evaluates data or constructs query answers.
+//! Bounded script preflight. Data statements reject before execution; only the
+//! existing empty CREATE provisioning is admitted. No data is evaluated here.
 use crate::{Error, Session, VerifiedResult};
 use sql_plan::QueryPlan;
 use std::fmt;
@@ -81,7 +81,7 @@ impl std::error::Error for ScriptError {
 }
 
 impl SqlScript {
-    /// Fully validate all syntax and proof-supported operations before network I/O.
+    /// Fully validate syntax and capability availability before network I/O.
     /// Each INSERT remains one statement; at most 256 literal rows may be supplied
     /// across all INSERT batches, independently of the 256-statement limit.
     /// Ordinary comments are accepted; executable/nested comments, strings,
@@ -295,8 +295,9 @@ fn prepare_query(sql: String, number: usize) -> Result<SqlStatement, ScriptError
         completed: Vec::new(),
         source: source.into(),
     })?;
-    // Reject every strength/policy before the script can create or store anything.
-    crate::reject_locking_plan(&plan).map_err(|source| ScriptError {
+    // Reject unavailable complete SQL proofs before any earlier statement can
+    // create a database, store rows or resume a mutation.
+    crate::require_sql_capability(&plan).map_err(|source| ScriptError {
         failed_statement: number,
         completed: Vec::new(),
         source,
@@ -376,252 +377,90 @@ mod tests {
     const CREATE: &str = "CREATE TABLE IF NOT EXISTS records (age TINYINT UNSIGNED NOT NULL, amount SMALLINT UNSIGNED NOT NULL)";
 
     #[test]
-    fn bootstrap_script_preserves_create_and_proved_select_as_distinct_operations() {
-        let script = SqlScript::parse(&format!("{CREATE}; SELECT * FROM records;")).unwrap();
-        assert!(script.has_create());
-        assert_eq!(script.statement_count(), 2);
-        assert!(matches!(
-            script.statements()[0],
-            SqlStatement::CreateTable {
-                if_not_exists: true
-            }
-        ));
-        assert!(matches!(
-            script.statements()[1],
-            SqlStatement::Query {
-                plan: QueryPlan::Select { .. },
-                ..
-            }
-        ));
-        assert!(script.check_table_lifecycle(false).is_ok());
-        assert!(script.check_table_lifecycle(true).is_ok());
-    }
-
-    #[test]
-    fn comments_and_multi_row_insert_preserve_every_literal_and_source_statement() {
-        let script = SqlScript::parse(&format!("-- client input\n{CREATE}; /* two rows */ INSERT INTO records(age,amount) VALUES(18,20),(42,30); SELECT amount FROM records;")).unwrap();
-        assert_eq!(script.inserted_rows(), 2);
-        assert_eq!(script.statement_count(), 3);
-        let SqlStatement::Query { sql, plan } = &script.statements()[1] else {
-            panic!("one INSERT statement expected");
-        };
-        assert_eq!(
-            plan,
-            &QueryPlan::Insert {
-                rows: vec![
-                    sql_plan::RowValues {
-                        age: 18,
-                        amount: 20
-                    },
-                    sql_plan::RowValues {
-                        age: 42,
-                        amount: 30
-                    },
-                ],
-            }
-        );
-        assert_eq!(sql_plan::parse_sql(sql).unwrap(), *plan);
-        assert!(matches!(
-            script.statements()[2],
-            SqlStatement::Query {
-                plan: QueryPlan::Select { .. },
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn pagination_preserves_nulls_and_window_order_and_rejects_a_later_duplicate_before_execution()
-    {
-        let script = SqlScript::parse("SELECT amount FROM records OFFSET NULL LIMIT ALL; SELECT age FROM records OFFSET 2 LIMIT 3").unwrap();
-        let SqlStatement::Query { sql, plan } = &script.statements()[1] else {
-            panic!("row-window query expected");
-        };
-        assert!(
-            matches!(plan, QueryPlan::Select { window, .. } if *window == sql_plan::RowWindow { offset: 2, limit: Some(3) })
-        );
-        assert_eq!(sql_plan::parse_sql(sql).unwrap(), *plan);
-        let error = SqlScript::parse(
-            "UPDATE records SET amount=amount+1; SELECT * FROM records OFFSET NULL OFFSET 1",
-        )
+    fn unavailable_sql_rejects_the_whole_script_before_any_creation() {
+        for sql in [
+            "SELECT * FROM records",
+            "SELECT amount FROM records LIMIT 0",
+            "SELECT COUNT(*) FROM records",
+            "SELECT SUM(amount) FROM records WHERE FALSE",
+            "UPDATE records SET amount=amount+0 WHERE TRUE",
+            "INSERT INTO records VALUES (18,20)",
+        ] {
+            let error = SqlScript::parse(&format!("{CREATE}; {sql}")).unwrap_err();
+            assert_eq!(error.failed_statement, 2, "{sql}");
+            assert!(error.completed.is_empty());
+            assert!(
+                error
+                    .to_string()
+                    .contains("encrypted SQL execution is unavailable"),
+                "{error}"
+            );
+        }
+        let error = SqlScript::parse(&format!(
+            "{CREATE}; INSERT INTO records VALUES(18,20); SELECT * FROM records"
+        ))
         .unwrap_err();
         assert_eq!(error.failed_statement, 2);
         assert!(error.completed.is_empty());
     }
 
     #[test]
-    fn malformed_later_tuple_rejects_the_whole_script_before_creation() {
-        for tuple in ["(256,30)", "(42,65536)", "(42)", "(42,30", "", "SELECT"] {
-            let error = SqlScript::parse(&format!(
-                "{CREATE}; INSERT INTO records VALUES(18,20),{tuple}; SELECT * FROM records"
-            ))
-            .unwrap_err();
-
-            assert_eq!(error.failed_statement, 2, "{tuple}");
-            assert!(error.completed.is_empty(), "{tuple}");
-        }
-    }
-
-    #[test]
-    fn inserted_row_budget_counts_all_batches_independently_of_statement_count() {
-        let half_batch = std::iter::repeat_n("(18,20)", MAX_SCRIPT_INSERTED_ROWS / 2)
-            .collect::<Vec<_>>()
-            .join(",");
-        let source = format!(
-            "INSERT INTO records VALUES {half_batch}; INSERT INTO records VALUES {half_batch}"
+    fn lexical_comments_literals_and_compound_tokens_remain_parser_inputs() {
+        let tokens = tokenize("\u{feff}-- public fixture\nINSERT INTO records VALUES(18,20),(255,65535); /* ordinary */ SELECT * FROM records WHERE age<>-1 AND age!=+42").unwrap();
+        assert_eq!(tokens.len(), 2);
+        assert!(tokens[1].iter().any(|token| token == "<>"));
+        assert!(tokens[1].iter().any(|token| token == "!="));
+        let error = prepare_query("INSERT INTO records VALUES(18,20)".into(), 1).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("encrypted SQL execution is unavailable")
         );
-        let script = SqlScript::parse(&source).unwrap();
-
-        assert_eq!(script.statement_count(), 2);
-        assert_eq!(script.inserted_rows(), MAX_SCRIPT_INSERTED_ROWS);
-
-        let error =
-            SqlScript::parse(&format!("{source}; INSERT INTO records VALUES (1,1)")).unwrap_err();
-        assert_eq!(error.failed_statement, 3);
-        assert!(error.completed.is_empty());
-        assert!(error.to_string().contains("inserted-row input limit"));
-
-        let oversized_batch = std::iter::repeat_n("(1,1)", MAX_SCRIPT_INSERTED_ROWS + 1)
-            .collect::<Vec<_>>()
-            .join(",");
-        let error =
-            SqlScript::parse(&format!("INSERT INTO records VALUES {oversized_batch}")).unwrap_err();
-        assert_eq!(error.failed_statement, 1);
-        assert!(error.completed.is_empty());
-        assert!(error.to_string().contains("inserted-row input limit"));
     }
 
     #[test]
-    fn maximum_literal_batch_fits_the_statement_byte_limit_without_token_space_inflation() {
+    fn literal_and_statement_limits_are_checked_at_their_owning_parser_boundary() {
         let tuples = std::iter::repeat_n("(255,65535)", MAX_SCRIPT_INSERTED_ROWS)
             .collect::<Vec<_>>()
             .join(",");
         let source = format!("INSERT INTO records VALUES {tuples}");
         assert!(source.len() < sql_plan::MAX_SQL_BYTES);
-
-        let script = SqlScript::parse(&source).unwrap();
-
-        assert_eq!(script.statement_count(), 1);
-        assert_eq!(script.inserted_rows(), MAX_SCRIPT_INSERTED_ROWS);
-        let SqlStatement::Query { plan, .. } = &script.statements()[0] else {
-            panic!("one INSERT batch expected");
+        let QueryPlan::Insert { rows } = sql_plan::parse_sql(&source).unwrap() else {
+            panic!("INSERT syntax expected")
         };
+        assert_eq!(rows.len(), MAX_SCRIPT_INSERTED_ROWS);
         assert_eq!(
-            plan,
-            &QueryPlan::Insert {
-                rows: vec![
-                    sql_plan::RowValues {
-                        age: 255,
-                        amount: 65535
-                    };
-                    MAX_SCRIPT_INSERTED_ROWS
-                ],
-            },
+            rows[255],
+            sql_plan::RowValues {
+                age: 255,
+                amount: 65535
+            }
         );
-    }
-
-    #[test]
-    fn statement_budget_counts_source_statements_including_an_unterminated_last_one() {
-        let source = "SELECT * FROM records;".repeat(MAX_SCRIPT_STATEMENTS);
-        let script = SqlScript::parse(&source).unwrap();
-        assert_eq!(script.statement_count(), MAX_SCRIPT_STATEMENTS);
-        assert_eq!(script.inserted_rows(), 0);
-
-        let error = SqlScript::parse(&format!("{source}SELECT * FROM records")).unwrap_err();
+        let ddl = format!("{CREATE};").repeat(MAX_SCRIPT_STATEMENTS);
+        assert_eq!(
+            SqlScript::parse(&ddl).unwrap().statement_count(),
+            MAX_SCRIPT_STATEMENTS
+        );
+        let error = SqlScript::parse(&format!("{ddl}{CREATE}")).unwrap_err();
         assert_eq!(error.failed_statement, MAX_SCRIPT_STATEMENTS + 1);
         assert!(error.completed.is_empty());
     }
 
     #[test]
-    fn aggregate_statements_are_planned_without_a_plaintext_fallback() {
-        let script = SqlScript::parse("SELECT COUNT(*) FROM records; SELECT SUM(amount) FROM records; SELECT COUNT(*), SUM(amount) FROM records WHERE age >= 18;").unwrap();
-        assert_eq!(script.statements().len(), 3);
-        assert!(matches!(
-            script.statements()[0],
-            SqlStatement::Query {
-                plan: QueryPlan::Count { .. },
-                ..
-            }
-        ));
-        assert!(matches!(
-            script.statements()[1],
-            SqlStatement::Query {
-                plan: QueryPlan::Sum { .. },
-                ..
-            }
-        ));
-        assert!(matches!(
-            script.statements()[2],
-            SqlStatement::Query {
-                plan: QueryPlan::Aggregate { .. },
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn unsupported_later_statement_rejects_the_entire_plan_before_creation() {
-        for unsupported in [
-            "SELECT AVG(amount) FROM records",
-            "SELECT * FROM records FOR UPDATE",
-            "SELECT * FROM records WHERE age < = 18",
-            "SELECT * FROM records WHERE age > = 18",
-            "SELECT * FROM records WHERE age < > 18",
-            "SELECT * FROM records WHERE age ! = 18",
-            "SELECT * FROM records WHERE age IN(7,NULL) OR amount=1",
-            "DELETE FROM records",
-            "CREATE TABLE customers (id INT)",
-            "INSERT INTO records VALUES (18,20),(256,30)",
-            "INSERT INTO records VALUES (18,20),(2 55,30)",
-        ] {
-            let error = SqlScript::parse(&format!(
-                "{CREATE}; INSERT INTO records VALUES(18,20); {unsupported};"
-            ))
-            .unwrap_err();
-            assert_eq!(error.failed_statement, 3, "{unsupported}");
-            assert!(error.completed.is_empty());
-        }
-    }
-
-    #[test]
-    fn boolean_script_preserves_signed_bounds_null_semantics_and_compound_tokens() {
-        let script = SqlScript::parse("SELECT * FROM records WHERE age<>-1 AND NOT(age IN(7,NULL)) OR age!=+42; UPDATE records SET amount=amount+0 WHERE NOT(age BETWEEN NULL AND 10);").unwrap();
-        assert_eq!(script.statement_count(), 2);
-        for statement in script.statements() {
-            let SqlStatement::Query { sql, plan } = statement else {
-                panic!("query expected")
-            };
-            assert_eq!(sql_plan::parse_sql(sql).unwrap(), *plan);
-        }
-    }
-
-    #[test]
-    fn missing_table_and_duplicate_create_never_call_the_creator() {
-        for (source, failed_statement) in [
-            ("SELECT * FROM records".to_string(), 1),
-            (
-                format!(
-                    "{CREATE}; INSERT INTO records VALUES (18,20),(42,30); {}",
-                    CREATE.replace("IF NOT EXISTS ", "")
-                ),
-                3,
-            ),
-        ] {
-            let mut session = None;
-            let script = SqlScript::parse(&source).unwrap();
-            let error = script
-                .execute(&mut session, || panic!("No I/O during lifecycle rejection"))
-                .unwrap_err();
-            assert!(session.is_none());
-            assert!(error.completed.is_empty());
-            assert_eq!(error.failed_statement, failed_statement);
-        }
-    }
-
-    #[test]
-    fn failed_creation_keeps_the_workspace_empty_and_reports_the_actual_error() {
-        let script = SqlScript::parse(&format!("{CREATE}; SELECT * FROM records")).unwrap();
+    fn duplicate_create_rejects_before_the_creator_and_failed_creation_leaves_no_session() {
+        let script = SqlScript::parse(&format!(
+            "{CREATE}; {}",
+            CREATE.replace("IF NOT EXISTS ", "")
+        ))
+        .unwrap();
         let mut session = None;
+        let error = script
+            .execute(&mut session, || panic!("No I/O for an invalid lifecycle"))
+            .unwrap_err();
+        assert_eq!(error.failed_statement, 2);
+        assert!(error.completed.is_empty());
+        assert!(session.is_none());
+        let script = SqlScript::parse(CREATE).unwrap();
         let error = script
             .execute(&mut session, || {
                 Err(Error::InvalidInput(
@@ -630,22 +469,22 @@ mod tests {
             })
             .unwrap_err();
         assert_eq!(error.failed_statement, 1);
-        assert!(error.completed.is_empty());
         assert!(error.to_string().contains("No authenticated peers"));
         assert!(session.is_none());
     }
 
     #[test]
-    fn script_limits_and_unsupported_comment_forms_reject_before_execution() {
+    fn unsupported_lexical_forms_and_oversized_scripts_reject_before_execution() {
         for source in [
             " ".repeat(MAX_SCRIPT_BYTES + 1),
-            "SELECT * FROM records;".repeat(MAX_SCRIPT_STATEMENTS + 1),
             "/* unterminated".into(),
             "/*! SELECT * FROM records */".into(),
             "/* outer /* inner */ */".into(),
-            "SELECT * FROM records WHERE age = '18'".into(),
+            "SELECT * FROM records WHERE age='18'".into(),
+            "INSERT INTO records VALUES(18,20),(256,30)".into(),
+            "SELECT * FROM records WHERE age < =18".into(),
         ] {
-            assert!(SqlScript::parse(&source).is_err());
+            assert!(SqlScript::parse(&source).is_err(), "{source}");
         }
     }
 }

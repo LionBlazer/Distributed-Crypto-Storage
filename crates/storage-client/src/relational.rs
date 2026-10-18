@@ -1,6 +1,6 @@
 //! Typed, owner-indexed encrypted relations. No imported plaintext is retained by
-//! the session and no peer has a decryption key. Every accepted SELECT byte comes
-//! from a genuine proved BFV projection of authenticated source cells.
+//! the session and no peer has a decryption key. SQL SELECT admission is closed
+//! until source-bound encrypted predicate/completeness/formation proofs exist.
 mod agreement;
 mod index;
 
@@ -365,11 +365,12 @@ impl RelationalSession {
         }
         Ok(bytes)
     }
-    /// Authenticates the complete private postings, prepares only the selected
-    /// original cells and accepts each streamed BFV block only after STARK checks.
+    /// Recognizes typed SELECT syntax, then rejects before I/O: an arithmetic
+    /// projection alone is not the complete required encrypted SQL relation.
     pub fn select(&mut self, sql: &str) -> Result<Selected> {
         let started = Instant::now();
         let plan = relational_types::plan_select_schemas(&self.schemas(), sql).map_err(invalid)?;
+        crate::require_select_capability()?;
         let requests = Requests::read_query();
         let version = self.synchronize(&requests)?;
         let relation = &self.relations[plan.table];

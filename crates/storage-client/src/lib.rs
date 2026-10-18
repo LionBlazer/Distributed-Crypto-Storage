@@ -25,8 +25,8 @@ pub enum Error {
     Cryptography(String),
     MissingComputationProof,
     UnavailableShard(u64),
-    /// The exact authorized mutation is retained in this live Session. Retry the
-    /// same SQL or call resume_pending; a new SQL statement must not replay it.
+    /// The exact authorized mutation is retained in this live Session. Current
+    /// SQL admission does not publish or resume legacy unproved mutations.
     PendingMutation {
         query_binding: [u8; 32],
         submitted: Option<Box<version_journal::HeadRef>>,
@@ -90,13 +90,32 @@ struct Shard {
 /// This type has no constructor for a fabricated or unverified accepted result.
 #[derive(Debug)]
 pub enum AcceptedResult {}
-fn reject_locking_plan(plan: &QueryPlan) -> Result<()> {
-    if matches!(plan, QueryPlan::LockingSelect { .. }) {
-        return Err(Error::InvalidInput(
+fn sql_proof_unavailable(operation: &str) -> Error {
+    Error::InvalidInput(format!(
+        "{operation} encrypted SQL execution is unavailable: the complete source-bound predicate, completeness and ciphertext-formation proof is not implemented"
+    ))
+}
+fn require_select_capability() -> Result<()> {
+    Err(sql_proof_unavailable("SELECT"))
+}
+fn require_update_capability() -> Result<()> {
+    Err(sql_proof_unavailable("UPDATE"))
+}
+fn require_mutation_capability() -> Result<()> {
+    Err(sql_proof_unavailable("INSERT/UPDATE"))
+}
+fn require_sql_capability(plan: &QueryPlan) -> Result<()> {
+    match plan {
+        QueryPlan::LockingSelect { .. } => Err(Error::InvalidInput(
             "Locking SELECT requires a composite source/ownership/FHE proof and fresh authorized control state; no live locking executor is implemented".into(),
-        ));
+        )),
+        QueryPlan::Select { .. } => require_select_capability(),
+        QueryPlan::Aggregate { .. } | QueryPlan::Count { .. } | QueryPlan::Sum { .. } => {
+            Err(sql_proof_unavailable("Aggregate"))
+        }
+        QueryPlan::AddAmount { .. } => require_update_capability(),
+        QueryPlan::Insert { .. } => Err(sql_proof_unavailable("INSERT")),
     }
-    Ok(())
 }
 
 pub struct Database {
@@ -298,7 +317,7 @@ impl Database {
     /// reply case is rejected; it can never produce AcceptedResult or advance heads.
     pub fn execute(&self, sql: &str) -> Result<AcceptedResult> {
         let plan = sql_plan::parse_sql(sql)?;
-        reject_locking_plan(&plan)?;
+        require_sql_capability(&plan)?;
         if matches!(&plan, QueryPlan::Select { window, .. } if window.offset != 0) {
             return Err(Error::InvalidInput("The historical unverified adapter does not execute OFFSET; use the proof-backed Session".into()));
         }

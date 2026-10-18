@@ -1,4 +1,4 @@
-//! Retry one exact owner-authorized mutation without rerunning its SQL or FHE jobs.
+//! Retain legacy owner-authorized mutations without publishing incomplete SQL proofs.
 use super::*;
 
 pub(super) enum MutationOutcome {
@@ -32,9 +32,9 @@ impl Session {
         }
     }
 
-    /// Continue publication and confirmation of exactly the retained mutation.
-    /// This never prepares SQL, runs new FHE jobs, resigns or changes its old/new
-    /// roots. Failures retain the pending operation and return its stable identity.
+    /// Reject a retained INSERT/UPDATE before I/O, preserving its exact bytes.
+    /// Genuine arithmetic is insufficient to resume a SQL mutation. This does
+    /// not prepare SQL, run FHE, resign, publish or change its old/new roots.
     /// The pending record is in memory; owner restart recovery is not implemented.
     pub fn resume_pending(&mut self) -> Result<Option<VerifiedResult>> {
         self.unavailable_this_operation.clear();
@@ -42,6 +42,11 @@ impl Session {
     }
 
     pub(super) fn resume_pending_record(&mut self) -> Result<Option<VerifiedResult>> {
+        if self.pending_mutation.is_some() {
+            // Retain the exact authorization and outcome. No synchronization,
+            // mining, publication or accepted mutation result is permitted.
+            crate::require_mutation_capability()?;
+        }
         if self.pending_mutation.is_none() {
             return Ok(None);
         }

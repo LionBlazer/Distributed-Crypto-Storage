@@ -19,6 +19,8 @@ pub(super) struct ProofJob<'a> {
 }
 
 #[cfg(test)]
+mod raw_tests;
+#[cfg(test)]
 mod tests;
 
 type ExecutorKey = (SocketAddr, [u8; 32]);

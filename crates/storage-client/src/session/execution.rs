@@ -3,9 +3,13 @@ use crate::query_rpc::Requests;
 use sql_plan::QueryPlan;
 
 impl Session {
-    /// Snapshot preparation, complete private index authentication, one executor's
-    /// genuine proof and a second freshness check precede every successful result.
+    /// SQL execution is unavailable until the complete encrypted SQL relation
+    /// exists. Reject before pending recovery, synchronization or peer work.
     pub fn execute(&mut self, sql: &str) -> Result<VerifiedResult> {
+        // Reject an unavailable SQL proof pipeline before resuming a pending
+        // mutation or performing any journal, source or arithmetic RPC.
+        let plan = sql_plan::parse_sql(sql)?;
+        crate::require_sql_capability(&plan)?;
         // Retry previously unreachable endpoints on each new operation, but do not
         // repeatedly pay their connection timeout at every phase of this one.
         self.unavailable_this_operation.clear();
@@ -17,9 +21,6 @@ impl Session {
                 .resume_pending_record()?
                 .ok_or_else(|| protocol("Missing retained mutation result"));
         }
-        let plan = sql_plan::parse_sql(sql)?;
-        // A typed locking plan cannot enter ordinary SELECT/UPDATE or synchronization.
-        crate::reject_locking_plan(&plan)?;
         let read_requests = matches!(
             plan,
             QueryPlan::Select { .. }

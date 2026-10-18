@@ -1,5 +1,18 @@
 # FHE playground
 
+Current SQL execution is unavailable pending complete source-bound FHE predicate,
+completeness, input-formation and encrypted-writeback proofs. Fixed and typed
+SELECT, aggregates, INSERT and UPDATE reject before peer I/O. A mixed SQL script
+rejects before CREATE. Empty initial provisioning, validated encrypted catalog
+import and raw custody remain separate; the GUI supplies no local fallback.
+Old pending Jobs mutations cannot be published or replayed as proved SQL.
+The historical SQL-success opt-in tests still require a coverage-preserving port;
+see the [coverage inventory](../crates/storage-client/SQL-CAPABILITY-COVERAGE.md).
+The [native guard record](../crates/storage-client/SQL-CAPABILITY-VALIDATION.md)
+validates refusal and raw protocol behavior, not these old GUI SQL-success cases.
+The full SQL suite is not green. Descriptions below of the former SQL pipeline
+are retained implementation/history, not current admission.
+
 The native egui client/manager supervises real [dcs-peer](../apps/dcs-peer/README.md)
 processes. It does not execute peer queries or synthesize packet delivery. The
 owner's keys and SQL preparation live in [storage-client](../crates/storage-client/README.md);

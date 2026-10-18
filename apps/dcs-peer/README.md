@@ -4,6 +4,20 @@ A standalone process hosting [peer-runtime](../../crates/peer-runtime/README.md)
 through [peer-transport](../../crates/peer-transport/README.md). It has no playground,
 GUI, local SQL simulator or owner FHE/AEAD secret dependency.
 
+Current SQL admission is explicitly unavailable. The shared Jobs verifier rejects
+INSERT/UPDATE transitions on Mine, Publish, relay and durable reopen even with a
+valid owner signature and genuine arithmetic. SELECT/aggregates/INSERT/UPDATE
+facades reject before I/O until complete source/predicate/completeness/formation
+and encrypted writeback proofs exist. Initial encrypted provisioning, raw custody
+and arithmetic RPCs, Empty history and distinct Registry200 control admission are
+separate. Old Jobs mutation histories fail closed on reopen without migration.
+See the [explicit test-impact inventory](../../crates/storage-client/SQL-CAPABILITY-COVERAGE.md).
+The [native guard record](../../crates/storage-client/SQL-CAPABILITY-VALIDATION.md)
+contains 143 passing refusal/raw-protocol tests and an explicitly observed old
+SQL-success failure. The old SQL scenarios below remain unchanged, unfinished
+functional expectations; the full SQL suite is not green. Their historical
+results are not evidence of current SQL support.
+
 Build from the repository root:
 
 ```sh
@@ -46,6 +60,13 @@ bootstrap is local administration, not a voting roster or production discovery
 protocol. Valid work and authorized transitions are verified independently of the
 number of connected identities.
 
+## Historical integration scenarios (SQL admission now closed)
+
+The retained SQL-success descriptions and commands below document the earlier
+implementation. The affected test bodies have not yet been ported and do not pass
+under the current guard. The raw custody/proof tests keep
+their own contracts; this section does not grant an SQL exception.
+
 `tests/process_transport.rs` launches actual OS processes and tests distinct PIDs,
 TLS authentication/pinning, real BFV outputs, direct peer copying, process loss,
 restart from the same ciphertext directory, disk tampering, quotas and mandatory
@@ -57,7 +78,7 @@ administration/invalid publication. Fixtures are explicitly public; credentials 
 fresh and stay in memory. Child handles own cleanup; no unrelated process is
 inspected or stopped. Generated ciphertext stays under ignored `.local/`.
 
-For a separate full-UPDATE RPC cost observation, set `DCS_TEST_RPC_PROFILE=1`
+For the historical full-UPDATE RPC observation (not executable under the current guard), the old fixture used `DCS_TEST_RPC_PROFILE=1`
 when running the existing genuine process scenario:
 
 ```powershell

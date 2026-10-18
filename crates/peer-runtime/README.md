@@ -326,7 +326,9 @@ diagnostic `Evaluate` route, whose response remains `UnverifiedCiphertext`.
 `Prove` checks that the stored object matches both original request heads, converts
 the actual ciphertext request to the canonical circuit and runs `bfv_query_proof`.
 `ProofReply` contains the complete canonical encrypted output and serialized genuine
-STARK. Supported proved operations are exact-index `SELECT`, `INSERT`, additive
+STARK. These operation names describe arithmetic RPCs, not admitted SQL queries
+or a proved encrypted predicate/completeness relation. Supported raw operations
+are owner-selected `SELECT`, `INSERT`, additive
 `UPDATE`, coefficient-packed `Aggregate`, and schema-independent `ByteSelect` over
 bounded encrypted byte chunks. The proved aggregate accepts only the new
 `BFVPAGQ2` contiguous ten-band coefficient layout (2560 selected rows) and fixed
@@ -348,40 +350,31 @@ runs outside the shared status/object mutex. At most eight connections and two
 public setups are admitted. These bounds do not establish a 1-2 GiB whole-process
 RAM guarantee or a 50-100 ms request SLA; full operations must be measured.
 
-`MutationManifest` signs an opaque query binding, operation, the full previous shard
-set and every original job request. `MutationEvidence` contains the corresponding
-canonical outputs and STARKs. Their manual codecs reject trailing bytes and bound
-aggregate frames to 32 MiB, jobs to 32, and each request/output/proof to 2 MiB before
-allocation. UPDATE must cover every shard, including empty ones; INSERT covers a
-nonempty ordered set of existing shards with exactly matching jobs and updates.
-Version-3 INSERT metadata binds each old row count and incoming batch count; each
-new data head must grow by exactly that job's authorized count. `JobVerifier` checks pinned crypto parameters, original contexts,
-all job proofs, allowed changed shard IDs and head revision/schema/domain/count
-constraints. The journal additionally checks parent state, work and owner signature.
-The application commitment uses domain version 3 for these batch-aware transition
-rules and the length-delimited Q2/R2 aggregate semantics ID, alongside the unchanged
-FHE/STARK profile identity. Version-2 application anchors reject during initialization;
-older aggregate/INSERT wires and journals are not migrated.
+`MutationManifest` and `MutationEvidence` retain their canonical bounded codecs:
+32 MiB aggregate, 32 jobs and 2 MiB per request/output/proof. Wire tags, application
+identity and disk namespace are unchanged. They are not an admitted SQL mutation
+format: the shared `TransitionVerifier for JobVerifier` rejects every Jobs
+transition with `RejectedComputationProof` before any arithmetic cache can admit
+state. This applies to INSERT and UPDATE on Mine, Publish, relay and durable reopen.
 
-`JobVerifier` keeps at most 128 successful arithmetic-proof digests in RAM, keyed
-by its pinned application commitment and every byte/length of canonical input,
-encrypted output and serialized proof. Entries are inserted only after genuine
-STARK verification. `JobVerifier::check_job` independently derives the canonical
-input from a caller's trusted original request, verifies its exact output/proof,
-returns the checked arithmetic marker and inserts the same bounded digest. The
-owner client uses this API before completion, so its later local journal import
-can reuse the verification instead of performing the identical STARK check again.
-No caller can populate the cache using a marker that omits proof-byte binding.
-Exact repeated proof validation during mining/publication can reuse that evidence;
-authorization, complete manifest, all original contexts,
-old/new head rules, ancestry and requested freshness are still checked separately.
-No root or SQL answer becomes acceptable merely because an arithmetic cache hits.
+Genuine Addition/Product proofs are insufficient for source-bound SQL predicate
+and completeness, ciphertext input formation, and output-to-new-AEAD/index linkage.
+An owner signature authenticates permission; it does not prove those relations.
+The earlier designated-client finalization contract is therefore not accepted as
+SQL mutation authority. Previously admitted Jobs mutation histories now fail
+closed on replay; there is no fallback, migration or renamed replacement app.
+Initial provisioning, Store/Copy/StoreDelta, raw Prove/Evaluate and separate
+Registry200 control admission remain independent.
 
-This is public verification of exact FHE jobs and owner-finalized roots. It does not
-publicly prove the private AEAD-root to FHE-input relation. The designated owner/client
-must independently verify authenticated complete selection, exact saved FHE inputs,
-decrypted completion and compact-store finalization before signing new roots.
-An owner signature is authorization, not a substitute for these checks or STARKs.
+`JobVerifier::check_job` still derives the exact canonical input from the trusted
+original request and genuinely verifies its complete encrypted output/proof. Its
+checked marker is arithmetic-only. The bounded 128-entry digest cache remains
+keyed to every input/output/proof byte; neither it nor a serialized marker grants
+SQL result or root publication authority. Current SQL facades reject before I/O.
+See [coverage and unfinished SQL scenarios](../storage-client/SQL-CAPABILITY-COVERAGE.md)
+and the [native validation record](../storage-client/SQL-CAPABILITY-VALIDATION.md).
+The refusal/raw-protocol gate passes; retained SQL-success cases remain unavailable
+and the full SQL suite is not green. This does not establish complete SQL support.
 
 ## Journal RPCs and storage lifecycle
 

@@ -5,6 +5,8 @@ mod borrowed_custody;
 mod ciphertext_preflight;
 #[path = "support/compute_custody.rs"]
 mod compute_custody;
+#[path = "support/raw_proof_failures.rs"]
+mod raw_proof_failures;
 #[path = "support/received_version.rs"]
 mod received_version;
 use compact_query::{AgeRange, PlainRow, bfv as backend};
@@ -488,7 +490,7 @@ fn unauthenticated_foreign_and_wrong_identity_connections_cannot_access_the_peer
     );
 }
 #[test]
-fn missing_proof_rejects_real_network_results_and_never_commits_insert_or_update() {
+fn sql_capability_rejection_precedes_historical_adapter_io_and_never_commits() {
     let authority = Authority::new();
     let owner = authority.identity();
     let connector = Connector::new(&owner, &authority.der).unwrap();
@@ -516,7 +518,7 @@ fn missing_proof_rejects_real_network_results_and_never_commits_insert_or_update
         assert!(
             matches!(
                 database.execute(sql),
-                Err(storage_client::Error::MissingComputationProof)
+                Err(storage_client::Error::InvalidInput(ref reason)) if reason.contains("encrypted SQL execution is unavailable")
             ),
             "{sql}"
         );
@@ -530,12 +532,12 @@ fn missing_proof_rejects_real_network_results_and_never_commits_insert_or_update
             .iter()
             .filter(|event| event.operation == "fhe" && event.succeeded)
             .count(),
-        4
+        0
     );
     process.kill();
     assert!(matches!(
         database.execute("SELECT * FROM records"),
-        Err(storage_client::Error::UnavailableShard(1))
+        Err(storage_client::Error::InvalidInput(ref reason)) if reason.contains("encrypted SQL execution is unavailable")
     ));
 }
 #[test]
