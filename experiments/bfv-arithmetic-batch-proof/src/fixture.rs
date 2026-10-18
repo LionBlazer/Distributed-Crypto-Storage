@@ -1,6 +1,6 @@
 //! Deterministic PUBLIC NONSECRET ciphertext-residue arithmetic, never SQL answers.
-use crate::{
-    Context, Error, Expected, RelationOutput, RelationRequest, instance_binding, statement,
+use bfv_arithmetic_batch_proof::{
+    Context, Error, Expected, RELATIONS, RelationOutput, RelationRequest, instance_binding,
 };
 use bfv_scale_circuit as scale;
 use bfv_tensor_circuit as tensor;
@@ -14,10 +14,10 @@ pub fn requests(context: Context) -> Result<Vec<RelationRequest>, Error> {
     build(context, false)
 }
 fn build(context: Context, zero: bool) -> Result<Vec<RelationRequest>, Error> {
-    let mut out = Vec::with_capacity(crate::RELATIONS);
-    for index in 0..crate::RELATIONS {
+    let mut out = Vec::with_capacity(RELATIONS);
+    for index in 0..RELATIONS {
         let binding = instance_binding(context, index)?;
-        match statement::role(index).unwrap() {
+        match role(index) {
             (2, b) => {
                 let basis = tensor::Basis::new(b).unwrap();
                 let input = (0..4)
@@ -56,6 +56,14 @@ fn build(context: Context, zero: bool) -> Result<Vec<RelationRequest>, Error> {
         }
     }
     Ok(out)
+}
+fn role(index: usize) -> (u8, u8) {
+    match index {
+        0..=3 => (1, 255),
+        4..=13 => (2, (index - 4) as u8),
+        14..=16 => (3, 255),
+        _ => unreachable!("fixed seventeen-position fixture"),
+    }
 }
 fn value(p: u64, index: usize, lane: usize, i: usize, zero: bool) -> u64 {
     if zero {

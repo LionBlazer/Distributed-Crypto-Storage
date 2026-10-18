@@ -23,8 +23,8 @@ established by this mathematical composition.
 | [bfv-fixed-geometry](../../crates/bfv-fixed-geometry/README.md) | Original N8192/Q5/t114689 constants |
 | [bfv-ntt-circuit](../../crates/bfv-ntt-circuit/README.md) | Exact public setup NTT evaluation and canonical query request/output codecs |
 | [bfv-relinearization-circuit](../../crates/bfv-relinearization-circuit/README.md) | Existing Embed/MAC integer relations/codecs and shared pure complete-vector routing |
-| [bfv-ntt-witness-proof](../bfv-ntt-witness-proof/README.md) | Actual complete native NTT main-witness proof and bounded verifier |
-| [bfv-relinearization-multilinear-proof](../bfv-relinearization-multilinear-proof/README.md) | Actual Embed/MAC public-Aux proofs and bounded verifier |
+| [bfv-ntt-witness-proof](../../crates/bfv-ntt-witness-proof/README.md) | Actual complete native NTT main-witness proof and bounded verifier |
+| [bfv-relinearization-multilinear-proof](../../crates/bfv-relinearization-multilinear-proof/README.md) | Actual Embed/MAC public-Aux proofs and bounded verifier |
 
 The direct SDK dependencies are only the independent actual-Owner demo/oracle. Core and the existing primitive libraries do not depend
 on this experiment. Its private workspace has its own lockfile, generated only by

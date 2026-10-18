@@ -165,7 +165,7 @@ impl Expected {
     pub fn request_wire(&self) -> Vec<u8> {
         let mut b = Vec::new();
         b.extend(b"BFVABRQ2");
-        b.extend(backend::profile(self.context));
+        b.extend(backend::profile_digest(self.context));
         b.extend(self.context.query);
         b.extend(self.context.setup);
         b.extend((RELATIONS as u32).to_le_bytes());
@@ -178,7 +178,7 @@ impl Expected {
     pub fn output_wire(&self) -> Vec<u8> {
         let mut b = Vec::new();
         b.extend(b"BFVABRO2");
-        b.extend(backend::profile(self.context));
+        b.extend(backend::profile_digest(self.context));
         b.extend(backend::digest(&self.request_wire()));
         b.extend((RELATIONS as u32).to_le_bytes());
         b.extend([0; 4]);
@@ -204,8 +204,8 @@ impl Expected {
         };
         if context.query == [0; 32]
             || context.setup == [0; 32]
-            || request[8..72] != backend::profile(context)
-            || output[8..72] != backend::profile(context)
+            || request[8..72] != backend::profile_digest(context)
+            || output[8..72] != backend::profile_digest(context)
             || output[72..136] != backend::digest(request)
             || request[136..144] != suffix()
             || output[136..144] != suffix()

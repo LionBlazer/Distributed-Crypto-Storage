@@ -257,7 +257,7 @@ impl Backend {
     }
 }
 /// Builds real job-specific public setup/security report, without arithmetic evaluation or a main trace.
-pub fn analyze(role: Role) -> Result<SecurityReport, Error> {
-    let (input, output, aux) = crate::fixture::zero_statement(role)?;
-    Ok(Backend::new(&input, &output, &aux)?.report)
+/// The caller supplies the complete canonical claim and public Aux; a report is not a proof.
+pub fn analyze(input: &Request, output: &Output, aux: &Aux) -> Result<SecurityReport, Error> {
+    Ok(Backend::new(input, output, aux)?.report)
 }

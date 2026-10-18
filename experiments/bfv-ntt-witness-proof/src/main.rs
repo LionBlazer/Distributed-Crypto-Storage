@@ -1,6 +1,7 @@
 //! Public nonsecret standalone stage driver. No SQL or operation acceptance.
 use bfv_ntt_circuit::{Basis, Direction};
-use bfv_ntt_witness_proof::{backend, fixture, prove, verify};
+use bfv_ntt_witness_proof::{analyze, direction_name, prove, verify};
+mod fixture;
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.len() != 3 || !matches!(args[0].as_str(), "security" | "prove") {
@@ -16,7 +17,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let basis = Basis::new(args[2].parse()?)?;
     // Actual full-statement gate before any NTT evaluation or main witness.
     // It allocates and commits job-specific public preprocessing, as documented.
-    let report = backend::analyze(direction, basis)?;
+    let report = {
+        let (zero_input, zero_output) = fixture::zero_statement(direction, basis)?;
+        analyze(&zero_input, &zero_output)?
+    };
     println!("{}", serde_json::to_string(&report)?);
     if args[0] == "security" {
         return Ok(());
@@ -31,7 +35,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "{}",
         serde_json::json!({
             "stage":"verified_experimental_ntt_main_witness",
-            "direction":backend::direction_name(direction),"basis_index":basis.index(),
+            "direction":direction_name(direction),"basis_index":basis.index(),
             "coefficients":8192,"proof_bytes":generated.proof.len(),
             "prover_timings":generated.timings,"verifier_timings":checked.timings,
             "fixture":"public_nonsecret","zero_knowledge":false,

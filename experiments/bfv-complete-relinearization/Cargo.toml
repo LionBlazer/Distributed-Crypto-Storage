@@ -9,8 +9,8 @@ publish = false
 [workspace]
 
 [dependencies]
-bfv-ntt-witness-proof = { path = "../bfv-ntt-witness-proof" }
-bfv-relinearization-multilinear-proof = { path = "../bfv-relinearization-multilinear-proof" }
+bfv-ntt-witness-proof = { path = "../../crates/bfv-ntt-witness-proof" }
+bfv-relinearization-multilinear-proof = { path = "../../crates/bfv-relinearization-multilinear-proof" }
 bfv-ntt-circuit = { path = "../../crates/bfv-ntt-circuit" }
 bfv-relinearization-circuit = { path = "../../crates/bfv-relinearization-circuit" }
 bfv-relinearization-key-source = { path = "../../crates/bfv-relinearization-key-source" }

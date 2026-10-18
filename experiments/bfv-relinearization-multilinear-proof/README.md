@@ -1,4 +1,11 @@
-# Public-Aux relinearization arithmetic with a multilinear STARK
+# Public-Aux relinearization arithmetic CLI
+
+Package `bfv-relinearization-multilinear-proof-cli` keeps the executable name
+`bfv-relinearization-multilinear-proof`. Command parsing, public nonsecret
+fixtures and JSON/timing presentation stay here; the real implementation and all
+twenty owning tests move to [the core library](../../crates/bfv-relinearization-multilinear-proof/README.md).
+The extraction passed the native gates in the linked proof-library validation.
+Earlier measurements below retain their historical implementation and source.
 
 Release compilation, strict all-target Clippy, rustfmt, both actual SDK security
 reports and all twenty owning tests passed on 2026-10-17. The two pure SDK oracle
@@ -20,9 +27,11 @@ optional `plonky3::ArithmeticAir`/`prepare`.
 fixed serial SHA512/WHIR configuration and actual complete SDK assessment.
 [`bounded-postcard`](../../crates/bounded-postcard/README.md) owns fresh per-decode
 allocation accounting. No older proof consumer or univariate backend is imported.
-The standalone private workspace does not change root membership or dependencies.
+The CLI's direct dependencies are the core proof library, the circuit library,
+`serde_json` and `sha2`. It contains no SDK backend, proof codec or private AIR test
+adapter; the standalone workspace packages only the executable.
 
-This consumer owns its domains/profile, full statement envelope, independent
+The core proof library owns its domains/profile, full statement envelope, independent
 public preparation, PK/VK lifetime, bounded canonical proof frame, complete report,
 direct SDK prove/verify calls and the opaque `CheckedStage` marker.
 `prove(&Request)` evaluates a public certificate, prepares the real AIR and proves
@@ -83,10 +92,12 @@ complete bound with no unassessed term before proof/verification. Both main and
 public PCS are assessed. Missing, unsupported or below-floor reports reject.
 These remain individual-stage bounds, not a composed whole-Relin security claim.
 
-`backend::analyze(role)` constructs a valid zero public statement without
+Library `analyze(&Request, &Output, &Aux)` accepts a canonical public claim without
 arithmetic evaluation, then allocates and commits actual public tables and builds
 an actual VK for SDK assessment. It generates no main trace/proof, but it is not
-a no-matrix or negligible-cost analysis path.
+a no-matrix or negligible-cost analysis path. The CLI constructs the same local
+shape-only zero claim/Aux before calling it, then drops those temporary values
+before creating the proving fixture. The library never constructs a fixture.
 
 ## Frame, decoding and conditional resource budget
 
@@ -137,21 +148,22 @@ expected program. Rebuilt public output/quotient/carry attacks reach the integer
 AIR; they do not rely solely on broken headers. All twenty tests pass, with no
 ignored or filtered cases.
 
-The reviewed standalone lock resolves offline to existing pinned registry versions;
+The historical standalone lock resolved offline to existing pinned registry versions;
 the leaf enables no parallel, diagnostics, test-util or nightly SDK feature.
 Validation used a fresh target, both `security` commands and both pure SDK oracles
 before any proof. Proof/test gates used an owned-process sampled memory fuse and
-actual time/resource receipts. Reproduce the owning gates with:
+actual time/resource receipts. The reviewed explicit vendor dependency and
+lock graph are integrated; reproduce CLI and Core owning gates with:
 
 ```sh
 cargo build --release --locked --offline --manifest-path experiments/bfv-relinearization-multilinear-proof/Cargo.toml
-cargo test --release --locked --offline --manifest-path experiments/bfv-relinearization-multilinear-proof/Cargo.toml --no-run
+cargo test --release --locked --offline -p bfv-relinearization-multilinear-proof --lib --no-run
 cargo clippy --release --locked --offline --manifest-path experiments/bfv-relinearization-multilinear-proof/Cargo.toml --all-targets -- -D warnings
 cargo run --release --locked --offline --manifest-path experiments/bfv-relinearization-multilinear-proof/Cargo.toml -- security embed
 cargo run --release --locked --offline --manifest-path experiments/bfv-relinearization-multilinear-proof/Cargo.toml -- security accumulate
 cargo run --release --locked --offline --manifest-path experiments/bfv-relinearization-multilinear-proof/Cargo.toml -- prove embed
 cargo run --release --locked --offline --manifest-path experiments/bfv-relinearization-multilinear-proof/Cargo.toml -- prove accumulate
-cargo test --release --locked --offline --manifest-path experiments/bfv-relinearization-multilinear-proof/Cargo.toml --lib -- --test-threads=1
+cargo test --release --locked --offline -p bfv-relinearization-multilinear-proof --lib -- --test-threads=1
 ```
 
 CLI security setup and public fixture construction precede the library prove
@@ -163,10 +175,13 @@ CLI analysis and fixtures. No timer is whole Relin/MulRelin, an FHE peer query o
 SQL latency. These process observations establish no performance improvement or
 whole-operation resource guarantee.
 
-`CheckedStage::security_report()` borrows the actual `backend::SecurityReport`
+`CheckedStage::security_report()` borrows the actual public `SecurityReport`
 rebuilt by this verifier and retained only after genuine proof verification
 succeeds. It exposes the existing whole-stage bound, terms and unassessed-component
 list for explicit composition; no report is accepted from a frame or producer.
 It adds no complete-Relin, same-secret-key, SQL or freshness guarantee. The
 [full graph validation](../bfv-mul-relin-proof/VALIDATION.md) includes all twenty
 owning tests and actual use of both relinearization reports in the complete graph.
+
+The [proof-library extraction validation](../bfv-mul-relin-proof/LIBRARY-EXTRACTION-VALIDATION.md) records the current
+relocation, owning native tests and preserved proof policy.

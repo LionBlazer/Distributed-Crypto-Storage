@@ -1,12 +1,14 @@
 //! Public-Aux multilinear proofs of two complete N8192 arithmetic stages.
 //! Neither stage proves NTT provenance, key authority, complete Relin, MulRelin or SQL.
 #![forbid(unsafe_code)]
-pub mod backend;
+mod backend;
 mod codec;
-pub mod fixture;
+#[cfg(test)]
+mod fixture;
 mod proof;
+pub use backend::{PcsSchedule, SecurityReport, Term, analyze, profile_digest, role_name};
 pub use proof::{CheckedStage, Generated, ProverTimings, VerifierTimings, prove, verify};
-/// New experiment policy only; includes the fixed role-sized public Aux.
+/// Fixed primitive-proof policy; includes the fixed role-sized public Aux.
 pub const MAX_PROOF_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_PROOF_SEQUENCE_ELEMENTS: usize = 16384;
 pub const MAX_PROOF_DECODE_ELEMENTS: usize = 8 * 1024 * 1024;

@@ -1,11 +1,15 @@
-//! Job-specific public preprocessing and one full NTT proof. Verification never
-//! accepts an auxiliary certificate and never runs the NTT evaluator.
+//! One public-Aux arithmetic proof, with verifier-owned preprocessing and SDK keys.
 use crate::{
     Error, MAX_PROOF_BYTES,
     backend::{self, Backend, POLICY_BITS, Proof},
     codec,
 };
-use bfv_ntt_circuit::{Basis, Direction, Output, Request, evaluate_with_certificate};
+use bfv_multilinear_stark::Val;
+use bfv_relinearization_circuit::{
+    Aux, DEGREE, Output, Request, Role, decode_aux, evaluate_with_certificate,
+};
+use p3_field::PrimeCharacteristicRing;
+use p3_matrix::dense::RowMajorMatrix;
 use p3_multi_stark::{
     ProverInstance, ProverInstances, VerifierInstance, VerifierInstances, prove_with_security,
     verify_with_security,
@@ -15,8 +19,7 @@ use p3_whir::QueryOpenings;
 use serde::Serialize;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Instant;
-
-pub(crate) const HEADER: usize = 256;
+pub(crate) const HEADER: usize = 144;
 #[derive(Clone, Debug, Serialize)]
 pub struct ProverTimings {
     pub arithmetic_and_certificate_ms: f64,
@@ -35,102 +38,100 @@ pub struct Generated {
     pub proof: Vec<u8>,
     pub timings: ProverTimings,
 }
-/// One arithmetic stage only. This type cannot become a production operation.
+/// One public arithmetic relation, without a key-authority or complete-operation capability.
 #[derive(Debug)]
-pub struct CheckedNtt {
-    direction: Direction,
-    basis: Basis,
+pub struct CheckedStage {
+    role: Role,
+    keyset_context: [u8; 32],
     input: [u8; 64],
     output: [u8; 64],
     report: backend::SecurityReport,
     pub timings: VerifierTimings,
 }
-impl CheckedNtt {
-    pub fn direction(&self) -> Direction {
-        self.direction
+impl CheckedStage {
+    pub fn role(&self) -> Role {
+        self.role
     }
-    pub fn basis(&self) -> Basis {
-        self.basis
+    pub fn keyset_context(&self) -> [u8; 32] {
+        self.keyset_context
     }
     /// Verifier-rebuilt SDK assessment retained only after proof verification succeeds.
-    pub fn security_report(&self) -> &backend::SecurityReport {
+    pub fn security_report(&self) -> &crate::SecurityReport {
         &self.report
     }
     pub fn matches(&self, input: &Request, output: &Output) -> bool {
-        self.direction == input.direction()
-            && self.basis == input.basis()
+        self.role == input.role()
+            && output.role() == input.role()
+            && self.keyset_context == input.keyset_context()
+            && output.keyset_context() == input.keyset_context()
             && self.input == backend::digest(&input.encode())
             && self.output == backend::digest(&output.encode())
     }
 }
-fn header(input: &Request, output: &Output, payload: usize) -> [u8; HEADER] {
+fn header(input: &Request) -> [u8; HEADER] {
     let mut bytes = [0; HEADER];
-    bytes[..8].copy_from_slice(b"BFVNTW01");
-    bytes[8..72].copy_from_slice(&backend::profile_digest(input.direction(), input.basis()));
+    bytes[..8].copy_from_slice(b"BFVRLM01");
+    bytes[8..72].copy_from_slice(&backend::profile_digest(input.role()));
     bytes[72..104].copy_from_slice(&input.binding());
-    bytes[104] = backend::tag(input.direction());
-    bytes[105] = input.basis().index();
-    bytes[106] = if input.direction() == Direction::Forward {
-        1
-    } else {
-        2
+    bytes[104..136].copy_from_slice(&input.keyset_context());
+    bytes[136] = input.role() as u8;
+    bytes[137] = match input.role() {
+        Role::Embed => 1,
+        Role::AccumulateAndAdd => 2,
     };
-    bytes[107] = if input.direction() == Direction::Forward {
-        2
-    } else {
-        1
-    };
-    bytes[112..176].copy_from_slice(&backend::digest(&input.encode()));
-    bytes[176..240].copy_from_slice(&backend::digest(&output.encode()));
-    bytes[240..248].copy_from_slice(&(payload as u64).to_le_bytes());
-    bytes[248..252].copy_from_slice(&((input.direction().stages() + 5) as u32).to_le_bytes());
+    bytes[138] = input.role().input_moduli().len() as u8;
+    bytes[139] = input.role().output_moduli().len() as u8;
     bytes
 }
-pub(crate) fn encode_frame(
-    input: &Request,
-    output: &Output,
-    proof: &Proof,
-) -> Result<Vec<u8>, Error> {
+pub(crate) fn encode_frame(input: &Request, aux: &Aux, proof: &Proof) -> Result<Vec<u8>, Error> {
     let payload = postcard::to_allocvec(proof).map_err(|_| Error::ProofEncoding)?;
-    if payload.len() > MAX_PROOF_BYTES - HEADER {
-        return Err(Error::ProofLength);
+    let aux = aux.encode();
+    let size = HEADER
+        .checked_add(aux.len())
+        .and_then(|n| n.checked_add(payload.len()))
+        .filter(|&n| n <= MAX_PROOF_BYTES)
+        .ok_or(Error::ProofLength)?;
+    if aux.len() != input.role().aux_bytes() {
+        return Err(Error::Statement);
     }
-    let mut bytes = header(input, output, payload.len()).to_vec();
+    let mut bytes = header(input).to_vec();
+    bytes.reserve(size - HEADER);
+    bytes.extend(aux);
     bytes.extend(payload);
     Ok(bytes)
 }
-pub(crate) fn decode_frame(input: &Request, output: &Output, bytes: &[u8]) -> Result<Proof, Error> {
-    if bytes.len() < HEADER || bytes.len() > MAX_PROOF_BYTES {
+pub(crate) fn decode_frame(input: &Request, bytes: &[u8]) -> Result<(Aux, Proof), Error> {
+    let split = HEADER
+        .checked_add(input.role().aux_bytes())
+        .ok_or(Error::ProofLength)?;
+    if bytes.len() <= split || bytes.len() > MAX_PROOF_BYTES {
         return Err(Error::ProofLength);
     }
-    if bytes[..HEADER] != header(input, output, bytes.len() - HEADER) {
+    if bytes[..HEADER] != header(input) {
         return Err(Error::Frame);
     }
-    let proof: Proof = codec::decode(&bytes[HEADER..])?;
-    if postcard::to_allocvec(&proof).map_err(|_| Error::ProofEncoding)? != bytes[HEADER..] {
+    let aux = decode_aux(&bytes[HEADER..split]).map_err(|_| Error::Statement)?;
+    if aux.encode() != bytes[HEADER..split] {
+        return Err(Error::Statement);
+    }
+    let proof: Proof = codec::decode(&bytes[split..])?;
+    if postcard::to_allocvec(&proof).map_err(|_| Error::ProofEncoding)? != bytes[split..] {
         return Err(Error::ProofEncoding);
     }
-    Ok(proof)
+    Ok((aux, proof))
 }
-/// Bounded protocol layout before handing adversarial data to the SDK.
-/// The SDK still checks every exact transcript, query, Merkle and polynomial rule.
 fn layout(proof: &Proof, backend: &Backend) -> Result<(), Error> {
     let report = &backend.report;
-    if proof.indexed.is_some()
+    if proof.lookup.is_some()
+        || proof.indexed.is_some()
         || proof.bus.is_some()
-        || proof.sumcheck.round_polys.len() != 22
-        || proof.sumcheck.round_polys.iter().any(|p| p.len() != 3)
-        || !proof.sumcheck.pow_witnesses.is_empty()
-    {
-        return Err(Error::ProofEncoding);
-    }
-    let lookup = proof.lookup.as_ref().ok_or(Error::ProofEncoding)?;
-    if lookup.layers.len() != 22
-        || lookup
-            .layers
+        || proof.sumcheck.round_polys.len() != 13
+        || proof
+            .sumcheck
+            .round_polys
             .iter()
-            .enumerate()
-            .any(|(i, l)| l.round_polys.len() != i)
+            .any(|p| p.len() != report.constraint_degree + 1)
+        || !proof.sumcheck.pow_witnesses.is_empty()
     {
         return Err(Error::ProofEncoding);
     }
@@ -142,16 +143,14 @@ fn layout(proof: &Proof, backend: &Backend) -> Result<(), Error> {
         (&proof.opening, &report.main_pcs, false),
         (public, &report.preprocessed_pcs, true),
     ] {
-        if opening.evals.len() != report.air_count
-            || opening.evals.iter().zip(&report.tables).any(|(e, t)| {
-                e.current().len()
-                    != if is_public {
-                        t.preprocessed_width
-                    } else {
-                        t.main_width
-                    }
-                    || !e.next().is_empty()
-            })
+        if opening.evals.len() != 1
+            || opening.evals[0].current().len()
+                != if is_public {
+                    report.preprocessed_width
+                } else {
+                    1
+                }
+            || !opening.evals[0].next().is_empty()
         {
             return Err(Error::ProofEncoding);
         }
@@ -216,41 +215,36 @@ fn bounded_rows<T>(
 }
 pub fn prove(input: &Request) -> Result<Generated, Error> {
     let total = Instant::now();
-    let evaluation = evaluate_with_certificate(input).map_err(|_| Error::Statement)?;
+    let evaluated = evaluate_with_certificate(input).map_err(|_| Error::Statement)?;
     let arithmetic_and_certificate_ms = total.elapsed().as_secs_f64() * 1000.;
     let start = Instant::now();
-    let backend = Backend::new(input, &evaluation.output)?;
+    let backend = Backend::new(input, &evaluated.output, &evaluated.aux)?;
     let public_setup_ms = start.elapsed().as_secs_f64() * 1000.;
     let start = Instant::now();
-    let traces = backend
-        .machine
-        .witness(&evaluation.aux)
-        .map_err(|_| Error::Statement)?;
-    let instances = ProverInstances::new(
-        backend
-            .machine
-            .airs()
-            .iter()
-            .zip(traces)
-            .map(|(a, t)| ProverInstance::new(a, Table::new(t.transpose()), &backend.prover, &[]))
-            .collect(),
-    );
+    let wire = backend::envelope(input, &evaluated.aux);
+    let out = evaluated.output.encode();
+    let profile = backend::profile_digest(input.role());
+    // All arithmetic values and carries are public preprocessing. This zero main
+    // column is constrained by the existing AIR, not claimed as a private execution.
+    let trace = RowMajorMatrix::new(vec![Val::ZERO; DEGREE], 1);
+    let instances = ProverInstances::new(vec![ProverInstance::new(
+        &backend.air,
+        Table::new(trace.transpose()),
+        &backend.prover,
+        &backend.values,
+    )]);
     let proof = prove_with_security(
         &backend.config,
         instances,
         0,
         POLICY_BITS,
-        &mut backend.config.challenger(
-            backend::profile_digest(input.direction(), input.basis()),
-            &input.encode(),
-            &evaluation.output.encode(),
-        ),
+        &mut backend.config.challenger(profile, &wire, &out),
     )
     .map_err(|_| Error::Proving)?;
     layout(&proof, &backend)?;
-    let bytes = encode_frame(input, &evaluation.output, &proof)?;
+    let bytes = encode_frame(input, &evaluated.aux, &proof)?;
     Ok(Generated {
-        output: evaluation.output,
+        output: evaluated.output,
         proof: bytes,
         timings: ProverTimings {
             arithmetic_and_certificate_ms,
@@ -260,52 +254,51 @@ pub fn prove(input: &Request) -> Result<Generated, Error> {
         },
     })
 }
-pub fn verify(input: &Request, output: &Output, bytes: &[u8]) -> Result<CheckedNtt, Error> {
+/// Verifies the exact public relation without reduction, NTT, MAC or quotient/carry reevaluation.
+pub fn verify(input: &Request, output: &Output, bytes: &[u8]) -> Result<CheckedStage, Error> {
     catch_unwind(AssertUnwindSafe(|| verify_inner(input, output, bytes)))
         .unwrap_or(Err(Error::Verification))
 }
-fn verify_inner(input: &Request, output: &Output, bytes: &[u8]) -> Result<CheckedNtt, Error> {
+fn verify_inner(input: &Request, output: &Output, bytes: &[u8]) -> Result<CheckedStage, Error> {
     let total = Instant::now();
-    let proof = decode_frame(input, output, bytes)?;
+    let (aux, proof) = decode_frame(input, bytes)?;
     let start = Instant::now();
-    let backend = Backend::new(input, output)?;
+    let backend = Backend::new(input, output, &aux)?;
     layout(&proof, &backend)?;
     let public_setup_ms = start.elapsed().as_secs_f64() * 1000.;
+    let wire = backend::envelope(input, &aux);
+    let out = output.encode();
+    let profile = backend::profile_digest(input.role());
     let Backend {
-        machine,
+        air,
+        values,
         config,
         prover,
         verifier,
         report,
     } = backend;
-    // The verifier retains no proving preprocessed codeword or main witness.
     drop(prover);
     let start = Instant::now();
-    let instances = VerifierInstances::new(
-        machine
-            .airs()
-            .iter()
-            .map(|a| VerifierInstance::new(a, &verifier, a.height().ilog2() as usize, &[]))
-            .collect(),
-    );
+    let instances = VerifierInstances::new(vec![VerifierInstance::new(
+        &air,
+        &verifier,
+        backend::LOG_HEIGHT,
+        &values,
+    )]);
     verify_with_security(
         &config,
         instances,
         &proof,
         0,
         POLICY_BITS,
-        &mut config.challenger(
-            backend::profile_digest(input.direction(), input.basis()),
-            &input.encode(),
-            &output.encode(),
-        ),
+        &mut config.challenger(profile, &wire, &out),
     )
     .map_err(|_| Error::Verification)?;
-    Ok(CheckedNtt {
-        direction: input.direction(),
-        basis: input.basis(),
+    Ok(CheckedStage {
+        role: input.role(),
+        keyset_context: input.keyset_context(),
         input: backend::digest(&input.encode()),
-        output: backend::digest(&output.encode()),
+        output: backend::digest(&out),
         report,
         timings: VerifierTimings {
             public_setup_ms,

@@ -1,8 +1,8 @@
 //! Deterministic PUBLIC NONSECRET coefficients. Not a database or query answer.
-use crate::Error;
 use bfv_ntt_circuit::{
     Basis, DEGREE, Direction, Output, Request, decode_output, decode_request, encode_request,
 };
+use bfv_ntt_witness_proof::Error;
 use sha2::{Digest, Sha256};
 pub fn request(direction: Direction, basis: Basis, binding: [u8; 32]) -> Result<Request, Error> {
     let p = basis.modulus();

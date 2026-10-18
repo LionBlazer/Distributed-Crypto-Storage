@@ -186,7 +186,8 @@ fn full_sha512_outputs_and_complete_statement_bytes_seed_distinct_domains() {
 fn whole_model_has_no_unassessed_term_and_uses_both_fixed_pcs_shapes() {
     // A numerical SDK report is required, not the requested phase target alone.
     for direction in directions() {
-        let report = backend::analyze(direction, Basis::new(0).unwrap()).unwrap();
+        let (input, output) = fixture::zero_statement(direction, Basis::new(0).unwrap()).unwrap();
+        let report = analyze(&input, &output).unwrap();
         assert!(report.whole_security_bits.is_finite() && report.whole_security_bits >= 144.);
         assert!(report.unassessed_components.is_empty());
         assert!(!report.terms.is_empty());

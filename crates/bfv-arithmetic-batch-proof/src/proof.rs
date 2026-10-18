@@ -1,6 +1,7 @@
 //! No auxiliary is decoded, transmitted or recomputed by the verifier.
 use crate::{
     COMPONENTS, Context, Error, Expected, MAX_FRAME_BYTES, RelationOutput, RelationRequest,
+    SecurityReport,
     backend::{self, Backend, POLICY_BITS, Proof},
     codec,
     machine::Aux,
@@ -21,7 +22,7 @@ pub(crate) const HEADER: usize = 320;
 pub struct Generated {
     pub outputs: Vec<RelationOutput>,
     pub frame: Vec<u8>,
-    pub report: backend::SecurityReport,
+    pub report: SecurityReport,
     pub generation_ms: f64,
 }
 /// Only the seventeen fixed public arithmetic relations, with no graph authority.
@@ -30,16 +31,16 @@ pub struct CheckedBatch {
     input: [u8; 64],
     output: [u8; 64],
     profile: [u8; 64],
-    report: backend::SecurityReport,
+    report: SecurityReport,
     pub verification_ms: f64,
 }
 impl CheckedBatch {
     /// Verifier-rebuilt assessments of all three phases with their existing union bound.
-    pub fn security_report(&self) -> &backend::SecurityReport {
+    pub fn security_report(&self) -> &SecurityReport {
         &self.report
     }
     pub fn matches(&self, expected: &Expected) -> bool {
-        self.profile == backend::profile(expected.context())
+        self.profile == backend::profile_digest(expected.context())
             && self.input == backend::digest(&expected.request_wire())
             && self.output == backend::digest(&expected.output_wire())
     }
@@ -57,7 +58,7 @@ fn header(expected: &Expected, lengths: &[usize; COMPONENTS]) -> Result<[u8; HEA
     }
     let mut b = [0; HEADER];
     b[..8].copy_from_slice(b"BFVABP02");
-    b[8..72].copy_from_slice(&backend::profile(expected.context()));
+    b[8..72].copy_from_slice(&backend::profile_digest(expected.context()));
     b[72..104].copy_from_slice(&expected.context().query);
     b[104..136].copy_from_slice(&expected.context().setup);
     b[136..200].copy_from_slice(&backend::digest(&expected.request_wire()));
@@ -367,7 +368,7 @@ fn verify_inner(expected: &Expected, frame: &[u8]) -> Result<CheckedBatch, Error
     Ok(CheckedBatch {
         input: backend::digest(&expected.request_wire()),
         output: backend::digest(&expected.output_wire()),
-        profile: backend::profile(expected.context()),
+        profile: backend::profile_digest(expected.context()),
         report,
         verification_ms: started.elapsed().as_secs_f64() * 1000.,
     })

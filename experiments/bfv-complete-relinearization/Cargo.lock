@@ -118,16 +118,13 @@ dependencies = [
  "bfv-ntt-circuit",
  "bounded-postcard",
  "p3-air",
- "p3-field",
  "p3-lookup",
- "p3-matrix",
  "p3-merkle-tree",
  "p3-multi-stark",
  "p3-sumcheck",
  "p3-whir",
  "postcard",
  "serde",
- "serde_json",
  "sha2",
 ]
 
@@ -198,7 +195,6 @@ dependencies = [
  "p3-whir",
  "postcard",
  "serde",
- "serde_json",
  "sha2",
 ]
 
@@ -886,8 +882,6 @@ dependencies = [
 [[package]]
 name = "p3-multi-stark"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0437304b3289d7a0fe3e758e5998cb909fc7d2131f6f1fee9ed78c679f8c70fa"
 dependencies = [
  "hashbrown",
  "itertools 0.15.0",

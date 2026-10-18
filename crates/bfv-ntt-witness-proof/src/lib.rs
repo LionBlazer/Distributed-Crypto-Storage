@@ -1,13 +1,17 @@
 //! Full N8192 public NTT through a main-witness multilinear STARK.
 //! A checked marker attests one arithmetic relation, never SQL or full MulRelin.
 #![forbid(unsafe_code)]
-pub mod backend;
+mod backend;
 mod codec;
-pub mod fixture;
+#[cfg(test)]
+mod fixture;
 mod proof;
+pub use backend::{
+    AirReport, PcsSchedule, SecurityReport, Term, analyze, direction_name, profile_digest,
+};
 pub use proof::{CheckedNtt, Generated, ProverTimings, VerifierTimings, prove, verify};
 
-/// Independent new-profile policy; no existing proof consumer's limits change.
+/// Fixed primitive-proof policy, unchanged by library extraction.
 pub const MAX_PROOF_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_PROOF_SEQUENCE_ELEMENTS: usize = 16384;
 pub const MAX_PROOF_DECODE_ELEMENTS: usize = 8 * 1024 * 1024;

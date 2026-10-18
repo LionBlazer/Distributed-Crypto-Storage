@@ -9,6 +9,7 @@ use fhe_math::rq::Representation;
 use fhe_traits::{DeserializeParametrized, Serialize};
 use sha2::{Digest, Sha256};
 use std::{sync::Arc, time::Instant};
+mod security;
 
 pub(crate) struct PublicFixture {
     pub setup: PublicSetup,
@@ -97,10 +98,8 @@ pub fn security() -> Result<()> {
         bfv_ntt_circuit::Direction::Forward,
     ] {
         for basis in 0..5 {
-            let report = bfv_ntt_witness_proof::backend::analyze(
-                direction,
-                bfv_ntt_circuit::Basis::new(basis)?,
-            )?;
+            let (input, output) = security::ntt(direction, bfv_ntt_circuit::Basis::new(basis)?)?;
+            let report = bfv_ntt_witness_proof::analyze(&input, &output)?;
             println!(
                 "{}",
                 serde_json::to_string(&report).map_err(|_| Error::Shape)?
@@ -111,7 +110,8 @@ pub fn security() -> Result<()> {
         bfv_relinearization_circuit::Role::Embed,
         bfv_relinearization_circuit::Role::AccumulateAndAdd,
     ] {
-        let report = bfv_relinearization_multilinear_proof::backend::analyze(role)?;
+        let (input, output, aux) = security::relinearization(role)?;
+        let report = bfv_relinearization_multilinear_proof::analyze(&input, &output, &aux)?;
         println!(
             "{}",
             serde_json::to_string(&report).map_err(|_| Error::Shape)?

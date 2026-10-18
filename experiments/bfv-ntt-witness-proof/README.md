@@ -1,4 +1,12 @@
-# Full N8192 NTT main-witness proof candidate
+# N8192 NTT witness proof CLI
+
+Package `bfv-ntt-witness-proof-cli` keeps the executable name
+`bfv-ntt-witness-proof`. It now owns only command parsing, public nonsecret
+fixtures and JSON/timing presentation. The actual proof implementation and all
+thirteen owning tests live in [the core library](../../crates/bfv-ntt-witness-proof/README.md).
+The current extraction passed the native gates in the linked proof-library
+validation. Earlier implementation measurements below retain their historical
+source and scope.
 
 The shared-backend migration passed release compilation, strict Clippy, rustfmt,
 full upstream SDK parity and all thirteen unignored owning tests on 2026-10-17.
@@ -7,7 +15,7 @@ exactly. All twenty genuine serialized proofs and the genuine weakened/foreign
 program proof rejections pass. Historical pre-extraction CPU measurements remain
 in [the exact results and limits](VALIDATION.md).
 
-After extraction, a fresh CPU smoke run generated and independently verified the
+After the earlier shared-backend migration, a fresh CPU smoke run generated and independently verified the
 same 1,958,608-byte forward-basis0 proof in 3,532.9335ms outer process time. Its
 sampled OS peak working set was 867,356,672 bytes. This single run is not a speed
 comparison or an interactive SQL latency guarantee. The complete regression suite
@@ -16,14 +24,16 @@ network acceptance shortcut was introduced.
 This experiment certifies one public, nonsecret NTT stage for one of ten fixed Q5/P5 bases. It provides no MulRelin, SQL, freshness, key
 ownership or production acceptance capability. The main trace is not hiding.
 
-The consumer owns the exact NTT hash domains and profile, complete statement
+The core proof library owns the exact NTT hash domains and profile, complete statement
 encoding, framing, bounded decoding, semantic geometry, verifier-built setup and
 checked stage marker. [`bfv-multilinear-stark`](../../crates/bfv-multilinear-stark/README.md)
 owns the fixed serial SHA-512/WHIR configuration and complete SDK security
 assessment. The optional `multistark`
 module in `bfv-ntt-circuit` owns fixed arithmetic, native routing, canonical codecs,
 public preparation and witness layout. `bounded-postcard` owns allocation-budget
-accounting. This consumer does not depend on an older proof consumer or change an
+accounting. This CLI depends directly on `bfv-ntt-witness-proof`, `bfv-ntt-circuit`,
+`serde_json` and `sha2`; it contains no backend or codec implementation. It does
+not depend on an older proof consumer or change an
 existing operation, profile, proof cap or decoder policy.
 
 ## Statement and verification
@@ -84,13 +94,15 @@ leave six/five final variables. These are checked SDK-derived values, not omitte
 soundness work. A fresh challenger is created for setup and separately for each
 proof/verification; setup's challenger state is discarded.
 
-`backend::analyze(direction, basis)` constructs actual job-specific public setup
+Library `analyze(&Request, &Output)` constructs actual job-specific public setup
 but no main trace or BFV NTT evaluation. Its report is the SDK's complete union
 accounting, including lookup, AIR, opening and collision terms. Missing,
 unassessed, nonfinite, or below-144-bit whole-statement bounds reject before
 proving and again during verification. Requested per-term target 160 is not a
 measured or inferred whole bound. All twenty reports must be reviewed before
-native proof gates. No old per-stage 128-bit result is relabeled as this bound,
+native proof gates. The CLI first builds its local shape-only zero pair and calls
+this API before any NTT evaluation, then drops that pair before proving. No old
+per-stage 128-bit result is relabeled as this bound,
 and no single-stage result is extended to a chain or the full SQL system.
 
 ## New frame and allocation policy
@@ -139,23 +151,25 @@ honest rejection. Range and address attacks preserve every local integer equatio
 and isolate the missing global link. Other attacks weaken carries, quotients,
 normalization, the final butterfly, multiplicities or complete IO preprocessing.
 Before this migration, all thirteen examples executed successfully, with zero
-ignored cases. The migration must repeat those owning checks and compare all
-twenty complete reports before acceptance.
+ignored cases. The current library extraction repeats those owning checks and
+compares all twenty complete reports; see the linked validation.
 
-Reproduction uses the reviewed standalone lock, a separate target,
+Historical reproduction used the reviewed standalone lock, a separate target,
 pinned Rust 1.99, `--locked --offline`, bounded build/Rayon threads and the exact
 reviewed P3 feature graph. No network/download behavior is part of these commands.
-After compilation and strict Clippy, complete all twenty security commands and
+The explicit reviewed vendor dependency and unchanged-version lock graph are
+integrated. Build the CLI and test its actual Core owner with these commands.
+Complete all twenty security commands and
 the real SDK oracle before genuine and negative proofs under the process fuse:
 
 ```powershell
 cargo build --release --locked --offline --manifest-path experiments/bfv-ntt-witness-proof/Cargo.toml
-cargo test --release --locked --offline --manifest-path experiments/bfv-ntt-witness-proof/Cargo.toml --no-run
+cargo test --release --locked --offline -p bfv-ntt-witness-proof --lib --no-run
 cargo clippy --release --locked --offline --manifest-path experiments/bfv-ntt-witness-proof/Cargo.toml --all-targets -- -D warnings
 # Invoke the built executable directly for all directions x basis 0..9:
 bfv-ntt-witness-proof security forward 0
 bfv-ntt-witness-proof prove forward 0
-cargo test --release --locked --offline --manifest-path experiments/bfv-ntt-witness-proof/Cargo.toml --lib -- --test-threads=1
+cargo test --release --locked --offline -p bfv-ntt-witness-proof --lib -- --test-threads=1
 ```
 
 The CLI `security <forward|inverse> <0..9>` emits one actual report; `prove` emits
@@ -166,10 +180,13 @@ trace/proof/encoding; verifier total includes bounded decode, public setup and
 SDK verification. An outer owned-process timer additionally includes startup,
 initial CLI report/setup and fixtures. No timer is a whole SQL or MulRelin timer.
 
-`CheckedNtt::security_report()` borrows the actual `backend::SecurityReport`
+`CheckedNtt::security_report()` borrows the actual public `SecurityReport`
 rebuilt by this verifier and retained only after genuine proof verification
 succeeds. It exposes the existing whole-stage bound, terms and unassessed-component
 list for explicit composition; no report is accepted from a frame or producer.
 It adds no composed-operation, SQL, setup-authority or freshness guarantee. The
 [full graph validation](../bfv-mul-relin-proof/VALIDATION.md) includes the original
 thirteen owning tests and actual use of this report for all115 graph NTT proofs.
+
+The [proof-library extraction validation](../bfv-mul-relin-proof/LIBRARY-EXTRACTION-VALIDATION.md) records the current
+relocation, owning native tests and preserved proof policy.

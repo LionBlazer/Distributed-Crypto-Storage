@@ -393,7 +393,8 @@ fn binary_goldilocks_public_rows_charge_each_byte_slot_in_both_role_budgets() {
 #[test]
 fn actual_whole_sdk_reports_require144_with_public_auxiliary_and_both_fixed_pcs_shapes() {
     for role in roles() {
-        let r = backend::analyze(role).unwrap();
+        let (input, output, aux) = fixture::zero_statement(role).unwrap();
+        let r = analyze(&input, &output, &aux).unwrap();
         assert!(r.whole_security_bits.is_finite() && r.whole_security_bits >= 144.);
         assert!(r.unassessed_components.is_empty());
         assert!(!r.terms.is_empty());

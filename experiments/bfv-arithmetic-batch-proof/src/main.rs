@@ -1,11 +1,16 @@
-use bfv_arithmetic_batch_proof::{Expected, backend, fixture, prove, verify};
+mod fixture;
+
+use bfv_arithmetic_batch_proof::{Expected, analyze, prove, verify};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mode = std::env::args()
         .nth(1)
         .ok_or("expected security or prove")?;
     let context = fixture::context();
     match mode.as_str() {
-        "security" => println!("{}", serde_json::to_string(&backend::analyze(context)?)?),
+        "security" => {
+            let expected = fixture::zero_statement(context)?;
+            println!("{}", serde_json::to_string(&analyze(&expected)?)?);
+        }
         "prove" => {
             let requests = fixture::requests(context)?;
             let generated = prove(context, &requests)?;

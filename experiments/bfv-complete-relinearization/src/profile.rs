@@ -24,14 +24,14 @@ pub fn profile_digest() -> [u8; 64] {
     }
     for direction in [Direction::Inverse, Direction::Forward] {
         for basis in 0..5 {
-            h.update(bfv_ntt_witness_proof::backend::profile_digest(
+            h.update(bfv_ntt_witness_proof::profile_digest(
                 direction,
                 Basis::new(basis).expect("fixed Q5 basis"),
             ));
         }
     }
     for role in [Role::Embed, Role::AccumulateAndAdd] {
-        h.update(bfv_relinearization_multilinear_proof::backend::profile_digest(role));
+        h.update(bfv_relinearization_multilinear_proof::profile_digest(role));
     }
     h.finalize().into()
 }

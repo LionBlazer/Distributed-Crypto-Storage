@@ -1,7 +1,7 @@
 //! PUBLIC NONSECRET arithmetic vectors. These arbitrary key-like vectors are not
 //! imported evaluation keys or evidence of ciphertext/key source or same-secret authority.
-use crate::Error;
 use bfv_relinearization_circuit::{DEGREE, Request, Role, decode_request, encode_request};
+use bfv_relinearization_multilinear_proof::Error;
 pub fn request(role: Role, binding: [u8; 32], keyset_context: [u8; 32]) -> Result<Request, Error> {
     let mut input = Vec::with_capacity(role.input_coefficients());
     for (poly, &p) in role.input_moduli().iter().enumerate() {

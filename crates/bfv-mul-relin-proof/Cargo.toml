@@ -1,0 +1,27 @@
+[package]
+name = "bfv-mul-relin-proof"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+[dependencies]
+bfv-mul-relin-circuit = { path = "../bfv-mul-relin-circuit" }
+bfv-relinearization-key-source = { path = "../bfv-relinearization-key-source" }
+bfv-arithmetic-batch-proof = { path = "../bfv-arithmetic-batch-proof" }
+bfv-ntt-witness-proof = { path = "../bfv-ntt-witness-proof" }
+bfv-relinearization-multilinear-proof = { path = "../bfv-relinearization-multilinear-proof" }
+bfv-ntt-circuit = { path = "../bfv-ntt-circuit" }
+bfv-scale-circuit = { path = "../bfv-scale-circuit" }
+bfv-tensor-circuit = { path = "../bfv-tensor-circuit" }
+bfv-relinearization-circuit = { path = "../bfv-relinearization-circuit" }
+bfv-fixed-geometry = { path = "../bfv-fixed-geometry" }
+bfv-ciphertext-wire = { path = "../bfv-ciphertext-wire" }
+bfv-query-core = { path = "../bfv-query-core", features = ["formation-proofs"] }
+bfv-ciphertext-formation = { path = "../bfv-ciphertext-formation" }
+registry200-proof = { path = "../registry200-proof" }
+bfv-key-transform = { path = "../bfv-key-transform" }
+bfv-basis-convolution = { path = "../bfv-basis-convolution" }
+fhe = { version = "=0.1.1", default-features = false }
+fhe-traits = "=0.1.1"
+p3-field = "=0.8.0"
+sha2 = "=0.10.9"

@@ -1,6 +1,7 @@
 //! Public nonsecret fixtures; no whole Relin/MulRelin/SQL acceptance.
 use bfv_relinearization_circuit::Role;
-use bfv_relinearization_multilinear_proof::{backend, fixture, prove, verify};
+use bfv_relinearization_multilinear_proof::{analyze, prove, role_name, verify};
+mod fixture;
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.len() != 2 || !matches!(args[0].as_str(), "security" | "prove") {
@@ -14,7 +15,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "accumulate" => Role::AccumulateAndAdd,
         _ => return Err("unknown fixed role".into()),
     };
-    println!("{}", serde_json::to_string(&backend::analyze(role)?)?);
+    let report = {
+        let (zero_input, zero_output, zero_aux) = fixture::zero_statement(role)?;
+        analyze(&zero_input, &zero_output, &zero_aux)?
+    };
+    println!("{}", serde_json::to_string(&report)?);
     if args[0] == "security" {
         return Ok(());
     }
@@ -26,7 +31,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!(
         "{}",
-        serde_json::json!({"stage":"verified_experimental_multilinear_relinearization_arithmetic","role":backend::role_name(role),"coefficients":8192,"proof_bytes":generated.proof.len(),"prover_timings":generated.timings,"verifier_timings":checked.timings,"fixture":"public_nonsecret","public_auxiliary":true,"zero_knowledge":false,"complete_relinearization":false,"whole_mul_relin":false,"key_authority":false,"live_sql_grant":false})
+        serde_json::json!({"stage":"verified_experimental_multilinear_relinearization_arithmetic","role":role_name(role),"coefficients":8192,"proof_bytes":generated.proof.len(),"prover_timings":generated.timings,"verifier_timings":checked.timings,"fixture":"public_nonsecret","public_auxiliary":true,"zero_knowledge":false,"complete_relinearization":false,"whole_mul_relin":false,"key_authority":false,"live_sql_grant":false})
     );
     Ok(())
 }

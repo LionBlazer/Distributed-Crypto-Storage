@@ -1,4 +1,5 @@
 [workspace]
+exclude = ["vendor/p3-multi-stark"]
 members = [
     "crates/bfv-hiding-stark",
     "crates/registry200-proof",
@@ -24,6 +25,10 @@ members = [
     "crates/bfv-mul-relin-circuit",
     "crates/bfv-arithmetic-stark",
     "crates/bfv-multilinear-stark",
+    "crates/bfv-ntt-witness-proof",
+    "crates/bfv-relinearization-multilinear-proof",
+    "crates/bfv-arithmetic-batch-proof",
+    "crates/bfv-mul-relin-proof",
     "crates/bfv-query-proof",
     "crates/bounded-postcard",
     "crates/limb-range-air",
@@ -67,6 +72,10 @@ default-members = [
     "crates/bfv-mul-relin-circuit",
     "crates/bfv-arithmetic-stark",
     "crates/bfv-multilinear-stark",
+    "crates/bfv-ntt-witness-proof",
+    "crates/bfv-relinearization-multilinear-proof",
+    "crates/bfv-arithmetic-batch-proof",
+    "crates/bfv-mul-relin-proof",
     "crates/bfv-query-proof",
     "crates/bounded-postcard",
     "crates/limb-range-air",

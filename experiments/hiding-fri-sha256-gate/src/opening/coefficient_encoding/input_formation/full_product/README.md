@@ -5,7 +5,7 @@ SDK FHE oracle. This module receives only public original setup/anchor, complete
 Encoding statements, two original ciphertexts, proposed output and public frames
 after the Owner, scope and private fixture have been dropped.
 
-`verify` uses the standalone [full graph](../../../../../../bfv-mul-relin-proof/README.md)
+`verify` uses the Core [full graph](../../../../../../../crates/bfv-mul-relin-proof/README.md)
 consumer; `verify_inputs` reloads the actual Key, two Source/encoding pairs, ten
 Basis and two Formation frames and drops their buffers after genuine verification.
 The other helpers test endpoint, session-budget and genuine foreign NTT rejection.

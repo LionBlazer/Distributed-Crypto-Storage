@@ -73,7 +73,7 @@ The Ntt wire tag still stores PB coefficients: no native/PB relabel is accepted.
 
 `feed_identity(&mut Sha512)` appends all raw native words, exact node metadata
 and every raw output coefficient in the original order, excluding derived
-headers. The [full proof consumer](../../experiments/bfv-mul-relin-proof/README.md)
+headers. The [full proof consumer](../bfv-mul-relin-proof/README.md)
 owns the domain, full Source/Encoding/Key33/setup/query/ciphertext provenance,
 profile, final graph identity, proof order/budgets and real verification. It must
 still verify all16 input proofs and all118 output records before yielding a

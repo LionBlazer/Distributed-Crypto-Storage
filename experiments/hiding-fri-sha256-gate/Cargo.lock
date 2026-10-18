@@ -118,7 +118,6 @@ dependencies = [
  "p3-whir",
  "postcard",
  "serde",
- "serde_json",
  "sha2",
 ]
 
@@ -301,16 +300,13 @@ dependencies = [
  "bfv-ntt-circuit",
  "bounded-postcard",
  "p3-air",
- "p3-field",
  "p3-lookup",
- "p3-matrix",
  "p3-merkle-tree",
  "p3-multi-stark",
  "p3-sumcheck",
  "p3-whir",
  "postcard",
  "serde",
- "serde_json",
  "sha2",
 ]
 
@@ -411,7 +407,6 @@ dependencies = [
  "p3-whir",
  "postcard",
  "serde",
- "serde_json",
  "sha2",
 ]
 

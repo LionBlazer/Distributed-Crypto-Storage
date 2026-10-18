@@ -8,8 +8,8 @@ This library owns one fixed public, nonhiding Plonky3 0.8.0 protocol: Goldilocks
 extension degree 5, all 512 SHA512 output bits, separate consumer-selected Merkle
 leaf/node/transcript domains, binary Merkle cap0, PrefixProver, WHIR unique
 decoding, fold4, starting inverse rate1 with derived later rates, zero grinding,
-per-phase target160 and complete-statement floor144. It has no direct project
-library dependency. In particular it does not import the older
+per-phase target160 and complete-statement floor144. It uses the reviewed [vendored SDK](../../vendor/p3-multi-stark/README.md)
+through an explicit path dependency shared by all multilinear consumers. In particular it does not import the older
 [univariate backend](../bfv-arithmetic-stark/README.md), whose parallel feature and
 configuration remain separate. Pinned multilinear SDK dependencies disable their
 default features; this crate enables no parallel or nightly feature.
@@ -85,10 +85,10 @@ Reproduce the owning gates from the repository root:
 ```sh
 cargo test --release --locked -p bfv-multilinear-stark -- --test-threads=1
 cargo clippy --release --locked -p bfv-multilinear-stark --all-targets -- -D warnings
-cargo test --release --locked --manifest-path experiments/bfv-ntt-witness-proof/Cargo.toml --lib -- --test-threads=1
+cargo test --release --locked -p bfv-ntt-witness-proof --lib -- --test-threads=1
 ```
 
 The standalone consumer retains exactly its previous resolved package features,
 plus this featureless local library. Existing root lock entries are unchanged;
 the seven added registry packages match the already validated standalone SDK.
-See the [consumer's limits and measurements](../../experiments/bfv-ntt-witness-proof/README.md).
+See the [consumer's limits and measurements](../bfv-ntt-witness-proof/README.md).

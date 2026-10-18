@@ -15,7 +15,7 @@ p3-field = "=0.8.0"
 p3-goldilocks = "=0.8.0"
 p3-lookup = { version = "=0.8.0", default-features = false }
 p3-merkle-tree = "=0.8.0"
-p3-multi-stark = { version = "=0.8.0", default-features = false }
+p3-multi-stark = { path = "../../vendor/p3-multi-stark", version = "=0.8.0", default-features = false }
 p3-sumcheck = { version = "=0.8.0", default-features = false }
 p3-symmetric = "=0.8.0"
 p3-whir = { version = "=0.8.0", default-features = false }

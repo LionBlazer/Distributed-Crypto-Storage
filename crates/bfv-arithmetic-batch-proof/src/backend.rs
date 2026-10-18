@@ -25,7 +25,7 @@ pub(crate) fn domains() -> Domains {
     )
     .expect("fixed prefix-free domains")
 }
-pub fn profile(context: Context) -> [u8; 64] {
+pub fn profile_digest(context: Context) -> [u8; 64] {
     let mut h = Sha512::new();
     h.update(b"DCS/ARITHMETIC-BATCH-PROOF/v2/profile/SHA512-full64/streaming-lookups/");
     h.update(bfv_multilinear_stark::PROTOCOL_DESCRIPTOR);
@@ -72,7 +72,7 @@ pub(crate) fn component_profile(expected: &Expected, ordinal: usize) -> Result<[
     let range = statement::component_range(ordinal)?;
     let mut h = Sha512::new();
     h.update(b"DCS/ARITHMETIC-BATCH/v2/phase/full-outer-profile-and-position/");
-    h.update(profile(expected.context()));
+    h.update(profile_digest(expected.context()));
     for n in [COMPONENTS, ordinal, range.start, range.end] {
         h.update((n as u64).to_le_bytes());
     }
@@ -375,11 +375,10 @@ impl Backend {
     }
 }
 /// Real verifier preprocessing and actual SDK assessment; no Aux or main trace.
-pub fn analyze(context: Context) -> Result<SecurityReport, Error> {
-    let expected = crate::fixture::zero_statement(context)?;
+pub fn analyze(expected: &Expected) -> Result<SecurityReport, Error> {
     let mut reports = Vec::with_capacity(COMPONENTS);
     for ordinal in 0..COMPONENTS {
-        let backend = Backend::new(&expected, ordinal)?;
+        let backend = Backend::new(expected, ordinal)?;
         reports.push(backend.report.clone());
     }
     summarize(reports)

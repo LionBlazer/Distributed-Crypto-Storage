@@ -320,7 +320,7 @@ impl Backend {
 }
 /// No main trace or NTT evaluation. This DOES allocate and commit verifier-built
 /// fixed/public tables, since the published security-report API needs a real VK.
-pub fn analyze(direction: Direction, basis: Basis) -> Result<SecurityReport, Error> {
-    let (input, output) = crate::fixture::zero_statement(direction, basis)?;
-    Ok(Backend::new(&input, &output)?.report)
+/// The caller supplies the complete canonical claim; a report is not a proof.
+pub fn analyze(input: &Request, output: &Output) -> Result<SecurityReport, Error> {
+    Ok(Backend::new(input, output)?.report)
 }

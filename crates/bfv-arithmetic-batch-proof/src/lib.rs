@@ -1,11 +1,16 @@
 //! One fixed public arithmetic union, not a DAG, MulRelin or SQL admission.
 #![forbid(unsafe_code)]
-pub mod backend;
+mod backend;
 mod codec;
-pub mod fixture;
+#[cfg(test)]
+mod fixture;
 mod machine;
 mod proof;
 mod statement;
+pub use backend::{
+    AirReport, ComponentReport, ResourceBound, Schedule, SecurityReport, Term, analyze,
+    profile_digest,
+};
 pub use proof::{CheckedBatch, Generated, prove, verify};
 pub use statement::{Context, Expected, RelationOutput, RelationRequest, instance_binding};
 pub const RELATIONS: usize = 17;

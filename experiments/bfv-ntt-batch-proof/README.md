@@ -29,7 +29,7 @@ the shared SHA512/WHIR config and the root workspace policy remain unchanged.
 | [bfv-ntt-circuit](../../crates/bfv-ntt-circuit/README.md) | Complete semantic NTT machines, private certificates and verifier-owned public IO |
 | [bfv-multilinear-stark](../../crates/bfv-multilinear-stark/README.md) | Fixed SHA512/WHIR config and actual SDK security assessment |
 | [bounded-postcard](../../crates/bounded-postcard/README.md) | Shared nested allocation accounting before deserialization reservations |
-| [Scoped SDK](../p3-multi-stark-streaming/README.md) | Opt-in streamed counted-lookup proving with the unchanged verifier |
+| [Vendored SDK](../../vendor/p3-multi-stark/README.md) | Opt-in streamed counted-lookup proving with the unchanged verifier |
 
 `Context` and `Expected::new` define the independent complete statement. `prove`
 owns witnesses, setup and proof generation; `verify` owns reconstruction,

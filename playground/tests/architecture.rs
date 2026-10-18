@@ -6,6 +6,7 @@ use std::{collections::BTreeSet, path::Path, process::Command};
 fn core_build_targets_and_dependencies_exclude_applications_and_experiments() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let core = root.join("crates").canonicalize().unwrap();
+    let vendored_sdk = root.join("vendor/p3-multi-stark").canonicalize().unwrap();
     let output = Command::new(env!("CARGO"))
         .args([
             "metadata",
@@ -42,9 +43,11 @@ fn core_build_targets_and_dependencies_exclude_applications_and_experiments() {
                 "Core dependency on {name}"
             );
             if let Some(path) = dependency["path"].as_str() {
+                let path = Path::new(path).canonicalize().unwrap();
                 assert!(
-                    Path::new(path).canonicalize().unwrap().starts_with(&core),
-                    "Core dependency escapes its layer: {path}"
+                    path.starts_with(&core) || (name == "p3-multi-stark" && path == vendored_sdk),
+                    "Core dependency is outside Core or its vendored SDK: {}",
+                    path.display()
                 );
             }
         }

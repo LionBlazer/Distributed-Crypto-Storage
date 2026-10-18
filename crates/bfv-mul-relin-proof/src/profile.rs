@@ -26,13 +26,13 @@ pub fn profile_digest() -> [u8; 64] {
         bfv_ntt_circuit::Direction::Inverse,
     ] {
         for b in 0..10 {
-            h.update(bfv_ntt_witness_proof::backend::profile_digest(
+            h.update(bfv_ntt_witness_proof::profile_digest(
                 direction,
                 bfv_ntt_circuit::Basis::new(b).unwrap(),
             ));
         }
     }
-    h.update(bfv_arithmetic_batch_proof::backend::profile(
+    h.update(bfv_arithmetic_batch_proof::profile_digest(
         bfv_arithmetic_batch_proof::Context {
             query: [1; 32],
             setup: [2; 32],
@@ -42,7 +42,7 @@ pub fn profile_digest() -> [u8; 64] {
         bfv_relinearization_circuit::Role::Embed,
         bfv_relinearization_circuit::Role::AccumulateAndAdd,
     ] {
-        h.update(bfv_relinearization_multilinear_proof::backend::profile_digest(role));
+        h.update(bfv_relinearization_multilinear_proof::profile_digest(role));
     }
     h.finalize().into()
 }
