@@ -5,7 +5,7 @@ use crate::{
     source::{commitment, schedule},
 };
 use bfv_hiding_stark::{TRACE_HEIGHT, Val};
-use p3_air::{Air, AirBuilder, BaseAir, WindowAccess, utils::pack_bits_le};
+use p3_air::{Air, AirBuilder, BaseAir, WindowAccess};
 use p3_field::{Algebra, PrimeCharacteristicRing};
 use std::{borrow::Cow, sync::OnceLock};
 
@@ -35,9 +35,6 @@ pub fn absorb(row: usize) -> Option<(Stream, usize)> {
 pub fn reset(row: usize) -> bool {
     matches!(row, 0 | 85 | 93)
 }
-fn packed<E: Algebra<Val>, T: Copy + Into<E>>(row: &[T], start: usize) -> E {
-    pack_bits_le(row[start..start + 32].iter().copied())
-}
 pub struct BootstrapAir {
     values: [Val; statement::BOOTSTRAP_VALUES],
     source_prefix: Vec<Val>,
@@ -63,22 +60,21 @@ impl BootstrapAir {
         slot: usize,
     ) -> E {
         match stream {
-            Stream::Source => match field {
-                0..=82 => E::from(self.source_prefix[field]),
-                83..=86 => row[SALTS + field - 83].into(),
-                87..=673 => packed(row, WORDS + 32 * slot),
-                _ => E::ZERO,
-            },
-            Stream::Enrollment => match field {
-                0..=32 => E::from(self.enrollment_prefix[field]),
-                33..=40 => row[TABLE + field - 33].into(),
-                41 => E::from_u8(2),
-                42 | 51 => E::from_usize(if field == 42 { 1 } else { 2 }),
-                43..=50 => packed(row, CONTROLLERS + 32 * (field - 43)),
-                52..=59 => packed(row, CONTROLLERS + 256 + 32 * (field - 52)),
-                60..=63 => row[SALTS + 4 + field - 60].into(),
-                _ => unreachable!(),
-            },
+            Stream::Source => {
+                super::opening::source_field(&self.source_prefix, row, WORDS, SALTS, field, slot)
+            }
+            Stream::Enrollment => super::opening::enrollment_field(
+                &self.enrollment_prefix,
+                row,
+                super::opening::Banks {
+                    words: WORDS,
+                    table: TABLE,
+                    ids: IDS,
+                    controllers: CONTROLLERS,
+                },
+                SALTS + 4,
+                field,
+            ),
             Stream::Registry => match field {
                 0..=32 => E::from(self.registry_prefix[field]),
                 33..=36 => E::from(self.values[96 + field - 33]),
@@ -150,7 +146,8 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for BootstrapAir {
                 let f = 87 + first + word;
                 b.assert_zero(
                     selectors[f / 8].clone()
-                        * (row[bank + word] - packed::<AB::Expr, _>(row, WORDS + (f % 8) * 32)),
+                        * (row[bank + word]
+                            - super::ranges::pack::<AB::Expr, _>(row, WORDS + (f % 8) * 32, 32)),
                 );
             }
         }

@@ -4,6 +4,7 @@ pub mod admission;
 pub mod lifecycle;
 pub mod source;
 pub mod wire;
+pub mod write;
 use bfv_hiding_stark::poseidon;
 pub use bfv_hiding_stark::{Error as BackendError, Val};
 mod fixed;

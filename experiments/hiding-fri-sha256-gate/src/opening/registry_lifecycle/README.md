@@ -191,3 +191,15 @@ wire verifier. This experiment keeps private witness/model/trace and producer
 field builders in statement.rs. The concrete application has moved to
 [registry200-journal](../../../../../crates/registry200-journal/README.md); actual
 peer control admission is distinct from legacy Registry112 and live SQL.
+
+
+## Separate AddAmount write eligibility
+
+The [WriteImage consumer](write/README.md) opens the current exact Registry200 and
+canonical Source, requires own NoKeyUpdate/Update holding for every selected
+original RowId, and commits a complete logical afterimage with globally rejected
+u16 overflow. Its separate profile and command domain do not extend the seven
+operations, replace the immutable Source application or admit a data mutation.
+The actual-history gate and all ten new tests passed; the
+[validation record](../../../REGISTRY200-WRITE-IMAGE-VALIDATION.md) gives the
+affected test scope, proof sizes, measurements and remaining obligations.

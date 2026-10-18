@@ -57,6 +57,10 @@ pub(crate) fn profile_digest(kind: Kind) -> [u8; 32] {
             crate::opening::state::locking::profile(&mut hash);
             (crate::opening::locking::air::WIDTH, 2)
         }
+        Kind::RegistryWriteImage => {
+            registry200_proof::write::profile(&mut hash);
+            (registry200_proof::write::layout::WIDTH, 2)
+        }
         Kind::RegistryLifecycleBootstrap => {
             crate::opening::registry_lifecycle::profile(&mut hash, true);
             (crate::opening::registry_lifecycle::bootstrap::WIDTH, 2)

@@ -4,7 +4,10 @@ pub mod air;
 pub mod bootstrap;
 pub mod control;
 pub mod layout;
+pub mod opening;
+pub mod predicate;
 pub mod ranges;
+pub mod registry;
 pub mod statement;
 use sha2::{Digest, Sha256};
 pub fn profile(h: &mut Sha256, bootstrap: bool) {

@@ -158,6 +158,7 @@ pub(crate) fn reference_output(statement: &Statement) -> [u32; WORDS] {
         | Kind::RegistryLifecycleBootstrap
         | Kind::RegistryLifecycle
         | Kind::RegistryLifecycleEncoding
+        | Kind::RegistryWriteImage
         | Kind::RegistryBootstrap => {
             unreachable!("SHA has a separate typed fixture")
         }

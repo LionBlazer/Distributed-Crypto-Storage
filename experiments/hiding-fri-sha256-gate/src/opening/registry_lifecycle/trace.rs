@@ -36,7 +36,7 @@ fn bytes(out: &mut [Val], value: &[u8]) {
         bits(&mut out[8 * i..8 * (i + 1)], u64::from(*byte));
     }
 }
-fn write_state(row: &mut [Val], base: usize, state: &Registry) {
+pub(super) fn write_state(row: &mut [Val], base: usize, state: &Registry) {
     bits(&mut row[base + REV..base + REV + 64], state.revision);
     bits(&mut row[base + ALLOC..base + ALLOC + 64], state.allocator);
     for t in 0..2 {
@@ -70,7 +70,7 @@ fn write_state(row: &mut [Val], base: usize, state: &Registry) {
         }
     }
 }
-fn subtraction(row: &mut [Val], at: usize, left: u64, right: u64) {
+pub(super) fn subtraction(row: &mut [Val], at: usize, left: u64, right: u64) {
     let mut borrow = 0i8;
     for bit in 0..64 {
         let difference = ((left >> bit) & 1) as i8 - ((right >> bit) & 1) as i8 - borrow;

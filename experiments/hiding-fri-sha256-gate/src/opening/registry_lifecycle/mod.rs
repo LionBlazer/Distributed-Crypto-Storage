@@ -13,6 +13,7 @@ mod statement;
 mod tests;
 mod trace;
 mod wire;
+mod write;
 use crate::backend::{Backend, Config, Error, Val};
 use crate::opening::trace as source_trace;
 use crate::primitive::Kind;
@@ -153,4 +154,8 @@ pub(crate) fn peer_control_gate(
     executable: Option<&std::path::Path>,
 ) -> Result<(), Error> {
     journal::peer_control_gate(mode, executable)
+}
+
+pub(crate) fn write_image_gate(mode: &str) -> Result<(), Error> {
+    journal::write_image_gate(mode)
 }

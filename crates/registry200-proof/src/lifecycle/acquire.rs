@@ -48,29 +48,23 @@ pub fn eval<AB: AirBuilder<F = Val>>(
         .map(|(r, s)| s.clone() * row[MASK + r])
         .sum();
     for i in 0..4 {
-        let at = EQUALITY + 11 * i;
-        for v in &row[at..at + 10] {
-            b.assert_bool(*v);
-        }
-        for v in &row[at..at + 11] {
-            b.assert_zero((AB::Expr::ONE - scan.clone()) * *v);
-        }
-        let difference: AB::Expr = pack(row, at, 8);
-        let zero: AB::Expr = row[at + 9].into();
-        b.assert_zero(
-            scan.clone()
-                * (pack::<AB::Expr, _>(row, AGES + 8 * i, 8) + Val::from_u16(256)
-                    - threshold.clone()
-                    - difference.clone()
-                    - row[at + 8] * Val::from_u16(256)),
+        super::predicate::eval_row(
+            b,
+            row,
+            next,
+            selectors,
+            pack(row, AGES + 8 * i, 8),
+            super::predicate::Columns {
+                equality: EQUALITY + 11 * i,
+                accumulator: ACC + i,
+                matched: MATCHES + i,
+            },
+            super::predicate::Scan {
+                active: scan.clone(),
+                threshold: threshold.clone(),
+                mask: mask.clone(),
+            },
         );
-        b.assert_zero(scan.clone() * difference.clone() * zero.clone());
-        b.assert_zero(scan.clone() * (difference * row[at + 10] - (AB::Expr::ONE - zero.clone())));
-        b.assert_zero(scan.clone() * zero.clone() * row[at + 10]);
-        b.when_first_row().assert_zero(row[ACC + i]);
-        b.when_transition()
-            .assert_eq(next[ACC + i], row[ACC + i] + mask.clone() * zero);
-        b.assert_zero(selectors[256].clone() * (row[MATCHES + i] - row[ACC + i]));
         let own: [AB::Expr; 5] = core::array::from_fn(|m| {
             (0..2)
                 .map(|t| row[ACTOR + t] * row[held(slot(OLD, t), i, m)])

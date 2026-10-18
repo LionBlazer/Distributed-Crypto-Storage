@@ -149,3 +149,16 @@ and process lifecycle are recorded in the
 [two-peer validation report](../../../../REGISTRY200-PEER-CONTROL-VALIDATION.md),
 which states their measurement scope. Private owner openings remain outside peers.
 No SQL, writer, controller-possession, MVCC or global finality grant is made.
+
+
+## Non-admitting WriteImage preparation
+
+[write_input.rs](write_input.rs) prepares the separate
+[AddAmount relation](../write/README.md) from the actual validated parent and
+externally retained private registry opening. The normal gate constructs real
+signed Bootstrap/Begin/Acquire history, matches C_registry and enrollment before
+the new command hash, and leaves Journal/accounting/Source unchanged. Its actual
+proof and fresh verification passed in the
+[native validation](../../../../REGISTRY200-WRITE-IMAGE-VALIDATION.md).
+The pair itself grants no history, global freshness, data-CAS authority or live
+SQL admission.

@@ -49,3 +49,13 @@ floor; no composed 128 or whole-protocol security claim follows.
 The extraction, preserved profiles and real two-peer control consumer are covered
 by the [validation record](../../experiments/hiding-fri-sha256-gate/REGISTRY200-PEER-CONTROL-VALIDATION.md).
 Its operation/process observations do not establish a whole-peer resource guarantee.
+
+
+## Separate WriteImage relation
+
+[write](src/write/README.md) defines fixed AddAmount eligibility and a complete
+ordered logical image. It shares the original canonical Registry200 opening,
+range and predicate equations; old profiles and operations remain unchanged.
+The control wire and application do not admit it or form a new encrypted Source
+or BFV result. Actual native analysis, proofs, framing and affected tests are
+recorded in the [WriteImage validation](../../experiments/hiding-fri-sha256-gate/REGISTRY200-WRITE-IMAGE-VALIDATION.md).

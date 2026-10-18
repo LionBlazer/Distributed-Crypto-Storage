@@ -57,41 +57,6 @@ impl LifecycleAir {
             periodics: OnceLock::new(),
         }
     }
-    fn controller<E: Algebra<Val>, T: Copy + Into<E>>(
-        row: &[T],
-        principal: usize,
-        word: usize,
-    ) -> E {
-        (0..2)
-            .map(|p| {
-                row[principal + p].into() * pack::<E, _>(row, CONTROLLERS + 256 * p + 32 * word, 32)
-            })
-            .sum()
-    }
-    fn slot_field<E: Algebra<Val>, T: Copy + Into<E>>(row: &[T], base: usize, part: usize) -> E {
-        match part {
-            0 => row[base + PRESENT].into(),
-            1..=2 => pack(row, base + ID + 32 * (part - 1), 32),
-            3 => row[base + PRINCIPAL].into() + row[base + PRINCIPAL + 1].into() * E::from_u8(2),
-            4..=11 => Self::controller(row, base + PRINCIPAL, part - 4),
-            12..=13 => pack(row, base + SEQ + 32 * (part - 12), 32),
-            14 => row[base + FAILED].into(),
-            15..=22 => pack(row, base + SNAPSHOT + 32 * (part - 15), 32),
-            23..=26 => code(row, base + HELD + 5 * (part - 23), 5),
-            27..=52 => {
-                let f = (part - 27) / 13;
-                let at = (part - 27) % 13;
-                let base = frame(base, f);
-                match at {
-                    0 => row[base].into(),
-                    1..=8 => pack(row, base + NAME + 32 * (at - 1), 32),
-                    9..=12 => code(row, base + SAVED + 5 * (at - 9), 5),
-                    _ => unreachable!(),
-                }
-            }
-            _ => unreachable!(),
-        }
-    }
     pub fn field<E: Algebra<Val>, T: Copy + Into<E>>(
         &self,
         row: &[T],
@@ -100,39 +65,37 @@ impl LifecycleAir {
         word: usize,
     ) -> E {
         match stream {
-            Stream::Source => match f {
-                0..=82 => E::from(self.source_prefix[f]),
-                83..=86 => row[SALTS + f - 83].into(),
-                87..=673 => pack(row, WORDS + 32 * word, 32),
-                _ => E::ZERO,
-            },
-            Stream::Enrollment => match f {
-                0..=32 => E::from(self.enrollment_prefix[f]),
-                33..=40 => row[TABLE + f - 33].into(),
-                41 => E::from_u8(2),
-                42 => E::ONE,
-                51 => E::from_u8(2),
-                43..=50 => pack(row, CONTROLLERS + 32 * (f - 43), 32),
-                52..=59 => pack(row, CONTROLLERS + 256 + 32 * (f - 52), 32),
-                60..=63 => row[SALTS + 4 + f - 60].into(),
-                _ => unreachable!(),
-            },
+            Stream::Source => {
+                super::opening::source_field(&self.source_prefix, row, WORDS, SALTS, f, word)
+            }
+            Stream::Enrollment => super::opening::enrollment_field(
+                &self.enrollment_prefix,
+                row,
+                super::opening::Banks {
+                    words: WORDS,
+                    table: TABLE,
+                    ids: IDS,
+                    controllers: CONTROLLERS,
+                },
+                SALTS + 4,
+                f,
+            ),
             Stream::Old | Stream::New => {
                 let new = matches!(stream, Stream::New);
-                let base = if new { NEW } else { OLD };
-                match f {
-                    0..=32 => E::from(self.registry_prefix[f]),
-                    33..=36 => E::from(self.statement.expected.enrollment[f - 33]),
-                    37..=44 => row[TABLE + f - 37].into(),
-                    45..=76 => row[IDS + f - 45].into(),
-                    77 | 79 => E::from_u8(2),
-                    78 => E::from_u8(4),
-                    80..=81 => pack(row, base + REV + 32 * (f - 80), 32),
-                    82..=83 => pack(row, base + ALLOC + 32 * (f - 82), 32),
-                    84..=189 => Self::slot_field(row, slot(base, (f - 84) / 53), (f - 84) % 53),
-                    190..=193 => row[SALTS + if new { 16 } else { 8 } + f - 190].into(),
-                    _ => E::ZERO,
-                }
+                super::opening::registry_field(
+                    &self.registry_prefix,
+                    self.statement.expected.enrollment,
+                    row,
+                    super::opening::Banks {
+                        words: WORDS,
+                        table: TABLE,
+                        ids: IDS,
+                        controllers: CONTROLLERS,
+                    },
+                    SALTS + if new { 16 } else { 8 },
+                    if new { NEW } else { OLD },
+                    f,
+                )
             }
             Stream::Command => match f {
                 0..=3 => E::from(source::words(&statement::COMMAND_DOMAIN).nth(f).unwrap()),
@@ -142,7 +105,7 @@ impl LifecycleAir {
                 109 => code(row, OP, 7),
                 110..=111 => pack(row, ID_CMD + 32 * (f - 110), 32),
                 112 => row[PRINCIPAL_CMD].into() + row[PRINCIPAL_CMD + 1].into() * E::from_u8(2),
-                113..=120 => Self::controller(row, PRINCIPAL_CMD, f - 113),
+                113..=120 => super::opening::controller(row, PRINCIPAL_CMD, f - 113, CONTROLLERS),
                 121..=122 => pack(row, OLD + REV + 32 * (f - 121), 32),
                 123..=124 => (0..2)
                     .map(|t| {

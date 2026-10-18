@@ -8,6 +8,7 @@ mod owner;
 mod peer_control;
 mod projection_context;
 mod projection_scenario;
+pub(super) mod write_input;
 use registry200_journal::request;
 #[cfg(test)]
 mod tests;
@@ -54,4 +55,8 @@ pub(super) fn peer_control_gate(
     executable: Option<&std::path::Path>,
 ) -> std::result::Result<(), crate::backend::Error> {
     peer_control::gate(mode, executable)
+}
+
+pub(super) fn write_image_gate(mode: &str) -> std::result::Result<(), crate::backend::Error> {
+    write_input::gate(mode)
 }

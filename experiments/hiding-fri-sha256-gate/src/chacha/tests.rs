@@ -297,6 +297,7 @@ fn claimed_output(statement: &Statement, trace: &RowMajorMatrix<Val>) -> [u32; W
         | Kind::RegistryLifecycleBootstrap
         | Kind::RegistryLifecycle
         | Kind::RegistryLifecycleEncoding
+        | Kind::RegistryWriteImage
         | Kind::RegistryBootstrap => {
             unreachable!()
         }
