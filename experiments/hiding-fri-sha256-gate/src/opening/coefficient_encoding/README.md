@@ -11,7 +11,7 @@ This is not a peer SQL handler, Formation, complete MulRelin or agreed-head gran
 | --- | --- |
 | [compiler](compiler.rs) / sql-plan | Privately compile fixed-schema WHERE, exact blinded SQL binding and acyclic pre-Source q |
 | [trace](trace.rs) | Own guarded caller plaintext/mask/salts, complete main trace and optional mathematical EncodedOpening |
-| [frame](frame.rs) | New two-component bounded canonical frame and real Source-first verification |
+| [library wire](../../../../../crates/registry200-proof/src/coefficient_encoding/wire/mod.rs) | Original two-component bounded canonical frame and real Source-first verification |
 | [fixture](fixture.rs) | PUBLIC NONSECRET Source/blind vectors and genuine actual Owner public Key statement; never runtime authority |
 | [registry200-proof](../../../../../crates/registry200-proof/README.md) | Single shared Source and new coefficient AIR/statement/profile implementations |
 | [bfv-hiding-stark](../../../../../crates/bfv-hiding-stark/README.md) | Existing fixed hiding proof configuration, actual assessment and bounded topology/codec |
@@ -64,7 +64,10 @@ production proof caps and allowlists remain unchanged. The pair is not a signed
 Journal Body or a transport registration/aggregate-fit claim.
 
 Source-first bounded decode verifies and drops its decoded proof/backend before
-allocating the child verifier. Typed BfvBinding is ONLY independently pinned
+allocating the child verifier. Framing and verification now live in the library;
+the CLI, adversarial examples and input16 integration call it directly, with no
+local verifier adapter. Its read-only result retains the full Statement/C_w.
+Typed BfvBinding is ONLY independently pinned
 public context; this pair contains NO Key proof. Downstream Formation must verify
 its actual Key/fiveBasis prerequisites and compare the complete independently
 expected encoding Statement INCLUDING C_w. New salt legitimately changes C_w;
@@ -118,3 +121,7 @@ process RAM/time and actual frame sizes. The standalone CLI pair alone establish
 no Source/query Formation; the separate linked test supplies those input proofs.
 No fixed latency cutoff, whole128, output MulRelin proof, freshness, live SQL,
 lock or writer permission follows from either path.
+
+The [library extraction validation](../../../COEFFICIENT-WIRE-EXTRACTION-VALIDATION.md)
+covers the preserved DCSCEP01 bytes, both genuine roles, Source-before-child-bomb
+rejection, mutable Source encoder checks and fresh input16 verification.

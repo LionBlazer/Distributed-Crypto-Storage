@@ -1,4 +1,4 @@
-use crate::{lifecycle, source};
+use crate::{coefficient_encoding, lifecycle, source};
 use bfv_hiding_stark::{self as engine, Config, Error, SecurityReport, Val};
 use engine::codec::Topology;
 use p3_air::{Air, AirBuilder, BaseAir};
@@ -8,8 +8,9 @@ enum FixedAir {
     Source(Box<source::air::OpeningAir>),
     Bootstrap(Box<lifecycle::bootstrap::BootstrapAir>),
     Lifecycle(Box<lifecycle::air::LifecycleAir>),
+    Encoding(Box<coefficient_encoding::air::EncodingAir>),
 }
-macro_rules! dispatch { ($s:expr,$m:ident $(,$a:expr)*)=>{match $s {FixedAir::Source(a)=>a.$m($($a),*),FixedAir::Bootstrap(a)=>a.$m($($a),*),FixedAir::Lifecycle(a)=>a.$m($($a),*)}}; }
+macro_rules! dispatch { ($s:expr,$m:ident $(,$a:expr)*)=>{match $s {FixedAir::Source(a)=>a.$m($($a),*),FixedAir::Bootstrap(a)=>a.$m($($a),*),FixedAir::Lifecycle(a)=>a.$m($($a),*),FixedAir::Encoding(a)=>a.$m($($a),*)}}; }
 impl BaseAir<Val> for FixedAir {
     fn width(&self) -> usize {
         dispatch!(self, width)
@@ -100,6 +101,14 @@ impl Backend {
             self.report,
             p,
             &self.values,
+        )
+    }
+    pub fn encoding(s: &coefficient_encoding::statement::Statement) -> Result<Self, Error> {
+        let role = s.expected.role();
+        Self::new(
+            FixedAir::Encoding(Box::new(coefficient_encoding::air::EncodingAir::new(s))),
+            s.values(),
+            (role.width(), role.public_values()),
         )
     }
 }

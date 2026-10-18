@@ -1,7 +1,6 @@
 //! Non-admitting Source/private-query coefficient evidence; no SQL execution or network role.
 mod compiler;
 mod fixture;
-mod frame;
 #[cfg(test)]
 mod input_formation;
 #[cfg(test)]
@@ -14,7 +13,7 @@ use crate::{
 use p3_matrix::dense::RowMajorMatrix;
 use p3_uni_stark::Proof;
 use registry200_proof::coefficient_encoding::statement::{Expected, Statement};
-use registry200_proof::coefficient_encoding::{Role, air::EncodingAir};
+use registry200_proof::coefficient_encoding::{Role, air::EncodingAir, wire};
 impl PublicStatement for Statement {
     fn kind(&self) -> Kind {
         match self.expected.role() {
@@ -80,7 +79,7 @@ pub(crate) fn gate(mode: &str) -> Result<(), Error> {
     };
     let source_ms = started.elapsed().as_secs_f64() * 1000.;
     let source_bytes =
-        frame::source_bytes(&f.source_statement, &source_proof).map_err(|_| Error::Shape)?;
+        wire::encode_source(&f.source_statement, &source_proof).map_err(|_| Error::Shape)?;
     let mut sizes = [0; 2];
     let mut prove_ms = [0.; 2];
     let mut verify_ms = [0.; 2];
@@ -95,12 +94,15 @@ pub(crate) fn gate(mode: &str) -> Result<(), Error> {
         let s = w.statement(e);
         let child = prove_child_with_factory(e, &s, Some(&source_proof), || w.trace(&s))?;
         let bytes =
-            frame::encode_with_source(e, &s, &source_bytes, &child).map_err(|_| Error::Shape)?;
+            wire::encode_with_source(e, &s, &source_bytes, &child).map_err(|_| Error::Shape)?;
         drop(child);
         prove_ms[i] = started.elapsed().as_secs_f64() * 1000.;
         sizes[i] = bytes.len();
         let started = Instant::now();
-        let decoded = frame::decode_and_verify(e, &bytes).map_err(|_| Error::Verification)?;
+        let decoded = wire::verify(e, &bytes)
+            .map_err(|_| Error::Verification)?
+            .statement()
+            .clone();
         require_complete(&s, &decoded)?;
         let _opening = w.formation_opening(&decoded)?;
         verify_ms[i] = started.elapsed().as_secs_f64() * 1000.;

@@ -68,8 +68,12 @@ setup identity and allKey33 as public context while original rows, masks and
 salts stay private main witnesses. The new direct dependency
 [bfv-key-transform](../bfv-key-transform/README.md) owns that typed statement and
 the Formation-compatible vector root ABI. Key context is not Key proof authority.
+The module's `wire` frontend owns bounded DCSCEP01 framing and actual Source-first
+pair verification, returning the complete verified Statement including C_w.
 The [experimental consumer](../../experiments/hiding-fri-sha256-gate/src/opening/coefficient_encoding/README.md)
-owns private compilation/proving and Source-first pair verification. The
+owns private compilation/proving and calls this verifier directly. The
 [executed validation](../../experiments/hiding-fri-sha256-gate/PRIVATE-COEFFICIENT-INPUT-VALIDATION.md)
 records actual degree4, individual128-bit assessments, proofs and input linkage.
 These roles do not change Registry admission or any original profile/cap/operation.
+The [extraction validation](../../experiments/hiding-fri-sha256-gate/COEFFICIENT-WIRE-EXTRACTION-VALIDATION.md)
+records the library frontend's native regression checks.

@@ -19,9 +19,12 @@ Expected/Statement claims. `layout` is a public circuit ABI for caller-owned tra
 writers. `air` constrains the two private-main relations. `commitment` owns their
 shared 8208-field vector schedule and distinct new command digest. `Role` fixes
 all profiles and dimensions; a caller cannot supply a profile or modulus.
-The experiment owns SQL compilation, private witnesses, proving, bounded framing
-and Source-first cryptographic verification. There is no backend/Kind dispatcher,
-fixture, secret-key getter or prover in this library.
+`wire` owns the original bounded DCSCEP01 frame and actual Source-first
+cryptographic verification. `wire::verify` accepts independently pinned Expected
+and bytes, returning a read-only VerifiedEncoding with the complete Statement,
+including C_w. Its private fixed backend constructs and assesses the actual AIR;
+callers supply no configuration, verification key or security report. The
+experiment owns SQL compilation, private witnesses, trace production and proving.
 
 ## Exact values and ownership
 
@@ -96,9 +99,31 @@ measured degree4, individual128-bit floors, bounded pair sizes and selected proc
 resources. These observations do not establish a whole peer resource guarantee.
 
 The [experiment consumer](../../../../experiments/hiding-fri-sha256-gate/src/opening/coefficient_encoding/README.md)
-requires the genuine canonical Source proof before any child factory. Its separate
-pair cannot establish a Key proof, either operand's Formation, complete private
+requires the genuine canonical Source proof before any child factory and calls
+the library verifier directly for both roles and the linked input16 scenario.
+The pair cannot establish a Key proof, either operand's Formation, complete private
 MulRelin, hidden-query/source provenance beyond this relation, SQL completeness,
 writer rights or a fresh agreed head. Individual floors do not imply composed128.
 Explicit owner buffers can be guarded; field vectors, traces, FFT/LDE and SDK
 allocator scratch are not claimed securely erased.
+
+## Bounded byte frontend
+
+`wire::BorrowedFrame::parse` checks the exact 184-byte header, all profile/context
+bytes, canonical C_mask/C_w roots, reserved bytes and complete lengths before
+proof decoding. Parsed slices carry no cryptographic authority. The pair cap is
+32 MiB; Source is at most 20 MiB and child at most 12,578,091 bytes. Sequence and
+total decoded-container limits remain 16,384 and 24 Mi/16 Mi elements respectively.
+Element counts are distinct from byte and process-memory limits.
+
+`wire::verify` actually verifies Source with the original fixed hiding suite and
+individual security assessment, drops its decoded proof and backend, then constructs
+and verifies Encoding. Failure returns no partial result. VerifiedEncoding retains
+only public statement metadata. Downstream composition must use its complete C_w
+and separately verify actual Key, Basis and Formation prerequisites.
+
+Producer helpers `wire::encode_source` and `wire::encode_with_source` canonically
+serialize existing SDK proofs. They do not verify them. The Source encoder reaudits
+the mutable low-level Source claim before AIR construction. Both keep the original
+frame bytes, profiles, caps and proof topology. Native regression evidence is in the
+[extraction validation](../../../../experiments/hiding-fri-sha256-gate/COEFFICIENT-WIRE-EXTRACTION-VALIDATION.md).

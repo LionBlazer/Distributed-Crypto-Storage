@@ -143,3 +143,136 @@ fn phase_root_alias_and_header_limits_reject_before_proof_decode() {
         Err(wire::Error::ResourceLimit)
     ));
 }
+
+mod coefficient_wire {
+    use crate::{
+        admission::CanonicalSource,
+        coefficient_encoding::{
+            Role, profile_digest,
+            statement::{BfvBinding, Expected},
+            wire,
+        },
+        source,
+    };
+    use p3_field::{PrimeCharacteristicRing, PrimeField64};
+
+    fn expected(role: Role) -> Expected {
+        let source = CanonicalSource::checked_claim(&super::source_claim()).unwrap();
+        // PUBLIC NONSECRET metadata only. No Key or Source proof is claimed.
+        let binding = BfvBinding::new(
+            [0x53; 32],
+            bfv_key_transform::Statement {
+                expected: bfv_key_transform::Expected {
+                    descriptor: bfv_key_transform::SetupDescriptor {
+                        database: [0x31; 16],
+                        key_domain: [0x71; 16],
+                        public_setup_digest: [0x95; 32],
+                        key_epoch: 1,
+                    },
+                    coefficients: [crate::Val::ONE; 4],
+                },
+                transformed: [crate::Val::ONE; 4],
+            },
+        );
+        match role {
+            Role::SourceAllOriginal => Expected::source(&source, binding).unwrap(),
+            Role::PrivateMask => {
+                Expected::private_mask(&source, binding, [0xB1; 32], [0xA1; 32], [0; 32]).unwrap()
+            }
+        }
+    }
+
+    /// Independently spell out the existing wire ABI with deliberately invalid proof placeholders.
+    fn malformed_pair(e: &Expected) -> Vec<u8> {
+        let mut out = b"DCSCEP01".to_vec();
+        out.extend([e.role().tag(), 0, 0, 0, 0, 0, 0, 0]);
+        out.extend(source::profile_digest(source::Relation::CanonicalIndex));
+        out.extend(profile_digest(e.role()));
+        for word in e.encoding_context() {
+            out.extend((word.as_canonical_u64() as u32).to_le_bytes());
+        }
+        out.extend(source::statement::encode_digest(e.command()));
+        out.extend([0; 32]);
+        out.extend(1u32.to_le_bytes());
+        out.extend(1u32.to_le_bytes());
+        out.extend([0, 0]);
+        out
+    }
+
+    #[test]
+    fn coefficient_pair_parser_preserves_both_roles_and_borrows_only_exact_payloads() {
+        for role in [Role::SourceAllOriginal, Role::PrivateMask] {
+            let e = expected(role);
+            let bytes = malformed_pair(&e);
+            let f = wire::BorrowedFrame::parse(&e, &bytes).unwrap();
+            assert_eq!(wire::HEADER, 184);
+            assert_eq!(f.encoded(), [0; 32]);
+            assert_eq!(f.source().as_ptr(), bytes[184..].as_ptr());
+            assert_eq!(f.child().as_ptr(), bytes[185..].as_ptr());
+            assert_eq!((f.source(), f.child()), (&[0][..], &[0][..]));
+            assert!(
+                wire::verify(&e, &bytes).is_err(),
+                "framing is not cryptographic verification"
+            );
+        }
+    }
+
+    #[test]
+    fn coefficient_pair_parser_rejects_noncanonical_roots_flags_lengths_and_trailing_bytes() {
+        let e = expected(Role::PrivateMask);
+        let bytes = malformed_pair(&e);
+        for at in [0, 8, 15, 47, 79, 111, 143] {
+            let mut bad = bytes.clone();
+            bad[at] ^= 1;
+            assert!(wire::BorrowedFrame::parse(&e, &bad).is_err());
+        }
+        let mut alias = bytes.clone();
+        alias[144..152].copy_from_slice(&0xffff_ffff_0000_0001u64.to_le_bytes());
+        assert!(wire::BorrowedFrame::parse(&e, &alias).is_err());
+        for (offset, cap) in [(176, wire::MAX_SOURCE), (180, wire::MAX_CHILD)] {
+            for len in [0, cap + 1] {
+                let mut bad = bytes.clone();
+                bad[offset..offset + 4].copy_from_slice(&(len as u32).to_le_bytes());
+                assert!(matches!(
+                    wire::BorrowedFrame::parse(&e, &bad),
+                    Err(wire::Error::ResourceLimit)
+                ));
+            }
+        }
+        let mut trailing = bytes.clone();
+        trailing.push(0);
+        assert!(matches!(
+            wire::BorrowedFrame::parse(&e, &trailing),
+            Err(wire::Error::Encoding)
+        ));
+        assert!(matches!(
+            wire::BorrowedFrame::parse(&e, &bytes[..183]),
+            Err(wire::Error::Encoding)
+        ));
+        assert!(matches!(
+            wire::BorrowedFrame::parse(&e, &vec![0; wire::MAX_FRAME + 1]),
+            Err(wire::Error::ResourceLimit)
+        ));
+    }
+
+    #[test]
+    fn coefficient_pair_header_pins_the_full_transformed_key_and_independent_setup() {
+        let e = expected(Role::SourceAllOriginal);
+        let bytes = malformed_pair(&e);
+        let source = CanonicalSource::checked_claim(e.source_claim()).unwrap();
+        let mut key = e.bfv().key().clone();
+        key.transformed[3] += crate::Val::ONE;
+        let changed_key =
+            Expected::source(&source, BfvBinding::new(e.bfv().full_setup(), key)).unwrap();
+        let mut setup = e.bfv().full_setup();
+        setup[31] ^= 1;
+        let changed_setup =
+            Expected::source(&source, BfvBinding::new(setup, e.bfv().key().clone())).unwrap();
+        for changed in [changed_key, changed_setup] {
+            assert!(matches!(
+                wire::BorrowedFrame::parse(&changed, &bytes),
+                Err(wire::Error::Shape)
+            ));
+        }
+    }
+}

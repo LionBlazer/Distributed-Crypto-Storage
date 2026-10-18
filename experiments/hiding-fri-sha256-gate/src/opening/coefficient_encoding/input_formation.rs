@@ -1,6 +1,6 @@
 //! PUBLIC NONSECRET fixtures. Real input provenance, still no proved FHE output or SQL grant.
 use super::{
-    Statement, compiler::CompiledPrivatePredicate, fixture, frame, prove_child_with_factory,
+    Statement, compiler::CompiledPrivatePredicate, fixture, prove_child_with_factory,
     require_complete,
 };
 use crate::backend::Backend;
@@ -10,7 +10,10 @@ use bfv_query_core::{
     QueryContext, TwoOperandStage,
 };
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
-use registry200_proof::{admission::CanonicalSource, coefficient_encoding::statement::BfvBinding};
+use registry200_proof::{
+    admission::CanonicalSource,
+    coefficient_encoding::{statement::BfvBinding, wire},
+};
 use std::{
     fs,
     io::Write,
@@ -131,7 +134,7 @@ fn source_and_hidden_query_form_both_actual_fhe_inputs_under_one_key_and_reverif
         p
     };
     let source_ms = started.elapsed().as_secs_f64() * 1000.;
-    let source_bytes = frame::source_bytes(&f.source_statement, &source_proof).unwrap();
+    let source_bytes = wire::encode_source(&f.source_statement, &source_proof).unwrap();
     let source_size = source_bytes.len();
     let mut statements = Vec::new();
     let mut encoding_ms = [0.; 2];
@@ -146,9 +149,9 @@ fn source_and_hidden_query_form_both_actual_fhe_inputs_under_one_key_and_reverif
         let started = Instant::now();
         let s = w.statement(e);
         let proof = prove_child_with_factory(e, &s, Some(&source_proof), || w.trace(&s)).unwrap();
-        let bytes = frame::encode_with_source(e, &s, &source_bytes, &proof).unwrap();
+        let bytes = wire::encode_with_source(e, &s, &source_bytes, &proof).unwrap();
         drop(proof);
-        let checked = frame::decode_and_verify(e, &bytes).unwrap();
+        let checked = wire::verify(e, &bytes).unwrap().statement().clone();
         require_complete(&s, &checked).unwrap();
         pair_sizes[index] = bytes.len();
         files.write(&format!("{index}-encoding-pair"), &bytes);
@@ -315,8 +318,8 @@ fn source_and_hidden_query_form_both_actual_fhe_inputs_under_one_key_and_reverif
             checked_key.statement().public_values()
         );
         let bytes = files.read(&format!("{index}-encoding-pair"));
-        assert!(frame::decode_and_verify(&expected[1 - index], &bytes).is_err());
-        fresh_statements.push(frame::decode_and_verify(e, &bytes).unwrap());
+        assert!(wire::verify(&expected[1 - index], &bytes).is_err());
+        fresh_statements.push(wire::verify(e, &bytes).unwrap().statement().clone());
     }
     for index in 0..2 {
         let frames: [Vec<u8>; 5] =

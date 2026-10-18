@@ -36,7 +36,7 @@ fn published() -> &'static Published {
             })
             .unwrap();
         b.verify(&f.source_statement, &proof).unwrap();
-        let source = frame::source_bytes(&f.source_statement, &proof).unwrap();
+        let source = wire::encode_source(&f.source_statement, &proof).unwrap();
         drop(b);
         let statements = [
             f.source_encoding.statement(&f.source),
@@ -51,7 +51,7 @@ fn published() -> &'static Published {
             let s = &statements[i];
             let child =
                 prove_child_with_factory(&s.expected, s, Some(&proof), || w.trace(s)).unwrap();
-            frame::encode_with_source(&s.expected, s, &source, &child).unwrap()
+            wire::encode_with_source(&s.expected, s, &source, &child).unwrap()
         });
         Published {
             source,
@@ -59,6 +59,45 @@ fn published() -> &'static Published {
             statements,
         }
     })
+}
+/// Malformed public components for hostile-input tests; never verifies a proof.
+fn replace_proofs(original: &[u8], source: &[u8], child: &[u8]) -> Vec<u8> {
+    let mut out = original[..wire::HEADER].to_vec();
+    out[176..180].copy_from_slice(&(source.len() as u32).to_le_bytes());
+    out[180..184].copy_from_slice(&(child.len() as u32).to_le_bytes());
+    out.extend(source);
+    out.extend(child);
+    out
+}
+
+#[test]
+fn library_pair_matches_original_frame_abi_for_both_genuine_roles() {
+    let p = published();
+    for (i, s) in p.statements.iter().enumerate() {
+        let e = &s.expected;
+        let f = wire::BorrowedFrame::parse(e, &p.frames[i]).unwrap();
+        let mut original = b"DCSCEP01".to_vec();
+        original.extend([e.role().tag(), 0, 0, 0, 0, 0, 0, 0]);
+        original.extend(crate::backend::profile_digest(Kind::CanonicalIndexOpening));
+        original.extend(crate::backend::profile_digest(s.kind()));
+        for word in e.encoding_context() {
+            use p3_field::PrimeField64;
+            original.extend(
+                u32::try_from(word.as_canonical_u64())
+                    .unwrap()
+                    .to_le_bytes(),
+            );
+        }
+        original.extend(source::encode_digest(e.command()));
+        original.extend(source::encode_digest(s.encoded));
+        original.extend((p.source.len() as u32).to_le_bytes());
+        original.extend((f.child().len() as u32).to_le_bytes());
+        assert_eq!(original.len(), 184);
+        original.extend(&p.source);
+        original.extend(f.child());
+        assert_eq!(original, p.frames[i]);
+        require_complete(s, wire::verify(e, &original).unwrap().statement()).unwrap();
+    }
 }
 fn source_proof() -> Proof<Config> {
     let f = fixture();
@@ -79,9 +118,9 @@ fn actual_source(f: &fixture::Fixture) -> Proof<Config> {
 fn own_frame(e: &Expected, w: &trace::Witness, source: &Proof<Config>) -> (Statement, Vec<u8>) {
     let s = w.statement(e);
     let child = prove_child_with_factory(e, &s, Some(source), || w.trace(&s)).unwrap();
-    let a = frame::source_bytes(e.source_claim(), source).unwrap();
-    let bytes = frame::encode_with_source(e, &s, &a, &child).unwrap();
-    require_complete(&s, &frame::decode_and_verify(e, &bytes).unwrap()).unwrap();
+    let a = wire::encode_source(e.source_claim(), source).unwrap();
+    let bytes = wire::encode_with_source(e, &s, &a, &child).unwrap();
+    require_complete(&s, &wire::verify(e, &bytes).unwrap().statement().clone()).unwrap();
     (s, bytes)
 }
 fn reject_sdk(s: &Statement, t: RowMajorMatrix<Val>) {
@@ -148,7 +187,7 @@ fn genuine_source_and_private_mask_all8192_match_actual_sdk_poly_and_formation_r
     .into_iter()
     .enumerate()
     {
-        let s = frame::decode_and_verify(e, &p.frames[i]).unwrap();
+        let s = wire::verify(e, &p.frames[i]).unwrap().statement().clone();
         require_complete(&p.statements[i], &s).unwrap();
         let raw = raw_oracle(e.role());
         let plaintext = Plaintext::try_encode(&raw, Encoding::poly(), &parameters).unwrap();
@@ -176,7 +215,7 @@ fn genuine_source_and_private_mask_all8192_match_actual_sdk_poly_and_formation_r
         assert_eq!(s.values().len(), e.role().public_values());
         assert_eq!(s.values()[8..699], e.source_claim().values());
         assert_eq!(s.values()[707..740], e.bfv().key().public_values());
-        assert!(p.frames[i].len() <= frame::MAX_FRAME);
+        assert!(p.frames[i].len() <= wire::MAX_FRAME);
     }
 }
 #[test]
@@ -446,7 +485,7 @@ fn full_independent_source_key33_and_setup_contexts_reject_before_child_factory(
         };
         if let Ok(c) = CanonicalSource::checked_claim(&source) {
             let foreign = Expected::source(&c, BfvBinding::new(setup, key)).unwrap();
-            assert!(frame::decode_and_verify(&foreign, &p.frames[0]).is_err());
+            assert!(wire::verify(&foreign, &p.frames[0]).is_err());
             assert!(
                 prove_child_with_factory(&foreign, s, Some(&proof), || {
                     called.set(1);
@@ -493,7 +532,7 @@ fn full_independent_source_key33_and_setup_contexts_reject_before_child_factory(
         fs.expected.encoding_context(),
         s.expected.encoding_context()
     );
-    assert!(frame::decode_and_verify(&f.source, &bytes).is_err());
+    assert!(wire::verify(&f.source, &bytes).is_err());
     assert!(
         prove_child_with_factory(&f.source, &fs, Some(&proof), || {
             called.set(1);
@@ -512,7 +551,7 @@ fn full_independent_source_key33_and_setup_contexts_reject_before_child_factory(
     .unwrap();
     let gp = actual_source(&g);
     let (_, bytes) = own_frame(&g.query, &g.query_encoding, &gp);
-    assert!(frame::decode_and_verify(&f.query, &bytes).is_err());
+    assert!(wire::verify(&f.query, &bytes).is_err());
     assert!(
         prove_child_with_factory(&f.source, s, Some(&gp), || {
             called.set(1);
@@ -544,7 +583,7 @@ fn equal_numeric_rows_with_new_full_rowid_keep_words_but_change_independent_sour
     let p = actual_source(&other);
     let (s, bytes) = own_frame(&other.source, &other.source_encoding, &p);
     assert_ne!(s.expected.encoding_context(), f.source.encoding_context());
-    assert!(frame::decode_and_verify(&f.source, &bytes).is_err());
+    assert!(wire::verify(&f.source, &bytes).is_err());
 }
 #[test]
 fn distinct_roles_bounded_pair_and_real_nested_proof_damage_fail_closed() {
@@ -552,58 +591,77 @@ fn distinct_roles_bounded_pair_and_real_nested_proof_damage_fail_closed() {
     let p = published();
     let e = &f.query;
     let bytes = &p.frames[1];
-    assert!(frame::decode_and_verify(&f.source, bytes).is_err());
-    assert!(frame::decode_and_verify(e, &p.frames[0]).is_err());
+    assert!(wire::verify(&f.source, bytes).is_err());
+    assert!(wire::verify(e, &p.frames[0]).is_err());
     for at in [0, 8, 15, 47, 79, 111, 143, 175] {
         let mut bad = bytes.clone();
         bad[at] ^= 1;
-        assert!(frame::decode_and_verify(e, &bad).is_err());
+        assert!(wire::verify(e, &bad).is_err());
     }
     let mut alias = bytes.clone();
     alias[144..152].copy_from_slice(&0xffff_ffff_0000_0001u64.to_le_bytes());
-    assert!(frame::Frame::parse(e, &alias).is_err());
+    assert!(wire::BorrowedFrame::parse(e, &alias).is_err());
     let mut trailing = bytes.clone();
     trailing.push(0);
-    assert!(frame::Frame::parse(e, &trailing).is_err());
-    assert!(frame::Frame::parse(e, &bytes[..183]).is_err());
+    assert!(wire::BorrowedFrame::parse(e, &trailing).is_err());
+    assert!(wire::BorrowedFrame::parse(e, &bytes[..183]).is_err());
     assert!(matches!(
-        frame::Frame::parse(e, &vec![0; frame::MAX_FRAME + 1]),
-        Err(frame::Error::ResourceLimit)
+        wire::BorrowedFrame::parse(e, &vec![0; wire::MAX_FRAME + 1]),
+        Err(wire::Error::ResourceLimit)
     ));
     for at in [176, 180] {
         let mut bad = bytes.clone();
         bad[at..at + 4].copy_from_slice(&u32::MAX.to_le_bytes());
         assert!(matches!(
-            frame::Frame::parse(e, &bad),
-            Err(frame::Error::ResourceLimit)
+            wire::BorrowedFrame::parse(e, &bad),
+            Err(wire::Error::ResourceLimit)
         ));
     }
-    let parsed = frame::Frame::parse(e, bytes).unwrap();
+    let parsed = wire::BorrowedFrame::parse(e, bytes).unwrap();
     let backend = Backend::new(&p.statements[1]).unwrap();
     let shape =
         proof_codec::Topology::checked(QUERY_WIDTH, backend.report.quotient_chunks).unwrap();
     let mut child: Proof<Config> =
-        proof_codec::decode(parsed.child, &shape, 16384, 16 * 1024 * 1024).unwrap();
+        proof_codec::decode(parsed.child(), &shape, 16384, 16 * 1024 * 1024).unwrap();
     child.ood_pow_witness += Val::ONE;
-    assert!(proof_codec::serialize(&child, &shape, frame::MAX_CHILD).is_err());
+    assert!(proof_codec::serialize(&child, &shape, wire::MAX_CHILD).is_err());
     let raw = postcard::to_allocvec(&child).unwrap();
     let prefix = postcard::to_allocvec(&child.commitments).unwrap().len();
     let mut bomb = raw[..prefix].to_vec();
     bomb.extend([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 1]);
-    let bad = frame::join(e, parsed.encoded, parsed.source, &bomb).unwrap();
+    let bad = replace_proofs(bytes, parsed.source(), &bomb);
     assert!(matches!(
-        frame::decode_and_verify(e, &bad),
-        Err(frame::Error::ResourceLimit)
+        wire::verify(e, &bad),
+        Err(wire::Error::ResourceLimit)
     ));
     child.ood_pow_witness = Val::ZERO;
     child.opened_values.trace_next = None;
     let raw = postcard::to_allocvec(&child).unwrap();
-    let bad = frame::join(e, parsed.encoded, parsed.source, &raw).unwrap();
-    assert!(frame::decode_and_verify(e, &bad).is_err());
-    let mut bad_source = parsed.source.to_vec();
+    let bad = replace_proofs(bytes, parsed.source(), &raw);
+    assert!(wire::verify(e, &bad).is_err());
+    let mut bad_source = parsed.source().to_vec();
     bad_source[0] ^= 1;
-    let bad = frame::join(e, parsed.encoded, &bad_source, parsed.child).unwrap();
-    assert!(frame::decode_and_verify(e, &bad).is_err());
+    let bad = replace_proofs(bytes, &bad_source, parsed.child());
+    assert!(wire::verify(e, &bad).is_err());
+    // Preserve the genuine proof's canonical topology; damage a commitment value.
+    let bad_source = {
+        let mut source = source_proof();
+        let mut roots = source.commitments.trace.roots().to_vec();
+        roots[0][0] += Val::ONE;
+        source.commitments.trace = p3_symmetric::MerkleCap::new(roots);
+        postcard::to_allocvec(&source).unwrap()
+    };
+    let bad = replace_proofs(bytes, &bad_source, parsed.child());
+    assert!(matches!(
+        wire::verify(e, &bad),
+        Err(wire::Error::Proof(Error::Verification))
+    ));
+    // The same genuine-but-corrupted Source fails before decoding a child bomb.
+    let bad = replace_proofs(bytes, &bad_source, &bomb);
+    assert!(matches!(
+        wire::verify(e, &bad),
+        Err(wire::Error::Proof(Error::Verification))
+    ));
     assert_eq!(
         fixed::profile_digest(Role::SourceAllOriginal),
         crate::backend::profile_digest(Kind::SourceCoefficientEncoding)
@@ -616,6 +674,33 @@ fn distinct_roles_bounded_pair_and_real_nested_proof_damage_fail_closed() {
         crate::backend::profile_digest(Kind::SelectedEncoding),
         fixed::profile_digest(Role::SourceAllOriginal)
     );
+}
+
+#[test]
+fn public_source_encoder_reaudits_mutable_claim_before_constructing_air() {
+    let f = fixture();
+    let proof = source_proof();
+    for page in 0..2 {
+        let mut bad = f.source_statement.clone();
+        bad.packets[page].truncate(1);
+        assert!(matches!(
+            wire::encode_source(&bad, &proof),
+            Err(wire::Error::Proof(Error::Shape))
+        ));
+        let mut bad = f.source_statement.clone();
+        let last = bad.packets[page].len() - 1;
+        bad.packets[page][last] ^= 1;
+        assert!(matches!(
+            wire::encode_source(&bad, &proof),
+            Err(wire::Error::Proof(Error::Shape))
+        ));
+    }
+    let mut bad = f.source_statement.clone();
+    bad.relation = registry200_proof::source::Relation::Bytes;
+    assert!(matches!(
+        wire::encode_source(&bad, &proof),
+        Err(wire::Error::Proof(Error::Shape))
+    ));
 }
 
 #[test]
@@ -641,8 +726,11 @@ fn fresh_encoding_salts_prove_but_complete_statement_and_original_opening_do_not
         assert_ne!(fresh.encoded, original.encoded);
         let child =
             prove_child_with_factory(&fresh.expected, &fresh, Some(&proof), || Ok(trace)).unwrap();
-        let bytes = frame::encode_with_source(&fresh.expected, &fresh, &p.source, &child).unwrap();
-        let decoded = frame::decode_and_verify(&fresh.expected, &bytes).unwrap();
+        let bytes = wire::encode_with_source(&fresh.expected, &fresh, &p.source, &child).unwrap();
+        let decoded = wire::verify(&fresh.expected, &bytes)
+            .unwrap()
+            .statement()
+            .clone();
         require_complete(&fresh, &decoded).unwrap();
         assert_eq!(fresh.producer_identity(), decoded.producer_identity());
         assert_ne!(original.producer_identity(), decoded.producer_identity());

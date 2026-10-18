@@ -3,6 +3,7 @@ pub mod air;
 pub mod commitment;
 pub mod layout;
 pub mod statement;
+pub mod wire;
 use sha2::{Digest, Sha256};
 pub const N: usize = 8192;
 pub const T: u64 = 114689;
