@@ -22,7 +22,8 @@ pub enum EpochOperandStage {
     Cancelled,
 }
 
-/// Retains one actual Key33/CsHat opening until cancel/drop. It has no import or recovery API.
+/// Retains one actual Key33/CsHat opening until cancel/drop. Owner-state encrypted
+/// backup restores it only after authenticating pins and verifying its actual Key proof.
 ///
 /// ```compile_fail
 /// use bfv_query_core::OwnerProofEpoch;
@@ -236,5 +237,6 @@ impl Drop for OwnerEpochOperandJob<'_, '_> {
         self.clear_current();
     }
 }
+mod owner_state;
 #[cfg(test)]
 mod tests;

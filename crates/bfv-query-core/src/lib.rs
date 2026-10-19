@@ -79,6 +79,7 @@ pub enum Error {
     TwoOperandStage,
     ProofEpochStage,
     EpochOperandStage,
+    OwnerStateAuthentication,
     AggregateBounds,
     UpdateBounds,
     SelectBounds,
@@ -916,7 +917,14 @@ mod public_material_tests {
 #[cfg(feature = "key-proofs")]
 mod key_anchor;
 #[cfg(feature = "key-proofs")]
+mod owner_state;
+#[cfg(feature = "key-proofs")]
 pub use key_anchor::{BfvKeyAnchor, KeyScope, OwnerKeyAnchor};
+#[cfg(feature = "key-proofs")]
+pub use owner_state::{
+    EncryptedOwnerState, MAX_OWNER_STATE_BYTES, OWNER_STATE_HEADER_BYTES, OwnerStateAuthority,
+    OwnerStateIdentity,
+};
 
 #[cfg(feature = "basis-proofs")]
 pub use key_anchor::{BasisJobStage, OwnerBasisJob};

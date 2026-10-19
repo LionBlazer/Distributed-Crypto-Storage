@@ -422,8 +422,8 @@ real prerequisite verifiers. Job completion/cancel/Drop clears only its own
 guarded W/salts; epoch cancellation/Drop clears the retained Key opening.
 The old single-operand and fixed two-operand APIs retain their semantics and
 owning assertions. Their shared private operand implementation contains no SQL
-or Source policy. No new dependency, profile, frame, cap, secret getter,
-serialization, trusted marker or recovery path is introduced.
+or Source policy. That in-memory stage introduced no new dependency, profile,
+frame, cap, secret getter, serialization, trusted marker or recovery path.
 
 The [producer/epoch validation](../../experiments/hiding-fri-sha256-gate/PRIVATE-INPUT-PRODUCER-EPOCH-VALIDATION.md)
 records the executed native stage. It enables
@@ -447,3 +447,19 @@ alter the genuine `verify_key_transform` prerequisite. Both new owning codec
 tests passed with `formation-proofs`; the
 [peer validation](../../docs/private-where-peer.md) also covers the borrowed
 complete-request view and exact encrypted-response binding.
+
+## Owner-authenticated private backup
+
+The separate [owner-state module](src/owner_state/README.md) adds encrypted,
+bounded Owner/anchor/ReadyEpoch backup and lexical restore. The caller supplies
+an owner-custodied wrapping authority and independently pinned full original
+setup/scope/record/anchor/Key33. Restore validates all secret coefficients before
+the SDK boundary, reopens both commitments and verifies the genuine stored Key
+frame before returning Ready. The implementation uses the existing pinned
+XChaCha20Poly1305 and official prost encoder; it exposes no plaintext secret,
+salt or Shat getter. Old generation and proof APIs retain their behavior.
+The [native validation](../../docs/owner-key-recovery.md) passed 132 runtime
+tests and 35 compile-fail contracts, including actual restored Key/Basis/Formation
+after the original private objects were destroyed. It adds no durable OwnerVault,
+rollback protection, Source Ckey/pending transaction recovery, same-secret RK
+theorem, finality or SQL admission.

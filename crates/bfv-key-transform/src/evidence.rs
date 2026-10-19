@@ -19,6 +19,17 @@ pub struct Evidence {
     bytes: Vec<u8>,
 }
 impl Evidence {
+    /// Adopt exact public bytes only after the existing bounded genuine verifier
+    /// accepts them against the independently supplied setup and expected anchor.
+    /// This does not authenticate those external pins or establish same-secret RK.
+    pub fn verify_owned(
+        full_setup_id: [u8; 32],
+        expected: &Expected,
+        bytes: Vec<u8>,
+    ) -> Result<Self, Error> {
+        verify(full_setup_id, expected, &bytes)?;
+        Ok(Self { bytes })
+    }
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
     }

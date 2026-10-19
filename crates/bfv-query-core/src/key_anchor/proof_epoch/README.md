@@ -19,9 +19,9 @@ complete original public setup/geometry before the secret copy. The existing
 An epoch starts at `AwaitingKey`. `prove_key()` produces and self-verifies the
 actual proof of its exact Key33/CsHat, clears the initial coefficient witness
 and advances to `Ready`. It can run only once. `key_evidence()` borrows public
-proof bytes; the epoch accepts no imported Key proof, serialized private state,
-trusted marker or callback. Recreating an epoch chooses a fresh CsHat salt;
-it cannot resume a discarded epoch from public Key bytes.
+proof bytes. No public proof alone, plaintext state import, trusted marker or
+callback can restore the private opening. Recreating an epoch chooses a fresh
+CsHat salt. The separate owner-authenticated encrypted backup below preserves it.
 
 `begin_operand(request, OperandInput)` accepts one complete canonical ciphertext
 and independently pinned public `EncodedCommitment`. A job exclusively borrows
@@ -49,8 +49,8 @@ Cancellation is between synchronous calls, not interruption of native proving.
 SDK, polynomial, FFT, field, trace, allocator and PCS scratch are not promised
 securely erased.
 
-The API exposes no secret/salt/Shat getter, Clone, Debug, serialization, import
-or callback. All generated evidence is public and caller-owned. Only one Key
+The API exposes no secret/salt/Shat getter, Clone, Debug, plaintext serialization,
+plaintext import or callback. All generated evidence is public and caller-owned. Only one Key
 frame is retained internally; jobs emit one component at a time. Current five
 Basis frames are borrowed for Formation verification; there is no accumulated
 proof bank, aggregate frame, raised cap or whole-process resource guarantee.
@@ -62,9 +62,13 @@ The latter still accepts exactly two operands with ONE request, clears its Key
 opening after Input1 and cannot be reopened. Its private implementation shares
 the same operand lifecycle and guard/proof code; all old tests remain unchanged.
 
-This epoch is deliberately in-memory. There is no crash/restart recovery or
-encrypted private-opening persistence. After losing it, callers must fail closed
-or create a newly certified epoch; public evidence cannot reconstruct openings.
+The epoch itself is in-memory. The separate
+[owner-state capability](../../owner_state/README.md) can encrypt its exact Ready
+opening under an owner-held wrapping authority. Restore reopens the actual
+secret's commitments and verifies its exact Key frame before Ready. No durable
+publication, antirollback or complete owner application crash recovery is supplied.
+Without that authenticated private backup callers must fail closed or create a
+newly certified epoch; public evidence cannot reconstruct openings.
 It does not make Source Copen query-independent, change the existing full-product
 same-q provenance contract, certify a Source or SQL mask, or prove evaluation-key
 same-secret consistency. A later Source-ingest/query composition requires its own

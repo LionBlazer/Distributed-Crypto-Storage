@@ -41,6 +41,15 @@ impl KeyMaterial {
     }
     // The owning constructor checks the original setup before reaching this secret copy.
     pub(super) fn new(anchor: &OwnerKeyAnchor<'_>) -> Result<Self> {
+        Self::with_output_salt(
+            anchor,
+            Zeroizing::new(bfv_key_transform::random_salt().map_err(backend)?),
+        )
+    }
+    pub(super) fn with_output_salt(
+        anchor: &OwnerKeyAnchor<'_>,
+        output_salt: Zeroizing<[u64; 4]>,
+    ) -> Result<Self> {
         let coefficients = secret_coefficients(anchor.owner)?;
         let input = bfv_key_transform::input_commitment(
             &anchor.public.descriptor(),
@@ -51,7 +60,6 @@ impl KeyMaterial {
         if input != anchor.public.coefficients {
             return Err(Error::BindingMismatch);
         }
-        let output_salt = Zeroizing::new(bfv_key_transform::random_salt().map_err(backend)?);
         let signed: Vec<_> = coefficients
             .iter()
             .copied()

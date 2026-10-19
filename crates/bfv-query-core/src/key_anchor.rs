@@ -33,7 +33,7 @@ impl BfvKeyAnchor {
     pub fn coefficient_commitment(&self) -> [u64; 4] {
         self.coefficients
     }
-    fn descriptor(&self) -> SetupDescriptor {
+    pub(super) fn descriptor(&self) -> SetupDescriptor {
         SetupDescriptor {
             database: self.scope.database,
             key_domain: self.scope.bfv_key_domain,
@@ -41,15 +41,15 @@ impl BfvKeyAnchor {
             key_epoch: self.scope.epoch,
         }
     }
-    fn expected(&self) -> Expected {
+    pub(super) fn expected(&self) -> Expected {
         Expected {
             descriptor: self.descriptor(),
             coefficients: self.coefficients.map(bfv_hiding_stark::Val::from_u64),
         }
     }
 }
-/// Borrows its original Owner. No Clone, Debug, serialization, import or private getters.
-/// The private salt is not persisted; recreating this handle creates another anchor.
+/// Borrows its original Owner. No Clone, Debug, plaintext import or private getters.
+/// Encrypted owner-state backup preserves its salt; key_anchor alone creates another anchor.
 ///
 /// ```compile_fail
 /// use bfv_query_core::OwnerKeyAnchor;
@@ -105,7 +105,7 @@ impl Owner {
         })
     }
 }
-fn secret_coefficients(owner: &Owner) -> Result<Zeroizing<Vec<i8>>> {
+pub(super) fn secret_coefficients(owner: &Owner) -> Result<Zeroizing<Vec<i8>>> {
     // No SecretKey::to_bytes: that SDK path leaves an additional unguarded proto copy.
     let wide = Zeroizing::new(fhe::proto::bfv::SecretKey::from(&owner.key).coeffs);
     if wide.len() != bfv_fixed_geometry::DEGREE || wide.iter().any(|v| !(-20..=20).contains(v)) {
@@ -159,6 +159,7 @@ impl PublicSetup {
 mod claim;
 #[cfg(test)]
 mod claim_tests;
+mod owner_state;
 #[cfg(test)]
 mod tests;
 

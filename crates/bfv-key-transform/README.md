@@ -68,3 +68,13 @@ opening privately across five ordered convolution proofs. It emits its OWN newly
 matching Key evidence, never reopens a standalone evidence's discarded salt. The
 [basis crate](../bfv-basis-convolution/README.md) verifies actual Key bytes before
 child work and pins all33 public values, including the fresh CsHat.
+
+`Evidence::verify_owned(full_setup_id, expected, bytes)` now retains exact public
+bytes only after the existing bounded genuine verifier accepts them. This lets
+the separate [Core owner-state capability](../bfv-query-core/src/owner_state/README.md)
+restore an authenticated private epoch without rerandomizing its Key proof.
+It is neither a public private-opening import nor an owner/RK authorization token.
+All old proof arithmetic, profiles and frame limits remain unchanged. All six
+owning primitive tests passed, including genuine owned evidence and a repaired
+frame with a damaged trace commitment; the [validation](../../docs/owner-key-recovery.md)
+also covers the Core restoration consumer.
