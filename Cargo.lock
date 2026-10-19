@@ -4727,6 +4727,7 @@ dependencies = [
  "bfv-mul-relin-proof",
  "bfv-query-core",
  "bfv-query-proof",
+ "chacha20poly1305",
  "compact-query",
  "compact-store",
  "ed25519-dalek",

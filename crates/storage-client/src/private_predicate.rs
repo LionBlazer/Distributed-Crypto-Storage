@@ -5,9 +5,10 @@ mod produce;
 mod source;
 pub use compiler::CompiledPrivatePredicate;
 pub use source::{
-    CompiledLockingSelect, FetchedSource, LockingActor, LockingCompletion, LockingConflict,
-    LockingControl, LockingParent, LockingPreparation, NonAdmittedLocking, PreparedLockingInputs,
-    SourceOwner, StagedLockingTransition,
+    CompiledLockingSelect, EncryptedSourceState, FetchedSource, LockingActor, LockingCompletion,
+    LockingConflict, LockingControl, LockingParent, LockingPreparation, NonAdmittedLocking,
+    PreparedLockingInputs, SOURCE_STATE_BYTES, SOURCE_STATE_HEADER_BYTES, SourceOwner,
+    SourceStateAuthority, SourceStateIdentity, StagedLockingTransition,
 };
 
 use bfv_mul_relin_proof::{InputEvidence, Provenance};

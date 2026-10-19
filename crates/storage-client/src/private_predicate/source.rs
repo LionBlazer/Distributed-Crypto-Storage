@@ -11,10 +11,15 @@ use registry200_proof::{
 use zeroize::Zeroizing;
 
 mod locking;
+mod state;
 pub use locking::{
     CompiledLockingSelect, LockingActor, LockingCompletion, LockingConflict, LockingControl,
     LockingParent, LockingPreparation, NonAdmittedLocking, PreparedLockingInputs,
     StagedLockingTransition,
+};
+pub use state::{
+    EncryptedSourceState, SOURCE_STATE_BYTES, SOURCE_STATE_HEADER_BYTES, SourceStateAuthority,
+    SourceStateIdentity,
 };
 
 /// Real fetched ciphertext with object, TableId and both heads pinned independently.

@@ -25,8 +25,12 @@ a mutation, preselect BFV input rows or establish agreed-head freshness.
 proof copy of the caller's AEAD key, the real compact-store sealer and one private
 OS-random Ckey salt. The caller is responsible for fresh random keys, domain
 uniqueness and private custody. There is no key getter, serialization or private
-callback. This capability is currently in-memory; recreating it samples a new
-Ckey salt and does not restore the previous Source commitment.
+callback. The fresh constructor samples a new Ckey salt. The separate
+[encrypted Source-state capability](source/state/README.md) restores the original
+key and salt from a bounded authenticated in-memory record under independent
+snapshot pins and a caller-custodied wrapping authority. Durable file custody,
+rollback protection and network reconciliation remain the caller's unfinished
+integration obligations.
 
 `seal_partition(&TableId, &[PlainRow; 4], RowIds)` uses the actual canonical writer
 for all four originals. The caller stores/replicates its encrypted data/index

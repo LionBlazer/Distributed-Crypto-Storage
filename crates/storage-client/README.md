@@ -15,6 +15,13 @@ bounded proof frames. The [native OS-peer validation](../../docs/private-where-p
 records a successful full hidden-predicate FHE operation and owning failure tests;
 this API does not open the SQL admission guards below or establish fresh heads.
 
+The same feature also exposes bounded
+[encrypted in-memory Source-state recovery](src/private_predicate/source/state/README.md).
+Restore authenticates independent object/full-head/Ckey pins and the actual
+complete encrypted image before returning the original key/salt authority. Five
+owning runtime cases and seven ownership contracts passed. Durable file custody,
+rollback protection and finalized-state reconciliation remain separate work.
+
 | Direct project dependency | Responsibility |
 | --- | --- |
 | [sql-plan](../sql-plan/README.md) | Typed statement plans, without plaintext execution |
