@@ -3,7 +3,7 @@
 Owner-side production of the existing fixed-N4 private coefficient inputs from
 real canonical encrypted storage. Enable the explicit `private-input-proofs`
 feature. This module does not call Session SQL admission, accept an answer, publish
-a mutation, choose matched rows or establish agreed-head freshness.
+a mutation, preselect BFV input rows or establish agreed-head freshness.
 
 ## Dependencies and ownership
 
@@ -14,6 +14,7 @@ a mutation, choose matched rows or establish agreed-head freshness.
 | [peer-runtime](../../../peer-runtime/README.md) | Full `RawBundle` custody audit and independently pinned object address |
 | [sql-plan](../../../sql-plan/README.md) | Compile an age-domain truth table without reading stored rows |
 | [registry200-proof](../../../registry200-proof/README.md) | Genuine Source-first canonical-index and two coefficient Encoding producers |
+| [registry200-journal](../../../registry200-journal/README.md) | Original application/intent/Request pins for the distinct joint locking producer |
 | [bfv-query-core](../../../bfv-query-core/README.md) | Actual ALL-original/predicate encryption, original setup checks and exclusive proof epoch |
 | [bfv-key-transform](../../../bfv-key-transform/README.md) | Existing OS-random proof salts |
 | [bfv-basis-convolution](../../../bfv-basis-convolution/README.md) | Actual ordered Basis verification before Formation |
@@ -123,3 +124,11 @@ add a public evaluation-key same-secret proof. This producer supplies neither
 fresh agreed heads, Source custody durability after witness loss, transaction
 ownership/write fences nor SQL admission. Existing SQL capability guards remain
 closed; adding FOR UPDATE/SKIP LOCKED requires the missing complete composition.
+
+The separate [joint locking producer](source/locking/README.md) prepares actual
+Source/input16/Lifecycle/Link evidence for a typed private `LockingSelect`. It keeps
+the plain compiler/producer above unchanged. This new path supplies no SQL grant,
+finalized admission or completed answer. Its eight owning tests passed natively;
+the [validation record](../../../../docs/private-locking-inputs.md) also records
+the separate failing legacy integration expectations. It must not bypass the
+existing Session capability guards.

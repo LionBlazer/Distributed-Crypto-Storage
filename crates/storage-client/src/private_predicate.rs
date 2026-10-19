@@ -4,7 +4,11 @@ mod compiler;
 mod produce;
 mod source;
 pub use compiler::CompiledPrivatePredicate;
-pub use source::{FetchedSource, SourceOwner};
+pub use source::{
+    CompiledLockingSelect, FetchedSource, LockingActor, LockingCompletion, LockingConflict,
+    LockingControl, LockingParent, LockingPreparation, NonAdmittedLocking, PreparedLockingInputs,
+    SourceOwner, StagedLockingTransition,
+};
 
 use bfv_mul_relin_proof::{InputEvidence, Provenance};
 use bfv_query_core::{BfvKeyAnchor, Owner, PreparedPrivateCoefficientPredicate, PublicSetup};

@@ -10,6 +10,13 @@ use registry200_proof::{
 };
 use zeroize::Zeroizing;
 
+mod locking;
+pub use locking::{
+    CompiledLockingSelect, LockingActor, LockingCompletion, LockingConflict, LockingControl,
+    LockingParent, LockingPreparation, NonAdmittedLocking, PreparedLockingInputs,
+    StagedLockingTransition,
+};
+
 /// Real fetched ciphertext with object, TableId and both heads pinned independently.
 /// These are caller expectations, never values adopted from the supplied bundle.
 pub struct FetchedSource<'a> {

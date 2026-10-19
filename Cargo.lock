@@ -4714,6 +4714,7 @@ dependencies = [
  "peer-runtime",
  "proof-acceleration",
  "rcgen",
+ "registry200-journal",
  "registry200-proof",
  "relational-types",
  "serde",
