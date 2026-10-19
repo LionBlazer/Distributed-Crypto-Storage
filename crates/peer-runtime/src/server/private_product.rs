@@ -28,8 +28,7 @@ pub(super) fn serve(
     let mut sent = 0usize;
     let mut received = start_bytes;
     let result = (|| -> io::Result<()> {
-        let _permit =
-            super::network::ProofPermit::acquire(&shared.proof_busy).map_err(io::Error::other)?;
+        let _permit = shared.proof_busy.try_acquire().map_err(io::Error::other)?;
         let (setup, heads) = {
             let mut state = shared.state.lock().map_err(rejected)?;
             let version = state

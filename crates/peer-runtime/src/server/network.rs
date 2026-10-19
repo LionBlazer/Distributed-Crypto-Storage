@@ -19,19 +19,6 @@ impl version_journal::TransitionVerifier for ApplicationVerifier {
         }
     }
 }
-pub(super) struct ProofPermit<'a>(&'a AtomicBool);
-impl<'a> ProofPermit<'a> {
-    pub(super) fn acquire(busy: &'a AtomicBool) -> Result<Self, RemoteError> {
-        busy.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .map_err(|_| RemoteError::Busy)?;
-        Ok(Self(busy))
-    }
-}
-impl Drop for ProofPermit<'_> {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::Release);
-    }
-}
 struct DiskReservation {
     shared: Arc<Shared>,
     bytes: u64,
@@ -87,7 +74,7 @@ pub(super) fn dispatch(shared: &Arc<Shared>, request: Request) -> Result<Respons
                     return Err(RemoteError::ResourceLimit);
                 }
             }
-            let _permit = ProofPermit::acquire(&shared.proof_busy)?;
+            let _permit = shared.proof_busy.try_acquire()?;
             let public = PublicSetup::from_bytes(&bytes).map_err(crypto)?;
             let verifier = Arc::new(JobVerifier::new(
                 public.update_parameters().map_err(crypto)?,
@@ -116,7 +103,7 @@ pub(super) fn dispatch(shared: &Arc<Shared>, request: Request) -> Result<Respons
             if operation == Operation::ByteSelect {
                 return Err(RemoteError::InvalidRequest);
             }
-            let _permit = ProofPermit::acquire(&shared.proof_busy)?;
+            let _permit = shared.proof_busy.try_acquire()?;
             let setup = {
                 let mut state = shared.state.lock().map_err(io_error)?;
                 state.store.audit_version(&object)?;
@@ -154,7 +141,7 @@ pub(super) fn dispatch(shared: &Arc<Shared>, request: Request) -> Result<Respons
             Ok(Response::UnverifiedCiphertext(output))
         }
         Request::InitJournal { genesis, setup } => {
-            let _permit = ProofPermit::acquire(&shared.proof_busy)?;
+            let _permit = shared.proof_busy.try_acquire()?;
             let genesis = Genesis::decode(&genesis).map_err(crypto)?;
             if genesis.initial_shards.len() > crate::MAX_JOBS {
                 return Err(RemoteError::ResourceLimit);
@@ -216,7 +203,7 @@ pub(super) fn dispatch(shared: &Arc<Shared>, request: Request) -> Result<Respons
             genesis,
             application,
         } => {
-            let _permit = ProofPermit::acquire(&shared.proof_busy)?;
+            let _permit = shared.proof_busy.try_acquire()?;
             // Bounded exact descriptor and genesis/application checks precede any disk registration.
             let descriptor =
                 registry200_journal::ApplicationDescriptor::decode(&application).map_err(crypto)?;
@@ -298,7 +285,7 @@ pub(super) fn dispatch(shared: &Arc<Shared>, request: Request) -> Result<Respons
             header,
             body,
         } => {
-            let _permit = ProofPermit::acquire(&shared.proof_busy)?;
+            let _permit = shared.proof_busy.try_acquire()?;
             let network = get_network(shared, network)?;
             let mut network = network.lock().map_err(io_error)?;
             let header = Header::decode(&header).map_err(crypto)?;
@@ -331,7 +318,7 @@ pub(super) fn dispatch(shared: &Arc<Shared>, request: Request) -> Result<Respons
             if attempts == 0 || attempts > 1_000_000 {
                 return Err(RemoteError::ResourceLimit);
             }
-            let _permit = ProofPermit::acquire(&shared.proof_busy)?;
+            let _permit = shared.proof_busy.try_acquire()?;
             let network = get_network(shared, network)?;
             let mut network = network.lock().map_err(io_error)?;
             let body_value =
@@ -374,7 +361,7 @@ pub(super) fn dispatch(shared: &Arc<Shared>, request: Request) -> Result<Respons
             }
         }
         Request::CollectJournal { network } => {
-            let _permit = ProofPermit::acquire(&shared.proof_busy)?;
+            let _permit = shared.proof_busy.try_acquire()?;
             let networks: Vec<_> = {
                 let state = shared.state.lock().map_err(io_error)?;
                 let active: std::collections::BTreeSet<_> =
@@ -515,7 +502,7 @@ pub(super) fn prove(
     if ciphertext.len() > MAX_JOB_BYTES {
         return Err(RemoteError::ResourceLimit);
     }
-    let _permit = ProofPermit::acquire(&shared.proof_busy)?;
+    let _permit = shared.proof_busy.try_acquire()?;
     let (evaluator, data_head, index_head) = {
         let mut state = shared.state.lock().map_err(io_error)?;
         let version = state.store.audit_version(&object)?;
@@ -548,13 +535,10 @@ mod tests {
     use super::*;
     #[test]
     fn concurrent_heavy_work_is_retryable_busy_and_drop_releases_admission() {
-        let busy = AtomicBool::new(false);
-        let first = ProofPermit::acquire(&busy).unwrap();
-        assert!(matches!(
-            ProofPermit::acquire(&busy),
-            Err(RemoteError::Busy)
-        ));
+        let busy = crate::ProofGate::new();
+        let first = busy.try_acquire().unwrap();
+        assert!(matches!(busy.try_acquire(), Err(RemoteError::Busy)));
         drop(first);
-        assert!(ProofPermit::acquire(&busy).is_ok());
+        assert!(busy.try_acquire().is_ok());
     }
 }

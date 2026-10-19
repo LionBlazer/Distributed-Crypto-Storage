@@ -25,6 +25,7 @@ pub(crate) struct FloorLog {
     position: u64,
     sequence: u64,
     previous: Hash,
+    header_hash: Hash,
     max_records: u64,
     #[cfg(test)]
     fault: Option<Fault>,
@@ -36,6 +37,42 @@ pub(crate) enum Fault {
     AfterSync,
 }
 impl FloorLog {
+    /// Bounded one-record export. Restore the append/replay cursor on all paths;
+    /// no parsed hash is an application/QC authority. The wrapper poisons on an
+    /// unreadable/corrupt owned log instead of silently signing past it.
+    pub(crate) fn export(&mut self, slot: u64) -> Result<Record> {
+        if slot == 0
+            || slot > self.sequence
+            || self.position != self.length
+            || self.file.metadata()?.len() != self.length
+        {
+            return Err(Error::CorruptFloor);
+        }
+        let saved = (self.position, self.sequence, self.previous);
+        let result = (|| {
+            self.file.seek(SeekFrom::Start(0))?;
+            let mut header = [0; HEADER_BYTES];
+            self.file.read_exact(&mut header)?;
+            if digest(b"dcs/registry200-finality/floor-header/v1", &[&header]) != self.header_hash {
+                return Err(Error::CorruptFloor);
+            }
+            self.position = HEADER_BYTES as u64;
+            self.sequence = 0;
+            self.previous = digest(b"dcs/registry200-finality/floor-header/v1", &[&header]);
+            for _ in 0..slot {
+                let record = self.next()?.ok_or(Error::CorruptFloor)?;
+                if self.sequence == slot {
+                    return Ok(record);
+                }
+            }
+            Err(Error::CorruptFloor)
+        })();
+        self.position = saved.0;
+        self.sequence = saved.1;
+        self.previous = saved.2;
+        self.file.seek(SeekFrom::Start(saved.0))?;
+        result
+    }
     pub(crate) fn create(path: &Path, binding: &Binding, budget: &ByteBudget) -> Result<Self> {
         let mut file = OpenOptions::new()
             .read(true)
@@ -55,6 +92,7 @@ impl FloorLog {
             position: header.len() as u64,
             sequence: 0,
             previous: digest(b"dcs/registry200-finality/floor-header/v1", &[&header]),
+            header_hash: digest(b"dcs/registry200-finality/floor-header/v1", &[&header]),
             max_records: u64::from(binding.journal_genesis().profile.max_headers),
             #[cfg(test)]
             fault: None,
@@ -80,6 +118,7 @@ impl FloorLog {
             position: HEADER_BYTES as u64,
             sequence: 0,
             previous: digest(b"dcs/registry200-finality/floor-header/v1", &[&b]),
+            header_hash: digest(b"dcs/registry200-finality/floor-header/v1", &[&b]),
             max_records: u64::from(binding.journal_genesis().profile.max_headers),
             #[cfg(test)]
             fault: None,

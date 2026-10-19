@@ -92,7 +92,7 @@ rollback remain operational assumptions.
 
 ## Verification status and remaining DCS work
 
-All six owning cases and three ownership compile-fail examples passed. The
+All seven owning cases and three ownership compile-fail examples passed. The
 affected work-finality and Journal regressions, strict Clippy and Core default
 build check passed too; see the [native validation record](../../docs/registry200-finality.md).
 Owning cases use actual public, explicitly non-secret fixtures: Core Source and
@@ -105,7 +105,7 @@ The safety premise remains less than one third Byzantine computational weight in
 the **activated** roster, with non-rollback durable honest signing. Checked work
 does not establish that premise, fair election inclusion, balanced failure groups
 or availability if a high-weight participant disappears. The bootstrap roster
-remains fixed. Network actor/gossip, permissionless system-lane work tickets,
+remains fixed. Production participant bootstrap, permissionless system-lane work tickets,
 safe epoch handoff, freshness barriers and a new joint hidden-predicate/FHE/lock
 application are still required. This wrapper's local latest floor cannot certify
 globally newest data during an unseen partition and gives no live SQL grant.
@@ -115,3 +115,21 @@ The round/lock/POL semantics are pinned separately in
 [Tendermint Algorithm 1, arXiv:1807.04938v3](https://arxiv.org/pdf/1807.04938v3).
 See the [mechanical Journal boundary](../version-journal/README.md) and the
 [original Registry application](../registry200-journal/README.md).
+
+## Export and keyless follower
+
+| Public entry point | Contract |
+| --- | --- |
+| `candidate_block`, `checkpoint_after` | Bounded original block and persisted QC export; decoding never confers authority |
+| `Follower::{new,apply}` | Keyless next-slot verification of the real application and quorum under independent public pins |
+
+The [keyless follower contract](src/follower/README.md) distinguishes checked
+in-memory evidence from a durable signer floor and current freshness policy.
+Export codecs have a distinct `export_profile_digest`; existing work/vote/QC,
+application, binding and disk profiles remain unchanged. The executed
+[TLS peer actor](../peer-runtime/src/finality/README.md) is owned by `peer-runtime`.
+The genuine Source/Lifecycle history test now also constructs a fresh keyless
+follower after private inputs are dropped and rechecks every original Body/QC.
+[Network validation](../../docs/network-finality.md) records its exact scope.
+Production deployment, system-lane,
+reconfiguration and freshness limitations above remain open.

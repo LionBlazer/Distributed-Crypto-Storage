@@ -607,3 +607,19 @@ predicates, link data mutations to held RowIds or establish agreed global
 freshness. Storage-client LockingSelect remains rejected. The
 [validation record](../../experiments/hiding-fri-sha256-gate/REGISTRY200-PEER-CONTROL-VALIDATION.md)
 records the actual two-process control flow and observation limits.
+
+## Closed finality service
+
+The distinct [Registry200 TLS actor](src/finality/README.md) consumes the concrete
+durable adapter and shares the process-owned `ProofGate` with existing network
+and private-product work. It verifies actual original application Bodies before
+votes and provides sequential original-body/QC catch-up and a keyless independent
+follower. `PeerServer::proof_gate` clones the existing resource gate before spawn;
+`ProofGate::try_acquire` returns a move-only RAII permit shared with all existing
+heavy work. A permit is resource ownership, never proof validity. The TLS owning
+tests passed in one process; four existing OS-peer rejection/cancellation cases
+also passed. These are not a four-OS-peer finality deployment result; see the
+[native record](../../docs/network-finality.md).
+Production participant-quota/bootstrap integration, system-lane admission, work
+roster activation/reconfiguration and a hidden-SQL lock grant remain open. It
+adds no alternate Jobs application or SQL capability enable flag.

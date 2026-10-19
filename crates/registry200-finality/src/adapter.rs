@@ -84,14 +84,7 @@ impl State {
             .history
             .get(&context.slot())
             .ok_or(Error::WrongContext)?;
-        if context.id() != h.context
-            || d.binding != self.binding.id()
-            || d.slot != context.slot()
-            || d.previous != context.previous_decision()
-            || d.header.parent != h.parent.block
-            || d.header.genesis != h.parent.genesis
-            || d.header.height != h.parent.height.checked_add(1).ok_or(Error::ResourceLimit)?
-        {
+        if context.id() != h.context {
             return Err(Error::WrongContext);
         }
         // No serialized receipt, cached validation bit, owner signature alone or
@@ -101,16 +94,15 @@ impl State {
             .journal()
             .body(d.header.id())
             .ok_or(Error::MissingCandidate)?;
-        self.journal
-            .journal()
-            .reverify_block(&d.header, body, now()?, &self.verifier)?;
-        let head = HeadRef {
-            genesis: d.header.genesis,
-            database: self.binding.journal_genesis().database,
-            block: d.header.id(),
-            height: d.header.height,
-            state_root: d.header.state_root,
-        };
+        let head = verify_candidate(
+            &self.binding,
+            self.journal.journal(),
+            &self.verifier,
+            context,
+            h.parent,
+            &d,
+            body,
+        )?;
         self.journal.journal().validated_shards(head)?;
         Ok(head)
     }
@@ -285,6 +277,79 @@ impl RegistryFinality {
     pub fn context(&self) -> &Context {
         self.voter.context()
     }
+    pub fn binding(&self) -> Result<Binding> {
+        self.live()?;
+        Ok(self
+            .state
+            .lock()
+            .map_err(|_| Error::Poisoned)?
+            .binding
+            .clone())
+    }
+    /// One original retained block. This public DTO carries no verification bit.
+    pub fn candidate_block(&self, id: Hash) -> Result<crate::CandidateBlock> {
+        self.live()?;
+        let state = self.state.lock().map_err(|_| Error::Poisoned)?;
+        let journal = state.journal.journal();
+        let header = journal.header(id).ok_or(Error::MissingCandidate)?.clone();
+        let body = journal.body(id).ok_or(Error::MissingCandidate)?.to_vec();
+        crate::CandidateBlock::new(header, body)
+    }
+    /// Availability only; neither cached presence nor this boolean authorizes a
+    /// vote. Every proposal/commit still invokes the original proof verifier.
+    pub fn has_candidate(&self, id: Hash) -> Result<bool> {
+        self.live()?;
+        Ok(self
+            .state
+            .lock()
+            .map_err(|_| Error::Poisoned)?
+            .journal
+            .journal()
+            .body(id)
+            .is_some())
+    }
+    /// Sequential remote catch-up, through the same durable signer/application
+    /// path. The caller cannot supply a next context or finalized-head marker.
+    pub fn receive_checkpoint(&mut self, checkpoint: &crate::Checkpoint) -> Result<Vec<Action>> {
+        self.live()?;
+        let decision = self.context().verify_commit(
+            &checkpoint.descriptor().encode(),
+            checkpoint.round(),
+            checkpoint.certificate(),
+        )?;
+        self.drive(Input::Certificate {
+            value: decision.value().to_vec(),
+            certificate: decision.certificate().clone(),
+        })
+    }
+    /// Exactly one persisted commit for sequential catch-up. Export rechecks the
+    /// actual chained file bytes; the recipient still verifies application + QC.
+    pub fn checkpoint_after(&mut self, slot: u64) -> Result<Option<crate::Checkpoint>> {
+        self.live()?;
+        let latest = self
+            .state
+            .lock()
+            .map_err(|_| Error::Poisoned)?
+            .current
+            .slot()
+            - 1;
+        if slot >= latest {
+            return Ok(None);
+        }
+        let result = self
+            .floor
+            .export(slot.checked_add(1).ok_or(Error::ResourceLimit)?)
+            .and_then(|r| {
+                crate::Checkpoint::new(Descriptor::decode(&r.value)?, r.round, r.certificate)
+            });
+        match result {
+            Ok(record) => Ok(Some(record)),
+            Err(error) => {
+                self.poisoned = true;
+                Err(error)
+            }
+        }
+    }
     pub fn finalized_head(&self) -> Result<Option<FinalizedHead>> {
         self.live()?;
         Ok(self.state.lock().map_err(|_| Error::Poisoned)?.finalized)
@@ -414,9 +479,39 @@ impl RegistryFinality {
         }
     }
 }
-fn now() -> Result<u64> {
+pub(crate) fn now() -> Result<u64> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .map_err(|_| Error::WrongContext)
+}
+
+// Shared concrete application relation, not a callback or an externally minted
+// accepting token. Signer and keyless follower use identical actual checks.
+pub(crate) fn verify_candidate(
+    binding: &Binding,
+    journal: &version_journal::Journal,
+    verifier: &RegistryVerifier,
+    context: &Context,
+    parent: HeadRef,
+    d: &Descriptor,
+    body: &[u8],
+) -> Result<HeadRef> {
+    if d.binding != binding.id()
+        || d.slot != context.slot()
+        || d.previous != context.previous_decision()
+        || d.header.parent != parent.block
+        || d.header.genesis != parent.genesis
+        || d.header.height != parent.height.checked_add(1).ok_or(Error::ResourceLimit)?
+    {
+        return Err(Error::WrongContext);
+    }
+    journal.reverify_block(&d.header, body, now()?, verifier)?;
+    Ok(HeadRef {
+        genesis: d.header.genesis,
+        database: binding.journal_genesis().database,
+        block: d.header.id(),
+        height: d.header.height,
+        state_root: d.header.state_root,
+    })
 }

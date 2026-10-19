@@ -46,7 +46,7 @@ struct Shared {
     stop: AtomicBool,
     listener_waker: Waker,
     active: AtomicUsize,
-    proof_busy: AtomicBool,
+    proof_busy: crate::ProofGate,
 }
 impl Shared {
     fn request_stop(&self) {
@@ -138,12 +138,17 @@ impl PeerServer {
                 stop: AtomicBool::new(false),
                 listener_waker,
                 active: AtomicUsize::new(0),
-                proof_busy: AtomicBool::new(false),
+                proof_busy: crate::ProofGate::new(),
             }),
         })
     }
     pub fn endpoint(&self) -> &Endpoint {
         &self.endpoint
+    }
+    /// The actual process gate, shared with custody/FHE and closed finality.
+    /// A clone is scheduling state, never a successful-verification token.
+    pub fn proof_gate(&self) -> crate::ProofGate {
+        self.shared.proof_busy.clone()
     }
     pub fn spawn(self) -> io::Result<RunningServer> {
         let endpoint = self.endpoint.clone();

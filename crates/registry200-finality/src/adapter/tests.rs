@@ -612,15 +612,103 @@ fn actual_source_bootstrap_begin_acquire_end_decisions_reverify_after_private_in
     let key = f.key();
     drop(f);
     drop(owned);
-    let reopened = RegistryFinality::open_existing(
+    let mut reopened = RegistryFinality::open_existing(
         &files.path,
-        binding,
+        binding.clone(),
         key,
         &ByteBudget::new(version_journal::MAX_JOURNAL_BYTES).unwrap(),
     )
     .unwrap();
     assert_eq!(reopened.finalized_head().unwrap(), finalized);
     assert_eq!(reopened.context(), &next_context);
+    // Private Source/registry openings, original owner and original signer were
+    // dropped above. The keyless client checks actual persisted bytes/QCs from
+    // independent public pins, one original proof-bearing block at a time.
+    let mut follower = Follower::new(binding).unwrap();
+    while let Some(checkpoint) = reopened
+        .checkpoint_after(follower.context().slot() - 1)
+        .unwrap()
+    {
+        let block = reopened
+            .candidate_block(checkpoint.descriptor().header().id())
+            .unwrap();
+        let checked = follower.apply(&checkpoint, &block).unwrap();
+        assert_eq!(checked.head().block, checkpoint.descriptor().header().id());
+    }
+    assert_eq!(follower.context(), &next_context);
+    assert_eq!(
+        follower.checked_head().unwrap().head(),
+        finalized.unwrap().head()
+    );
+}
+
+#[test]
+fn untrusted_checkpoint_codec_and_duplicate_follower_reverify_cannot_skip_body_or_quorum() {
+    let f = Fixture::new();
+    let files = Files::new();
+    let mut owned = RegistryFinality::create_new(
+        &files.path,
+        f.binding.clone(),
+        f.key(),
+        &ByteBudget::new(version_journal::MAX_JOURNAL_BYTES).unwrap(),
+    )
+    .unwrap();
+    let (header, body) = f.empty(&owned, 0);
+    let d = owned.import_candidate(header, &body).unwrap();
+    f.commit(&mut owned, &d);
+    let checkpoint = owned.checkpoint_after(0).unwrap().unwrap();
+    let block = owned.candidate_block(d.header().id()).unwrap();
+    let checkpoint = Checkpoint::decode(&checkpoint.encode()).unwrap();
+    let block = CandidateBlock::decode(&block.encode()).unwrap();
+    let mut follower = Follower::new(f.binding.clone()).unwrap();
+    let checked = follower.apply(&checkpoint, &block).unwrap();
+    assert_eq!(
+        checked.head(),
+        owned.finalized_head().unwrap().unwrap().head()
+    );
+    let context = follower.context().clone();
+    let mut bad_certificate = checkpoint.certificate().to_vec();
+    *bad_certificate.last_mut().unwrap() ^= 1;
+    let forged = Checkpoint::new(
+        checkpoint.descriptor().clone(),
+        checkpoint.round(),
+        bad_certificate,
+    )
+    .unwrap();
+    assert!(follower.apply(&forged, &block).is_err());
+    let mut bad_body = block.body().to_vec();
+    *bad_body.last_mut().unwrap() ^= 1;
+    let forged = CandidateBlock::new(block.header().clone(), bad_body).unwrap();
+    assert!(follower.apply(&checkpoint, &forged).is_err());
+    assert_eq!(follower.context(), &context);
+    assert_eq!(follower.apply(&checkpoint, &block).unwrap(), checked);
+    assert_eq!(follower.context(), &context);
+    assert!(owned.checkpoint_after(1).unwrap().is_none());
+    for mut bytes in [checkpoint.encode(), block.encode()] {
+        bytes.push(0);
+        assert!(Checkpoint::decode(&bytes).is_err());
+        assert!(CandidateBlock::decode(&bytes).is_err());
+    }
+    let mut oversized = block.encode();
+    oversized[8 + version_journal::HEADER_BYTES..12 + version_journal::HEADER_BYTES]
+        .copy_from_slice(&u32::MAX.to_le_bytes());
+    assert!(CandidateBlock::decode(&oversized).is_err());
+    drop(owned);
+    let mut reopened = RegistryFinality::open_existing(
+        &files.path,
+        f.binding.clone(),
+        f.key(),
+        &ByteBudget::new(version_journal::MAX_JOURNAL_BYTES).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        reopened.checkpoint_after(0).unwrap().unwrap().encode(),
+        checkpoint.encode()
+    );
+    assert_eq!(
+        reopened.candidate_block(d.header().id()).unwrap().encode(),
+        block.encode()
+    );
 }
 
 #[test]

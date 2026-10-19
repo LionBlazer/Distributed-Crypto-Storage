@@ -8,10 +8,16 @@
 mod adapter;
 mod binding;
 mod codec;
+mod follower;
 mod store;
+mod wire;
 
 pub use adapter::{FinalizedHead, RegistryFinality};
 pub use binding::{Binding, DESCRIPTOR_BYTES, Descriptor, profile_digest};
+pub use follower::{Follower, VerifiedCheckpoint};
+pub use wire::{
+    CandidateBlock, Checkpoint, MAX_BLOCK_BYTES, MAX_CHECKPOINT_BYTES, export_profile_digest,
+};
 
 pub type Hash = [u8; 32];
 pub type Result<T> = std::result::Result<T, Error>;

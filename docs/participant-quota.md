@@ -91,6 +91,6 @@ than silently admitting them into this namespace.
 This change grants no SQL answer, lock, freshness receipt or cryptographic proof
 validity. The new joint application must retain and genuinely reverify its full
 input, Lifecycle/Link and FHE output evidence on vote, import and reopen. The
-network finality service, complete evidence graph, live participant bootstrap,
+deployment of the [network finality service](network-finality.md), complete evidence graph, live participant bootstrap,
 keyless client freshness barrier and four-OS partition/restart scenarios remain
 separate integration work.

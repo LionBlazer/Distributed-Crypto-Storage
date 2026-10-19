@@ -129,7 +129,8 @@ activated roster, with honest durable signing protected from rollback. Checked
 work does not establish fair inclusion, that Byzantine fraction or availability
 after a high-weight peer disappears. Only the bootstrap roster is activated.
 
-Transport/gossip and actual independent-peer partition/restart gates, a
+The [TLS transport/gossip and keyless follower](network-finality.md) now have
+owning native coverage. Actual independent-process finality partition/restart gates, a
 permissionless system lane and safe epoch handoff, globally fresh barriers, and
 the new joint hidden-predicate/FHE/lock application remain required. Immutable
 `FinalizedHead` metadata records a checked floor; it cannot establish the newest
