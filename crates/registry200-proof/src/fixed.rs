@@ -1,4 +1,4 @@
-use crate::{coefficient_encoding, lifecycle, source};
+use crate::{coefficient_encoding, lifecycle, predicate_acquire, source};
 use bfv_hiding_stark::{self as engine, Config, Error, SecurityReport, Val};
 use engine::codec::Topology;
 use p3_air::{Air, AirBuilder, BaseAir};
@@ -10,8 +10,9 @@ enum FixedAir {
     Bootstrap(Box<lifecycle::bootstrap::BootstrapAir>),
     Lifecycle(Box<lifecycle::air::LifecycleAir>),
     Encoding(Box<coefficient_encoding::air::EncodingAir>),
+    PredicateAcquire(Box<predicate_acquire::air::PredicateAcquireAir>),
 }
-macro_rules! dispatch { ($s:expr,$m:ident $(,$a:expr)*)=>{match $s {FixedAir::Source(a)=>a.$m($($a),*),FixedAir::Bootstrap(a)=>a.$m($($a),*),FixedAir::Lifecycle(a)=>a.$m($($a),*),FixedAir::Encoding(a)=>a.$m($($a),*)}}; }
+macro_rules! dispatch { ($s:expr,$m:ident $(,$a:expr)*)=>{match $s {FixedAir::Source(a)=>a.$m($($a),*),FixedAir::Bootstrap(a)=>a.$m($($a),*),FixedAir::Lifecycle(a)=>a.$m($($a),*),FixedAir::Encoding(a)=>a.$m($($a),*),FixedAir::PredicateAcquire(a)=>a.$m($($a),*)}}; }
 impl BaseAir<Val> for FixedAir {
     fn width(&self) -> usize {
         dispatch!(self, width)
@@ -113,6 +114,18 @@ impl Backend {
             FixedAir::Encoding(Box::new(coefficient_encoding::air::EncodingAir::new(s))),
             s.values(),
             (role.width(), role.public_values()),
+        )
+    }
+    pub fn predicate_acquire(e: &predicate_acquire::Expected) -> Result<Self, Error> {
+        Self::new(
+            FixedAir::PredicateAcquire(Box::new(predicate_acquire::air::PredicateAcquireAir::new(
+                e,
+            ))),
+            e.values(),
+            (
+                predicate_acquire::layout::WIDTH,
+                predicate_acquire::PUBLIC_VALUES,
+            ),
         )
     }
 }

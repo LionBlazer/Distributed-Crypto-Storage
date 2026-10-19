@@ -6,6 +6,8 @@ mod fixture;
 mod formation_scenario;
 mod owner;
 mod peer_control;
+#[cfg(test)]
+mod predicate_acquire_tests;
 mod projection_context;
 mod projection_scenario;
 pub(super) mod write_input;

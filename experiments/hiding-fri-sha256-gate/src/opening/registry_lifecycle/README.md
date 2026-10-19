@@ -93,6 +93,15 @@ this explicit N4/T2/D2 abstraction. Saved modes summarize monotone lock upgrades
 they do not certify the native event history, its byte encoding or event-count cap.
 There is no encrypted data rollback/commit relation here.
 
+The separate Core [predicate/Acquire link](../../../../../crates/registry200-proof/src/predicate_acquire/README.md)
+now owns a new success-only relation, without changing this Lifecycle AIR or its
+profile. Its [consumer tests](journal/predicate_acquire_tests.rs) build genuine
+signed history and separate Source/Query/Lifecycle/link proofs, including
+same-q/different-mask and unsuccessful-outcome controls. Those new tests remain
+unexecuted source candidates. This adds no SQL result, row-lock admission or
+agreed freshness/finality grant; the exact FHE returned-row link and composite
+wire/admission contract remain separate requirements.
+
 Revision increments on each successful command. Allocator increments only on
 Begin. Existing actor sequence increments on each non-End command. End at sequence
 u64::MAX remains admissible if the global revision can advance. Every increment is
@@ -203,3 +212,13 @@ operations, replace the immutable Source application or admit a data mutation.
 The actual-history gate and all ten new tests passed; the
 [validation record](../../../REGISTRY200-WRITE-IMAGE-VALIDATION.md) gives the
 affected test scope, proof sizes, measurements and remaining obligations.
+
+## Hidden predicate / successful Acquire linkage
+
+The journal's `predicate_acquire_tests` consumer builds an actual owner-signed
+five-body history and verifies genuine Source, private Cmd48, Lifecycle Cmd160
+and successful Result144 proofs through the separate Core linkage relation.
+Its five tests passed; the [native record](../../../../../docs/private-predicate-acquire.md)
+states the byte-cap blocker and the remaining joint SQL compilation, encrypted
+result completion and finalized-head obligations. This detached proof grants no
+live SQL or lock authority.

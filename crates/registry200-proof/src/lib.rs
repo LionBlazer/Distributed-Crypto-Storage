@@ -3,6 +3,7 @@
 pub mod admission;
 pub mod coefficient_encoding;
 pub mod lifecycle;
+pub mod predicate_acquire;
 pub mod source;
 pub mod wire;
 pub mod write;

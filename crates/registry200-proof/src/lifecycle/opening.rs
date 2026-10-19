@@ -5,6 +5,36 @@ use super::{
 };
 use bfv_hiding_stark::Val;
 use p3_field::Algebra;
+
+/// Shared PUBLIC prefix only; private command banks have their own owning AIR.
+pub fn command_prefix<E: Algebra<Val>>(context: &[Val], old: [Val; 4], f: usize) -> Option<E> {
+    match f {
+        0..=3 => Some(E::from(
+            crate::source::statement::words(&super::statement::COMMAND_DOMAIN)
+                .nth(f)
+                .unwrap(),
+        )),
+        4 => Some(E::from_u8(2)),
+        5..=104 => Some(E::from(context[f - 5])),
+        105..=108 => Some(E::from(old[f - 105])),
+        _ => None,
+    }
+}
+
+/// The original Result144 prefix, with unchanged domains, field order and values.
+pub fn result_prefix<E: Algebra<Val>>(context: &[Val], roots: [Val; 12], f: usize) -> Option<E> {
+    match f {
+        0..=3 => Some(E::from(
+            crate::source::statement::words(&super::statement::RESULT_DOMAIN)
+                .nth(f)
+                .unwrap(),
+        )),
+        4 => Some(E::from_u8(2)),
+        5..=104 => Some(E::from(context[f - 5])),
+        105..=116 => Some(E::from(roots[f - 105])),
+        _ => None,
+    }
+}
 #[derive(Clone, Copy)]
 pub struct Banks {
     pub words: usize,

@@ -193,8 +193,10 @@ Independently trusted owner setup association still does not prove that every
 public evaluation key shares the same BFV secret.
 
 No result is bound to an independently fresh finalized database/control head.
-Private predicate commitments and Registry lifecycle commitments have not yet
-been joined by one relation. Durable weighted consensus, safe roster activation,
+A subsequent [detached relation](private-predicate-acquire.md) joins the hidden
+predicate commitments and successful Registry Acquire commitments, with actual
+proof tests. Joint locking-SQL compilation, encrypted result completion and
+bounded durable composite admission remain missing. Durable weighted consensus, safe roster activation,
 transaction ownership, held RowIds, writer fencing and recovery remain necessary
 before SQL admission or real locking. The selected less-than-one-third malicious
 computational-weight contract and quorum waiting remain mandatory. These missing

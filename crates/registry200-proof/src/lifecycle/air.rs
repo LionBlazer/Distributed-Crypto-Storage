@@ -97,71 +97,91 @@ impl LifecycleAir {
                     f,
                 )
             }
-            Stream::Command => match f {
-                0..=3 => E::from(source::words(&statement::COMMAND_DOMAIN).nth(f).unwrap()),
-                4 => E::from_u8(2),
-                5..=104 => E::from(self.context[f - 5]),
-                105..=108 => E::from(self.values[100 + f - 105]),
-                109 => code(row, OP, 7),
-                110..=111 => pack(row, ID_CMD + 32 * (f - 110), 32),
-                112 => row[PRINCIPAL_CMD].into() + row[PRINCIPAL_CMD + 1].into() * E::from_u8(2),
-                113..=120 => super::opening::controller(row, PRINCIPAL_CMD, f - 113, CONTROLLERS),
-                121..=122 => pack(row, OLD + REV + 32 * (f - 121), 32),
-                123..=124 => (0..2)
-                    .map(|t| {
-                        row[ACTOR + t].into()
-                            * pack::<E, _>(row, slot(OLD, t) + SEQ + 32 * (f - 123), 32)
-                    })
-                    .sum(),
-                125..=132 => pack(row, MASK + 32 * (f - 125), 32),
-                133 => code::<E, _>(row, MODE, 4) + (0..4).map(|m| row[MODE + m].into()).sum::<E>(),
-                134 => code(row, WAIT, 3),
-                135 => pack(row, OFFSET, 3),
-                136 => pack(row, LIMIT, 3),
-                137 => pack(row, PROJECTION, 2),
-                138..=145 => pack(row, NAME_CMD + 32 * (f - 138), 32),
-                146..=153 => {
-                    row[OP].into()
-                        * E::from(
-                            source::words(&self.statement.expected.parent)
-                                .nth(f - 146)
-                                .unwrap(),
-                        )
+            Stream::Command => {
+                if let Some(value) = super::opening::command_prefix(
+                    &self.context,
+                    self.values[100..104].try_into().unwrap(),
+                    f,
+                ) {
+                    value
+                } else {
+                    match f {
+                        109 => code(row, OP, 7),
+                        110..=111 => pack(row, ID_CMD + 32 * (f - 110), 32),
+                        112 => {
+                            row[PRINCIPAL_CMD].into()
+                                + row[PRINCIPAL_CMD + 1].into() * E::from_u8(2)
+                        }
+                        113..=120 => {
+                            super::opening::controller(row, PRINCIPAL_CMD, f - 113, CONTROLLERS)
+                        }
+                        121..=122 => pack(row, OLD + REV + 32 * (f - 121), 32),
+                        123..=124 => (0..2)
+                            .map(|t| {
+                                row[ACTOR + t].into()
+                                    * pack::<E, _>(row, slot(OLD, t) + SEQ + 32 * (f - 123), 32)
+                            })
+                            .sum(),
+                        125..=132 => pack(row, MASK + 32 * (f - 125), 32),
+                        133 => {
+                            code::<E, _>(row, MODE, 4)
+                                + (0..4).map(|m| row[MODE + m].into()).sum::<E>()
+                        }
+                        134 => code(row, WAIT, 3),
+                        135 => pack(row, OFFSET, 3),
+                        136 => pack(row, LIMIT, 3),
+                        137 => pack(row, PROJECTION, 2),
+                        138..=145 => pack(row, NAME_CMD + 32 * (f - 138), 32),
+                        146..=153 => {
+                            row[OP].into()
+                                * E::from(
+                                    source::words(&self.statement.expected.parent)
+                                        .nth(f - 146)
+                                        .unwrap(),
+                                )
+                        }
+                        154 => row[ABORT].into(),
+                        155..=158 => row[SALTS + 12 + f - 155].into(),
+                        _ => E::ZERO,
+                    }
                 }
-                154 => row[ABORT].into(),
-                155..=158 => row[SALTS + 12 + f - 155].into(),
-                _ => E::ZERO,
-            },
-            Stream::Result => match f {
-                0..=3 => E::from(source::words(&statement::RESULT_DOMAIN).nth(f).unwrap()),
-                4 => E::from_u8(2),
-                5..=104 => E::from(self.context[f - 5]),
-                105..=116 => E::from(self.values[100 + f - 105]),
-                117 => code(row, OP, 7),
-                118 => {
-                    let failed: E = (0..2)
-                        .map(|t| row[ACTOR + t].into() * row[slot(OLD, t) + FAILED].into())
-                        .sum();
-                    let abort: E = row[ABORT].into();
-                    (E::ONE - row[SUCCESS].into())
-                        * (row[WAIT].into() + row[WAIT + 1].into() * E::from_u8(2))
-                        + row[OP + 6].into()
-                            * (abort.clone() + failed.clone() - abort * failed)
-                            * E::from_u8(3)
+            }
+            Stream::Result => {
+                if let Some(value) = super::opening::result_prefix(
+                    &self.context,
+                    self.values[100..112].try_into().unwrap(),
+                    f,
+                ) {
+                    value
+                } else {
+                    match f {
+                        117 => code(row, OP, 7),
+                        118 => {
+                            let failed: E = (0..2)
+                                .map(|t| row[ACTOR + t].into() * row[slot(OLD, t) + FAILED].into())
+                                .sum();
+                            let abort: E = row[ABORT].into();
+                            (E::ONE - row[SUCCESS].into())
+                                * (row[WAIT].into() + row[WAIT + 1].into() * E::from_u8(2))
+                                + row[OP + 6].into()
+                                    * (abort.clone() + failed.clone() - abort * failed)
+                                    * E::from_u8(3)
+                        }
+                        119..=120 => pack(row, ID_CMD + 32 * (f - 119), 32),
+                        121..=132 => {
+                            let at = match (f - 121) / 4 {
+                                0 => RETURN,
+                                1 => SKIP,
+                                2 => VISIT,
+                                _ => unreachable!(),
+                            };
+                            row[SUCCESS].into() * row[at + (f - 121) % 4].into()
+                        }
+                        133..=136 => row[SALTS + 20 + f - 133].into(),
+                        _ => E::ZERO,
+                    }
                 }
-                119..=120 => pack(row, ID_CMD + 32 * (f - 119), 32),
-                121..=132 => {
-                    let at = match (f - 121) / 4 {
-                        0 => RETURN,
-                        1 => SKIP,
-                        2 => VISIT,
-                        _ => unreachable!(),
-                    };
-                    row[SUCCESS].into() * row[at + (f - 121) % 4].into()
-                }
-                133..=136 => row[SALTS + 20 + f - 133].into(),
-                _ => E::ZERO,
-            },
+            }
         }
     }
 }

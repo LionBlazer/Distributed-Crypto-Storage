@@ -87,3 +87,16 @@ records actual degree4, individual128-bit assessments, proofs and input linkage.
 These roles do not change Registry admission or any original profile/cap/operation.
 The [extraction validation](../../experiments/hiding-fri-sha256-gate/COEFFICIENT-WIRE-EXTRACTION-VALIDATION.md)
 records the library frontend's native regression checks.
+
+## Separate private predicate / Acquire linkage
+
+[predicate_acquire](src/predicate_acquire/README.md) adds a distinct success-only
+relation opening the same hidden mask in the existing Cmd48 and Acquire Cmd160,
+and the exact successful Result144. Its detached verifier requires genuine
+Source/Query and Source/Lifecycle pairs before the new link proof. This does not
+change Journal admission, prove SQL compilation or grant freshness/finality.
+All eight new owning tests passed in the
+[native validation record](../../docs/private-predicate-acquire.md). The measured
+unique proof payload exceeds the unchanged 32MiB Body cap before headers; this
+detached relation is not yet an admitted composite transition. Existing validation
+records above retain their original scope.
