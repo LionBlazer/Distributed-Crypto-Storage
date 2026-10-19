@@ -462,6 +462,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "bfv-product-evidence"
+version = "0.1.0"
+dependencies = [
+ "bfv-mul-relin-proof",
+ "bfv-query-core",
+ "bfv-relinearization-key-source",
+ "protocol-storage",
+ "registry200-proof",
+ "sha2",
+]
+
+[[package]]
 name = "bfv-query-core"
 version = "0.1.0"
 dependencies = [
@@ -1157,6 +1169,7 @@ version = "0.1.0"
 dependencies = [
  "bfv-key-transform",
  "bfv-mul-relin-proof",
+ "bfv-product-evidence",
  "bfv-query-core",
  "bfv-query-proof",
  "bincode",
@@ -3605,6 +3618,7 @@ name = "peer-runtime"
 version = "0.1.0"
 dependencies = [
  "bfv-mul-relin-proof",
+ "bfv-product-evidence",
  "bfv-query-core",
  "bfv-query-proof",
  "bfv-relinearization-key-source",

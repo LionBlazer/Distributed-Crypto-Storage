@@ -12,6 +12,7 @@ client acceptance.
 | [bfv-query-core](../bfv-query-core/README.md) | Canonical public-only FHE operation adapters |
 | [bfv-query-proof](../bfv-query-proof/README.md) | Actual STARK generation/verification for every BFV residue |
 | [bfv-mul-relin-proof](../bfv-mul-relin-proof/README.md) | Exact private-input BFV multiplication graph and complete proof verification |
+| [bfv-product-evidence](../bfv-product-evidence/README.md) | Typed-depot public product retention and fresh actual proof replay |
 | [bfv-relinearization-key-source](../bfv-relinearization-key-source/README.md) | Canonical public evaluation-key preparation for the pinned original setup |
 | [proof-acceleration](../proof-acceleration/README.md) | Pure bounded CPU-worker policy, without enabling its loader |
 | [version-journal](../version-journal/README.md) | Pinned work/profile validation, ancestry, authorization and durable ordering |
@@ -46,9 +47,23 @@ nonce, role and ordinal. The next proof is produced only after a bounded explici
 client demand. Each original input cap and the complete collection cap apply;
 no aggregate proof blob or journal body is created. The peer retains at most the
 fixed fifteen public input frames, drops them before output proof work, and
-produces one output record at a time. There is no durable job/spool or implicit
+produces one output record at a time. The peer has no durable job/spool or implicit
 retry identity. Complete application-frame reads/writes produce activity events;
 partial transport reads are excluded from application-frame counters.
+
+`RemotePeer::prove_private_product_recorded` uses that same closed verification
+loop with a caller-owned `ProductStore`, whose only constructor requires typed
+participant `DepotBudget`. It retains one Source and both Encoding children,
+Key/ten Basis/two Formation, original setup/request/response/claims and the 118
+verified output records as separate bounded immutable blobs. After actual END,
+EOF, full verifier finish and a final live cancellation/deadline check it publishes
+a small untrusted catalog last. Errors leave accounted public blobs without a
+new completed catalog; no whole graph proof Vec or aggregate transport frame is
+introduced. A subsequent reader must freshly verify every original proof against
+independently pinned setup/Key33/Provenance/request/heads/query. A content identity,
+prior QC or successful earlier read supplies no cached proof authority. See the
+[retention contract](../bfv-product-evidence/README.md) and its
+[actual OS-peer/replay gate](../../docs/retained-product-evidence.md).
 
 One heavy permit spans the connection. Errors, EOF, cancellation and terminal
 delivery drop its in-memory state and permit. I/O has a 180-second inactivity

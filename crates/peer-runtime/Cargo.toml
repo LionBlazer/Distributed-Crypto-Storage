@@ -6,6 +6,7 @@ rust-version = "1.99"
 publish = false
 
 [dependencies]
+bfv-product-evidence = { path = "../bfv-product-evidence" }
 protocol-storage = { path = "../protocol-storage" }
 ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std", "fast", "zeroize"] }
 zeroize = "=1.9.1"

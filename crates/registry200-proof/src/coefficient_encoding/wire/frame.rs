@@ -84,7 +84,10 @@ impl<'a> BorrowedFrame<'a> {
         self.child
     }
 }
-pub(super) fn join(e: &Expected, encoded: [u8; 32], a: &[u8], b: &[u8]) -> Result<Vec<u8>, Error> {
+/// Assemble the unchanged bounded canonical pair from original proof bytes.
+/// This builder verifies neither proof and grants no authority; callers must
+/// still use `wire::verify` with their independent complete Expected.
+pub fn join(e: &Expected, encoded: [u8; 32], a: &[u8], b: &[u8]) -> Result<Vec<u8>, Error> {
     let mut out = header(e, encoded, a.len(), b.len())?;
     out.extend(a);
     out.extend(b);

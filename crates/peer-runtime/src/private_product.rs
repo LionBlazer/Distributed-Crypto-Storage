@@ -115,6 +115,24 @@ impl CheckedPrivateProduct {
         &self.response
     }
 }
+/// Checked current mathematical stream plus an UNTRUSTED retained identity.
+/// Fresh readers must actually verify its original evidence again; this is no
+/// persisted application vote, agreed head, SQL answer or lock permission.
+pub struct RecordedPrivateProduct {
+    pub(crate) checked: CheckedPrivateProduct,
+    pub(crate) catalog: bfv_product_evidence::CatalogId,
+}
+impl RecordedPrivateProduct {
+    pub fn checked(&self) -> &CheckedPrivateProduct {
+        &self.checked
+    }
+    pub fn catalog(&self) -> bfv_product_evidence::CatalogId {
+        self.catalog
+    }
+    pub fn into_parts(self) -> (CheckedPrivateProduct, bfv_product_evidence::CatalogId) {
+        (self.checked, self.catalog)
+    }
+}
 pub(crate) fn rejected(error: impl std::fmt::Display) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, error.to_string())
 }

@@ -31,7 +31,7 @@ pub use pages::{
     PageBatchRequest, PageError, PageImage,
 };
 pub use peer_transport::{Connector, Endpoint, Identity, RequestControl, RequestScope};
-pub use private_product::{CheckedPrivateProduct, PrivateProductRequest};
+pub use private_product::{CheckedPrivateProduct, PrivateProductRequest, RecordedPrivateProduct};
 pub use proof_gate::{ProofGate, ProofPermit};
 pub use read_image::{
     MAX_READ_IMAGE_PREFIX_PAGES, MAX_READ_IMAGE_RESPONSE_BYTES, ReadImage, ReadImageRequest,

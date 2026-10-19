@@ -1,6 +1,7 @@
 use super::*;
 use crate::private_product::*;
 use bfv_mul_relin_proof::{Expected, InputEvidence, Provenance, Verifier};
+use bfv_product_evidence::{CatalogId, ProductStore, RecordingVerifier};
 use bfv_query_core::EvaluatedPrivateCoefficientPredicate;
 use bfv_relinearization_key_source::PreparedKey;
 use std::io::Read;
@@ -16,6 +17,36 @@ impl RemotePeer {
         ciphertext: &[u8],
         inputs: &InputEvidence<'_>,
     ) -> io::Result<CheckedPrivateProduct> {
+        self.private_product(object, provenance, ciphertext, inputs, None)
+            .map(|(checked, _)| checked)
+    }
+    /// Execute the SAME genuine proof path and retain its public evidence in
+    /// the caller's typed participant depot. Only END+EOF and full verification
+    /// publish a catalog; cancellation/quota failure returns no checked result.
+    /// A retained catalog supplies no SQL, freshness, finality or lock grant.
+    pub fn prove_private_product_recorded(
+        &self,
+        object: [u8; 32],
+        provenance: Provenance,
+        ciphertext: &[u8],
+        inputs: &InputEvidence<'_>,
+        store: &mut ProductStore,
+    ) -> io::Result<RecordedPrivateProduct> {
+        let (checked, catalog) =
+            self.private_product(object, provenance, ciphertext, inputs, Some(store))?;
+        Ok(RecordedPrivateProduct {
+            checked,
+            catalog: catalog.ok_or_else(|| rejected("missing completed product catalog"))?,
+        })
+    }
+    fn private_product(
+        &self,
+        object: [u8; 32],
+        provenance: Provenance,
+        ciphertext: &[u8],
+        inputs: &InputEvidence<'_>,
+        recording: Option<&mut ProductStore>,
+    ) -> io::Result<(CheckedPrivateProduct, Option<CatalogId>)> {
         let started = Instant::now();
         let cancellation = self.control.as_ref().and_then(|control| control.current());
         check_budget(started, cancellation.as_ref())?;
@@ -36,7 +67,7 @@ impl RemotePeer {
         })?;
         let mut sent = 0;
         let mut received = 0;
-        let result = (|| -> io::Result<CheckedPrivateProduct> {
+        let result = (|| -> io::Result<(CheckedPrivateProduct, Option<CatalogId>)> {
             let mut stream = self
                 .connector
                 .connect_cancellable(&self.endpoint, cancellation.as_ref())?;
@@ -72,7 +103,20 @@ impl RemotePeer {
                 .to_vec();
             check_budget(started, cancellation.as_ref())?;
             let expected = Expected::new(provenance, output).map_err(rejected)?;
-            let mut verifier = Verifier::new(&expected, &key);
+            let mut verifier = match recording {
+                Some(store) => ProductVerification::Recorded(Box::new(
+                    RecordingVerifier::new(
+                        store,
+                        &expected,
+                        &key,
+                        object,
+                        ciphertext,
+                        &response.output,
+                    )
+                    .map_err(retention_error)?,
+                )),
+                None => ProductVerification::Ephemeral(Box::new(Verifier::new(&expected, &key))),
+            };
             {
                 let claims = binding.receive_observed(
                     &mut stream,
@@ -82,10 +126,10 @@ impl RemotePeer {
                     &mut observed,
                 )?;
                 check_budget(started, cancellation.as_ref())?;
-                verifier.accept_claims(&claims).map_err(rejected)?;
+                verifier.accept_claims(&claims)?;
             }
             check_budget(started, cancellation.as_ref())?;
-            verifier.verify_inputs(inputs).map_err(rejected)?;
+            verifier.verify_inputs(inputs)?;
             for ordinal in 0..bfv_mul_relin_proof::PROOF_RECORDS {
                 check_budget(started, cancellation.as_ref())?;
                 let demand = binding.send(&mut stream, NEXT, ordinal, &[])?;
@@ -99,7 +143,7 @@ impl RemotePeer {
                     &mut observed,
                 )?;
                 check_budget(started, cancellation.as_ref())?;
-                verifier.accept(&record).map_err(rejected)?;
+                verifier.accept(&record)?;
             }
             let end = binding.receive_observed(
                 &mut stream,
@@ -108,19 +152,16 @@ impl RemotePeer {
                 0,
                 &mut observed,
             )?;
-            if !end.is_empty() {
-                return Err(rejected("nonempty terminal"));
-            }
-            let mut trailing = [0];
-            if stream.read(&mut trailing)? != 0 {
-                return Err(rejected("trailing stream bytes"));
-            }
             check_budget(started, cancellation.as_ref())?;
-            let product = verifier.finish().map_err(rejected)?;
-            Ok(CheckedPrivateProduct {
-                product,
-                response: response.output,
-            })
+            let (product, catalog) =
+                verifier.finish(&end, &mut stream, started, cancellation.as_ref())?;
+            Ok((
+                CheckedPrivateProduct {
+                    product,
+                    response: response.output,
+                },
+                catalog,
+            ))
         })();
         if let Some(trace) = &self.trace {
             trace(Trace {
@@ -146,6 +187,65 @@ impl RemotePeer {
             });
         }
     }
+}
+
+// A closed choice of the SAME actual verifier. No peer-supplied verification
+// policy, cached receipt or configurable accept callback is introduced.
+enum ProductVerification<'a> {
+    Ephemeral(Box<Verifier<'a>>),
+    Recorded(Box<RecordingVerifier<'a>>),
+}
+impl ProductVerification<'_> {
+    fn accept_claims(&mut self, bytes: &[u8]) -> io::Result<()> {
+        match self {
+            Self::Ephemeral(v) => v.accept_claims(bytes).map_err(rejected),
+            Self::Recorded(v) => v.accept_claims(bytes).map_err(retention_error),
+        }
+    }
+    fn verify_inputs(&mut self, inputs: &InputEvidence<'_>) -> io::Result<()> {
+        match self {
+            Self::Ephemeral(v) => v.verify_inputs(inputs).map_err(rejected),
+            Self::Recorded(v) => v.verify_inputs(inputs).map_err(retention_error),
+        }
+    }
+    fn accept(&mut self, bytes: &[u8]) -> io::Result<()> {
+        match self {
+            Self::Ephemeral(v) => v.accept(bytes).map_err(rejected),
+            Self::Recorded(v) => v.accept(bytes).map_err(retention_error),
+        }
+    }
+    fn finish(
+        self,
+        end: &[u8],
+        stream: &mut impl Read,
+        started: Instant,
+        cancellation: Option<&peer_transport::Cancellation>,
+    ) -> io::Result<(bfv_mul_relin_proof::CheckedProduct, Option<CatalogId>)> {
+        match self {
+            Self::Ephemeral(v) => {
+                if !end.is_empty() {
+                    return Err(rejected("nonempty terminal"));
+                }
+                let mut trailing = [0];
+                if stream.read(&mut trailing)? != 0 {
+                    return Err(rejected("trailing stream bytes"));
+                }
+                check_budget(started, cancellation)?;
+                Ok(((*v).finish().map_err(rejected)?, None))
+            }
+            Self::Recorded(v) => {
+                let completed = (*v).finish(end, stream).map_err(retention_error)?;
+                check_budget(started, cancellation)?;
+                let (product, catalog) = completed.publish().map_err(retention_error)?.into_parts();
+                Ok((product, Some(catalog)))
+            }
+        }
+    }
+}
+fn retention_error(error: bfv_product_evidence::Error) -> io::Error {
+    // Preserve the concrete storage/quota/proof error for the caller, rather
+    // than collapsing a local ResourceLimit into an indistinguishable string.
+    io::Error::new(io::ErrorKind::InvalidData, error)
 }
 fn check_budget(
     started: Instant,

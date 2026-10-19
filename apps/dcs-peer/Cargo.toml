@@ -13,6 +13,7 @@ serde_json.workspace = true
 zeroize = "1"
 
 [dev-dependencies]
+bfv-product-evidence = { path = "../../crates/bfv-product-evidence" }
 registry200-finality = { path = "../../crates/registry200-finality" }
 registry200-journal = { path = "../../crates/registry200-journal" }
 work-finality = { path = "../../crates/work-finality" }

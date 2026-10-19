@@ -1,6 +1,8 @@
 //! Actual random owner keys and real stored N4 data. Expected rows below are a
 //! test oracle only; the peer receives ciphertexts and mathematical evidence.
 use super::support::{Process, identity};
+#[path = "retained_product.rs"]
+mod retained_product;
 use bfv_query_core::{Geometry, KeyScope, Owner};
 use compact_query::{PlainRow, ReadHeads, RowIds, TableId};
 use peer_runtime::{ActivityPhase, Connector, RawBundle, Request, Response};
@@ -16,6 +18,16 @@ use zeroize::Zeroizing;
 #[test]
 #[ignore = "Runs real private Source/input16 and the complete 134-node FHE proof graph on an OS peer"]
 fn stored_originals_and_hidden_where_complete_real_peer_fhe_after_private_source_drop() {
+    run(false);
+}
+
+#[test]
+#[ignore = "Real OS-peer input16/full134, durable public evidence and fresh keyless replay; allow 1800 seconds"]
+fn retained_stored_product_replays_after_private_owners_drop_and_rejects_repaired_splices() {
+    run(true);
+}
+
+fn run(retained: bool) {
     let started = Instant::now();
     let identity = identity();
     let connector = Connector::permissionless(&identity).unwrap();
@@ -117,6 +129,24 @@ fn stored_originals_and_hidden_where_complete_real_peer_fhe_after_private_source
     let prepare_ms = prepare.elapsed().as_secs_f64() * 1000.;
     let (provenance, prepared, frames) = inputs.into_parts();
     let input_bytes = frames.as_input_evidence().byte_len().unwrap();
+    // These pins are copied from the owner's LOCAL claims before I/O. No peer
+    // catalog, reconstructed label or prior result supplies their authority.
+    let pins = if retained {
+        Some(retained_product::Pins::new(
+            object,
+            setup,
+            &provenance,
+            &prepared.request,
+        ))
+    } else {
+        drop(setup);
+        None
+    };
+    let owned = retained.then(retained_product::OwnedDepot::new);
+    let quota = owned.as_ref().map(retained_product::OwnedDepot::create);
+    let mut store = quota
+        .as_ref()
+        .map(|q| bfv_product_evidence::ProductStore::open(q.depot_budget()).unwrap());
     drop(compiled);
     drop(fetched);
     drop(epoch);
@@ -126,14 +156,31 @@ fn stored_originals_and_hidden_where_complete_real_peer_fhe_after_private_source
     // Act: the independently running peer has no source key, private openings,
     // owner plaintext fixture or locally preselected answer.
     let computation = Instant::now();
-    let checked = remote
-        .prove_private_product(
-            object,
-            provenance,
-            &prepared.request,
-            &frames.as_input_evidence(),
+    let (checked, catalog) = if let Some(store) = &mut store {
+        let (checked, catalog) = remote
+            .prove_private_product_recorded(
+                object,
+                provenance,
+                &prepared.request,
+                &frames.as_input_evidence(),
+                store,
+            )
+            .unwrap()
+            .into_parts();
+        (checked, Some(catalog))
+    } else {
+        (
+            remote
+                .prove_private_product(
+                    object,
+                    provenance,
+                    &prepared.request,
+                    &frames.as_input_evidence(),
+                )
+                .unwrap(),
+            None,
         )
-        .unwrap();
+    };
     let stream_ms = computation.elapsed().as_secs_f64() * 1000.;
     let output_bytes = checked.product().output_ciphertext().len();
     let answer = owner
@@ -177,12 +224,34 @@ fn stored_originals_and_hidden_where_complete_real_peer_fhe_after_private_source
     );
     println!(
         "{}",
-        serde_json::json!({"case":"actual-stored-private-where-peer","peer_pid":process.pid(),"owner_pid":std::process::id(),
+        serde_json::json!({"case":if retained {"actual-retained-stored-private-where-peer"} else {"actual-stored-private-where-peer"},"peer_pid":process.pid(),"owner_pid":std::process::id(),
         "input_frames":15,"input_proofs":16,"logical_output_nodes":134,"output_records":118,"input_bytes":input_bytes,"output_ciphertext_bytes":output_bytes,
         "sent_application_bytes":requests.iter().map(|e|e.bytes).sum::<u64>(),"received_application_bytes":replies.iter().map(|e|e.bytes).sum::<u64>(),
         "prepare_ms":prepare_ms,"stream_and_full_verify_ms":stream_ms,"total_ms":started.elapsed().as_secs_f64()*1000.,
         "source_private_state_dropped_before_peer_work":true,"sql_grant":false,"fresh_finalized_head":false})
     );
     drop(events);
+    if let (Some(pins), Some(store), Some(q)) = (&pins, &mut store, &quota) {
+        retained_product::cancel_before_io_keeps_only_existing_public_bytes(
+            &remote,
+            pins,
+            &frames.as_input_evidence(),
+            store,
+            q,
+        );
+    }
+    let identity = checked.product().identity();
+    let response = checked.encrypted_response().to_vec();
+    let output = checked.product().output_ciphertext().to_vec();
+    drop(checked);
+    drop(frames);
+    drop(owner);
+    drop(store);
+    drop(quota);
     process.finish(&remote);
+    if let (Some(owned), Some(pins), Some(catalog)) = (owned, pins, catalog) {
+        // No BFV Owner, AEAD SourceOwner, epoch/handle, producer, input proof
+        // collection or live peer remains. Only independent PUBLIC pins survive.
+        owned.replay_and_challenge(pins, catalog, identity, &response, &output);
+    }
 }

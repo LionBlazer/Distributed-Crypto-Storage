@@ -151,3 +151,9 @@ serialize existing SDK proofs. They do not verify them. The Source encoder reaud
 the mutable low-level Source claim before AIR construction. Both keep the original
 frame bytes, profiles, caps and proof topology. Native regression evidence is in the
 [extraction validation](../../../../experiments/hiding-fri-sha256-gate/COEFFICIENT-WIRE-EXTRACTION-VALIDATION.md).
+
+`wire::join(Expected, encoded_root, original_source, original_child)` exposes the
+same bounded canonical raw-parts assembler for public evidence retention. It
+checks framing, lengths and canonical root representation only, verifies neither
+proof, and creates no alternate profile or authority. Consumers must still call
+the unchanged actual `wire::verify` with independent complete pins.

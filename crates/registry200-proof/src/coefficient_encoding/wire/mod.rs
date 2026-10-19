@@ -3,7 +3,7 @@ mod frame;
 use super::statement::{Expected, Statement};
 use crate::{admission::CanonicalSource, fixed::Backend, source};
 use bfv_hiding_stark::{Config, Error as BackendError, codec};
-pub use frame::{BorrowedFrame, HEADER, MAX_CHILD, MAX_FRAME, MAX_SOURCE};
+pub use frame::{BorrowedFrame, HEADER, MAX_CHILD, MAX_FRAME, MAX_SOURCE, join};
 use p3_uni_stark::Proof;
 
 const SEQUENCE: usize = 16_384;
