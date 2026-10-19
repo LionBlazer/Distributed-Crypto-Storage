@@ -4,14 +4,12 @@
 //! acceptance flag. This crate has no production journal/proof adapter yet.
 //! A decision here is not a `FinalizedHead`, an activated epoch, or a SQL grant.
 
-mod budget;
 mod codec;
 mod kernel;
 mod messages;
 mod rules;
 mod wal;
 
-pub use budget::{ByteBudget, Reservation};
 pub use messages::{Action, Decision, Input, Proposal, RoundStep, Timeout};
 pub use rules::{
     ApplicationContext, ApplicationError, ApplicationVerifier, ConsensusRulesId, Context, Rules,
@@ -52,6 +50,19 @@ impl From<EvidenceError> for Error {
 impl From<std::io::Error> for Error {
     fn from(value: std::io::Error) -> Self {
         Self::Io(value)
+    }
+}
+impl From<protocol_storage::Error> for Error {
+    fn from(value: protocol_storage::Error) -> Self {
+        match value {
+            protocol_storage::Error::InvalidConfig => Self::InvalidConfig,
+            protocol_storage::Error::ResourceLimit => Self::ResourceLimit,
+            protocol_storage::Error::Poisoned => Self::Poisoned,
+            protocol_storage::Error::Io(error) => Self::Io(error),
+            protocol_storage::Error::CorruptFile
+            | protocol_storage::Error::Encoding
+            | protocol_storage::Error::Identity => Self::CorruptWal,
+        }
     }
 }
 impl std::fmt::Display for Error {

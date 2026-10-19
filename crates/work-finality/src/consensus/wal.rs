@@ -1,13 +1,13 @@
 use super::{
-    Action, ApplicationVerifier, ByteBudget, Context, Decision, Error, Input, MAX_RECORD_BYTES,
-    Result, RoundStep, Timeout,
-    budget::FileCharge,
+    Action, ApplicationVerifier, Context, Decision, Error, Input, MAX_RECORD_BYTES, Result,
+    RoundStep, Timeout,
     codec::{self, Reader},
     kernel::Machine,
     messages::encode_actions,
 };
 use crate::{Hash, hash};
 use ed25519_dalek::SigningKey;
+use protocol_storage::{ByteBudget, FileCharge};
 use std::{
     fs::{File, OpenOptions, TryLockError},
     io::{Read, Seek, SeekFrom, Write},
@@ -62,9 +62,9 @@ impl<V: ApplicationVerifier> DurableVoter<V> {
             .create_new(true)
             .open(path.as_ref())?;
         lock(&file)?;
-        let canonical = path.as_ref().canonicalize()?;
         let header = header(&context, key.verifying_key().to_bytes());
-        let charge = budget.file(canonical, header.len() as u64)?;
+        let mut charge = budget.register_file(path.as_ref())?;
+        charge.grow(header.len() as u64)?;
         // On any error leave the new file intact. Never truncate or recreate.
         file.write_all(&header)?;
         file.sync_all()?;
@@ -103,7 +103,7 @@ impl<V: ApplicationVerifier> DurableVoter<V> {
         if length < HEADER_BYTES as u64 || length > context.rules().max_wal_bytes() {
             return Err(Error::CorruptWal);
         }
-        let charge = budget.file(path.as_ref().canonicalize()?, length)?;
+        let charge = budget.register_file(path.as_ref())?;
         let mut received = [0; HEADER_BYTES];
         file.read_exact(&mut received)
             .map_err(|_| Error::CorruptWal)?;

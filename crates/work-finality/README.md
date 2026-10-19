@@ -15,8 +15,9 @@ proof adapter, networking, SQL and lock grants remain absent. A
 
 ## Ownership and dependencies
 
-The crate has no direct project-module dependencies. It uses the existing pinned
-`sha2` and `ed25519-dalek` versions. Production signs with the ordinary Ed25519 API
+The crate uses [`protocol-storage`](../protocol-storage/README.md) for actual
+shared file-byte accounting. It uses the existing pinned `sha2` and
+`ed25519-dalek` versions. Production signs with the ordinary Ed25519 API
 and verifies with `verify_strict`; weak public keys are rejected. SHA256d checks
 actual key-bound proof of work. No signature, key id, TLS identity, or claimed
 hashpower replaces work.

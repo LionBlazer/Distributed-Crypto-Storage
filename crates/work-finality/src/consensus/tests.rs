@@ -1,14 +1,14 @@
 //! PUBLIC, NON-SECRET keys and real local filesystem/signature tests. These are
 //! protocol-kernel scenarios, not independently running DCS peers or SQL proofs.
 use super::{
-    Action, ApplicationContext, ApplicationError, ApplicationVerifier, ByteBudget, Context,
-    DurableVoter, Error, Input, MAX_RECORD_BYTES, MAX_SHARED_BYTES, Proposal, RoundStep, Rules,
-    wal::Fault,
+    Action, ApplicationContext, ApplicationError, ApplicationVerifier, Context, DurableVoter,
+    Error, Input, MAX_RECORD_BYTES, MAX_SHARED_BYTES, Proposal, RoundStep, Rules, wal::Fault,
 };
 use crate::{
     Election, Genesis, Hash, Limits, NetworkSeed, QuorumCertificate, SignedVote, Step, WorkTicket,
 };
 use ed25519_dalek::SigningKey;
+use protocol_storage::ByteBudget;
 use std::{
     fs,
     io::Write,
