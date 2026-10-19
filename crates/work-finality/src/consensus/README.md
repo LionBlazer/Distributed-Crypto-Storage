@@ -75,6 +75,20 @@ map are bounded by the checked roster (at most 4096); retained proposals, valid
 values and POLs are also finite. Repeated semantic votes/certificates are no-ops
 and do not append WAL records.
 
+An exact repeated **remote Proposal** is also a whole-operation no-op, but only
+after its complete Context, current round, proposer signature and attached POL
+verify and the complete Proposal equals the one already retained. It returns no
+actions, does not run `drive`, recheck the application, or grow the WAL. It grants
+no computation, freshness, finality or SQL authority. A different signature/POL,
+new or conflicting proposal still follows the original application checks; the
+owner-local Propose path is unchanged. Actual stored WAL inputs are fully replayed
+on reopen. Client/checkpoint retries and missing-premise checks in closed journal
+adapters are separate and retain their actual verification requirements. Owning
+tests use the real WorkTicket verifier to cover exact retries, changed signed
+proposals, local signing and locked WAL recovery. No latency, liveness or RAM
+improvement is established by these unit cases; complete peer-process operations
+require their separate owning gates.
+
 ### Application and local-control boundary
 
 `ApplicationVerifier::verify(&ApplicationContext, descriptor)` is captured by the

@@ -140,6 +140,16 @@ impl Machine {
                 self.receive_proposal(ctx, verifier, key, &proposal, &mut out)?;
             }
             Input::Proposal(proposal) => {
+                // An authenticated byte-identical remote retry adds no protocol
+                // evidence. Return from the WHOLE apply: even drive must not
+                // emit an action or turn this no-op into a new admission check.
+                proposal.verify(ctx)?;
+                if proposal.round() != self.round {
+                    return Err(Error::Stale);
+                }
+                if self.proposal.as_ref() == Some(proposal) {
+                    return Ok(Vec::new());
+                }
                 self.receive_proposal(ctx, verifier, key, proposal, &mut out)?
             }
             Input::Vote(vote) => {
