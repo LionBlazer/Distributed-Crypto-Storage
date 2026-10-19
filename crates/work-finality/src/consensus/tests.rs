@@ -985,3 +985,191 @@ fn bounded_codecs_reject_oversize_counts_truncation_trailing_and_signature_chang
     let timeout = super::Timeout::new(&f.context, 0, RoundStep::Propose).unwrap();
     assert!(Input::decode(&f.context, &Input::Timeout(timeout).encode().unwrap()).is_err());
 }
+
+fn multi_fixture() -> Fixture {
+    let mut f = fixture();
+    let rules = Rules::multi_slot(
+        [2; 32],
+        2048,
+        32,
+        [100, 200, 300],
+        10,
+        MAX_RECORD_BYTES as u64,
+    )
+    .unwrap();
+    assert_ne!(rules.id(), f.context.rules().id());
+    let seed = NetworkSeed::new(
+        rules.seed_domain([3; 32]),
+        [4; 32],
+        [255; 32],
+        Limits::new(16, 4).unwrap(),
+    )
+    .unwrap();
+    let election = seed.bootstrap_election();
+    let tickets = f
+        .keys
+        .iter()
+        .map(|k| WorkTicket::sign(&election, k, 0).unwrap())
+        .collect();
+    f.genesis = Genesis::from_bootstrap(seed, tickets).unwrap();
+    f.context = Context::new(rules, [3; 32], &f.genesis, [5; 32], 1, [6; 32]).unwrap();
+    f.application = TicketApplication {
+        election: election.clone(),
+        network: f.genesis.id(),
+    };
+    f.a = WorkTicket::sign(&election, &f.keys[0], 77)
+        .unwrap()
+        .encode()
+        .to_vec();
+    f.b = WorkTicket::sign(&election, &f.keys[0], 78)
+        .unwrap()
+        .encode()
+        .to_vec();
+    f
+}
+
+#[test]
+fn distinct_actual_quorum_subsets_and_rounds_have_one_semantic_successor() {
+    let f = multi_fixture();
+    let first = f.qc(0, Step::Precommit, &f.a);
+    let expected = f
+        .context
+        .vote(7, Step::Precommit, Some(f.context.value_id(&f.a).unwrap()))
+        .unwrap();
+    let other_votes: Vec<_> = (1..4)
+        .map(|i| f.vote(i, 7, Step::Precommit, Some(&f.a)))
+        .collect();
+    let other = QuorumCertificate::assemble(f.context.set(), &expected, &other_votes).unwrap();
+    assert_ne!(first.encode().unwrap(), other.encode().unwrap());
+    let a = f
+        .context
+        .verify_commit(&f.a, 0, &first.encode().unwrap())
+        .unwrap();
+    let b = f
+        .context
+        .verify_commit(&f.a, 7, &other.encode().unwrap())
+        .unwrap();
+    assert_eq!(a.semantic_id(), b.semantic_id());
+    let next = f.context.after_decision(&a).unwrap();
+    assert_eq!(next, f.context.after_decision(&b).unwrap());
+    assert_eq!(next.previous_decision(), a.semantic_id());
+    assert_eq!(next.slot(), 2);
+    assert!(
+        f.context
+            .verify_commit(&f.b, 0, &first.encode().unwrap())
+            .is_err()
+    );
+    assert!(fixture().context.after_decision(&a).is_err());
+}
+
+#[test]
+fn multi_slot_signer_advances_only_its_durable_decision_and_replays_two_slots() {
+    let f = multi_fixture();
+    let files = OwnedFiles::new();
+    let budget = ByteBudget::new(MAX_SHARED_BYTES).unwrap();
+    let mut voter = f.create(&files, "multi", 0, &budget);
+    assert!(matches!(voter.advance(), Err(Error::Stale)));
+    voter
+        .handle(Input::Certificate {
+            value: f.a.clone(),
+            certificate: f.qc(0, Step::Precommit, &f.a),
+        })
+        .unwrap();
+    let first = voter.decision().unwrap().semantic_id();
+    voter.advance().unwrap();
+    let next = voter.context().clone();
+    assert_eq!(next.slot(), 2);
+    assert_eq!(next.previous_decision(), first);
+    assert!(voter.locked().is_none());
+    assert!(voter.valid().is_none());
+    assert_eq!(voter.round(), 0);
+    assert!(voter.outbound().unwrap().is_empty());
+    let length = voter.file_bytes();
+    for step in [Step::Prevote, Step::Precommit] {
+        for value in [None, Some(f.a.as_slice())] {
+            assert!(
+                voter
+                    .handle(Input::Vote(f.vote(0, 0, step, value)))
+                    .is_err()
+            );
+        }
+    }
+    assert_eq!(voter.file_bytes(), length);
+    assert!(
+        DurableVoter::create_new(
+            files.path("wrong-start"),
+            next.clone(),
+            f.application.clone(),
+            f.key(0),
+            &budget
+        )
+        .is_err()
+    );
+    let expected = next
+        .vote(3, Step::Precommit, Some(next.value_id(&f.b).unwrap()))
+        .unwrap();
+    let votes: Vec<_> = f.keys[..3]
+        .iter()
+        .map(|key| SignedVote::sign(expected, key).unwrap())
+        .collect();
+    let qc = QuorumCertificate::assemble(next.set(), &expected, &votes).unwrap();
+    voter
+        .handle(Input::Certificate {
+            value: f.b.clone(),
+            certificate: qc,
+        })
+        .unwrap();
+    voter.advance().unwrap();
+    let final_context = voter.context().clone();
+    assert_eq!(final_context.slot(), 3);
+    drop(voter);
+    let reopened = DurableVoter::open_existing(
+        files.path("multi"),
+        f.context.clone(),
+        f.application.clone(),
+        f.key(0),
+        &budget,
+    )
+    .unwrap();
+    assert_eq!(reopened.context(), &final_context);
+    assert!(reopened.decision().is_none());
+    assert!(reopened.outbound().unwrap().is_empty());
+}
+
+#[test]
+fn multi_slot_lost_advance_ack_replays_but_partial_advance_never_repairs_or_restarts() {
+    let f = multi_fixture();
+    let files = OwnedFiles::new();
+    let budget = ByteBudget::new(MAX_SHARED_BYTES).unwrap();
+    for (name, fault) in [("lost", Fault::AfterSync), ("torn", Fault::Partial(7))] {
+        let mut voter = f.create(&files, name, 0, &budget);
+        voter
+            .handle(Input::Certificate {
+                value: f.a.clone(),
+                certificate: f.qc(0, Step::Precommit, &f.a),
+            })
+            .unwrap();
+        let next = f.context.after_decision(voter.decision().unwrap()).unwrap();
+        voter.inject(fault);
+        assert!(matches!(voter.advance(), Err(Error::Io(_))));
+        assert!(voter.is_poisoned());
+        assert!(voter.outbound().is_err());
+        assert!(voter.decision().is_none());
+        drop(voter);
+        let bytes = fs::read(files.path(name)).unwrap();
+        // A fresh process budget registers the ACTUAL uncertain physical extent.
+        let reopened = DurableVoter::open_existing(
+            files.path(name),
+            f.context.clone(),
+            f.application.clone(),
+            f.key(0),
+            &ByteBudget::new(MAX_SHARED_BYTES).unwrap(),
+        );
+        if name == "lost" {
+            assert_eq!(reopened.unwrap().context(), &next);
+        } else {
+            assert!(matches!(reopened, Err(Error::CorruptWal)));
+        }
+        assert_eq!(fs::read(files.path(name)).unwrap(), bytes);
+    }
+}

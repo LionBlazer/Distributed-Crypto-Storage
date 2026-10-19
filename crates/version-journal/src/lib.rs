@@ -6,6 +6,8 @@
 
 mod chain;
 mod durable;
+#[cfg(test)]
+mod floor_tests;
 mod wire;
 
 pub use chain::{Freshness, HeadRef, ImportOutcome, Journal, Reorganization};

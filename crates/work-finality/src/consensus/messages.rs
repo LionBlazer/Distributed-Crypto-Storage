@@ -388,6 +388,19 @@ pub struct Decision {
     pub(crate) certificate: QuorumCertificate,
 }
 impl Decision {
+    /// Stable agreed-value identity. Different genuine quorum subsets, signature
+    /// encodings or commit rounds for this same slot/value MUST NOT split the
+    /// following slot's vote domain.
+    pub fn semantic_id(&self) -> Hash {
+        hash(
+            b"dcs/work-finality/semantic-decision/v1",
+            &[
+                &self.context,
+                &(self.value.len() as u64).to_le_bytes(),
+                &self.value,
+            ],
+        )
+    }
     pub fn context_id(&self) -> Hash {
         self.context
     }

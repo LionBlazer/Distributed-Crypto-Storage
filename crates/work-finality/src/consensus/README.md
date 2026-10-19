@@ -1,4 +1,4 @@
-# Single-slot consensus and owned signer
+# Bounded consensus and owned signer
 
 | Direct dependency | Responsibility |
 | --- | --- |
@@ -13,11 +13,11 @@
 | `DurableVoter::{create_new,open_existing}` | Own key and exclusive WAL; recovery is existing-only |
 | `DurableVoter::{handle_bytes,handle}` | Verify remote messages or process owner-local proposal/timer events; sync before publishing |
 | `DurableVoter::{outbound,decision,timeout}` | Recover exact durable actions and current local timer |
-| `ApplicationVerifier` | Required trusted application-validation boundary; production journal adapter is absent |
+| `ApplicationVerifier` | Required trusted application-validation boundary; closed application adapter lives in a separate crate |
 | `ByteBudget`, `Reservation` | Share finite accounted storage with actual retained application artifacts |
 
 
-The new [`consensus`](mod.rs) module implements one bounded slot over
+The original `Rules::new` profile of [`consensus`](mod.rs) implements one bounded slot over
 the independently pinned bootstrap roster. It follows the round/lock/POL rules of
 Algorithm 1 in [arXiv:1807.04938v3, 22 November 2019](https://arxiv.org/pdf/1807.04938v3),
 with work-unit weights. It is not a deployed
@@ -86,9 +86,10 @@ retained evidence; this module does not load or authenticate such external files
 on the adapter's behalf. Its 1 MiB descriptor cap is not a whole-application-proof
 size claim.
 
-**No production closed journal adapter exists.** In particular, this module does
-not turn generic `TransitionVerifier`, a root, a TLS response, or an application
-DTO into permission to vote for a database candidate. The owning tests use an
+**Generic consensus does not provide an application-proof adapter.** The new
+closed Registry200 integration is linked in the source increment below. This
+module does not turn generic `TransitionVerifier`, a root, a TLS response, or an
+application DTO into permission to vote for a database candidate. The original owning tests use an
 explicitly separate mathematical application that checks genuine key-bound work
 tickets and strict possession signatures. They never simulate Source acceptance.
 
@@ -156,9 +157,9 @@ free quota; exhaustion safely stops this finite stage.
 
 ### Remaining protocol integration
 
-Only one slot and the bootstrap set are implemented. Monotonic slot handoff,
-reconfiguration with old/new quorum overlap, finalized journal-floor installation,
-the system lane, transport and actual proof-admitting journal adapter remain open.
+The validated original profile covers one slot and the bootstrap set. The new
+validated extension below adds an explicitly separate multi-slot mode.
+Reconfiguration with old/new quorum overlap, the system lane and transport remain open.
 `Decision` contains the exact descriptor and precommit certificate; it grants no
 `FinalizedHead`, SQL result, or database lock. The less-than-one-third bound must
 hold on the activated roster; checked puzzle work alone does not establish that
@@ -176,3 +177,33 @@ for this slice are recorded in the linked validation record.
 See also the official Tendermint
 [signing-state contract](https://docs.tendermint.com/master/spec/consensus/signing.html)
 and [WAL description](https://docs.tendermint.com/master/spec/consensus/wal.html).
+
+### Explicit multi-slot extension
+
+`Rules::multi_slot` creates a new complete RulesId/seed domain; `Rules::new`, the
+single-slot id and the old work/vote/QC profiles are unchanged. Multi-slot initial
+installation starts at slot one. `Decision::semantic_id` hashes exact ContextId
+and length-delimited descriptor bytes, excluding QC, signer subset and commit
+round. Thus distinct genuine commit certificates for one value do not fork the
+next slot. `Context::{verify_commit,after_decision}` perform actual mathematical
+QC verification/read-only lineage reconstruction and confer no application grant.
+
+Only `DurableVoter::advance()` changes the owned signer's slot. It takes no next
+context, requires its own already-durable decision, rechecks application/QC,
+checks slot increment, appends/syncs private local command tag 6 with empty action
+list, then resets round/lock/valid state in the next domain. Locks never reset on
+timeout/nil or an external context. `DCSWFW02` distinguishes this WAL mode, while
+the exact existing record framing remains. Reopen begins with the independent
+slot-one context and replays every actual decision and Advance. Old slot votes,
+including nil/future evidence, cannot cross into the next domain. An advanced
+context cannot be used to create a new signer WAL.
+
+The closed [`registry200-finality`](../../../registry200-finality/README.md)
+adapter installs a genuine application-checked durable Journal floor before
+calling Advance. Generic core Advance by itself is not that installation. The
+three new local filesystem/lineage cases passed, together with all 33 preceding
+runtime tests and five compile-fail examples. The
+[integration record](../../../../docs/registry200-finality.md) covers actual
+application proofs, floor recovery and native attribution. No network actor,
+epoch activation or SQL grant is
+added by this mode.

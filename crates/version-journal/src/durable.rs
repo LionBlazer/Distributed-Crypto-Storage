@@ -145,6 +145,12 @@ impl DurableJournal {
     pub fn disk_bytes(&self) -> u64 {
         self.length
     }
+    /// In-memory mechanical restriction, not persisted certificate authority.
+    /// The closed finality owner persists/reverifies its decision log first and
+    /// reinstalls this restriction on every reopen before exposing any head.
+    pub fn restrict_ancestry_floor(&mut self, head: crate::HeadRef) -> Result<()> {
+        self.journal.restrict_ancestry_floor(head)
+    }
     pub fn append_block<V: TransitionVerifier + ?Sized>(
         &mut self,
         header: Header,

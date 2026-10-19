@@ -99,6 +99,34 @@ from atomically installing the corresponding encrypted storage images. Applicati
 must retain and validate those images and handle reorganizations before serving a
 new head. A valid root does not prove data availability or independent replicas.
 
+## Mechanical ancestry floor
+
+`Journal::restrict_ancestry_floor` accepts an exact already-validated reference
+that descends the previous filter. This is a low-level mechanical restriction,
+**not** certificate verification or finality authority. It immediately recomputes
+both header and validated tips inside that subtree. New header/body/block imports,
+candidate creation and fork-choice reconsideration cannot adopt a branch below or
+beside it. Known historical ancestor duplicates remain readable but cannot move
+the floor or become a new competing tip. Confirmed resolution never returns below
+the floor; exact requests below it are stale. With the default Genesis floor,
+the original cumulative-work behavior is unchanged.
+
+`reverify_block` always performs actual Header/Body/owner/application checks,
+including cached blocks. It is read-only and intentionally permits historical
+rechecks; it cannot install a floor or adopt a branch. Applications must bind the
+correct historical parent themselves. The existing cached import fast path is
+unchanged, so finality adapters must call this explicit full check before voting.
+
+`DurableJournal::restrict_ancestry_floor` is an in-memory forwarding operation.
+Its old disk format does not persist a trusted certificate. The closed
+[`registry200-finality`](../registry200-finality/README.md) owner persists and
+reverifies its separate certificate history, then reinstalls the filter on every
+reopen before exposing a finalized head. Both new floor/reverification tests
+passed, along with all 18 preceding contract tests. The local tests use actual
+Empty work blocks and reject-only proof callbacks; the separate closed adapter
+also passed genuine Source/Lifecycle admission and durable reopen. The
+[native record](../../docs/registry200-finality.md) distinguishes these scopes.
+
 ## Verification
 
 From the repository root:

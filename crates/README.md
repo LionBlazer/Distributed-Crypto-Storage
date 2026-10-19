@@ -33,9 +33,10 @@ executables. The root Cargo default members select this layer only.
 | [compact-query](compact-query/README.md) | Complete private selection and proof-first FHE query/write lifecycle | compact-store; optional bfv-query-core, bfv-query-proof |
 | [registry200-proof](registry200-proof/README.md) | Shared Source/Lifecycle circuits and genuine bounded fixed-profile verification | bfv-hiding-stark, compact-store, version-journal |
 | [registry200-journal](registry200-journal/README.md) | Exact owner-authorized private-control application with actual parent CAS | registry200-proof, compact-store, version-journal |
+| [registry200-finality](registry200-finality/README.md) | Closed durable multi-slot checkpoint owner for actual Registry200 proofs and mechanical Journal ancestry floors | registry200-journal, version-journal, work-finality, protocol-storage |
 | [version-journal](version-journal/README.md) | Bounded cumulative-work forks, authorization, freshness and durable metadata | None |
 | [protocol-storage](protocol-storage/README.md) | Shared retained-file accounting and bounded immutable public evidence lifecycle | None |
-| [work-finality](work-finality/README.md) | Checked key-bound work elections, weighted quorum evidence and an exclusive durable single-slot consensus signer; no live SQL or finalized-head authority | protocol-storage |
+| [work-finality](work-finality/README.md) | Checked key-bound work elections, weighted quorum evidence and an exclusive durable single/multi-slot consensus signer; no live SQL authority | protocol-storage |
 | [transaction-state](transaction-state/README.md) | Bounded public transaction/row-lock control state, signed intents and metadata-only witnesses | version-journal |
 | [replica-store](replica-store/README.md) | Ciphertext custody, placement and local atomic repair | compact-store |
 | [peer-protocol](peer-protocol/README.md) | Bounded connection/request/cancellation state machine | None |

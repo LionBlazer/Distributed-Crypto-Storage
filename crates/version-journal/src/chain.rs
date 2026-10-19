@@ -61,6 +61,7 @@ pub struct Journal {
     accounted_bytes: u64,
     header_tip: Hash,
     validated_tip: Hash,
+    ancestry_floor: Hash,
 }
 impl Journal {
     pub fn new(genesis: Genesis) -> Result<Self> {
@@ -89,6 +90,7 @@ impl Journal {
             accounted_bytes,
             header_tip: id,
             validated_tip: id,
+            ancestry_floor: id,
         })
     }
     pub fn genesis(&self) -> &Genesis {
@@ -139,6 +141,23 @@ impl Journal {
             .and_then(|n| n.state.as_deref())
             .ok_or(Error::BodyUnavailable)
     }
+    /// Mechanical ancestry restriction only, NOT a certificate/finality grant.
+    /// A production finality owner must independently verify and persist its
+    /// actual application decision before advancing this monotonic filter.
+    pub fn restrict_ancestry_floor(&mut self, head: HeadRef) -> Result<()> {
+        self.check_reference(head)?;
+        if !self.is_ancestor(self.ancestry_floor, head.block) {
+            return Err(Error::Reorganized);
+        }
+        self.ancestry_floor = head.block;
+        self.header_tip = self.scan_best(false);
+        self.validated_tip = self.scan_best(true);
+        Ok(())
+    }
+    /// Configured mechanical floor only; this carries no certificate authority.
+    pub fn ancestry_floor(&self) -> HeadRef {
+        self.head(self.ancestry_floor)
+    }
     /// Observed strongest non-invalid header, even if its body is unavailable.
     /// This does not return an accepted database head.
     pub fn best_header(&self) -> Hash {
@@ -186,6 +205,9 @@ impl Journal {
         if parent_node.invalid {
             return Err(Error::InvalidAncestor);
         }
+        if !self.is_ancestor(self.ancestry_floor, parent) {
+            return Err(Error::Reorganized);
+        }
         let wire = body.encode(self.profile())?;
         let next = self.apply_changes(parent, previous, body)?;
         Ok(Header {
@@ -217,6 +239,7 @@ impl Journal {
     }
     pub fn import_header(&mut self, header: Header, now: u64) -> Result<Hash> {
         let id = self.check_header(&header, now)?;
+        self.require_floor(&header)?;
         if let Some(existing) = self.nodes.get(&id) {
             if existing.invalid {
                 return Err(Error::InvalidAncestor);
@@ -252,6 +275,9 @@ impl Journal {
         let node = self.nodes.get(&id).ok_or(Error::UnknownHead)?;
         if node.invalid {
             return Err(Error::InvalidAncestor);
+        }
+        if let Some(header) = &node.header {
+            self.require_floor(header)?;
         }
         if node.state.is_some() {
             if node.body.as_deref() != Some(body_wire) {
@@ -310,12 +336,19 @@ impl Journal {
         let confirmed_height = self
             .height(best)
             .checked_sub(depth)
-            .ok_or(Error::Unconfirmed)?;
+            .filter(|h| *h >= self.height(self.ancestry_floor))
+            .unwrap_or(self.height(self.ancestry_floor));
+        if self.ancestry_floor == self.id && self.height(best) < depth {
+            return Err(Error::Unconfirmed);
+        }
         let confirmed = self.ancestor_at(best, confirmed_height)?;
         match policy {
             Freshness::LatestConfirmed => Ok(self.head(confirmed)),
             Freshness::Exact(requested) => {
                 self.check_reference(requested)?;
+                if requested.height < self.height(self.ancestry_floor) {
+                    return Err(Error::StaleHead);
+                }
                 if !self.is_ancestor(requested.block, best) {
                     return Err(Error::Reorganized);
                 }
@@ -356,6 +389,20 @@ impl Journal {
         self.ancestor_at(descendant, height)
             .is_ok_and(|id| id == ancestor)
     }
+    /// Actual complete historical/candidate revalidation, deliberately bypassing
+    /// no signature or proof check even when this block is already cached. This
+    /// read-only operation does not adopt a branch or certify a finalized head.
+    pub fn reverify_block<V: TransitionVerifier + ?Sized>(
+        &self,
+        header: &Header,
+        body: &[u8],
+        now: u64,
+        verifier: &V,
+    ) -> Result<()> {
+        self.check_header(header, now)?;
+        self.prepare_state(header, body, verifier)?;
+        Ok(())
+    }
 
     pub(crate) fn prepare_block<V: TransitionVerifier + ?Sized>(
         &self,
@@ -365,6 +412,7 @@ impl Journal {
         verifier: &V,
     ) -> Result<PreparedBlock> {
         let id = self.check_header(&header, now)?;
+        self.require_floor(&header)?;
         if let Some(node) = self.nodes.get(&id) {
             if node.invalid {
                 return Err(Error::InvalidAncestor);
@@ -545,6 +593,9 @@ impl Journal {
         }
     }
     fn reconsider(&mut self, candidate: Hash) {
+        if !self.is_ancestor(self.ancestry_floor, candidate) {
+            return;
+        }
         let node = self.nodes.get(&candidate).expect("inserted candidate");
         if node.invalid {
             return;
@@ -566,13 +617,29 @@ impl Journal {
     fn scan_best(&self, require_state: bool) -> Hash {
         self.nodes
             .iter()
-            .filter(|(_, n)| !n.invalid && (!require_state || n.state.is_some()))
+            .filter(|(id, n)| {
+                !n.invalid
+                    && (!require_state || n.state.is_some())
+                    && self.is_ancestor(self.ancestry_floor, **id)
+            })
             .max_by(|(a_id, a), (b_id, b)| {
                 a.cumulative_work
                     .cmp(&b.cumulative_work)
                     .then_with(|| b_id.cmp(a_id))
             })
-            .map_or(self.id, |(id, _)| *id)
+            .map_or(self.ancestry_floor, |(id, _)| *id)
+    }
+    fn require_floor(&self, header: &Header) -> Result<()> {
+        let id = header.id();
+        // Already known historical ancestors may be replayed as duplicates;
+        // they never become a new competing tip or a finalized authority.
+        if self.nodes.contains_key(&id) && self.is_ancestor(id, self.ancestry_floor) {
+            return Ok(());
+        }
+        if !self.is_ancestor(self.ancestry_floor, header.parent) {
+            return Err(Error::Reorganized);
+        }
+        Ok(())
     }
     fn height(&self, id: Hash) -> u64 {
         self.nodes

@@ -8,9 +8,10 @@ on 2026-10-19; the executed scope is recorded below.
 This is a reusable mathematical prerequisite for the selected finality contract:
 less than one third of confirmed computational weight may be Byzantine, and locks
 must wait when the required quorum is unavailable. The validated election/QC layer
-is supplemented by a validated single-slot consensus/signer
-module described below. Reconfiguration, fresh journal-head agreement, the production candidate
-proof adapter, networking, SQL and lock grants remain absent. A
+is supplemented by a validated single/multi-slot consensus signer and a closed
+[Registry200 candidate adapter](../registry200-finality/README.md).
+Reconfiguration, globally fresh head agreement, networking, SQL and lock grants
+remain separate work. A
 `QuorumCertificate` is never a `FinalizedHead` or application admission token.
 
 ## Ownership and dependencies
@@ -160,6 +161,14 @@ precedes all published actions. Its complete-instance vote domain includes the
 previous-decision anchor, including nil and future votes. All 33 runtime tests
 and five compile-fail examples passed; the module record gives attribution.
 
-Only the bootstrap roster and one slot are supported. A network actor, monotonic
-slot/roster handoff, system lane, finalized journal floor and closed production
-proof adapter remain required before live SQL or row-lock admission.
+The preceding executed record covers the original single-slot profile. The
+validated extension adds explicitly separate `Rules::multi_slot`, no-argument durable
+signer Advance and semantic Decision lineage; the old rules id and mathematical
+work/vote/QC formats remain unchanged. The closed
+[`registry200-finality`](../registry200-finality/README.md) adapter supplies actual
+Source/Lifecycle admission and a durable Journal floor. All 36 runtime tests and
+five compile-fail examples pass; the [integration record](../../docs/registry200-finality.md)
+also covers actual application proofs and durable recovery. Only the bootstrap
+roster is supported; a network actor,
+safe roster handoff, system lane, freshness barrier and joint hidden SQL proof
+application remain required before live SQL or row-lock admission.

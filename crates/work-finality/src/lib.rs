@@ -1,8 +1,8 @@
 //! Checked fixed-target work elections and weighted quorum signature evidence.
 //!
-//! The optional integration boundary in [`consensus`] owns a bounded single-slot
-//! round/lock/POL machine and durable signer. No production application-proof
-//! adapter, finalized-head installation, SQL or lock grant is supplied here.
+//! The integration boundary in [`consensus`] owns bounded explicitly selected
+//! single/multi-slot round/lock/POL state and a durable signer. The closed journal
+//! adapter is a separate crate; this mathematical core supplies no SQL/lock grant.
 //!
 //! Weights cannot be nominated through a public record constructor:
 //! ```compile_fail

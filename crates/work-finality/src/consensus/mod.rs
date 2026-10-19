@@ -1,7 +1,7 @@
-//! Bounded, single-slot weighted Tendermint and an exclusive durable signer.
+//! Bounded weighted Tendermint and an exclusive durable signer.
 //!
 //! The application verifier is a trusted integration boundary, not a remote
-//! acceptance flag. This crate has no production journal/proof adapter yet.
+//! acceptance flag. The closed journal/proof adapter is a separate crate.
 //! A decision here is not a `FinalizedHead`, an activated epoch, or a SQL grant.
 
 mod codec;

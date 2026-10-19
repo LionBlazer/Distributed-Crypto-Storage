@@ -4163,6 +4163,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "registry200-finality"
+version = "0.1.0"
+dependencies = [
+ "compact-store",
+ "ed25519-dalek",
+ "p3-field",
+ "protocol-storage",
+ "registry200-journal",
+ "registry200-proof",
+ "sha2",
+ "version-journal",
+ "work-finality",
+ "zeroize",
+]
+
+[[package]]
 name = "registry200-journal"
 version = "0.1.0"
 dependencies = [

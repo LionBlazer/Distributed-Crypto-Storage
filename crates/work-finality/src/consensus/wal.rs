@@ -17,7 +17,7 @@ use std::{
 const HEADER_BYTES: usize = 8 + 32 + 32 + 32 + 8 + 32;
 const RECORD_OVERHEAD: usize = 4 + 8 + 32 + 4 + 4 + 32 + 4 + 8;
 
-/// Exclusive signer and single-slot protocol owner. The private key is moved
+/// Exclusive signer and explicitly selected single/multi-slot protocol owner. The private key is moved
 /// here and never exposed, cloned, debugged or serialized. No outbound signature,
 /// lock/POL change or decision is published before its complete record syncs.
 ///
@@ -56,6 +56,7 @@ impl<V: ApplicationVerifier> DurableVoter<V> {
         budget: &ByteBudget,
     ) -> Result<Self> {
         require_key(&context, &key)?;
+        require_initial_context(&context)?;
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -94,6 +95,7 @@ impl<V: ApplicationVerifier> DurableVoter<V> {
         budget: &ByteBudget,
     ) -> Result<Self> {
         require_key(&context, &key)?;
+        require_initial_context(&context)?;
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -200,17 +202,7 @@ impl<V: ApplicationVerifier> DurableVoter<V> {
     /// bytes must use handle_bytes, which rejects both local-control tags.
     pub fn handle(&mut self, input: Input) -> Result<Vec<Action>> {
         self.live()?;
-        match self.file.metadata() {
-            Ok(metadata) if metadata.len() == self.length => {}
-            Ok(_) => {
-                self.poisoned = true;
-                return Err(Error::CorruptWal);
-            }
-            Err(error) => {
-                self.poisoned = true;
-                return Err(Error::Io(error));
-            }
-        }
+        self.check_position()?;
         let encoded = input.encode()?;
         // All mutations and signatures are private until durable commit. Failure
         // leaves the old machine intact; no partially prepared action escapes.
@@ -245,6 +237,52 @@ impl<V: ApplicationVerifier> DurableVoter<V> {
         self.machine = prepared;
         Ok(actions)
     }
+    /// Persist the next slot using ONLY this signer's durable decision. The key
+    /// never leaves this owner and callers cannot nominate a successor context.
+    /// Application/floor integrations must install their actual durable floor
+    /// before calling this mathematical protocol operation.
+    pub fn advance(&mut self) -> Result<()> {
+        self.live()?;
+        self.check_position()?;
+        let decision = self.machine.decision().ok_or(Error::Stale)?;
+        self.context
+            .verify_application(&self.verifier, decision.value())?;
+        let next = self.context.after_decision(decision)?;
+        let sequence = self.sequence.checked_add(1).ok_or(Error::ResourceLimit)?;
+        let record = encode_record(sequence, self.previous, &[6], &[0])?;
+        let next_hash = record_hash(&record)?;
+        let next_length = self
+            .length
+            .checked_add(record.len() as u64)
+            .ok_or(Error::ResourceLimit)?;
+        if next_length > self.context.rules().max_wal_bytes() {
+            return Err(Error::ResourceLimit);
+        }
+        self.charge.grow(next_length)?;
+        if let Err(error) = self.write_record(&record) {
+            self.poisoned = true;
+            return Err(Error::Io(error));
+        }
+        self.length = next_length;
+        self.sequence = sequence;
+        self.previous = next_hash;
+        self.context = next;
+        self.machine = Machine::new();
+        Ok(())
+    }
+    fn check_position(&mut self) -> Result<()> {
+        match self.file.metadata() {
+            Ok(metadata) if metadata.len() == self.length => Ok(()),
+            Ok(_) => {
+                self.poisoned = true;
+                Err(Error::CorruptWal)
+            }
+            Err(error) => {
+                self.poisoned = true;
+                Err(Error::Io(error))
+            }
+        }
+    }
     fn live(&self) -> Result<()> {
         if self.poisoned {
             Err(Error::Poisoned)
@@ -269,6 +307,23 @@ impl<V: ApplicationVerifier> DurableVoter<V> {
         r.end()?;
         if checksum != record_hash(record)? {
             return Err(Error::CorruptWal);
+        }
+        if input == [6] {
+            if output != [0] {
+                return Err(Error::CorruptWal);
+            }
+            let decision = self.machine.decision().ok_or(Error::CorruptWal)?;
+            self.context
+                .verify_application(&self.verifier, decision.value())
+                .map_err(|_| Error::CorruptWal)?;
+            self.context = self
+                .context
+                .after_decision(decision)
+                .map_err(|_| Error::CorruptWal)?;
+            self.machine = Machine::new();
+            self.sequence += 1;
+            self.previous = checksum;
+            return Ok(());
         }
         let command = Input::decode_record(&self.context, input).map_err(|_| Error::CorruptWal)?;
         let mut next = self.machine.clone();
@@ -328,7 +383,11 @@ pub(crate) enum Fault {
 
 fn header(context: &Context, public_key: Hash) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(HEADER_BYTES);
-    bytes.extend_from_slice(b"DCSWFW01");
+    bytes.extend_from_slice(if context.rules().is_multi_slot() {
+        b"DCSWFW02"
+    } else {
+        b"DCSWFW01"
+    });
     bytes.extend_from_slice(context.rules().id().as_bytes());
     bytes.extend_from_slice(&context.id());
     bytes.extend_from_slice(&public_key);
@@ -367,6 +426,12 @@ fn require_key(context: &Context, key: &SigningKey) -> Result<()> {
         .weight(key.verifying_key().to_bytes())
         .is_none()
     {
+        return Err(Error::WrongContext);
+    }
+    Ok(())
+}
+fn require_initial_context(context: &Context) -> Result<()> {
+    if context.rules().is_multi_slot() && context.slot() != 1 {
         return Err(Error::WrongContext);
     }
     Ok(())

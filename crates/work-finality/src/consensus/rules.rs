@@ -24,6 +24,7 @@ pub struct Rules {
     timeouts_ms: [u64; 3],
     timeout_delta_ms: u64,
     wal_bytes: u64,
+    multiple_slots: bool,
 }
 impl Rules {
     pub fn new(
@@ -58,7 +59,32 @@ impl Rules {
             timeouts_ms,
             timeout_delta_ms,
             wal_bytes,
+            multiple_slots: false,
         })
+    }
+    /// Explicit fresh protocol domain. Existing single-slot Rules::new/id and
+    /// ticket/vote/QC encodings remain unchanged. Work must use this new id.
+    pub fn multi_slot(
+        application: Hash,
+        value_bytes: u32,
+        max_round: u64,
+        timeouts_ms: [u64; 3],
+        timeout_delta_ms: u64,
+        wal_bytes: u64,
+    ) -> Result<Self> {
+        let mut rules = Self::new(
+            application,
+            value_bytes,
+            max_round,
+            timeouts_ms,
+            timeout_delta_ms,
+            wal_bytes,
+        )?;
+        rules.multiple_slots = true;
+        Ok(rules)
+    }
+    pub fn is_multi_slot(&self) -> bool {
+        self.multiple_slots
     }
     pub fn id(&self) -> ConsensusRulesId {
         let mut fields = Vec::new();
@@ -70,7 +96,7 @@ impl Rules {
         }
         fields.extend_from_slice(&self.timeout_delta_ms.to_le_bytes());
         fields.extend_from_slice(&self.wal_bytes.to_le_bytes());
-        ConsensusRulesId(hash(b"dcs/work-finality/consensus-rules/v1", &[
+        let single = hash(b"dcs/work-finality/consensus-rules/v1", &[
             &profile_digest(), &fields,
             b"arxiv1807.04938v3/algorithm1/bounded-single-slot/certified-descriptor-commit",
             b"single-slot/initial-set-only/weighted-proposer-(slot-1+round)%total",
@@ -83,7 +109,17 @@ impl Rules {
             &(MAX_INPUT_BYTES as u64).to_le_bytes(), &(MAX_RECORD_BYTES as u64).to_le_bytes(),
             &MAX_SHARED_BYTES.to_le_bytes(), &(super::MAX_ACTIONS as u64).to_le_bytes(),
             &(super::MAX_TRACKED_FILES as u64).to_le_bytes(),
-        ]))
+        ]);
+        if self.multiple_slots {
+            ConsensusRulesId(hash(b"dcs/work-finality/consensus-multi-slot-rules/v1", &[
+                &single,
+                b"DCSWFW02/local-record-tag6/empty-output0/advance-only-durable-commit",
+                b"initial-slot1/fixed-bootstrap-set/checked-slot+1/app-and-QC-reverify-before-advance",
+                b"previous=H(dcs/work-finality/semantic-decision/v1,ContextId,value-length,value)/exclude-QC-signerset-round",
+            ]))
+        } else {
+            ConsensusRulesId(single)
+        }
     }
     /// Supply this as NetworkSeed::domain before mining any bootstrap tickets.
     pub fn seed_domain(&self, public_network_tag: Hash) -> Hash {
@@ -94,6 +130,9 @@ impl Rules {
     }
     pub fn max_value_bytes(&self) -> usize {
         self.value_bytes as usize
+    }
+    pub fn application_id(&self) -> Hash {
+        self.application
     }
     pub fn max_wal_bytes(&self) -> u64 {
         self.wal_bytes
@@ -136,6 +175,7 @@ impl Context {
         previous_decision: Hash,
     ) -> Result<Self> {
         if slot == 0
+            || (rules.is_multi_slot() && slot != 1)
             || genesis.seed().domain() != rules.seed_domain(public_network_tag)
             || genesis.initial_set().epoch() != 0
         {
@@ -167,6 +207,41 @@ impl Context {
     }
     pub fn previous_decision(&self) -> Hash {
         self.previous
+    }
+    /// Pure mathematical commit checking, not application validation or a journal
+    /// floor grant. The production adapter must separately reverify the candidate.
+    pub fn verify_commit(&self, value: &[u8], round: u64, bytes: &[u8]) -> Result<super::Decision> {
+        let expected = self.vote(round, crate::Step::Precommit, Some(self.value_id(value)?))?;
+        let certificate = crate::QuorumCertificate::decode_and_verify(&self.set, &expected, bytes)?;
+        Ok(super::Decision {
+            context: self.id(),
+            value: value.to_vec(),
+            certificate,
+        })
+    }
+    /// Read-only deterministic lineage reconstruction. This cannot advance an
+    /// owned signer; only DurableVoter::advance can persist that transition.
+    pub fn after_decision(&self, decision: &super::Decision) -> Result<Self> {
+        if !self.rules.is_multi_slot() || decision.context_id() != self.id() {
+            return Err(Error::WrongContext);
+        }
+        decision.certificate().verify(
+            &self.set,
+            &self.vote(
+                decision.certificate().context().round(),
+                crate::Step::Precommit,
+                Some(self.value_id(decision.value())?),
+            )?,
+        )?;
+        let slot = self.slot.checked_add(1).ok_or(Error::ResourceLimit)?;
+        Ok(Self {
+            rules: self.rules.clone(),
+            network: self.network,
+            journal: self.journal,
+            set: self.set.clone(),
+            slot,
+            previous: decision.semantic_id(),
+        })
     }
     pub fn id(&self) -> Hash {
         hash(

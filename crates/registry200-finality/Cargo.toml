@@ -1,0 +1,20 @@
+[package]
+name = "registry200-finality"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[dependencies]
+work-finality = { path = "../work-finality" }
+version-journal = { path = "../version-journal" }
+registry200-journal = { path = "../registry200-journal" }
+protocol-storage = { path = "../protocol-storage" }
+sha2 = "=0.10.9"
+ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std", "fast", "zeroize"] }
+
+[dev-dependencies]
+registry200-proof = { path = "../registry200-proof" }
+compact-store = { path = "../compact-store" }
+p3-field = "=0.8.0"
+zeroize = "=1.9.1"
