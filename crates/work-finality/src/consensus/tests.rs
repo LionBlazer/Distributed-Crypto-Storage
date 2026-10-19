@@ -8,7 +8,7 @@ use crate::{
     Election, Genesis, Hash, Limits, NetworkSeed, QuorumCertificate, SignedVote, Step, WorkTicket,
 };
 use ed25519_dalek::SigningKey;
-use protocol_storage::ByteBudget;
+use protocol_storage::{ByteBudget, ControlFile, ParticipantQuota};
 use std::{
     fs,
     io::Write,
@@ -1172,4 +1172,186 @@ fn multi_slot_lost_advance_ack_replays_but_partial_advance_never_repairs_or_rest
         }
         assert_eq!(fs::read(files.path(name)).unwrap(), bytes);
     }
+}
+
+/// Owns only a newly created PUBLIC test namespace, including fixed child dirs.
+struct ParticipantFiles {
+    files: OwnedFiles,
+}
+impl ParticipantFiles {
+    fn new() -> Self {
+        Self {
+            files: OwnedFiles::new(),
+        }
+    }
+    fn root(&self) -> PathBuf {
+        self.files.path("participant")
+    }
+}
+impl Drop for ParticipantFiles {
+    fn drop(&mut self) {
+        let root = self.root();
+        for directory in [
+            root.join("control"),
+            root.join("depot"),
+            root.join("custody"),
+            root,
+        ] {
+            if !fs::symlink_metadata(&directory).is_ok_and(|metadata| metadata.file_type().is_dir())
+                || directory.canonicalize().ok().as_ref() != Some(&directory)
+            {
+                continue;
+            }
+            if let Ok(entries) = fs::read_dir(&directory) {
+                for entry in entries
+                    .take(protocol_storage::MAX_TRACKED_FILES + 2)
+                    .flatten()
+                {
+                    if entry.file_type().is_ok_and(|kind| kind.is_file()) {
+                        let _ = fs::remove_file(entry.path());
+                    }
+                }
+            }
+            let _ = fs::remove_dir(directory); // non-recursive, never follows links
+        }
+    }
+}
+
+#[test]
+fn participant_wal_precharges_its_header_before_creating_any_file() {
+    let f = multi_fixture();
+    let files = ParticipantFiles::new();
+    // The actual namespace header needs 136 bytes; this leaves one byte less
+    // than the actual fixed WAL header (144), without relaxing either limit.
+    let quota = ParticipantQuota::create_new(files.root(), [71; 32], 136 + 143).unwrap();
+    let path = quota.control_file([72; 32], ControlFile::Wal);
+    let result = DurableVoter::create_new(
+        &path,
+        f.context.clone(),
+        f.application.clone(),
+        f.key(0),
+        &quota.control_budget(),
+    );
+    assert!(matches!(result, Err(Error::ResourceLimit)));
+    assert!(!path.exists());
+    assert_eq!(quota.usage().unwrap().total_bytes(), 136);
+    assert_eq!(quota.usage().unwrap().tracked_files(), 2);
+    assert!(quota.depot_budget().reserve(1).is_ok());
+}
+
+#[test]
+fn participant_wal_write_and_advance_failures_stop_all_classes_until_strict_reopen() {
+    let f = multi_fixture();
+    for advancing in [false, true] {
+        for fault in [Fault::Partial(7), Fault::BeforeSync, Fault::AfterSync] {
+            let files = ParticipantFiles::new();
+            let quota = ParticipantQuota::create_new(files.root(), [71; 32], 1_000_000).unwrap();
+            let control = quota.control_budget();
+            let depot = quota.depot_budget();
+            let custody = quota.custody_budget();
+            let path = quota.control_file([72; 32], ControlFile::Wal);
+            let mut voter = DurableVoter::create_new(
+                &path,
+                f.context.clone(),
+                f.application.clone(),
+                f.key(0),
+                &control,
+            )
+            .unwrap();
+            if advancing {
+                voter
+                    .handle(Input::Certificate {
+                        value: f.a.clone(),
+                        certificate: f.qc(0, Step::Precommit, &f.a),
+                    })
+                    .unwrap();
+            }
+            let before = voter.file_bytes();
+            voter.inject(fault);
+            let result = if advancing {
+                voter.advance()
+            } else {
+                voter
+                    .handle(Input::Certificate {
+                        value: f.a.clone(),
+                        certificate: f.qc(0, Step::Precommit, &f.a),
+                    })
+                    .map(|_| ())
+            };
+            assert!(matches!(result, Err(Error::Io(_))));
+            assert!(voter.is_poisoned());
+            assert!(voter.outbound().is_err());
+            assert!(voter.decision().is_none());
+            for result in [control.reserve(1), depot.reserve(1), custody.reserve(1)] {
+                assert!(matches!(result, Err(protocol_storage::Error::Poisoned)));
+            }
+            let charged = quota.usage().unwrap().total_bytes();
+            drop(voter);
+            // Windows prevents even a read through another descriptor while
+            // the WAL lock is held; inspect the physical bytes after Drop.
+            let bytes = fs::read(&path).unwrap();
+            assert!(bytes.len() as u64 > before);
+            assert!(charged >= 136 + bytes.len() as u64);
+            drop(quota);
+            // Even after the parent handle disappears, every descendant budget
+            // retains the exclusive namespace lock and conservative accounting.
+            assert!(ParticipantQuota::open_existing(files.root(), [71; 32], 1_000_000).is_err());
+            drop(control);
+            drop(depot);
+            drop(custody);
+            let reopened =
+                ParticipantQuota::open_existing(files.root(), [71; 32], 1_000_000).unwrap();
+            assert_eq!(
+                reopened.usage().unwrap().total_bytes(),
+                136 + bytes.len() as u64
+            );
+            let voter = DurableVoter::open_existing(
+                &path,
+                f.context.clone(),
+                f.application.clone(),
+                f.key(0),
+                &reopened.control_budget(),
+            );
+            if matches!(fault, Fault::Partial(_)) {
+                assert!(matches!(voter, Err(Error::CorruptWal)));
+            } else {
+                let voter = voter.unwrap();
+                assert_eq!(voter.context().slot(), if advancing { 2 } else { 1 });
+                assert_eq!(voter.decision().is_some(), !advancing);
+            }
+            assert_eq!(fs::read(&path).unwrap(), bytes);
+        }
+    }
+}
+
+#[test]
+fn participant_wal_extent_changes_poison_the_shared_namespace_before_any_action() {
+    let f = multi_fixture();
+    let files = ParticipantFiles::new();
+    let quota = ParticipantQuota::create_new(files.root(), [71; 32], 1_000_000).unwrap();
+    let path = quota.control_file([72; 32], ControlFile::Wal);
+    let mut voter = DurableVoter::create_new(
+        &path,
+        f.context.clone(),
+        f.application.clone(),
+        f.key(0),
+        &quota.control_budget(),
+    )
+    .unwrap();
+    // A locked Windows file rejects another descriptor's write. The test-only
+    // hook changes the actual owned file, rather than mocking metadata/errors.
+    voter.append_unaccounted_for_test().unwrap();
+    assert!(matches!(
+        voter.handle(Input::Propose(f.a.clone())),
+        Err(Error::CorruptWal)
+    ));
+    assert!(voter.outbound().is_err());
+    assert!(matches!(
+        quota.depot_budget().reserve(1),
+        Err(protocol_storage::Error::Poisoned)
+    ));
+    assert!(matches!(
+        quota.custody_budget().reserve(1),
+        Err(protocol_storage::Error::Poisoned)
+    ));
 }

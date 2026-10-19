@@ -3,9 +3,14 @@
 
 mod budget;
 mod evidence;
+mod participant;
 
-pub use budget::{ByteBudget, FileCharge, Reservation};
+pub use budget::{ByteBudget, CustodyBudget, DepotBudget, FileCharge, FilePermit, Reservation};
 pub use evidence::{BlobId, BlobReader, EvidenceStore, StagedBlob, StoreLimits};
+pub use participant::{
+    ControlFile, CustodyFile, MAX_PARTICIPANT_BYTES, ParticipantQuota, ParticipantUsage,
+    participant_profile_digest,
+};
 
 pub const MAX_SHARED_BYTES: u64 = 256 * 1024 * 1024;
 pub const MAX_TRACKED_FILES: usize = 4096;
@@ -34,5 +39,7 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 pub type Result<T> = std::result::Result<T, Error>;
 
+#[cfg(test)]
+mod participant_tests;
 #[cfg(test)]
 mod tests;

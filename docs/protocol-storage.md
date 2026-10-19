@@ -9,7 +9,7 @@ the Journal, fixtures or cryptographic proof verification.
 
 ## Observable contracts
 
-The existing 256 MiB aggregate budget remains a hard ceiling. Actual canonical
+The legacy 256 MiB aggregate budget remains a hard ceiling. Actual canonical
 regular-file charges survive handle Drop. Existing files must be registered
 after the owning file lock; absolute growth is charged before writing. Explicit
 reservation transfer preserves its charge continuously, and failed transfer
@@ -104,9 +104,11 @@ or private material is committed.
 
 This module has not been connected to a live SQL answer, a finalized lock or a
 durable full FHE evidence graph. The [actual private-peer proof graph](private-where-peer.md)
-does not fit this legacy 256 MiB aggregate budget. A new application/resource
-profile with a separately explicit participant-wide quota is required; silently
-excluding its proof files or accepting a cached verification result is forbidden.
+does not fit this legacy 256 MiB aggregate budget. The separately explicit
+[participant quota profile](participant-quota.md) now provides one global ledger
+and typed CONTROL/depot/custody budgets. A new application binding, complete proof
+graph manifest and runtime integration remain necessary; silently excluding proof
+files or accepting a cached verification result is forbidden.
 The [detached linkage Body-cap blocker](private-predicate-acquire.md), composed
 security obligations, complete evidence availability, fresh quorum head and
 network partition/restart gates remain unresolved.

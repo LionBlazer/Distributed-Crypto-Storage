@@ -1,5 +1,7 @@
-use crate::budget::regular_file;
-use crate::{ByteBudget, Error, FileCharge, MAX_BLOB_BYTES, MAX_TRACKED_FILES, Result};
+use crate::budget::{Budget, Class, regular_file};
+use crate::{
+    ByteBudget, DepotBudget, Error, FileCharge, MAX_BLOB_BYTES, MAX_TRACKED_FILES, Result,
+};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions, TryLockError},
@@ -72,7 +74,7 @@ impl StoreLimits {
 /// charges in the SAME budget before resuming its protocol.
 pub struct EvidenceStore {
     directory: PathBuf,
-    budget: ByteBudget,
+    budget: Budget,
     limits: StoreLimits,
     _lock: File,
     _lock_charge: FileCharge,
@@ -86,23 +88,41 @@ impl EvidenceStore {
         budget: ByteBudget,
         limits: StoreLimits,
     ) -> Result<Self> {
-        let metadata = fs::symlink_metadata(directory.as_ref())?;
+        if budget.inner.owner.is_some() {
+            return Err(Error::InvalidConfig);
+        }
+        Self::open_with_budget(directory.as_ref(), budget.inner, limits)
+    }
+    /// Open the NEW participant's fixed depot, after complete participant-wide
+    /// inventory. It shares the same bounded CAS implementation and blob caps.
+    pub fn open_depot(budget: DepotBudget, limits: StoreLimits) -> Result<Self> {
+        let owner = budget.inner.owner.as_ref().ok_or(Error::InvalidConfig)?;
+        let directory = owner.directory(Class::Depot);
+        Self::open_with_budget(&directory, budget.inner, limits)
+    }
+    fn open_with_budget(directory: &Path, budget: Budget, limits: StoreLimits) -> Result<Self> {
+        let metadata = fs::symlink_metadata(directory)?;
         if !metadata.file_type().is_dir() {
             return Err(Error::CorruptFile);
         }
-        let directory = directory.as_ref().canonicalize()?;
+        let directory = directory.canonicalize()?;
         let lock_path = directory.join(LOCK);
-        match fs::symlink_metadata(&lock_path) {
+        let exists = match fs::symlink_metadata(&lock_path) {
             Ok(metadata) if !metadata.file_type().is_file() => return Err(Error::CorruptFile),
-            Ok(_) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Ok(_) => true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
             Err(error) => return Err(error.into()),
-        }
+        };
+        let mut permit = if exists {
+            budget.check_existing_file(&lock_path)?;
+            None
+        } else {
+            Some(budget.preflight_file(&lock_path, 0)?)
+        };
         let lock = OpenOptions::new()
             .read(true)
             .write(true)
-            .create(true)
-            .truncate(false)
+            .create_new(!exists)
             .open(&lock_path)?;
         lock.try_lock().map_err(|error| match error {
             TryLockError::WouldBlock => Error::Io(std::io::Error::new(
@@ -114,7 +134,10 @@ impl EvidenceStore {
         if lock.metadata()?.len() != 0 {
             return Err(Error::CorruptFile);
         }
-        let lock_charge = budget.register_file(&lock_path)?;
+        let lock_charge = match &mut permit {
+            Some(permit) => permit.register_file()?,
+            None => budget.register_file(&lock_path)?,
+        };
         let mut store = Self {
             directory,
             budget,
@@ -142,41 +165,33 @@ impl EvidenceStore {
                 .file_name()
                 .into_string()
                 .map_err(|_| Error::Encoding)?;
-            if name == LOCK {
-                continue;
-            }
             let (path, actual_bytes) = regular_file(&entry.path())?;
-            if let Some(stem) = name.strip_suffix(".blob") {
-                let id = parse_stem(stem)?;
-                self.require_id(id)?;
-                if actual_bytes != id.bytes {
-                    return Err(Error::CorruptFile);
+            match classify_name(&name)? {
+                DepotName::Lock => {
+                    if actual_bytes != 0 {
+                        return Err(Error::CorruptFile);
+                    }
                 }
-                if blobs.len() >= self.limits.blobs {
-                    return Err(Error::ResourceLimit);
+                DepotName::Blob(id) => {
+                    self.require_id(id)?;
+                    if actual_bytes != id.bytes {
+                        return Err(Error::CorruptFile);
+                    }
+                    if blobs.len() >= self.limits.blobs {
+                        return Err(Error::ResourceLimit);
+                    }
+                    blobs.push((path, id));
                 }
-                blobs.push((path, id));
-            } else if let Some(stem) = name.strip_suffix(".part") {
-                let (identity, sequence_text) = stem.rsplit_once('-').ok_or(Error::Encoding)?;
-                let id = parse_stem(identity)?;
-                self.require_id(id)?;
-                if sequence_text.len() != 16 {
-                    return Err(Error::Encoding);
+                DepotName::Stage(id, sequence) => {
+                    self.require_id(id)?;
+                    self.sequence = self
+                        .sequence
+                        .max(sequence.checked_add(1).ok_or(Error::ResourceLimit)?);
+                    if actual_bytes > id.bytes {
+                        return Err(Error::CorruptFile);
+                    }
+                    stages.push(path);
                 }
-                let sequence =
-                    u64::from_str_radix(sequence_text, 16).map_err(|_| Error::Encoding)?;
-                if format!("{sequence:016x}") != sequence_text {
-                    return Err(Error::Encoding);
-                }
-                self.sequence = self
-                    .sequence
-                    .max(sequence.checked_add(1).ok_or(Error::ResourceLimit)?);
-                if actual_bytes > id.bytes {
-                    return Err(Error::CorruptFile);
-                }
-                stages.push(path);
-            } else {
-                return Err(Error::Encoding);
             }
         }
         // A crash can leave .part + .blob hard links to ONE physical file. Remove
@@ -243,21 +258,24 @@ impl EvidenceStore {
         let path = self
             .directory
             .join(format!("{}-{sequence:016x}.part", id.stem()));
+        let mut permit = self.budget.preflight_file(&path, id.bytes)?;
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create_new(true)
-            .open(&path)?;
-        let charge = match self.budget.register_file(&path) {
+            .open(permit.path())?;
+        let charge = match permit.register_file() {
             Ok(charge) => charge,
             Err(error) => {
                 // The newly created file is empty; no uncharged payload exists.
                 drop(file);
-                let _ = fs::remove_file(&path);
+                if fs::remove_file(&path).is_ok() {
+                    let _ = self.budget.release_removed_path(&path);
+                }
                 return Err(error);
             }
         };
-        let mut stage = StagedBlob {
+        let stage = StagedBlob {
             store: self,
             id,
             path,
@@ -271,11 +289,6 @@ impl EvidenceStore {
             #[cfg(test)]
             fault: None,
         };
-        stage
-            .charge
-            .as_mut()
-            .ok_or(Error::Poisoned)?
-            .grow(id.bytes)?;
         Ok(stage)
     }
     /// A bounded sequential reader, not proof verification. Call finish after
@@ -283,6 +296,7 @@ impl EvidenceStore {
     pub fn reader(&mut self, id: BlobId) -> Result<BlobReader<'_>> {
         self.require_id(id)?;
         let path = self.directory.join(id.filename());
+        self.budget.check_existing_file(&path)?;
         self.budget.register_file(&path)?;
         let file = File::open(path)?;
         if file.metadata()?.len() != id.bytes {
@@ -320,6 +334,7 @@ impl StagedBlob<'_> {
         if self.failed || self.cleaned {
             return Err(Error::Poisoned);
         }
+        self.store.budget.check_live()?;
         let next = self
             .written
             .checked_add(bytes.len() as u64)
@@ -329,6 +344,7 @@ impl StagedBlob<'_> {
         }
         if let Err(error) = self.file.as_mut().ok_or(Error::Poisoned)?.write_all(bytes) {
             self.failed = true;
+            self.store.budget.poison_after_io();
             return Err(error.into());
         }
         self.hash.update(bytes);
@@ -339,6 +355,7 @@ impl StagedBlob<'_> {
         if self.failed {
             return Err(Error::Poisoned);
         }
+        self.store.budget.check_live()?;
         if self.written != self.id.bytes {
             return Err(Error::Encoding);
         }
@@ -347,19 +364,29 @@ impl StagedBlob<'_> {
         }
         #[cfg(test)]
         if self.fault == Some(TestFault::Sync) {
+            self.store.budget.poison_after_io();
             return Err(std::io::Error::other("PUBLIC test: stage sync failure").into());
         }
-        self.file.as_ref().ok_or(Error::Poisoned)?.sync_all()?;
+        if let Err(error) = self.file.as_ref().ok_or(Error::Poisoned)?.sync_all() {
+            self.store.budget.poison_after_io();
+            return Err(error.into());
+        }
         let target = self.store.directory.join(self.id.filename());
+        self.store.budget.publication_target(&target)?;
         match fs::hard_link(&self.path, &target) {
             Ok(()) => {
                 // From here a committed name may survive even if cleanup/sync
                 // fails. Never release its charge or delete it as cancellation.
                 self.published = true;
-                self.charge
+                if let Err(error) = self
+                    .charge
                     .as_mut()
                     .ok_or(Error::Poisoned)?
-                    .retarget(&target)?;
+                    .retarget(&target)
+                {
+                    self.store.budget.poison_after_io();
+                    return Err(error);
+                }
                 #[cfg(test)]
                 if self.fault == Some(TestFault::AfterLink) {
                     return Err(std::io::Error::other(
@@ -369,13 +396,20 @@ impl StagedBlob<'_> {
                 }
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                self.store.budget.check_existing_file(&target)?;
                 self.store.budget.register_file(&target)?;
                 require_contents(&mut File::open(&target)?, self.id)?;
             }
-            Err(error) => return Err(error.into()), // no overwrite/copy fallback
+            Err(error) => {
+                self.store.budget.poison_after_io();
+                return Err(error.into());
+            } // no overwrite/copy fallback
         }
         self.cleanup()?;
-        sync_directory(&self.store.directory)?;
+        if let Err(error) = sync_directory(&self.store.directory) {
+            self.store.budget.poison_after_io();
+            return Err(error);
+        }
         Ok(self.id)
     }
     pub fn cancel(mut self) -> Result<()> {
@@ -400,19 +434,27 @@ impl StagedBlob<'_> {
         drop(self.file.take());
         #[cfg(test)]
         if self.fault == Some(TestFault::Cleanup) {
+            self.store.budget.poison_after_io();
             return Err(std::io::Error::other("PUBLIC test: failed stage removal").into());
         }
         match fs::remove_file(&self.path) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
+            Err(error) => {
+                self.store.budget.poison_after_io();
+                return Err(error.into());
+            }
         }
         if !self.published {
             self.charge.as_mut().ok_or(Error::Poisoned)?.removed()?;
             self.charge = None;
         }
         self.cleaned = true;
-        sync_directory(&self.store.directory)
+        let synced = sync_directory(&self.store.directory);
+        if synced.is_err() {
+            self.store.budget.poison_after_io();
+        }
+        synced
     }
 }
 impl Drop for StagedBlob<'_> {
@@ -477,7 +519,7 @@ impl Read for BlobReader<'_> {
     }
 }
 
-fn require_contents(file: &mut File, id: BlobId) -> Result<()> {
+pub(crate) fn require_contents(file: &mut File, id: BlobId) -> Result<()> {
     if file.metadata()?.len() != id.bytes {
         return Err(Error::CorruptFile);
     }
@@ -499,6 +541,33 @@ fn require_contents(file: &mut File, id: BlobId) -> Result<()> {
         return Err(Error::Identity);
     }
     Ok(())
+}
+pub(crate) enum DepotName {
+    Lock,
+    Blob(BlobId),
+    Stage(BlobId, u64),
+}
+pub(crate) fn classify_name(name: &str) -> Result<DepotName> {
+    if name == LOCK {
+        return Ok(DepotName::Lock);
+    }
+    if let Some(stem) = name.strip_suffix(".blob") {
+        return Ok(DepotName::Blob(parse_stem(stem)?));
+    }
+    if let Some(stem) = name.strip_suffix(".part") {
+        let (identity, sequence_text) = stem.rsplit_once('-').ok_or(Error::Encoding)?;
+        let id = parse_stem(identity)?;
+        if sequence_text.len() != 16 {
+            return Err(Error::Encoding);
+        }
+        let sequence = u64::from_str_radix(sequence_text, 16).map_err(|_| Error::Encoding)?;
+        if format!("{sequence:016x}") != sequence_text {
+            return Err(Error::Encoding);
+        }
+        sequence.checked_add(1).ok_or(Error::ResourceLimit)?;
+        return Ok(DepotName::Stage(id, sequence));
+    }
+    Err(Error::Encoding)
 }
 fn parse_stem(stem: &str) -> Result<BlobId> {
     if stem.len() != 81 || !stem.is_ascii() || stem.as_bytes()[64] != b'-' {
@@ -523,7 +592,7 @@ fn hex(bytes: &[u8]) -> String {
     }
     text
 }
-fn sync_directory(directory: &Path) -> Result<()> {
+pub(crate) fn sync_directory(directory: &Path) -> Result<()> {
     // std provides directory fsync on Unix. Windows file sync/hard-link success
     // does NOT promise durable directory entries; missing entries stop reopen.
     #[cfg(unix)]

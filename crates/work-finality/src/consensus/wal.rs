@@ -57,18 +57,20 @@ impl<V: ApplicationVerifier> DurableVoter<V> {
     ) -> Result<Self> {
         require_key(&context, &key)?;
         require_initial_context(&context)?;
+        let header = header(&context, key.verifying_key().to_bytes());
+        let mut permit = budget.preflight_file(path.as_ref(), header.len() as u64)?;
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
             .create_new(true)
-            .open(path.as_ref())?;
+            .open(permit.path())?;
         lock(&file)?;
-        let header = header(&context, key.verifying_key().to_bytes());
-        let mut charge = budget.register_file(path.as_ref())?;
-        charge.grow(header.len() as u64)?;
+        let charge = permit.register_file()?;
         // On any error leave the new file intact. Never truncate or recreate.
-        file.write_all(&header)?;
-        file.sync_all()?;
+        if let Err(error) = file.write_all(&header).and_then(|()| file.sync_all()) {
+            charge.mark_io_failed();
+            return Err(error.into());
+        }
         Ok(Self {
             context,
             verifier,
@@ -96,6 +98,7 @@ impl<V: ApplicationVerifier> DurableVoter<V> {
     ) -> Result<Self> {
         require_key(&context, &key)?;
         require_initial_context(&context)?;
+        budget.check_existing_file(path.as_ref())?;
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -229,6 +232,7 @@ impl<V: ApplicationVerifier> DurableVoter<V> {
         self.charge.grow(next_length)?;
         if let Err(error) = self.write_record(&record) {
             self.poisoned = true;
+            self.charge.mark_io_failed();
             return Err(Error::Io(error));
         }
         self.length = next_length;
@@ -261,6 +265,7 @@ impl<V: ApplicationVerifier> DurableVoter<V> {
         self.charge.grow(next_length)?;
         if let Err(error) = self.write_record(&record) {
             self.poisoned = true;
+            self.charge.mark_io_failed();
             return Err(Error::Io(error));
         }
         self.length = next_length;
@@ -275,10 +280,12 @@ impl<V: ApplicationVerifier> DurableVoter<V> {
             Ok(metadata) if metadata.len() == self.length => Ok(()),
             Ok(_) => {
                 self.poisoned = true;
+                self.charge.mark_io_failed();
                 Err(Error::CorruptWal)
             }
             Err(error) => {
                 self.poisoned = true;
+                self.charge.mark_io_failed();
                 Err(Error::Io(error))
             }
         }
@@ -371,6 +378,12 @@ impl<V: ApplicationVerifier> DurableVoter<V> {
     #[cfg(test)]
     pub(crate) fn inject(&mut self, fault: Fault) {
         self.fault = Some(fault);
+    }
+    #[cfg(test)]
+    pub(crate) fn append_unaccounted_for_test(&mut self) -> std::io::Result<()> {
+        self.file.seek(SeekFrom::End(0))?;
+        self.file.write_all(&[0xff])?;
+        self.file.sync_all()
     }
 }
 #[cfg(test)]
