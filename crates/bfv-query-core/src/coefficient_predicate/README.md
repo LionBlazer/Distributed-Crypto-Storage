@@ -122,3 +122,65 @@ opaque multi-operand scope, not discarded-salt reconstruction or getters. No
 freshness, transaction/lock/writer fence, mutable encrypted Source, production
 SQL path or composed-security claim follows. Core does not depend on experiments
 or proof producers, and this prototype does not change old operations or caps.
+
+## Binding-only restoration of an exact saved request
+
+`Owner::restore_private_coefficient_predicate_for_experiment` consumes the saved
+public request `Vec<u8>` plus independently supplied `QueryContext`, full query32
+and SHA25632 of that exact request. It returns the original
+`PreparedPrivateCoefficientPredicate`, moving the identical request allocation
+and rebuilding only its opaque public pending labels. It does not restore the
+Owner or a private opening. The caller must already possess or separately restore
+the correct Owner; there is no raw secret-key getter or serialized pending flag.
+
+The method checks the unchanged complete request cap and canonical envelope,
+the Owner's geometry/full keyset, both complete heads and QueryId, full query and
+the digest of both encrypted operands. It then uses the existing bounded borrowed
+ciphertext validators on both original operands before constructing pending state.
+Restoration performs no SDK ciphertext decoding, seed expansion, encryption,
+query recompilation or FHE evaluation. It never replaces saved bytes with newly
+randomized encryption. Invalid scope is rejected before polynomial inspection.
+
+These expected labels must come from the caller's independently retained binding;
+copying them from an untrusted request provides no identity check. Shape-valid
+same-parameter ciphertexts do not authenticate same-secret encryption origin.
+Even a foreign original ciphertext can pass this binding-only API when the caller
+deliberately supplies matching labels and a matching digest. Source/Encoding/Key/
+Basis/Formation proofs and their complete independent expectations remain separate
+mandatory checks for any accepting composition. The restored pending value gives
+no proof, source completeness, fresh head, lock, finality or SQL authority.
+Existing owner completion remains explicitly UNVERIFIED.
+Restoration may repeat and supplies no durable phase or anti-replay policy.
+
+Three added owning tests discard the original pending value, preserve the
+saved request bytes/allocation, execute the actual evaluator's BFV product and
+complete only its real encrypted result. They also cover foreign Owner metadata,
+full independent context/query/digest, changed operands, repaired malformed
+polynomial claims, canonical headers, truncation, trailing bytes and byte limits.
+The foreign-origin control intentionally demonstrates the absence of encryption-
+origin authority; it is not a successful mixed-key FHE or SQL claim.
+
+All 13 owning coefficient-predicate cases passed on Windows/MSVC Rust 1.99.0,
+release/offline/locked, native CPU, Cargo/Rayon threads 2:
+
+```text
+cargo test --release --offline --locked -p bfv-query-core --lib coefficient_predicate::tests:: -- --test-threads=1
+cargo check --release --offline --locked -p bfv-query-core --all-targets
+cargo clippy --release --offline --locked -p bfv-query-core --features formation-proofs --all-targets -- -D warnings
+cargo fmt --all
+```
+
+The test command took 10.184 s including compilation, with 3.44 s test runtime.
+The nominal 100 ms observer recorded 51 samples, maximum gap 396.613 ms, sampled
+working set 204,378,112 B, private 209,936,384 B and OS peak working set 212,877,312 B.
+No sampled 1792-MiB per-PID fuse or 1800-second runner abort occurred. This measures only
+these mathematical BFV cases, not full proof generation, restored Owner state,
+an accepted SQL operation, durable recovery or a complete-process resource bound.
+
+The 1470-file raw source snapshot `.local/pending-restore-native-r1/source.json`
+has SHA256 `0F4CD01E28D6AB67F1B2552DECD319AB5BB83A099FE87C5BFFED96884452C596`.
+All files and exact inventory matched after native tests and before this
+documentation update. Test stdout/stderr SHA256:
+`C40CCDB9783783D25A10F661B396CCA46295C0EC1D2766942B8563849ECB4774` /
+`C5757A776F69FDFD611EC21C523F2939292B3DF786C5A57922DCD9386E77147F`.
+No dependency, existing request codec/profile or SQL admission guard changed.

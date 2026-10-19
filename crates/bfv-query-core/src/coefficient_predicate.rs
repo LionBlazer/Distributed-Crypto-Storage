@@ -358,6 +358,49 @@ impl Owner {
             request,
         })
     }
+    /// Rebuild public pending labels for the EXACT saved encrypted request.
+    ///
+    /// All expectations must come from the caller's independent saved binding,
+    /// not be copied from an untrusted request being restored. This consumes and
+    /// returns the same request buffer without SDK decoding, encryption or FHE.
+    /// Ciphertext shape and labels do not authenticate same-owner encryption,
+    /// computation, completeness, freshness or SQL authority. Completion remains
+    /// explicitly unverified and consumes the rebuilt pending value as before.
+    /// The caller owns durable phase and anti-replay checks; restoration may repeat.
+    pub fn restore_private_coefficient_predicate_for_experiment(
+        &self,
+        request: Vec<u8>,
+        expected_context: QueryContext,
+        expected_query: [u8; 32],
+        expected_request_digest: [u8; 32],
+    ) -> Result<PreparedPrivateCoefficientPredicate> {
+        let view = request_view(&request)?;
+        if !expected_context.valid() {
+            return Err(Error::BindingMismatch);
+        }
+        require_labels(&view.labels, self.geometry, self.keyset_id)?;
+        if view.labels.context != expected_context
+            || view.labels.query != expected_query
+            || <[u8; 32]>::from(Sha256::digest(&request)) != expected_request_digest
+        {
+            return Err(Error::BindingMismatch);
+        }
+        fixed_parameters(&self.parameters)?;
+        // Both validators borrow the original bounded bytes. They perform no
+        // polynomial allocation, seed expansion or SDK ciphertext operation.
+        for ciphertext in [view.original, view.predicate] {
+            bfv_ciphertext_wire::validate(ciphertext).map_err(|_| Error::InvalidShape)?;
+        }
+        Ok(PreparedPrivateCoefficientPredicate {
+            pending: PendingPrivateCoefficientPredicate {
+                keyset_id: self.keyset_id,
+                context: expected_context,
+                query: expected_query,
+                request_digest: expected_request_digest,
+            },
+            request,
+        })
+    }
     /// Owner completion ONLY. A valid decryption is not computation/completeness evidence.
     pub fn decrypt_private_coefficient_predicate_unverified_for_experiment(
         &self,

@@ -642,3 +642,271 @@ fn completion_rejects_response_shape_and_actual_decrypted_range_or_padding_viola
         );
     }
 }
+
+#[test]
+fn saved_request_restores_exact_bytes_after_pending_drop_and_completes_actual_fhe() {
+    let (owner, evaluator) = setup();
+    let originals = rows();
+    let private = mask([0, 128, 255]);
+    let original = owner
+        .encrypt_original_coefficient_rows_for_experiment(&originals)
+        .unwrap();
+    let query = [0xA1; 32];
+    let saved = {
+        let prepared = owner
+            .prepare_private_coefficient_predicate_for_experiment(
+                context(),
+                query,
+                &original,
+                &private,
+            )
+            .unwrap();
+        // Only the public wire escapes. The original opaque pending state is
+        // dropped here and is never serialized or passed to restoration.
+        prepared.request
+    };
+    let original_bytes = saved.clone();
+    let original_allocation = saved.as_ptr();
+    let digest = Sha256::digest(&saved).into();
+    let restored = owner
+        .restore_private_coefficient_predicate_for_experiment(saved, context(), query, digest)
+        .unwrap();
+    assert_eq!(restored.request, original_bytes);
+    assert_eq!(
+        restored.request.as_ptr(),
+        original_allocation,
+        "restoration moves the same buffer"
+    );
+    assert_eq!(restored.operand_ciphertexts().unwrap()[0], original);
+    let result = evaluator
+        .evaluate_private_coefficient_predicate_for_experiment(&restored.request)
+        .unwrap();
+    assert_eq!(result.ct_ct_multiplications, 1);
+    let answer = owner
+        .decrypt_private_coefficient_predicate_unverified_for_experiment(
+            restored.pending,
+            &result.output,
+        )
+        .unwrap();
+    assert_eq!(answer.rows, expected(&originals, &private));
+}
+
+#[test]
+fn restored_pending_requires_independent_owner_context_query_and_exact_request_digest() {
+    let (owner, _) = Owner::generate(Geometry::Rows16).unwrap();
+    let (foreign_owner, _) = Owner::generate(Geometry::Rows16).unwrap();
+    let original = owner
+        .encrypt_original_coefficient_rows_for_experiment(&rows())
+        .unwrap();
+    let query = [0xA2; 32];
+    let saved = owner
+        .prepare_private_coefficient_predicate_for_experiment(
+            context(),
+            query,
+            &original,
+            &mask([127]),
+        )
+        .unwrap()
+        .request;
+    let digest: [u8; 32] = Sha256::digest(&saved).into();
+    assert_ne!(owner.keyset_id, foreign_owner.keyset_id);
+    assert!(matches!(
+        foreign_owner.restore_private_coefficient_predicate_for_experiment(
+            saved.clone(),
+            context(),
+            query,
+            digest,
+        ),
+        Err(Error::BindingMismatch)
+    ));
+    for case in 0..6 {
+        let mut expected_context = context();
+        let mut expected_query = query;
+        let mut expected_digest = digest;
+        match case {
+            0 => expected_context.query_id[15] ^= 1,
+            1 => expected_context.data_head[HEAD_BYTES - 1] ^= 1,
+            2 => expected_context.index_head[HEAD_BYTES - 1] ^= 1,
+            3 => expected_context.index_head.truncate(HEAD_BYTES - 1),
+            4 => expected_query[31] ^= 1,
+            _ => expected_digest[31] ^= 1,
+        }
+        assert!(
+            matches!(
+                owner.restore_private_coefficient_predicate_for_experiment(
+                    saved.clone(),
+                    expected_context,
+                    expected_query,
+                    expected_digest,
+                ),
+                Err(Error::BindingMismatch)
+            ),
+            "independent binding {case}"
+        );
+    }
+    // Reject a mismatched scope before even inspecting malformed polynomials.
+    // The repaired digest is deliberately the caller's supplied hostile claim.
+    let malformed = replace_operand(&saved, 0, &[0]);
+    let malformed_digest = Sha256::digest(&malformed).into();
+    let mut other_context = context();
+    other_context.data_head[HEAD_BYTES - 1] ^= 1;
+    assert!(matches!(
+        owner.restore_private_coefficient_predicate_for_experiment(
+            malformed,
+            other_context,
+            query,
+            malformed_digest,
+        ),
+        Err(Error::BindingMismatch)
+    ));
+
+    // Same-parameter ciphertext bytes carry no authenticated key origin.
+    // Matching caller labels/digest may bind a foreign original; this creates
+    // no Source/Formation proof and is deliberately NOT accepted SQL evidence.
+    let foreign_original = foreign_owner
+        .encrypt_original_coefficient_rows_for_experiment(&rows())
+        .unwrap();
+    let mixed = replace_operand(&saved, 0, &foreign_original);
+    let mixed_digest = Sha256::digest(&mixed).into();
+    let restored = owner
+        .restore_private_coefficient_predicate_for_experiment(mixed, context(), query, mixed_digest)
+        .unwrap();
+    assert_eq!(restored.operand_ciphertexts().unwrap()[0], foreign_original);
+}
+
+#[test]
+fn saved_request_restore_rejects_altered_ciphertexts_envelopes_and_wire_limits() {
+    let (owner, _) = Owner::generate(Geometry::Rows16).unwrap();
+    let original = owner
+        .encrypt_original_coefficient_rows_for_experiment(&rows())
+        .unwrap();
+    let query = [0xA3; 32];
+    let saved = owner
+        .prepare_private_coefficient_predicate_for_experiment(
+            context(),
+            query,
+            &original,
+            &mask([128, 255]),
+        )
+        .unwrap()
+        .request;
+    let digest: [u8; 32] = Sha256::digest(&saved).into();
+    let predicate_start = REQUEST_HEADER + request_view(&saved).unwrap().original.len();
+    for at in [
+        16,
+        47,
+        48,
+        79,
+        80,
+        95,
+        96,
+        207,
+        208,
+        319,
+        REQUEST_HEADER,
+        predicate_start,
+        saved.len() - 1,
+    ] {
+        let mut changed = saved.clone();
+        changed[at] ^= 1;
+        assert!(
+            matches!(
+                owner.restore_private_coefficient_predicate_for_experiment(
+                    changed,
+                    context(),
+                    query,
+                    digest,
+                ),
+                Err(Error::BindingMismatch)
+            ),
+            "original binding rejects changed public byte {at}"
+        );
+    }
+    let mut other_geometry = saved.clone();
+    other_geometry[10] = geometry_byte(Geometry::Rows256);
+    let other_digest = Sha256::digest(&other_geometry).into();
+    assert!(matches!(
+        owner.restore_private_coefficient_predicate_for_experiment(
+            other_geometry,
+            context(),
+            query,
+            other_digest,
+        ),
+        Err(Error::BindingMismatch)
+    ));
+    for at in [0, 8, 11, 15] {
+        let mut bad = saved.clone();
+        bad[at] ^= 1;
+        assert!(matches!(
+            owner.restore_private_coefficient_predicate_for_experiment(
+                bad,
+                context(),
+                query,
+                digest,
+            ),
+            Err(Error::InvalidShape)
+        ));
+    }
+    for at in [COMMON_HEADER, COMMON_HEADER + 4] {
+        for length in [0u32, u32::MAX] {
+            let mut bad = saved.clone();
+            bad[at..at + 4].copy_from_slice(&length.to_le_bytes());
+            assert!(matches!(
+                owner.restore_private_coefficient_predicate_for_experiment(
+                    bad,
+                    context(),
+                    query,
+                    digest,
+                ),
+                Err(Error::WireLimit)
+            ));
+        }
+    }
+    for end in [COMMON_HEADER - 1, REQUEST_HEADER - 1, saved.len() - 1] {
+        assert!(matches!(
+            owner.restore_private_coefficient_predicate_for_experiment(
+                saved[..end].to_vec(),
+                context(),
+                query,
+                digest,
+            ),
+            Err(Error::InvalidShape)
+        ));
+    }
+    let mut trailing = saved.clone();
+    trailing.push(0);
+    assert!(matches!(
+        owner.restore_private_coefficient_predicate_for_experiment(
+            trailing,
+            context(),
+            query,
+            digest,
+        ),
+        Err(Error::InvalidShape)
+    ));
+    assert!(matches!(
+        owner.restore_private_coefficient_predicate_for_experiment(
+            vec![0; MAX_REQUEST + 1],
+            context(),
+            query,
+            digest,
+        ),
+        Err(Error::WireLimit)
+    ));
+    // The outer envelope and supplied digest are self-consistent, but neither
+    // operand may contain a tiny/noncanonical polynomial before pending exists.
+    let tiny = [10, 7, 8, 2, 16, 8, 26, 1, 0, 10, 7, 8, 2, 16, 8, 26, 1, 0];
+    for operand in 0..2 {
+        let malformed = replace_operand(&saved, operand, &tiny);
+        let malformed_digest = Sha256::digest(&malformed).into();
+        assert!(matches!(
+            owner.restore_private_coefficient_predicate_for_experiment(
+                malformed,
+                context(),
+                query,
+                malformed_digest,
+            ),
+            Err(Error::InvalidShape)
+        ));
+    }
+}
