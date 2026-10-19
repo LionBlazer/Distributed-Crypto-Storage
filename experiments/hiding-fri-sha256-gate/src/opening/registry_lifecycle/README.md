@@ -15,7 +15,8 @@ The reusable production libraries do not depend on this experiment. Direct modul
 dependencies are [registry200-proof](../../../../../crates/registry200-proof/README.md)
 for the single shared Source/lifecycle math, ranges and digest codec, the private
 [Source producer](../README.md), [backend adapter](../../backend.rs), and SDK
-AIR/prover. Local [statement.rs](statement.rs) builds private witness fields;
+AIR/prover. Local [statement.rs](statement.rs) supplies explicitly non-secret
+consumer fixtures to the Core witness and commitment builders;
 [primitive contracts](../../primitive.rs) adapt the shared math without Registry112 conversion.
 The `transaction-state` dependency is used only by the independent
 owning-test oracle. That native state machine is never called by a verifier.
@@ -48,7 +49,8 @@ C_open and C_cmd; the commitments are not inputs to their own request identity.
 
 ## Fixed image and command semantics
 
-[model.rs](model.rs) is an owner-local prover input builder. It is not called by
+[the Core model](../../../../../crates/registry200-proof/src/lifecycle/circuit/model.rs)
+is an owner-local prover input builder. It is not called by
 verification. The new stable registry has exactly 200 Gold fields:
 
 | Fields | Meaning |
@@ -97,8 +99,9 @@ The separate Core [predicate/Acquire link](../../../../../crates/registry200-pro
 now owns a new success-only relation, without changing this Lifecycle AIR or its
 profile. Its [consumer tests](journal/predicate_acquire_tests.rs) build genuine
 signed history and separate Source/Query/Lifecycle/link proofs, including
-same-q/different-mask and unsuccessful-outcome controls. Those new tests remain
-unexecuted source candidates. This adds no SQL result, row-lock admission or
+same-q/different-mask and unsuccessful-outcome controls. Those five tests passed
+in the [native linkage record](../../../../../docs/private-predicate-acquire.md).
+This adds no SQL result, row-lock admission or
 agreed freshness/finality grant; the exact FHE returned-row link and composite
 wire/admission contract remain separate requirements.
 
@@ -196,8 +199,12 @@ The child encoding module consumes the exact canonical Source and PV116 lifecycl
 
 [registry200-proof](../../../../../crates/registry200-proof/README.md) now owns the
 actual shared Source/Lifecycle AIRs, public claims, exact profiles and bounded
-wire verifier. This experiment keeps private witness/model/trace and producer
-field builders in statement.rs. The concrete application has moved to
+wire verifier. Core also owns the single private mathematical model/trace,
+commitment builders, guarded lifecycle witness and fixed Source-first producer.
+This experiment imports those implementations directly; its test-only raw proof
+adapter supports genuine adversarial SDK traces. The
+[producer validation](../../../../../docs/lifecycle-producer.md) records the
+executed extraction regressions. The concrete application has moved to
 [registry200-journal](../../../../../crates/registry200-journal/README.md); actual
 peer control admission is distinct from legacy Registry112 and live SQL.
 

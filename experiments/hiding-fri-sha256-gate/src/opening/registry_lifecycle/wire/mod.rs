@@ -3,13 +3,14 @@
 mod tests;
 mod transport;
 #[cfg(test)]
+use super::prove;
+#[cfg(test)]
 use super::{
     CompositeProof,
     statement::{self, Statement},
 };
 use super::{
     fixture::Fixture,
-    prove,
     statement::{Expected, Phase},
 };
 use crate::backend::Error as BackendError;
@@ -22,13 +23,13 @@ use crate::{backend::analyze, opening::proof_codec::Topology, primitive::Kind};
 #[cfg(test)]
 use p3_air::BaseAir;
 #[cfg(test)]
+pub(in crate::opening) use registry200_proof::wire::encode_claim as encode;
+#[cfg(test)]
 use registry200_proof::wire::frame::Role;
 use registry200_proof::wire::frame::{self, Frame};
 #[cfg(test)]
 use registry200_proof::wire::{CHILD_SLOTS, MAX_SEQUENCE_ELEMENTS, SOURCE_SLOTS};
-pub(in crate::opening) use registry200_proof::wire::{
-    Error, encode_claim as encode, verify_claim as verify,
-};
+pub(in crate::opening) use registry200_proof::wire::{Error, verify_claim as verify};
 pub(super) use registry200_proof::wire::{
     decode_and_verify_claim as decode_and_verify, maximum_bundle_bytes, role,
 };
@@ -78,8 +79,19 @@ pub(super) fn gate(mode: &str, bootstrap: bool) -> Result<(), BackendError> {
         let bytes = {
             if !bootstrap {
                 let (initial, w) = fixture.bootstrap()?;
-                let (s, p) = prove(&initial, &fixture.source_witness, &w)?;
-                super::verify(&initial, &s, &p)?;
+                let checked = registry200_proof::admission::Expected::checked_claim(&initial)?;
+                let source = registry200_proof::source::prove(
+                    &registry200_proof::admission::CanonicalSource::checked_claim(&initial.source)?,
+                    &fixture.source_witness,
+                )
+                .map_err(|_| BackendError::Verification)?;
+                let prepared = registry200_proof::lifecycle::PreparedWitness::new(&checked, w)
+                    .map_err(|_| BackendError::Verification)?;
+                let evidence =
+                    registry200_proof::lifecycle::prove(&checked, &prepared, source.as_bytes())
+                        .map_err(|_| BackendError::Verification)?;
+                let s = registry200_proof::wire::verify_claim(&initial, evidence.as_bytes())
+                    .map_err(|_| BackendError::Verification)?;
                 let Phase::Transition { old, .. } = e.phase else {
                     unreachable!()
                 };
@@ -87,8 +99,18 @@ pub(super) fn gate(mode: &str, bootstrap: bool) -> Result<(), BackendError> {
                     return Err(BackendError::Shape);
                 }
             }
-            let (s, p) = prove(&e, &fixture.source_witness, &w)?;
-            encode(&e, &s, &p).map_err(|_| BackendError::Verification)?
+            let checked = registry200_proof::admission::Expected::checked_claim(&e)?;
+            let source = registry200_proof::source::prove(
+                &registry200_proof::admission::CanonicalSource::checked_claim(&e.source)?,
+                &fixture.source_witness,
+            )
+            .map_err(|_| BackendError::Verification)?;
+            let prepared = registry200_proof::lifecycle::PreparedWitness::new(&checked, w)
+                .map_err(|_| BackendError::Verification)?;
+            registry200_proof::lifecycle::prove(&checked, &prepared, source.as_bytes())
+                .map_err(|_| BackendError::Verification)?
+                .into_parts()
+                .1
         };
         let parsed = Frame::parse(role(&e), &bytes).map_err(|_| BackendError::Verification)?;
         let started = std::time::Instant::now();

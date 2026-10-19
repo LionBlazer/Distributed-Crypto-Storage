@@ -43,3 +43,12 @@ this extraction does not approve per-query owner plaintext execution.
 The [producer/epoch validation](../../../../experiments/hiding-fri-sha256-gate/PRIVATE-INPUT-PRODUCER-EPOCH-VALIDATION.md)
 records executed Core guards, all five Source relations, coefficient/Poly
 regressions and the actual linked input16 consumer. It grants no SQL admission.
+
+The private [verification helper](verification.rs) now owns shared actual
+Canonical Source byte verification for coefficient and lifecycle production.
+It reaudits the independently supplied complete claim, keeps the original20MiB,
+sequence16384 and24Mi decoded-element limits, and drops its decoded proof/backend
+on every exit. Coefficient framing and `encode_source` retain their current ABI
+and implementation. The new [lifecycle producer](../lifecycle/README.md) consumes
+these actual bytes; no Source DTO or cached success substitutes for verification.
+This new extraction is source-only until its native validation is recorded.

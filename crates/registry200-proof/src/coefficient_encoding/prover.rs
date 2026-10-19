@@ -4,7 +4,7 @@ use super::{
     statement::{Expected, Statement},
     wire,
 };
-use crate::fixed::Backend;
+use crate::{fixed::Backend, source};
 
 /// Complete public statement and bounded Source/encoding pair. No private opening,
 /// backend, raw proof, Key verification token or SQL permission is retained.
@@ -33,7 +33,7 @@ pub fn prove(
     source: &[u8],
 ) -> Result<Evidence, wire::Error> {
     witness.require_expected(expected)?;
-    wire::verify_source(expected, source)?;
+    source::verification::verify(expected.source_claim(), source)?;
     let statement = witness.statement();
     let bytes = {
         let backend = Backend::encoding(&statement)?;

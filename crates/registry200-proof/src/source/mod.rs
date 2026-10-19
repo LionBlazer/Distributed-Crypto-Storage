@@ -9,6 +9,7 @@ pub mod factorized;
 pub mod layout;
 pub mod poly1305;
 mod prover;
+pub(crate) mod verification;
 pub use prover::{SourceEvidence, prove};
 pub mod schedule;
 pub mod statement;

@@ -7,7 +7,6 @@ pub use frame::{BorrowedFrame, HEADER, MAX_CHILD, MAX_FRAME, MAX_SOURCE};
 use p3_uni_stark::Proof;
 
 const SEQUENCE: usize = 16_384;
-const SOURCE_SLOTS: usize = 24 * 1024 * 1024;
 const CHILD_SLOTS: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -41,6 +40,17 @@ impl From<codec::Error> for Error {
             codec::Error::Encoding => Self::Encoding,
             codec::Error::ResourceLimit => Self::ResourceLimit,
             codec::Error::Shape => Self::Shape,
+        }
+    }
+}
+impl From<crate::wire::Error> for Error {
+    fn from(e: crate::wire::Error) -> Self {
+        match e {
+            crate::wire::Error::Encoding => Self::Encoding,
+            crate::wire::Error::ResourceLimit => Self::ResourceLimit,
+            crate::wire::Error::Profile | crate::wire::Error::Shape => Self::Shape,
+            crate::wire::Error::Verification => Self::Verification,
+            crate::wire::Error::Proof(e) => Self::Proof(e),
         }
     }
 }
@@ -89,26 +99,11 @@ pub fn verify(e: &Expected, bytes: &[u8]) -> Result<VerifiedEncoding, Error> {
             expected: e.clone(),
             encoded: source::statement::decode_digest(f.encoded())?,
         };
-        verify_source(e, f.source())?;
+        source::verification::verify(e.source_claim(), f.source())?;
         let backend = Backend::encoding(&s)?;
         let proof = codec::decode(f.child(), &backend.shape, SEQUENCE, CHILD_SLOTS)?;
         backend.verify(&proof)?;
         Ok(VerifiedEncoding { statement: s })
-    }))
-    .map_err(|_| Error::Verification)?
-}
-
-// Shared actual verification, never a cached Boolean/receipt. All decoded Source
-// allocations and its backend die at this function boundary, including on error.
-pub(super) fn verify_source(e: &Expected, bytes: &[u8]) -> Result<(), Error> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        if bytes.is_empty() || bytes.len() > MAX_SOURCE {
-            return Err(Error::ResourceLimit);
-        }
-        let backend = Backend::source(e.source_claim())?;
-        let proof = codec::decode(bytes, &backend.shape, SEQUENCE, SOURCE_SLOTS)?;
-        backend.verify(&proof)?;
-        Ok(())
     }))
     .map_err(|_| Error::Verification)?
 }

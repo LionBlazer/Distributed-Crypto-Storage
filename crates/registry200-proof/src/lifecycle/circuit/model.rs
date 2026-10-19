@@ -1,13 +1,14 @@
 //! Owner-local bounded state machine. This is a prover input builder, never a verifier.
-use crate::backend::Error;
+use bfv_hiding_stark::Error;
+use zeroize::Zeroize;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(super) struct Savepoint {
+pub struct Savepoint {
     pub name: [u8; 32],
     pub held: [u8; 4],
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct Transaction {
+pub struct Transaction {
     pub id: u64,
     pub principal: u8,
     pub sequence: u64,
@@ -17,14 +18,14 @@ pub(super) struct Transaction {
     pub savepoints: Vec<Savepoint>,
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(super) struct Registry {
+pub struct Registry {
     pub revision: u64,
     pub allocator: u64,
     pub transactions: Vec<Transaction>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
-pub(super) enum Operation {
+pub enum Operation {
     Begin,
     Acquire,
     FailCurrent,
@@ -34,7 +35,7 @@ pub(super) enum Operation {
     End,
 }
 impl Operation {
-    pub(super) const ALL: [Self; 7] = [
+    pub const ALL: [Self; 7] = [
         Self::Begin,
         Self::Acquire,
         Self::FailCurrent,
@@ -45,7 +46,7 @@ impl Operation {
     ];
 }
 #[derive(Clone, Debug)]
-pub(super) struct Command {
+pub struct Command {
     pub operation: Operation,
     pub transaction: u64,
     pub principal: u8,
@@ -112,7 +113,7 @@ impl Command {
     }
 }
 #[derive(Clone, Debug)]
-pub(super) struct Step {
+pub struct Step {
     pub next: Registry,
     /// 0 successful command, 1 atomic WAIT conflict, 2 atomic NOWAIT conflict,
     /// 3 successful End resolved as abort (including failed Commit).
@@ -125,7 +126,47 @@ pub(super) struct Step {
     pub returned: [bool; 4],
     pub block: [bool; 4],
 }
-pub(super) use registry200_proof::lifecycle::conflicts;
+impl Zeroize for Savepoint {
+    fn zeroize(&mut self) {
+        self.name.zeroize();
+        self.held.zeroize();
+    }
+}
+impl Zeroize for Transaction {
+    fn zeroize(&mut self) {
+        self.id.zeroize();
+        self.principal.zeroize();
+        self.sequence.zeroize();
+        self.failed.zeroize();
+        self.snapshot.zeroize();
+        self.held.zeroize();
+        self.savepoints.zeroize();
+    }
+}
+impl Zeroize for Registry {
+    fn zeroize(&mut self) {
+        self.revision.zeroize();
+        self.allocator.zeroize();
+        self.transactions.zeroize();
+    }
+}
+impl Zeroize for Command {
+    fn zeroize(&mut self) {
+        self.transaction.zeroize();
+        self.principal.zeroize();
+        self.sequence.zeroize();
+        self.name.zeroize();
+        self.mask.zeroize();
+        self.mode.zeroize();
+        self.wait.zeroize();
+        self.offset.zeroize();
+        self.limit.zeroize();
+        self.projection.zeroize();
+        self.abort.zeroize();
+        self.operation = Operation::Begin;
+    }
+}
+use crate::lifecycle::conflicts;
 impl Registry {
     pub fn require_canonical(&self) -> Result<(), Error> {
         if self.transactions.len() > 2 || self.allocator > self.revision {

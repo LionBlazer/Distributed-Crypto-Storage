@@ -40,9 +40,13 @@ There is one Source AIR for Bytes, Canonical, Packed, Factorized and State layou
 Old profiles, kind names, arithmetic and wire limits retain their exact bytes.
 The [Source circuit](src/source/README.md) owns the one mathematical trace writer
 for all five layouts and a fixed Canonical-only typed producer. The coefficient
-module likewise owns its guarded private witnesses and typed producer. Native
-Registry.step, lifecycle witnesses/producers, SQL compilation, fixtures and CLI
-deployment remain outside this crate. wire::decode_and_verify_claim exposes
+module likewise owns its guarded private witnesses and typed producer. The
+[lifecycle module](src/lifecycle/README.md) owns the original native prover-input
+model, trace writer, guarded witness and fixed Source-first producer. SQL
+compilation belongs to storage-client; fixtures and CLI deployment remain in
+their consumer layers. The [producer validation](../../docs/lifecycle-producer.md)
+records actual byte verification, durable Journal reopen and unchanged reports.
+wire::decode_and_verify_claim exposes
 actual verified proof objects for downstream mathematical composition; it does
 not grant application permission.
 

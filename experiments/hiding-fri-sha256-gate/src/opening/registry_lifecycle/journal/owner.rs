@@ -252,14 +252,23 @@ impl Prepared<'_> {
                 (step.next, step.outcome, step.returned, step.skipped, salt)
             }
         };
-        let (s, p) = backend(super::super::prove(
+        let checked = backend(registry200_proof::admission::Expected::checked_claim(
             &self.expected,
-            self.source_witness,
-            &self.witness,
         ))?;
-        let proof =
-            wire::encode(&self.expected, &s, &p).map_err(|_| Error::RejectedComputationProof)?;
-        drop(p);
+        let source = registry200_proof::source::prove(
+            &backend(
+                registry200_proof::admission::CanonicalSource::checked_claim(&self.expected.source),
+            )?,
+            self.source_witness,
+        )
+        .map_err(|_| Error::RejectedComputationProof)?;
+        let prepared = registry200_proof::lifecycle::PreparedWitness::new(&checked, self.witness)
+            .map_err(|_| Error::RejectedComputationProof)?;
+        let evidence = registry200_proof::lifecycle::prove(&checked, &prepared, source.as_bytes())
+            .map_err(|_| Error::RejectedComputationProof)?;
+        let (s, proof) = evidence.into_parts();
+        drop(prepared);
+        drop(source);
         let new = Control::Active {
             enrollment: statement::encoded(self.expected.enrollment),
             registry: statement::encoded(s.next),

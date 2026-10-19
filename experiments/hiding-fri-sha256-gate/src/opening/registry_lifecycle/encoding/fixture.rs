@@ -91,8 +91,20 @@ pub(super) fn gate(mode: &str) -> Result<(), Error> {
             return Ok(());
         }
         let start = std::time::Instant::now();
+        let checked = registry200_proof::admission::Expected::checked_claim(&f.parent)?;
+        let source = registry200_proof::source::prove(
+            &registry200_proof::admission::CanonicalSource::checked_claim(&f.parent.source)?,
+            &f.source.source_witness,
+        )
+        .map_err(|_| Error::Verification)?;
+        let prepared =
+            registry200_proof::lifecycle::PreparedWitness::new(&checked, f.parent_witness.clone())
+                .map_err(|_| Error::Verification)?;
+        let evidence = registry200_proof::lifecycle::prove(&checked, &prepared, source.as_bytes())
+            .map_err(|_| Error::Verification)?;
         let (_, parent) =
-            super::super::prove(&f.parent, &f.source.source_witness, &f.parent_witness)?;
+            registry200_proof::wire::decode_and_verify_claim(&f.parent, evidence.as_bytes())
+                .map_err(|_| Error::Verification)?;
         let bytes = super::prove_and_encode(
             &f.expected,
             &f.parent_witness,

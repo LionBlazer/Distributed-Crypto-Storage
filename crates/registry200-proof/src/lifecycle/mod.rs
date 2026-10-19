@@ -2,13 +2,18 @@
 pub mod acquire;
 pub mod air;
 pub mod bootstrap;
+pub mod circuit;
 pub mod control;
 pub mod layout;
 pub mod opening;
 pub mod predicate;
+mod prover;
 pub mod ranges;
 pub mod registry;
 pub mod statement;
+pub use prover::{Evidence, PreparedWitness, prove};
+#[cfg(test)]
+mod prover_tests;
 use sha2::{Digest, Sha256};
 pub fn profile(h: &mut Sha256, bootstrap: bool) {
     h.update(b"DCS/private-registry-lifecycle/v2/N4-T2-D2/owner-authorized-externally/canonical-source-first/no-live-grant");

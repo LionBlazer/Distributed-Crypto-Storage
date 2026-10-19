@@ -1,4 +1,6 @@
 //! Result144-to-originals encoding evidence. No ciphertext formation or live SQL admission.
+//! Parent model/trace and normal lifecycle proof production are now Core-owned;
+//! this legacy selected-originals relation is not the private predicate FHE path.
 pub(crate) mod air;
 mod compiler;
 mod fixture;

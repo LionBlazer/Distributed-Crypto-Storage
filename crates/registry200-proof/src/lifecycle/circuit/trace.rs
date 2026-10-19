@@ -1,30 +1,46 @@
 //! Owner-only witnesses and trace construction. Public verification never calls this module.
 use super::{
+    commitment as statement,
+    model::{Command, Operation, Registry, Step},
+};
+use crate::lifecycle::{
     air::{self, LifecycleAir},
     bootstrap,
     layout::*,
-    model::{Command, Operation, Registry, Step},
-    statement::{self, Expected, Phase, Statement},
+    statement::{Expected, Phase, Statement},
 };
-use crate::backend::{Error, TRACE_HEIGHT, Val};
-use crate::opening::poseidon;
+use crate::source::poseidon;
+use bfv_hiding_stark::{Error, TRACE_HEIGHT, Val};
 use p3_field::{Field, PrimeCharacteristicRing};
 use p3_matrix::dense::RowMajorMatrix;
+use zeroize::Zeroize;
 #[derive(Clone)]
-pub(in crate::opening) struct Witness {
-    pub(super) plain: [u8; 2348],
-    pub(super) controllers: [[u8; 32]; 2],
+pub struct Witness {
+    pub plain: [u8; 2348],
+    pub controllers: [[u8; 32]; 2],
     /// Source, enrollment, old, command, next and result salts.
-    pub(super) salts: [[Val; 4]; 6],
-    pub(super) old: Registry,
-    pub(super) command: Option<Command>,
+    pub salts: [[Val; 4]; 6],
+    pub old: Registry,
+    pub command: Option<Command>,
 }
-pub(super) fn bits(out: &mut [Val], value: u64) {
+impl Drop for Witness {
+    fn drop(&mut self) {
+        self.plain.zeroize();
+        self.controllers.zeroize();
+        self.old.zeroize();
+        if let Some(command) = &mut self.command {
+            command.zeroize();
+        }
+        self.salts.fill([Val::ZERO; 4]);
+        // Native field traces, salts and temporary SDK buffers have no erasure guarantee.
+    }
+}
+pub fn bits(out: &mut [Val], value: u64) {
     for (i, v) in out.iter_mut().enumerate() {
         *v = Val::from_bool((value >> i) & 1 != 0);
     }
 }
-pub(super) fn inverse(value: Val) -> Val {
+pub fn inverse(value: Val) -> Val {
     if value == Val::ZERO {
         Val::ZERO
     } else {
@@ -36,7 +52,7 @@ fn bytes(out: &mut [Val], value: &[u8]) {
         bits(&mut out[8 * i..8 * (i + 1)], u64::from(*byte));
     }
 }
-pub(super) fn write_state(row: &mut [Val], base: usize, state: &Registry) {
+pub fn write_state(row: &mut [Val], base: usize, state: &Registry) {
     bits(&mut row[base + REV..base + REV + 64], state.revision);
     bits(&mut row[base + ALLOC..base + ALLOC + 64], state.allocator);
     for t in 0..2 {
@@ -70,7 +86,7 @@ pub(super) fn write_state(row: &mut [Val], base: usize, state: &Registry) {
         }
     }
 }
-pub(super) fn subtraction(row: &mut [Val], at: usize, left: u64, right: u64) {
+pub fn subtraction(row: &mut [Val], at: usize, left: u64, right: u64) {
     let mut borrow = 0i8;
     for bit in 0..64 {
         let difference = ((left >> bit) & 1) as i8 - ((right >> bit) & 1) as i8 - borrow;
@@ -79,13 +95,46 @@ pub(super) fn subtraction(row: &mut [Val], at: usize, left: u64, right: u64) {
     }
 }
 impl Witness {
-    pub(super) fn table(&self) -> [u8; 32] {
+    fn require_trace_shape(&self, next: Option<&Registry>) -> Result<(), Error> {
+        let bounded = |state: &Registry| {
+            state.transactions.len() <= 2
+                && state.transactions.iter().all(|tx| {
+                    (1..=2).contains(&tx.principal)
+                        && tx.held.iter().all(|m| *m <= 4)
+                        && tx.savepoints.len() <= 2
+                        && tx.savepoints.iter().all(|f| f.held.iter().all(|m| *m <= 4))
+                })
+        };
+        if !bounded(&self.old) || next.is_some_and(|s| !bounded(s)) {
+            return Err(Error::Shape);
+        }
+        if let Some(c) = &self.command
+            && (!(1..=2).contains(&c.principal)
+                || (c.operation == Operation::Acquire
+                    && (!(1..=4).contains(&c.mode) || c.wait > 2)))
+        {
+            return Err(Error::Shape);
+        }
+        Ok(())
+    }
+    pub(crate) fn require_source(&self, e: &Expected) -> Result<(), Error> {
+        self.require_trace_shape(None)?;
+        e.require_contract()?;
+        let fields =
+            crate::source::commitment::opening_fields(&e.source, self.salts[0], &self.plain);
+        if crate::source::commitment::digest(&fields) != e.source.open_commitment {
+            return Err(Error::Shape);
+        }
+        Ok(())
+    }
+    pub fn table(&self) -> [u8; 32] {
         self.plain[124..156].try_into().unwrap()
     }
-    pub(super) fn ages(&self) -> [u8; 4] {
+    pub fn ages(&self) -> [u8; 4] {
         core::array::from_fn(|i| self.plain[3 * i])
     }
-    pub(super) fn statement(&self, e: &Expected) -> Result<Statement, Error> {
+    pub fn statement(&self, e: &Expected) -> Result<Statement, Error> {
+        self.require_trace_shape(None)?;
         statement::proposed(e, self)
     }
     fn common(
@@ -96,10 +145,10 @@ impl Witness {
         controllers: usize,
         inverses: usize,
     ) {
-        for (i, word) in crate::opening::statement::words(&self.table()).enumerate() {
+        for (i, word) in crate::source::statement::words(&self.table()).enumerate() {
             row[table + i] = word;
         }
-        for (i, word) in crate::opening::statement::words(&self.plain[2220..2348]).enumerate() {
+        for (i, word) in crate::source::statement::words(&self.plain[2220..2348]).enumerate() {
             row[ids + i] = word;
         }
         for (t, c) in self.controllers.iter().enumerate() {
@@ -167,7 +216,9 @@ impl Witness {
             }
         }
     }
-    pub(super) fn trace(&self, s: &Statement) -> Result<RowMajorMatrix<Val>, Error> {
+    pub fn trace(&self, s: &Statement) -> Result<RowMajorMatrix<Val>, Error> {
+        self.require_trace_shape(None)?;
+        s.expected.require_contract()?;
         if matches!(s.expected.phase, Phase::Bootstrap) {
             return self.bootstrap_trace(s);
         }
@@ -175,12 +226,11 @@ impl Witness {
         let step = self.old.step(command, s.expected.parent, self.ages())?;
         self.trace_step(s, &step)
     }
-    /// Kept private to the relation so owning attacks can construct a coherent malicious trace.
-    pub(super) fn trace_step(
-        &self,
-        s: &Statement,
-        step: &Step,
-    ) -> Result<RowMajorMatrix<Val>, Error> {
+    /// Explicit low-level mathematical writer for coherent hostile Step claims.
+    /// This never verifies the Step or grants application permission.
+    pub fn trace_step(&self, s: &Statement, step: &Step) -> Result<RowMajorMatrix<Val>, Error> {
+        self.require_trace_shape(Some(&step.next))?;
+        s.expected.require_contract()?;
         let command = self.command.as_ref().ok_or(Error::Shape)?;
         let air = LifecycleAir::new(s);
         let mut bank = Val::zero_vec(WIDTH);
