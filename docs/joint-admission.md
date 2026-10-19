@@ -100,7 +100,8 @@ The Acquire lane calls the actual retained input16/output118 replay and genuine
 Lifecycle/PredicateAcquire verification. A full new-Genesis Acquire through this
 kernel/history has **not** yet been executed. The
 [ordinary retained OS-peer gate](retained-product-evidence.md) is separate evidence
-and cannot establish that missing composition. Durable Joint signing/reopen,
-network prefetch, owner staged-state custody and exact-byte retry, fresh own
+and cannot establish that missing composition. Local durable Joint signing and
+reopen have since passed their [own native gate](durable-joint-finality.md).
+Network prefetch, owner staged-state custody and exact-byte retry, fresh own
 Acquire completion, ordinary SELECT and general SQL remain unfinished. SQL
 entry guards stay closed until their complete required evidence is available.

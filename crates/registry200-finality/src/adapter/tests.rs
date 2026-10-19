@@ -877,7 +877,7 @@ fn participant_metadata_last_reopen_and_deleted_wal_never_become_a_new_signer() 
     let quota = ParticipantQuota::create_new(&root, [0x91; 32], 10_000_000_000).unwrap();
     let paths = crate::participant::Paths::participant(
         &quota,
-        &f.binding,
+        crate::pins::Pins::Original(&f.binding),
         f.key().verifying_key().to_bytes(),
     );
     let mut owned =
@@ -917,7 +917,7 @@ fn participant_late_quota_refusal_keeps_partial_files_but_never_publishes_metada
     let quota = ParticipantQuota::create_new(&root, [0x92; 32], limit).unwrap();
     let paths = crate::participant::Paths::participant(
         &quota,
-        &f.binding,
+        crate::pins::Pins::Original(&f.binding),
         f.key().verifying_key().to_bytes(),
     );
     assert!(RegistryFinality::create_participant(&quota, f.binding.clone(), f.key()).is_err());

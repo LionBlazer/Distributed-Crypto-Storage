@@ -1,4 +1,5 @@
 use crate::participant::{self, Paths};
+use crate::pins::Pins;
 use crate::{Binding, Descriptor, Error, Hash, Result, store::FloorLog};
 use ed25519_dalek::SigningKey;
 use protocol_storage::{ByteBudget, FileCharge};
@@ -190,7 +191,11 @@ impl RegistryFinality {
         binding: Binding,
         key: SigningKey,
     ) -> Result<Self> {
-        let paths = Paths::participant(quota, &binding, key.verifying_key().to_bytes());
+        let paths = Paths::participant(
+            quota,
+            Pins::Original(&binding),
+            key.verifying_key().to_bytes(),
+        );
         Self::create_paths(paths, binding, key, &quota.control_budget())
     }
     fn create_paths(
@@ -244,7 +249,7 @@ impl RegistryFinality {
             };
             (journal, journal_charge)
         };
-        let floor = FloorLog::create(&paths.floor, &binding, budget)?;
+        let floor = FloorLog::create(&paths.floor, Pins::Original(&binding), budget)?;
         let context = binding.initial_context().clone();
         let metadata_binding = binding.clone();
         let state = Arc::new(Mutex::new(State::new(binding, journal, journal_charge)?));
@@ -256,7 +261,7 @@ impl RegistryFinality {
             budget,
         )?;
         let metadata = metadata_permit
-            .map(|permit| participant::install(permit, &metadata_binding, signer))
+            .map(|permit| participant::install(permit, Pins::Original(&metadata_binding), signer))
             .transpose()?;
         Ok(Self {
             state,
@@ -284,7 +289,11 @@ impl RegistryFinality {
         binding: Binding,
         key: SigningKey,
     ) -> Result<Self> {
-        let paths = Paths::participant(quota, &binding, key.verifying_key().to_bytes());
+        let paths = Paths::participant(
+            quota,
+            Pins::Original(&binding),
+            key.verifying_key().to_bytes(),
+        );
         Self::open_paths(paths, binding, key, &quota.control_budget())
     }
     fn open_paths(
@@ -296,7 +305,14 @@ impl RegistryFinality {
         let metadata = paths
             .metadata
             .as_ref()
-            .map(|p| participant::open(p, &binding, key.verifying_key().to_bytes(), budget))
+            .map(|p| {
+                participant::open(
+                    p,
+                    Pins::Original(&binding),
+                    key.verifying_key().to_bytes(),
+                    budget,
+                )
+            })
             .transpose()?;
         let verifier = RegistryVerifier::new(binding.application()?, binding.journal_genesis())?;
         budget.check_existing_file(&paths.journal)?;
@@ -312,7 +328,7 @@ impl RegistryFinality {
             journal_charge.mark_io_failed();
             Error::from(e)
         })?;
-        let mut floor = FloorLog::open(&paths.floor, &binding, budget)?;
+        let mut floor = FloorLog::open(&paths.floor, Pins::Original(&binding), budget)?;
         let initial = binding.initial_context().clone();
         let mut state = State::new(binding, journal, journal_charge)?;
         while let Some(record) = floor.next()? {

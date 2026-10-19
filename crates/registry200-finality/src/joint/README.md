@@ -1,9 +1,12 @@
-# Closed keyless Joint history
+# Closed Joint history and durable owner
 
 This module checks historical checkpoints for the NEW fixed Registry200 Joint
-application. Its four owning native cases and two ownership contracts passed.
+application. Its four keyless owning cases and two ownership contracts passed,
+alongside five durable owning cases and two durable ownership contracts.
 The original Registry200 Binding, Follower, verifier, codecs and profiles remain
-unchanged. No generic Journal, supplied verifier, callback or "already verified"
+unchanged. Its private storage implementation is shared through the closed
+`Pins::Original | Pins::Joint` choice, with byte-identical Original domains and
+formats. No generic Journal, supplied verifier, callback or "already verified"
 flag can construct this module's historical parent.
 
 `JointBinding::new` takes independently authenticated public network, multi-slot
@@ -61,6 +64,67 @@ Pending Control; it creates no Active Registry or lock. Even an Active parent is
 Its immutable descriptor retains full setup and Key33 metadata; no secret or
 private opening is exposed.
 
+## Durable participant installation
+
+`durable_profile_digest()` is a NEW fixed algorithm identity. Construct
+`Rules::multi_slot(durable_profile_digest(), 272, ...)` before bootstrap work,
+then `JointBinding::for_durable(...)`. The original `JointBinding::new` and
+keyless `profile_digest()` keep their exact identities and reject these foreign
+Rules. No caller-selected profile, accepting flag or automatic migration exists.
+Keyless history can independently follow a correctly pinned durable binding.
+
+`DurableJointFinality::{create_participant,open_participant}` take the ONE actual
+`ParticipantQuota`, the independent binding and an owned signer key. Each opens
+its concrete `JointDepot` from that quota's `depot_budget()` internally, so a
+caller cannot substitute a store charged to another participant. Cold public
+prefetch must close that store gate before construction. The owner returns only
+`evidence_ingress()` for later bounded public bytes; it exposes no mutable
+Journal/store, key, supplied successor or generic application verifier.
+
+Creation is new-only: metadata absence is reserved before depot opening or setup
+restoration, and the same actual permit is held through installation. Charged
+Journal, floor and actual DurableVoter are created before metadata-last
+publication. `DCSJFM01` metadata pins binding and signer. The SAME FloorLog has
+fixed Joint domains `DCSJFL01`/`DCSJFR01`, a 168-byte header and unchanged bounded
+record geometry. All control files are charged against the existing <=256-MiB
+control budget, alongside the same participant's separate depot/global quota.
+No legacy Body, transport, Journal, WAL, proof or blob cap is widened.
+
+Import rechecks the exact current certified parent, owner-signed canonical Body
+and all actual Joint proofs, even for a cached block; durable body sync precedes
+voting. Every proposal, commit, recovery and signer advance calls the concrete
+JointVerifier again. Bootstrap/Control/Acquire keep the kernel's exact mandatory
+proof lanes. In particular no QC, manifest hash, catalog identity or previous
+proof-success bit replaces all input16/output118 replay for Acquire.
+
+Once the actual signer decision is durable, the owner rechecks application,
+quorum/successor and terminal/history bounds BEFORE floor append. It syncs the
+floor before restricting ancestry/installing historical parent state, then
+unlocks State before the actual signer's no-argument `advance` rechecks the app
+and syncs the successor WAL. A bounded slot-to-context-ID/parent map supports
+old WAL proposal replay; only the latest complete Context is retained for
+idempotent alternate-QC retry. The last allowed Header is admitted, not lost to
+an off-by-one bound. Attempts beyond the terminal bound close this owner.
+
+Existing-only recovery restores the independently pinned setup, reopens the
+actual Journal with full Joint verification, replays each floor's actual QC and
+computation, then replays the signer WAL and synchronizes a durable decision/floor
+gap. Missing/corrupt setup, computation premises, marker, Journal, floor or WAL
+never recreate a file or authorize a signer. Torn tails are rejected without
+truncation. Uncertain writes poison this owner and the shared actual-file ledger;
+I/O/storage/floor/poison errors are preserved in `Error::Durable` rather than
+reported as a malformed network encoding. Filesystem/directory-entry power-loss
+guarantees, non-rollback honest signing and immutable evidence retention remain
+host assumptions.
+
+`import_candidate`, `propose`, `receive`, `receive_checkpoint`, `on_timeout` and
+`checkpoint_after` use actual Work protocol types. Latest semantic duplicate QCs
+recheck the complete application and retain the same successor without appending
+another floor/WAL record. `finalized_parent()` publishes only the private-field
+historical metadata after full synchronization. It is not a freshness barrier,
+Vault promotion, completed FHE answer or live SQL grant; without quorum no lock
+or End permission can be returned.
+
 ## Host lifecycle and limits
 
 Before `apply`, the caller must fetch and durably retain **all** fixed catalog
@@ -73,10 +137,10 @@ gate is created here. Repeated verification can be expensive and remains subject
 to host DoS/scheduling policy. No whole-process RAM or interactive latency claim
 follows from these source bounds.
 
-This keyless owner has no mutable Journal/store getter, signer key, outbound vote,
+The keyless owner has no mutable Journal/store getter, signer key, outbound vote,
 WAL or floor-log API. Fresh reconstruction must replay original blocks and QCs
-with the original local evidence and independent binding. It is not a durable
-JointFinality adapter. Durable floor-before-WAL-advance, network transport/prefetch,
+with the original local evidence and independent binding. The separate durable
+owner above adds signer/floor persistence. Network transport/prefetch,
 owner Vault/staged-state promotion, exact signed-byte lost-ACK recovery, delegated
 rights and fresh operation-specific Acquire completion remain separate required
 integration work. Without quorum no lock/End permission may be returned.
@@ -98,7 +162,10 @@ exhausted; safe retained-history compaction remains unresolved.
 
 `binding.rs` owns independent pins, `wire.rs` owns the new bounded untrusted
 envelopes, and `history.rs` owns closed application/QC checking and parent creation.
-The parent crate's private bounded Reader and timestamp helper are reused.
+`adapter.rs` owns the concrete durable lifecycle and historical replay map.
+The parent crate's private bounded Reader, timestamp helper, actual FloorLog and
+participant metadata machinery are reused. Private `pins.rs` is the closed
+Original/Joint namespace selector, not an application-verification interface.
 
 Four runtime tests and two compile-fail examples passed. They cover new/old application and Rules separation,
 bounded canonical wires, actual Work quorum/alternate semantic decision, atomic
@@ -111,3 +178,19 @@ reservations; diagnostic usage remains readable. See the
 [native validation record](../../../../docs/joint-admission.md).
 Full Acquire retained evidence and independent-process/finality/SQL gates remain
 pending; no expensive positive is replaced by a simulated success test.
+
+Five additional durable runtime cases and two ownership compile-fail examples
+passed; see the [durable native record](../../../../docs/durable-joint-finality.md).
+They use actual
+signed Source/Bootstrap/Begin/Kind proofs and real Work QCs, fresh durable replay,
+re-signed wrong-q rejection, semantic retry, missing/corrupt retained premises,
+metadata-last/missing-WAL refusal, actual partial/lost-ACK floor writes,
+post-floor shared-ledger refusal at actual WAL advance, corrupt closed-WAL tail,
+shared poison and terminal-two-Header reopen. The test-only pre-advance point
+marks the actual shared ledger failed; the real signer's grow must reject it.
+Closed-WAL corruption uses actual file bytes after releasing its exclusive lock.
+These do not claim arbitrary filesystem write-fault coverage or malicious rollback
+protection; the unchanged work-finality writer owns its partial/sync fault tests.
+Together with the original and keyless regressions, 19 distinct runtime cases
+and seven compile-fail contracts passed. Full Acquire, independent-process Joint
+finality and fresh completion remain pending.

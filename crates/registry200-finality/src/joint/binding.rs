@@ -22,6 +22,20 @@ pub fn profile_digest() -> Hash {
     ])
 }
 
+/// Distinct signer/floor contract selected BEFORE Work bootstrap. The keyless
+/// relation/profile remains unchanged; no old RulesId is silently relabelled.
+pub fn durable_profile_digest() -> Hash {
+    digest(b"dcs/registry200-finality/joint-durable/v1", &[
+        &profile_digest(),
+        b"fixed-JointVerifier/all-proof-replay-before-vote-import-reopen/no-cached-authority",
+        b"DCSJFL01/DCSJFR01/DCSJFM01/participant-four-files/metadata-last/precharge/fsync",
+        b"decision-WAL-before-floor/floor-before-install-and-advance/semantic-successor/strict-tail/no-repair",
+        b"bounded-historical-contexts/last-admissible-header/no-quorum-no-lock-or-End/no-SQL-grant",
+        &(CANDIDATE_BYTES as u64).to_le_bytes(),
+        &version_journal::MAX_JOURNAL_BYTES.to_le_bytes(),
+    ])
+}
+
 /// Independently authenticated public installation pins. Network metadata may
 /// not nominate a binding, source object, Key33, setup, roster, or easier Rules.
 #[derive(Clone)]
@@ -43,8 +57,46 @@ impl JointBinding {
         descriptor: Descriptor,
         setup: SetupClaim,
     ) -> Result<Self> {
+        Self::checked(
+            public_network,
+            rules,
+            work,
+            journal,
+            descriptor,
+            setup,
+            Purpose::Keyless,
+        )
+    }
+    pub fn for_durable(
+        public_network: Hash,
+        rules: Rules,
+        work: WorkGenesis,
+        journal: JournalGenesis,
+        descriptor: Descriptor,
+        setup: SetupClaim,
+    ) -> Result<Self> {
+        Self::checked(
+            public_network,
+            rules,
+            work,
+            journal,
+            descriptor,
+            setup,
+            Purpose::Durable,
+        )
+    }
+    fn checked(
+        public_network: Hash,
+        rules: Rules,
+        work: WorkGenesis,
+        journal: JournalGenesis,
+        descriptor: Descriptor,
+        setup: SetupClaim,
+        purpose: Purpose,
+    ) -> Result<Self> {
+        let profile = purpose.profile();
         if !rules.is_multi_slot()
-            || rules.application_id() != profile_digest()
+            || rules.application_id() != profile
             || rules.max_value_bytes() != CANDIDATE_BYTES
             || journal.network_id != public_network
         {
@@ -66,7 +118,7 @@ impl JointBinding {
         let id = digest(
             b"dcs/registry200-finality/joint-binding/v1",
             &[
-                &profile_digest(),
+                &profile,
                 &public_network,
                 rules.id().as_bytes(),
                 &work.id(),
@@ -118,7 +170,31 @@ impl JointBinding {
     pub fn initial_context(&self) -> &Context {
         &self.initial
     }
+    pub(super) fn require_durable(&self) -> Result<()> {
+        if self.rules.application_id() != durable_profile_digest() {
+            return Err(Error::Binding);
+        }
+        Ok(())
+    }
+    pub(super) fn namespace(&self) -> Hash {
+        digest(
+            b"dcs/registry200-finality/joint-journal-namespace/v1",
+            &[&durable_profile_digest(), &self.id],
+        )
+    }
     pub(crate) fn application(&self) -> Result<Application> {
         Ok(Application::new(self.descriptor.clone(), &self.journal)?)
+    }
+}
+enum Purpose {
+    Keyless,
+    Durable,
+}
+impl Purpose {
+    fn profile(&self) -> Hash {
+        match self {
+            Self::Keyless => profile_digest(),
+            Self::Durable => durable_profile_digest(),
+        }
     }
 }

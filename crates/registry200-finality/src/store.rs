@@ -1,6 +1,9 @@
 //! Private bounded certificate log. Parsing/checksums never confer authority.
 use crate::{
-    Binding, DESCRIPTOR_BYTES, Error, Hash, Result, codec::Reader, digest, profile_digest,
+    DESCRIPTOR_BYTES, Error, Hash, Result,
+    codec::Reader,
+    digest,
+    pins::{Format, Pins},
 };
 use protocol_storage::{ByteBudget, FileCharge};
 use std::{
@@ -19,6 +22,7 @@ pub(crate) struct Record {
     pub(crate) certificate: Vec<u8>,
 }
 pub(crate) struct FloorLog {
+    format: Format,
     file: File,
     charge: FileCharge,
     length: u64,
@@ -60,12 +64,12 @@ impl FloorLog {
             self.file.seek(SeekFrom::Start(0))?;
             let mut header = [0; HEADER_BYTES];
             self.file.read_exact(&mut header)?;
-            if digest(b"dcs/registry200-finality/floor-header/v1", &[&header]) != self.header_hash {
+            if digest(self.format.header_hash(), &[&header]) != self.header_hash {
                 return Err(Error::CorruptFloor);
             }
             self.position = HEADER_BYTES as u64;
             self.sequence = 0;
-            self.previous = digest(b"dcs/registry200-finality/floor-header/v1", &[&header]);
+            self.previous = digest(self.format.header_hash(), &[&header]);
             for _ in 0..slot {
                 let record = self.next()?.ok_or(Error::CorruptFloor)?;
                 if self.sequence == slot {
@@ -80,7 +84,7 @@ impl FloorLog {
         self.file.seek(SeekFrom::Start(saved.0))?;
         result
     }
-    pub(crate) fn create(path: &Path, binding: &Binding, budget: &ByteBudget) -> Result<Self> {
+    pub(crate) fn create(path: &Path, binding: Pins<'_>, budget: &ByteBudget) -> Result<Self> {
         let header = header(binding);
         let mut permit = budget.preflight_file(path, header.len() as u64)?;
         let mut file = OpenOptions::new()
@@ -95,19 +99,20 @@ impl FloorLog {
             return Err(e.into());
         }
         Ok(Self {
+            format: binding.format(),
             file,
             charge,
             length: header.len() as u64,
             position: header.len() as u64,
             sequence: 0,
-            previous: digest(b"dcs/registry200-finality/floor-header/v1", &[&header]),
-            header_hash: digest(b"dcs/registry200-finality/floor-header/v1", &[&header]),
-            max_records: u64::from(binding.journal_genesis().profile.max_headers),
+            previous: digest(binding.format().header_hash(), &[&header]),
+            header_hash: digest(binding.format().header_hash(), &[&header]),
+            max_records: u64::from(binding.genesis().profile.max_headers),
             #[cfg(test)]
             fault: None,
         })
     }
-    pub(crate) fn open(path: &Path, binding: &Binding, budget: &ByteBudget) -> Result<Self> {
+    pub(crate) fn open(path: &Path, binding: Pins<'_>, budget: &ByteBudget) -> Result<Self> {
         budget.check_existing_file(path)?;
         let charge = budget.register_file(path)?;
         let mut file = OpenOptions::new()
@@ -136,14 +141,15 @@ impl FloorLog {
         }
         let (length, b) = inspected?;
         Ok(Self {
+            format: binding.format(),
             file,
             charge,
             length,
             position: HEADER_BYTES as u64,
             sequence: 0,
-            previous: digest(b"dcs/registry200-finality/floor-header/v1", &[&b]),
-            header_hash: digest(b"dcs/registry200-finality/floor-header/v1", &[&b]),
-            max_records: u64::from(binding.journal_genesis().profile.max_headers),
+            previous: digest(binding.format().header_hash(), &[&b]),
+            header_hash: digest(binding.format().header_hash(), &[&b]),
+            max_records: u64::from(binding.genesis().profile.max_headers),
             #[cfg(test)]
             fault: None,
         })
@@ -190,9 +196,9 @@ impl FloorLog {
         }
         let certificate = r.take(cert_len)?.to_vec();
         let hash = r.hash()?;
-        if hash != digest(b"dcs/registry200-finality/floor-record/v1", &[&b[..n - 44]])
+        if hash != digest(self.format.record_hash(), &[&b[..n - 44]])
             || r.u32()? as usize != n
-            || r.array::<8>()? != *b"DCSRFR01"
+            || r.array::<8>()? != *self.format.record_magic()
         {
             return Err(Error::CorruptFloor);
         }
@@ -245,10 +251,10 @@ impl FloorLog {
         b.extend_from_slice(decision.value());
         b.extend_from_slice(&(certificate.len() as u32).to_le_bytes());
         b.extend_from_slice(&certificate);
-        let hash = digest(b"dcs/registry200-finality/floor-record/v1", &[&b]);
+        let hash = digest(self.format.record_hash(), &[&b]);
         b.extend_from_slice(&hash);
         b.extend_from_slice(&(n as u32).to_le_bytes());
-        b.extend_from_slice(b"DCSRFR01");
+        b.extend_from_slice(self.format.record_magic());
         self.charge.grow(next)?;
         self.file.seek(SeekFrom::Start(self.length))?;
         #[cfg(test)]
@@ -278,14 +284,14 @@ impl FloorLog {
         self.fault = Some(fault);
     }
 }
-fn header(binding: &Binding) -> Vec<u8> {
+fn header(binding: Pins<'_>) -> Vec<u8> {
     let mut b = Vec::with_capacity(HEADER_BYTES);
-    b.extend_from_slice(b"DCSRFL01");
-    b.extend_from_slice(&profile_digest());
+    b.extend_from_slice(binding.format().floor_magic());
+    b.extend_from_slice(&binding.format().profile());
     b.extend_from_slice(&binding.id());
-    b.extend_from_slice(&binding.initial_context().id());
-    b.extend_from_slice(&binding.journal_genesis().id().expect("checked binding"));
-    let checksum = digest(b"dcs/registry200-finality/floor-header-check/v1", &[&b]);
+    b.extend_from_slice(&binding.context().id());
+    b.extend_from_slice(&binding.genesis().id().expect("checked binding"));
+    let checksum = digest(binding.format().header_check(), &[&b]);
     b.extend_from_slice(&checksum);
     b
 }

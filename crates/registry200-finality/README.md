@@ -5,19 +5,22 @@ weighted multi-slot signer and certificate floor log. It implements a local
 durable protocol boundary. It is not a peer actor, a freshness barrier, an epoch
 activation protocol or permission to accept SQL/row-lock results.
 
-The separate [closed keyless Joint history](src/joint/README.md) composes the new
+The separate [closed Joint module](src/joint/README.md) composes the new
 FHE/control application with actual weighted checkpoint verification. Its private
-parent type can only originate in full application/QC replay. It has no durable
-signer or floor yet; the original durable adapter below keeps its original
-application and proof contract.
+parent type can only originate in full application/QC replay. Alongside keyless
+history, `DurableJointFinality` owns the actual signer and floor under a distinct
+fixed durable Rules profile. Its five owning native cases and two ownership
+contracts passed; see the [durable Joint record](../../docs/durable-joint-finality.md).
+The original durable adapter below keeps its original application,
+proof profiles and byte formats.
 
 | Direct dependency | Responsibility |
 | --- | --- |
-| [registry200-joint](../registry200-joint/README.md) | Fixed retained FHE plus Source/Lifecycle/Link admission for the separate keyless Joint history |
+| [registry200-joint](../registry200-joint/README.md) | Fixed retained FHE plus Source/Lifecycle/Link replay for the separate Joint history and durable owner |
 | `registry200-journal` | Complete canonical application pins and the actual Source-first/Lifecycle transition verifier |
 | `version-journal` | Canonical Header/Body, actual work/owner/CAS checks, bounded journal persistence and mechanical ancestry floor |
 | `work-finality` | Checked bootstrap weights, actual signatures/QCs, round/lock/POL machine and exclusive multi-slot signer |
-| `protocol-storage` | One 256 MiB maximum shared actual-file/transient-reservation quota |
+| `protocol-storage` | Original <=256-MiB shared budget or explicit participant global quota with unchanged control cap and typed depot accounting |
 | `sha2`, `ed25519-dalek` | Domain-separated identities and transfer of the caller-owned signing key |
 
 | Public entry point | Contract |
@@ -29,6 +32,12 @@ application and proof contract.
 | `import_candidate` | Recheck actual full Header/Body/owner/proof and current certified parent, including duplicate imports; retain body before voting |
 | `propose`, `receive`, `on_timeout` | Actual local proposal, bounded signed remote input, or local clock control; no generic verifier callback |
 | `finalized_head` | Metadata available only after durable decision, floor installation and next-slot signer synchronization |
+
+Private `pins.rs` selects only Original or Joint installation domains for the
+SAME actual FloorLog and participant files. Original choices preserve every
+existing magic/hash/profile byte. Joint uses its own fixed Rules/storage profile
+and accepts no old-application fallback; see its module README for the executed
+tests and complete replay contract.
 
 ## Pins and ordering
 
@@ -114,8 +123,8 @@ does not establish that premise, fair election inclusion, balanced failure group
 or availability if a high-weight participant disappears. The bootstrap roster
 remains fixed. The participant bootstrap below has passed its own native gate;
 permissionless system-lane work tickets, safe epoch handoff, freshness barriers
-and a new joint hidden-predicate/FHE/lock
-application are still required. This wrapper's local latest floor cannot certify
+and full network integration of the Joint hidden-predicate/FHE/lock application
+are still required. This wrapper's local latest floor cannot certify
 globally newest data during an unseen partition and gives no live SQL grant.
 
 The round/lock/POL semantics are pinned separately in

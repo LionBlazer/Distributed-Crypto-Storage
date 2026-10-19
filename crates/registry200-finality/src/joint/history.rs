@@ -25,6 +25,22 @@ pub struct VerifiedJointParent {
     control: Control,
 }
 impl VerifiedJointParent {
+    pub(super) fn checked(
+        binding: &JointBinding,
+        head: HeadRef,
+        slot: u64,
+        decision: Hash,
+        control: Control,
+    ) -> Self {
+        Self {
+            binding: binding.id(),
+            descriptor: binding.application_descriptor().clone(),
+            head,
+            slot,
+            decision,
+            control,
+        }
+    }
     pub fn binding_id(&self) -> Hash {
         self.binding
     }
@@ -134,7 +150,7 @@ impl JointHistory {
             context,
             parent,
             candidate,
-            block,
+            block.body(),
         )?;
         let head = HeadRef {
             genesis: candidate.header.genesis,
@@ -190,14 +206,14 @@ impl JointHistory {
     }
 }
 
-fn verify_candidate(
+pub(super) fn verify_candidate(
     binding: &JointBinding,
     journal: &Journal,
     verifier: &JointVerifier,
     context: &Context,
     parent: HeadRef,
     d: &JointCandidate,
-    block: &CandidateBlock,
+    body: &[u8],
 ) -> Result<Control> {
     if d.binding != binding.id()
         || d.slot != context.slot()
@@ -208,18 +224,13 @@ fn verify_candidate(
     {
         return Err(Error::Context);
     }
-    journal.reverify_block(
-        &d.header,
-        block.body(),
-        crate::adapter::now().map_err(|_| Error::Context)?,
-        verifier,
-    )?;
+    journal.reverify_block(&d.header, body, crate::adapter::now()?, verifier)?;
     // Snapshot only after the actual owner/header/application proof checks.
     // SourceSpec derives from immutable independently pinned NEW application.
     let application = binding.application()?;
     let spec = application.source_spec();
     let old = spec.control(journal.validated_shards(parent)?)?;
-    let next = match Body::decode(block.body(), journal.profile())? {
+    let next = match Body::decode(body, journal.profile())? {
         Body::Empty => old,
         Body::Transition(body) => {
             if body.updates.len() != 1 || body.updates[0].id != spec.control_id {
@@ -233,4 +244,4 @@ fn verify_candidate(
 
 #[cfg(test)]
 #[path = "tests.rs"]
-mod tests;
+pub(super) mod tests;

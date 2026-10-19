@@ -1,5 +1,5 @@
 //! Explicit participant storage profile. No legacy path adoption or recovery create.
-use crate::{Binding, Error, Hash, Result, digest};
+use crate::{Error, Hash, Result, digest, pins::Pins};
 use protocol_storage::{ByteBudget, ControlFile, FileCharge, FilePermit, ParticipantQuota};
 use std::{
     fs::{File, OpenOptions},
@@ -32,7 +32,7 @@ impl Paths {
             metadata: None,
         })
     }
-    pub fn participant(quota: &ParticipantQuota, binding: &Binding, signer: Hash) -> Self {
+    pub fn participant(quota: &ParticipantQuota, binding: Pins<'_>, signer: Hash) -> Self {
         let id = file_id(binding, signer);
         Self {
             journal: quota.control_file(id, ControlFile::Journal),
@@ -42,25 +42,21 @@ impl Paths {
         }
     }
 }
-fn file_id(binding: &Binding, signer: Hash) -> Hash {
+fn file_id(binding: Pins<'_>, signer: Hash) -> Hash {
     digest(
-        b"dcs/registry200-finality/participant-file-id/v1",
-        &[
-            &participant_storage_profile_digest(),
-            &binding.id(),
-            &signer,
-        ],
+        binding.format().file_domain(),
+        &[&binding.format().storage_profile(), &binding.id(), &signer],
     )
 }
-fn metadata(binding: &Binding, signer: Hash) -> [u8; META_BYTES] {
+fn metadata(binding: Pins<'_>, signer: Hash) -> [u8; META_BYTES] {
     let mut b = [0; META_BYTES];
-    b[..8].copy_from_slice(b"DCSRFM01");
+    b[..8].copy_from_slice(binding.format().metadata_magic());
     for (i, h) in [
-        participant_storage_profile_digest(),
+        binding.format().storage_profile(),
         protocol_storage::participant_profile_digest(),
         binding.id(),
         signer,
-        binding.initial_context().journal_genesis(),
+        binding.context().journal_genesis(),
         file_id(binding, signer),
     ]
     .iter()
@@ -68,16 +64,13 @@ fn metadata(binding: &Binding, signer: Hash) -> [u8; META_BYTES] {
     {
         b[8 + 32 * i..40 + 32 * i].copy_from_slice(h);
     }
-    let hash = digest(
-        b"dcs/registry200-finality/participant-metadata/v1",
-        &[&b[..200]],
-    );
+    let hash = digest(binding.format().metadata_hash(), &[&b[..200]]);
     b[200..].copy_from_slice(&hash);
     b
 }
 pub(crate) fn install(
     mut permit: FilePermit,
-    binding: &Binding,
+    binding: Pins<'_>,
     signer: Hash,
 ) -> Result<FileCharge> {
     let bytes = metadata(binding, signer);
@@ -115,7 +108,7 @@ fn sync_parent(path: &Path) -> std::io::Result<()> {
 }
 pub(crate) fn open(
     path: &Path,
-    binding: &Binding,
+    binding: Pins<'_>,
     signer: Hash,
     budget: &ByteBudget,
 ) -> Result<FileCharge> {

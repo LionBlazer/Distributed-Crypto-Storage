@@ -32,9 +32,9 @@ use work_finality::{
 };
 use zeroize::Zeroizing;
 
-struct Directory(PathBuf);
+pub(in crate::joint) struct Directory(PathBuf);
 impl Directory {
-    fn new() -> Self {
+    pub(in crate::joint) fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let parent = std::env::temp_dir().canonicalize().unwrap();
         for _ in 0..128 {
@@ -51,7 +51,7 @@ impl Directory {
         }
         panic!("bounded directory allocation exhausted")
     }
-    fn root(&self) -> PathBuf {
+    pub(in crate::joint) fn root(&self) -> PathBuf {
         self.0.join("participant")
     }
 }
@@ -80,13 +80,13 @@ impl Drop for Directory {
         }
     }
 }
-struct Fixture {
-    descriptor: Descriptor,
-    setup: bfv_query_core::PublicSetup,
-    source: source::Statement,
-    witness: lifecycle::circuit::Witness,
+pub(in crate::joint) struct Fixture {
+    pub(in crate::joint) descriptor: Descriptor,
+    pub(in crate::joint) setup: bfv_query_core::PublicSetup,
+    pub(in crate::joint) source: source::Statement,
+    pub(in crate::joint) witness: lifecycle::circuit::Witness,
 }
-fn fixture() -> &'static Fixture {
+pub(in crate::joint) fn fixture() -> &'static Fixture {
     static PUBLIC: OnceLock<Fixture> = OnceLock::new();
     PUBLIC.get_or_init(|| {
         let key = [0x71; 32];
@@ -189,7 +189,7 @@ fn fixture() -> &'static Fixture {
         }
     })
 }
-fn genesis(d: &Descriptor) -> Genesis {
+pub(in crate::joint) fn genesis(d: &Descriptor) -> Genesis {
     let app = d.source_spec().unwrap();
     Genesis {
         network_id: app.network,
@@ -217,7 +217,7 @@ fn genesis(d: &Descriptor) -> Genesis {
         initial_shards: app.initial_shards(),
     }
 }
-fn keys() -> Vec<SigningKey> {
+pub(in crate::joint) fn keys() -> Vec<SigningKey> {
     let mut keys: Vec<_> = (1..=4).map(|n| SigningKey::from_bytes(&[n; 32])).collect();
     keys.sort_by_key(|k| k.verifying_key().to_bytes());
     keys
@@ -233,7 +233,7 @@ fn rules() -> Rules {
     )
     .unwrap()
 }
-fn work(rules: &Rules) -> WorkGenesis {
+pub(in crate::joint) fn work(rules: &Rules) -> WorkGenesis {
     let seed = NetworkSeed::new(
         rules.seed_domain([0x19; 32]),
         [10; 32],
@@ -259,7 +259,12 @@ fn binding(g: Genesis, claim: SetupClaim) -> JointBinding {
     )
     .unwrap()
 }
-fn certificate(context: &Context, d: &JointCandidate, round: u64, start: usize) -> Vec<u8> {
+pub(in crate::joint) fn certificate(
+    context: &Context,
+    d: &JointCandidate,
+    round: u64,
+    start: usize,
+) -> Vec<u8> {
     // Test-only signed evidence uses the unchanged public SDK vote-domain rule.
     let mut h = Sha256::new();
     h.update(b"dcs/work-finality/consensus-vote-instance/v1");
@@ -469,7 +474,7 @@ fn actual_empty_quorum_duplicate_rounds_share_successor_and_invalid_inputs_do_no
     );
 }
 
-fn proof_body(
+pub(in crate::joint) fn proof_body(
     f: &Fixture,
     app: &Application,
     journal: &Journal,
@@ -633,7 +638,7 @@ fn proof_body(
     body.sign(app.genesis(), &SigningKey::from_bytes(&[0x64; 32]));
     (Body::Transition(body), kind)
 }
-fn proposed(journal: &Journal, body: &Body) -> CandidateBlock {
+pub(in crate::joint) fn proposed(journal: &Journal, body: &Body) -> CandidateBlock {
     let head = journal.best_validated();
     let mut header = journal
         .candidate(head.block, body, 1001 + head.height)

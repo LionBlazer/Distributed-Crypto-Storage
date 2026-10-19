@@ -1,12 +1,14 @@
-//! Keyless, closed verification of historical Joint computation and Work quorums.
-//! No signer, durable floor, fresh SQL grant or arbitrary Journal import exists here.
+//! Closed historical Joint verification and a distinct durable participant owner.
+//! Neither path is a fresh SQL grant or accepts an arbitrary supplied Journal.
 
+mod adapter;
 mod binding;
 mod history;
 mod wire;
 
 pub use crate::CandidateBlock;
-pub use binding::{JointBinding, profile_digest};
+pub use adapter::{DurableJointFinality, participant_storage_profile_digest};
+pub use binding::{JointBinding, durable_profile_digest, profile_digest};
 pub use history::{JointHistory, VerifiedJointParent};
 pub use wire::{CANDIDATE_BYTES, JointCandidate, JointCheckpoint, MAX_CHECKPOINT_BYTES};
 
@@ -22,6 +24,8 @@ pub enum Error {
     Joint(registry200_joint::Error),
     Journal(version_journal::Error),
     Consensus(work_finality::consensus::Error),
+    /// Preserve concrete storage, I/O, corrupt-floor and poison ownership.
+    Durable(crate::Error),
 }
 impl From<registry200_joint::Error> for Error {
     fn from(e: registry200_joint::Error) -> Self {
@@ -42,13 +46,14 @@ impl From<crate::Error> for Error {
     fn from(e: crate::Error) -> Self {
         match e {
             crate::Error::ResourceLimit => Self::ResourceLimit,
-            _ => Self::Encoding,
+            crate::Error::InvalidEncoding => Self::Encoding,
+            other => Self::Durable(other),
         }
     }
 }
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "Joint historical checkpoint rejected: {self:?}")
+        write!(f, "Joint checkpoint owner rejected: {self:?}")
     }
 }
 impl std::error::Error for Error {}

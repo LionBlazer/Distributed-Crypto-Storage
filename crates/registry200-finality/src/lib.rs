@@ -1,4 +1,4 @@
-//! Closed, durable checkpoint finality for the original Registry200 application.
+//! Closed checkpoint finality for the original Registry200 and separate Joint app.
 //!
 //! This is a local protocol owner, not a network actor or SQL grant. Independent
 //! bootstrap pins and the activated roster's <1/3 Byzantine-weight premise are
@@ -10,6 +10,7 @@ mod binding;
 mod codec;
 mod follower;
 mod participant;
+mod pins;
 mod store;
 mod wire;
 
