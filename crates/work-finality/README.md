@@ -7,9 +7,10 @@ on 2026-10-19; the executed scope is recorded below.
 
 This is a reusable mathematical prerequisite for the selected finality contract:
 less than one third of confirmed computational weight may be Byzantine, and locks
-must wait when the required quorum is unavailable. It does not implement Tendermint
-round progression, vote locks, durable anti-double-voting, reconfiguration, fresh
-head agreement, candidate proof validation, networking, SQL, or a lock grant. A
+must wait when the required quorum is unavailable. The validated election/QC layer
+is supplemented by a validated single-slot consensus/signer
+module described below. Reconfiguration, fresh journal-head agreement, the production candidate
+proof adapter, networking, SQL and lock grants remain absent. A
 `QuorumCertificate` is never a `FinalizedHead` or application admission token.
 
 ## Ownership and dependencies
@@ -20,9 +21,10 @@ and verifies with `verify_strict`; weak public keys are rejected. SHA256d checks
 actual key-bound proof of work. No signature, key id, TLS identity, or claimed
 hashpower replaces work.
 
-Callers retain signing-key ownership; the library borrows keys for a call and stores
-only public evidence. It performs no I/O and makes no secret-erasure guarantee for
-caller or library scratch. The dev-only `ed25519-dalek/hazmat` feature constructs two
+The election/QC APIs borrow caller-owned signing keys and store only public
+evidence. That layer performs no I/O. The new `consensus::DurableVoter` instead
+consumes its signing key and owns its file lifecycle. Neither boundary guarantees
+erasure of caller or library scratch. The dev-only `ed25519-dalek/hazmat` feature constructs two
 genuinely valid signatures of the same PoW message using an explicitly PUBLIC,
 NON-SECRET fixture key. Both pass production strict verification before duplicate
 work is rejected. Hazmat signing is not used by production code.
@@ -40,7 +42,9 @@ work is rejected. Hazmat signing is not used by production code.
 
 All fields which could nominate a weight or a verified result are private. Public
 getters expose immutable metadata. There is no serde format, arbitrary-weight
-constructor, callback, serialized trusted marker, or signing-key getter.
+constructor, serialized trusted marker, or signing-key getter. The consensus
+module's explicit application-verification trait is a separate trusted integration
+boundary; its production implementation is still missing.
 
 ## Acyclic work and weight contract
 
@@ -50,7 +54,7 @@ public key and nonce. Genesis then hashes the complete seed and checked sorted
 tickets. Only after that is its initial `EpochSet` derived and bound to FinalityId.
 Genesis does not include that final set id, avoiding a self-hash fixed point.
 
-A future consensus composition must derive the seed domain from an explicit
+The consensus composition derives the seed domain from an explicit
 network tag and its complete consensus-rules identity **before** mining tickets.
 The mathematical `profile_digest` fixes tickets, votes and certificates; it does
 not fix proposer, round/lock/POL, timeout, system-value or WAL rules. Nodes with
@@ -107,10 +111,11 @@ only their exact length. Canonical order, flags, full EOF and re-encoding are
 enforced. Oversized elections are rejected, never cut down to a preferred subset.
 These are message/library bounds, not measurements of whole-peer RAM or storage.
 
-Stateless signing deliberately permits the caller to create conflicting votes.
-Production must persist signing state and locks before exposing a signature,
-reject rollback/double-voting, and verify full application/Source proofs before
-voting. Neither this API nor a quorum fixes those missing lifecycle obligations.
+Stateless `SignedVote::sign` deliberately permits the caller to create conflicting
+votes; it remains unchanged. The consensus module adds an owned durable signer
+instead of changing this mathematical API. Production must also supply actual
+application/Source proof validation and protect the signer's installation against
+rollback or duplicated key custody. A quorum alone fixes none of those obligations.
 
 ## Sources and verification status
 
@@ -144,3 +149,16 @@ stderr is `5F7976A3B65CFD3DBF62E2C9EAE13898C419D71004D27572C0E702A8E35BC726`.
 The command took 3.070 seconds including compilation and doctests; this is not a
 network finality, worst-case verification or resource measurement. No runtime
 consumer, production target, roster activation or SQL admission was added.
+
+## Single-slot consensus and owned signer
+
+[`consensus`](src/consensus/README.md) owns bounded proposal/prevote/precommit
+state, nil/ANY/future-round evidence, persistent lock/POL state and an exclusive
+signer WAL. Actual signatures and application checks precede a decision; WAL sync
+precedes all published actions. Its complete-instance vote domain includes the
+previous-decision anchor, including nil and future votes. All 33 runtime tests
+and five compile-fail examples passed; the module record gives attribution.
+
+Only the bootstrap roster and one slot are supported. A network actor, monotonic
+slot/roster handoff, system lane, finalized journal floor and closed production
+proof adapter remain required before live SQL or row-lock admission.

@@ -1,7 +1,8 @@
 //! Checked fixed-target work elections and weighted quorum signature evidence.
 //!
-//! This library does not run consensus, persist signing state, verify application
-//! proofs, establish a finalized head, or authorize SQL or lock grants.
+//! The optional integration boundary in [`consensus`] owns a bounded single-slot
+//! round/lock/POL machine and durable signer. No production application-proof
+//! adapter, finalized-head installation, SQL or lock grant is supplied here.
 //!
 //! Weights cannot be nominated through a public record constructor:
 //! ```compile_fail
@@ -19,6 +20,7 @@
 #![forbid(unsafe_code)]
 
 mod config;
+pub mod consensus;
 mod election;
 mod quorum;
 mod wire;
