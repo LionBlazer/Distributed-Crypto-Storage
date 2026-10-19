@@ -34,6 +34,7 @@ executables. The root Cargo default members select this layer only.
 | [registry200-proof](registry200-proof/README.md) | Shared Source/Lifecycle circuits and genuine bounded fixed-profile verification | bfv-hiding-stark, compact-store, version-journal |
 | [registry200-journal](registry200-journal/README.md) | Exact owner-authorized private-control application with actual parent CAS | registry200-proof, compact-store, version-journal |
 | [version-journal](version-journal/README.md) | Bounded cumulative-work forks, authorization, freshness and durable metadata | None |
+| [work-finality](work-finality/README.md) | Checked key-bound work elections and exact weighted quorum signature evidence; no consensus or finalized-head authority | None |
 | [transaction-state](transaction-state/README.md) | Bounded public transaction/row-lock control state, signed intents and metadata-only witnesses | version-journal |
 | [replica-store](replica-store/README.md) | Ciphertext custody, placement and local atomic repair | compact-store |
 | [peer-protocol](peer-protocol/README.md) | Bounded connection/request/cancellation state machine | None |
