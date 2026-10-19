@@ -189,14 +189,30 @@ impl Machine {
             }
             Input::Certificate { value, certificate } => {
                 let raw = certificate.context();
-                let id = ctx.verify_application(verifier, value)?;
+                let id = ctx.value_id(value)?;
                 certificate.verify(ctx.set(), &ctx.vote(raw.round(), raw.step(), Some(id))?)?;
+                if raw.step() == Step::Prevote {
+                    // Authenticate even a stale/future POL, but do not replay
+                    // application proofs for a round this machine cannot use.
+                    if raw.round() != self.round {
+                        return Err(Error::Stale);
+                    }
+                    if self
+                        .current_pol
+                        .as_ref()
+                        .is_some_and(|(old_value, old)| old_value == value && old == certificate)
+                    {
+                        // The first identical event already ran drive before
+                        // durable publication. No new evidence may trigger it.
+                        return Ok(Vec::new());
+                    }
+                }
+                // PRECOMMIT always retains the full application check, even
+                // for an older allowed round of this same slot.
+                ctx.verify_application(verifier, value)?;
                 match raw.step() {
                     Step::Precommit => self.decide(ctx, value, certificate, &mut out)?,
                     Step::Prevote => {
-                        if raw.round() != self.round {
-                            return Err(Error::Stale);
-                        }
                         if let Some((_, old)) = &self.current_pol {
                             if old.context().value() != Some(id) {
                                 return Err(Error::Equivocation);

@@ -89,6 +89,20 @@ proposals, local signing and locked WAL recovery. No latency, liveness or RAM
 improvement is established by these unit cases; complete peer-process operations
 require their separate owning gates.
 
+PREVOTE certificates are first authenticated against the full Context and value.
+A noncurrent round then returns `Stale` before application replay. An exact
+current `(value, certificate)` already retained by this machine is a whole-apply
+no-op before `drive`: its first event completed `drive` before publication and
+the repeat introduces no new evidence. Different genuine QCs or values still
+run the actual application verifier. PRECOMMIT certificates never use this
+shortcut; a valid older-round commit of the same slot still runs the application
+check and can decide. Recovery and signer advance also retain actual application
+verification. This does not cache a proof grant or change any closed adapter's
+client/checkpoint revalidation. The two additional counted-real-work/QC/WAL tests
+passed as part of all 44 work-finality runtime tests; five compile-fail examples
+also passed. These unit checks establish no complete peer-process latency or
+liveness measurement.
+
 ### Application and local-control boundary
 
 `ApplicationVerifier::verify(&ApplicationContext, descriptor)` is captured by the

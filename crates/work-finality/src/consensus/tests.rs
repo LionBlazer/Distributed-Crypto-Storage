@@ -1656,3 +1656,277 @@ fn remote_proposal_noop_preserves_local_signing_locked_wal_replay_and_stale_afte
     drop(reopened);
     assert_eq!(fs::read(&path).unwrap(), exact_decided_wal);
 }
+
+#[test]
+fn exact_current_prevote_qc_retries_do_not_replay_or_hide_new_evidence() {
+    let f = fixture();
+    let files = OwnedFiles::new();
+    let path = files.path("prevote-noop");
+    let budget = ByteBudget::new(MAX_SHARED_BYTES).unwrap();
+    let (application, calls) = counted_ticket_application(&f);
+    let mut voter = DurableVoter::create_new(
+        &path,
+        f.context.clone(),
+        application.clone(),
+        f.key(3),
+        &budget,
+    )
+    .unwrap();
+    let certificate = f.qc(0, Step::Prevote, &f.a);
+    let input = Input::Certificate {
+        value: f.a.clone(),
+        certificate: certificate.clone(),
+    };
+    assert!(voter.handle(input.clone()).unwrap().is_empty());
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let length = voter.file_bytes();
+    let used = budget.used().unwrap();
+    let timer = voter.timeout().unwrap();
+    drop(voter);
+    let first_pol_record = fs::read(&path).unwrap();
+    let mut voter = DurableVoter::open_existing(
+        &path,
+        f.context.clone(),
+        application.clone(),
+        f.key(3),
+        &budget,
+    )
+    .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    let encoded = input.encode().unwrap();
+    for _ in 0..16 {
+        assert!(voter.handle(input.clone()).unwrap().is_empty());
+        assert!(voter.handle_bytes(&encoded).unwrap().is_empty());
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(voter.context(), &f.context);
+    assert_eq!(voter.round(), 0);
+    assert_eq!(voter.step(), RoundStep::Propose);
+    assert_eq!(voter.timeout().unwrap(), timer);
+    assert_eq!(voter.locked(), None);
+    assert_eq!(voter.valid(), None);
+    assert!(voter.outbound().unwrap().is_empty());
+    assert_eq!(voter.file_bytes(), length);
+    assert_eq!(budget.used().unwrap(), used);
+
+    // Another genuine signer subset is NOT the exact tuple stored above.
+    let expected = f
+        .context
+        .vote(0, Step::Prevote, Some(f.context.value_id(&f.a).unwrap()))
+        .unwrap();
+    let votes: Vec<_> = [0, 2, 3]
+        .into_iter()
+        .map(|n| f.vote(n, 0, Step::Prevote, Some(&f.a)))
+        .collect();
+    let alternate = QuorumCertificate::assemble(f.context.set(), &expected, &votes).unwrap();
+    alternate.verify(f.context.set(), &expected).unwrap();
+    assert_ne!(alternate, certificate);
+    assert!(
+        voter
+            .handle(Input::Certificate {
+                value: f.a.clone(),
+                certificate: alternate,
+            })
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    assert!(matches!(
+        voter.handle(Input::Certificate {
+            value: f.b.clone(),
+            certificate: f.qc(0, Step::Prevote, &f.b),
+        }),
+        Err(Error::Equivocation)
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
+    assert_eq!(voter.file_bytes(), length);
+    assert_eq!(budget.used().unwrap(), used);
+
+    // The first POL ran drive without a proposal. A NEW genuine proposal must
+    // still introduce that missing evidence and produce the actual lock/vote.
+    let out = voter
+        .handle(Input::Proposal(f.proposal(0, &f.a, None)))
+        .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 5);
+    assert!(
+        out.iter()
+            .any(|a| matches!(a, Action::Vote(v) if v.context().step() == Step::Precommit))
+    );
+    let locked = Some((0, f.context.value_id(&f.a).unwrap()));
+    assert_eq!(voter.locked(), locked);
+    assert_eq!(voter.valid(), locked);
+    assert_eq!(voter.step(), RoundStep::Precommit);
+    let persisted = voter.outbound().unwrap();
+    drop(voter);
+    let locked_records = fs::read(&path).unwrap();
+    assert!(locked_records.starts_with(&first_pol_record));
+    let mut reopened =
+        DurableVoter::open_existing(&path, f.context.clone(), application, f.key(3), &budget)
+            .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 7);
+    let used = budget.used().unwrap();
+    let length = reopened.file_bytes();
+    assert!(reopened.handle(input).unwrap().is_empty());
+    assert_eq!(calls.load(Ordering::SeqCst), 7);
+    assert_eq!(reopened.outbound().unwrap(), persisted);
+    assert_eq!(reopened.locked(), locked);
+    assert_eq!(reopened.valid(), locked);
+    assert_eq!(reopened.file_bytes(), length);
+    assert_eq!(budget.used().unwrap(), used);
+    drop(reopened);
+    assert_eq!(fs::read(&path).unwrap(), locked_records);
+}
+
+#[test]
+fn noncurrent_prevote_is_authenticated_without_app_replay_but_old_precommit_stays_fresh() {
+    let f = multi_fixture();
+    let files = OwnedFiles::new();
+    let path = files.path("certificate-rounds");
+    let budget = ByteBudget::new(MAX_SHARED_BYTES).unwrap();
+    let (application, calls) = counted_ticket_application(&f);
+    let mut voter = DurableVoter::create_new(
+        &path,
+        f.context.clone(),
+        application.clone(),
+        f.key(0),
+        &budget,
+    )
+    .unwrap();
+    for n in [1, 2] {
+        voter
+            .handle(Input::Vote(f.vote(n, 1, Step::Prevote, None)))
+            .unwrap();
+    }
+    assert_eq!(voter.round(), 1);
+    let length = voter.file_bytes();
+    let used = budget.used().unwrap();
+    let timer = voter.timeout().unwrap();
+    for round in [0, 2] {
+        let input = Input::Certificate {
+            value: f.a.clone(),
+            certificate: f.qc(round, Step::Prevote, &f.a),
+        };
+        assert!(matches!(voter.handle(input.clone()), Err(Error::Stale)));
+        assert!(matches!(
+            voter.handle_bytes(&input.encode().unwrap()),
+            Err(Error::Stale)
+        ));
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+    let foreign_context = Context::new(
+        f.context.rules().clone(),
+        [3; 32],
+        &f.genesis,
+        [5; 32],
+        1,
+        [88; 32],
+    )
+    .unwrap();
+    let foreign_vote = foreign_context
+        .vote(
+            1,
+            Step::Prevote,
+            Some(foreign_context.value_id(&f.a).unwrap()),
+        )
+        .unwrap();
+    let foreign_votes: Vec<_> = f.keys[..3]
+        .iter()
+        .map(|key| SignedVote::sign(foreign_vote, key).unwrap())
+        .collect();
+    let foreign =
+        QuorumCertificate::assemble(foreign_context.set(), &foreign_vote, &foreign_votes).unwrap();
+    foreign
+        .verify(foreign_context.set(), &foreign_vote)
+        .unwrap();
+    assert!(
+        voter
+            .handle(Input::Certificate {
+                value: f.a.clone(),
+                certificate: foreign
+            })
+            .is_err()
+    );
+    assert!(
+        voter
+            .handle(Input::Certificate {
+                value: f.b.clone(),
+                certificate: f.qc(1, Step::Prevote, &f.a),
+            })
+            .is_err()
+    );
+    let mut bad_signature = Input::Certificate {
+        value: f.a.clone(),
+        certificate: f.qc(1, Step::Prevote, &f.a),
+    }
+    .encode()
+    .unwrap();
+    *bad_signature.last_mut().unwrap() ^= 1;
+    assert!(voter.handle_bytes(&bad_signature).is_err());
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(voter.context(), &f.context);
+    assert_eq!(voter.round(), 1);
+    assert_eq!(voter.step(), RoundStep::Propose);
+    assert_eq!(voter.timeout().unwrap(), timer);
+    assert_eq!(voter.locked(), None);
+    assert_eq!(voter.valid(), None);
+    assert!(voter.decision().is_none());
+    assert!(voter.outbound().unwrap().is_empty());
+    assert_eq!(voter.file_bytes(), length);
+    assert_eq!(budget.used().unwrap(), used);
+
+    // A real older-round quorum is still insufficient for an invalid work
+    // application. Only the actual application verifier may reject this value.
+    let mut bad_ticket = f.a.clone();
+    *bad_ticket.last_mut().unwrap() ^= 1;
+    assert!(matches!(
+        voter.handle(Input::Certificate {
+            certificate: f.qc(0, Step::Precommit, &bad_ticket),
+            value: bad_ticket,
+        }),
+        Err(Error::ApplicationRejected)
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(voter.decision().is_none());
+    assert_eq!(voter.file_bytes(), length);
+    assert_eq!(budget.used().unwrap(), used);
+
+    let out = voter
+        .handle(Input::Certificate {
+            value: f.a.clone(),
+            certificate: f.qc(0, Step::Precommit, &f.a),
+        })
+        .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert!(out.iter().any(|a| matches!(a, Action::Decided(_))));
+    let decision = voter.decision().unwrap().clone();
+    assert_eq!(decision.certificate().context().round(), 0);
+    voter.advance().unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    let next = voter.context().clone();
+    assert_eq!(next.slot(), 2);
+    assert_eq!(next.previous_decision(), decision.semantic_id());
+    let used = budget.used().unwrap();
+    drop(voter);
+    let exact_wal = fs::read(&path).unwrap();
+
+    // Recovery still executes the actual application, not a stored QC receipt.
+    let mut rejecting = application.clone();
+    rejecting.actual.network = [99; 32];
+    assert!(matches!(
+        DurableVoter::open_existing(&path, f.context.clone(), rejecting, f.key(0), &budget,),
+        Err(Error::CorruptWal)
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
+    assert_eq!(fs::read(&path).unwrap(), exact_wal);
+    let reopened =
+        DurableVoter::open_existing(&path, f.context.clone(), application, f.key(0), &budget)
+            .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 6);
+    assert_eq!(reopened.context(), &next);
+    assert!(reopened.decision().is_none());
+    assert!(reopened.outbound().unwrap().is_empty());
+    assert_eq!(budget.used().unwrap(), used);
+    drop(reopened);
+    assert_eq!(fs::read(&path).unwrap(), exact_wal);
+}
