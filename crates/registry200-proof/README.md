@@ -104,3 +104,15 @@ All eight new owning tests passed in the
 unique proof payload exceeds the unchanged 32MiB Body cap before headers; this
 detached relation is not yet an admitted composite transition. Existing validation
 records above retain their original scope.
+
+## Separate private Control-kind linkage
+
+[control_kind](src/control_kind/README.md) adds a new detached fixed relation
+opening the original Cmd160 commitment and proving its hidden opcode belongs to
+the six existing non-Acquire operations. It requires the genuine original
+Source-first Lifecycle pair and pins full Source691/Lifecycle116 before child
+work. Bootstrap remains separate. The full library's 21 runtime cases and four
+ownership examples passed; see the [native record](src/control_kind/README.md#executed-validation).
+It changes no old AIR/profile/opcode/cap, Journal allowlist or SQL capability.
+A future composite Control application must actually require this link rather
+than trust a caller-supplied lane tag.
