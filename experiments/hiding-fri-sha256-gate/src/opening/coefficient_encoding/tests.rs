@@ -225,12 +225,8 @@ fn empty_full_range_and_noncontiguous_hidden_masks_prove_complete_reversed_vecto
             4,
         ),
     ] {
-        let compiled = compiler::CompiledPrivatePredicate::compile(
-            sql,
-            Zeroizing::new([0xB1; 32]),
-            [0xA1; 32],
-        )
-        .unwrap();
+        let compiled =
+            CompiledPrivatePredicate::compile(sql, Zeroizing::new([0xB1; 32]), [0xA1; 32]).unwrap();
         let mut source = f.source_statement.clone();
         source.request = compiled.query(&source, f.source.bfv());
         // A different exact SQL has a different q and requires a fresh genuine Source.
@@ -277,30 +273,17 @@ fn compiler_rejects_other_sql_roles_and_owns_private_blind_nonce_and_full_query(
         "UPDATE records SET amount = amount + 1",
     ] {
         assert!(
-            compiler::CompiledPrivatePredicate::compile(
-                sql,
-                Zeroizing::new([0xB1; 32]),
-                [0xA1; 32]
-            )
-            .is_err(),
+            CompiledPrivatePredicate::compile(sql, Zeroizing::new([0xB1; 32]), [0xA1; 32]).is_err(),
             "{sql}"
         );
     }
     assert!(
-        compiler::CompiledPrivatePredicate::compile(
-            fixture::SQL,
-            Zeroizing::new([0xA1; 32]),
-            [0xA1; 32]
-        )
-        .is_err()
+        CompiledPrivatePredicate::compile(fixture::SQL, Zeroizing::new([0xA1; 32]), [0xA1; 32])
+            .is_err()
     );
     assert!(
-        compiler::CompiledPrivatePredicate::compile(
-            fixture::SQL,
-            Zeroizing::new([0; 32]),
-            [0xA1; 32]
-        )
-        .is_err()
+        CompiledPrivatePredicate::compile(fixture::SQL, Zeroizing::new([0; 32]), [0xA1; 32])
+            .is_err()
     );
     let canonical = CanonicalSource::checked_claim(&f.source_statement).unwrap();
     for (sql, blind, nonce) in [
@@ -312,8 +295,7 @@ fn compiler_rejects_other_sql_roles_and_owns_private_blind_nonce_and_full_query(
             [0xA1; 32],
         ),
     ] {
-        let c =
-            compiler::CompiledPrivatePredicate::compile(sql, Zeroizing::new(blind), nonce).unwrap();
+        let c = CompiledPrivatePredicate::compile(sql, Zeroizing::new(blind), nonce).unwrap();
         assert_ne!(
             c.query(&f.source_statement, f.source.bfv()),
             f.source_statement.request
@@ -520,12 +502,9 @@ fn full_independent_source_key33_and_setup_contexts_reject_before_child_factory(
     let mut key = f.source.bfv().key().clone();
     key.transformed[3] += Val::ONE;
     let binding = BfvBinding::new(f.source.bfv().full_setup(), key);
-    let compiled = compiler::CompiledPrivatePredicate::compile(
-        fixture::SQL,
-        Zeroizing::new([0xB1; 32]),
-        [0xA1; 32],
-    )
-    .unwrap();
+    let compiled =
+        CompiledPrivatePredicate::compile(fixture::SQL, Zeroizing::new([0xB1; 32]), [0xA1; 32])
+            .unwrap();
     assert_eq!(
         compiled.query(&f.source_statement, &binding),
         f.source_statement.request

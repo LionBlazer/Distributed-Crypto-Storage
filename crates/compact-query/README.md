@@ -13,6 +13,31 @@ Historical completion methods return unverified results. The separate proved BFV
 completion path below verifies genuine arithmetic evidence and complete authenticated
 index selection; global agreement and freshness belong to the network client.
 
+## Caller-owned canonical storage
+
+The public [storage module](src/storage.rs) owns canonical age/amount table storage
+with a borrowed [compact-store Owner](../compact-store/README.md). It has no BFV or
+TFHE key, predicate, SQL, proof or consensus dependency. `storage::seal_partition`
+uses a caller-selected TableId, consumes its RowIds allocation and seals EVERY
+supplied original row through the same data/index writer used by both existing backends.
+`storage::restore` checks complete canonical images against independently selected
+TableId and data/index heads, then authenticates the private index header with the
+supplied owner. Data-page AEAD is checked by `storage::row` at the exact ordinal.
+The caller owns returned plaintext and any explicit copies.
+
+This boundary lets an application compose its own AEAD Owner and separate BFV/proof
+owner without exporting either secret from an existing handle. It does not perform
+WHERE filtering, create a Source or ciphertext-formation proof, authorize supplied
+heads, persist private keys or admit SQL/network results. The new owning API tests
+exercise actual canonical N4 seal/restore/all-row reads, wrong key/domain/TableId,
+both independent heads and a damaged final index byte. They are source-only until
+the integration orchestrator runs the affected native gates.
+
+```sh
+cargo test --release --locked -p compact-store --lib crypto::key_tests::
+cargo test --release --locked -p compact-query --no-default-features --lib storage::api_tests::
+```
+
 ## Generic byte projection proof composition
 
 With `bfv-experiment`, `byte_select::check` verifies the serialized genuine

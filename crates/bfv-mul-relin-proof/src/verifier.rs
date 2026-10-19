@@ -101,7 +101,7 @@ impl<'a> Verifier<'a> {
         if self.inputs || self.graph.is_none() {
             return Err(Error::Stage);
         }
-        self.expected.provenance.verify(evidence)?;
+        self.expected.provenance.verify_inputs(evidence)?;
         self.inputs = true;
         Ok(())
     }

@@ -28,6 +28,21 @@ const FORMATION_FRAME_BYTES: usize =
 pub const MAX_INPUT_BYTES: usize =
     KEY_FRAME_BYTES + 2 * wire::MAX_FRAME + 10 * BASIS_FRAME_BYTES + 2 * FORMATION_FRAME_BYTES;
 
+/// Number and order of individual input frames, never one aggregate proof blob.
+pub const INPUT_FRAMES: usize = 15;
+
+/// Existing proof codec byte cap for one fixed input role. This is not a
+/// verification result, transport policy, or permission to allocate that size.
+pub const fn input_frame_limit(ordinal: usize) -> Option<usize> {
+    match ordinal {
+        0 => Some(KEY_FRAME_BYTES),
+        1..=2 => Some(wire::MAX_FRAME),
+        3..=12 => Some(BASIS_FRAME_BYTES),
+        13..=14 => Some(FORMATION_FRAME_BYTES),
+        _ => None,
+    }
+}
+
 /// Public proof bytes borrowed from their existing individual bounded frames.
 ///
 /// Input0 is SourceAllOriginal and Input1 is PrivateMask; each inner Basis array
@@ -41,7 +56,50 @@ pub struct InputEvidence<'a> {
     pub formations: [&'a [u8]; 2],
 }
 
-impl InputEvidence<'_> {
+impl<'a> InputEvidence<'a> {
+    /// Borrow the exact fixed order: Key, Enc0, Enc1, Input0 Basis Q0..4,
+    /// Input1 Basis Q0..4, Formation0, Formation1. No bytes are copied.
+    pub fn frames(&self) -> [&'a [u8]; INPUT_FRAMES] {
+        [
+            self.key,
+            self.encodings[0],
+            self.encodings[1],
+            self.bases[0][0],
+            self.bases[0][1],
+            self.bases[0][2],
+            self.bases[0][3],
+            self.bases[0][4],
+            self.bases[1][0],
+            self.bases[1][1],
+            self.bases[1][2],
+            self.bases[1][3],
+            self.bases[1][4],
+            self.formations[0],
+            self.formations[1],
+        ]
+    }
+
+    /// Check nonempty individual frames and their existing caps before borrowing
+    /// the collection. Actual proof grammar, role and cryptography remain mandatory.
+    pub fn from_frames(frames: [&'a [u8]; INPUT_FRAMES]) -> Result<Self, Error> {
+        for (ordinal, bytes) in frames.iter().enumerate() {
+            if bytes.is_empty() || bytes.len() > input_frame_limit(ordinal).unwrap() {
+                return Err(Error::ResourceLimit);
+            }
+        }
+        let evidence = Self {
+            key: frames[0],
+            encodings: [frames[1], frames[2]],
+            bases: [
+                frames[3..8].try_into().unwrap(),
+                frames[8..13].try_into().unwrap(),
+            ],
+            formations: [frames[13], frames[14]],
+        };
+        let _ = evidence.byte_len()?;
+        Ok(evidence)
+    }
+
     /// Count the complete submitted bytes with checked arithmetic and every
     /// original per-frame byte cap. This does not parse or verify any proof.
     pub fn byte_len(&self) -> Result<usize, Error> {
@@ -74,7 +132,7 @@ impl InputEvidence<'_> {
 
 /// Immutable independently supplied public claims for both original inputs.
 /// Construction checks their association and complete ciphertext grammar, not
-/// their proofs. Verification is internal to the complete graph consumer.
+/// their proofs. A decoded claim is not an independently trusted Owner anchor.
 pub struct Provenance {
     setup: PublicSetup,
     anchor: BfvKeyAnchor,
@@ -207,7 +265,10 @@ impl Provenance {
     /// Verify all sixteen original input proof roles. Decoded SDK proofs and
     /// verifier backends are owned and dropped inside each existing verifier.
     /// Only public statements survive between phases; no partial success escapes.
-    pub(crate) fn verify(&self, evidence: &InputEvidence<'_>) -> Result<(), Error> {
+    /// This verifies mathematics against this instance's claims. A decoded peer
+    /// anchor is still untrusted: the caller independently owns setup/anchor
+    /// provenance, source authorization and freshness. No receipt is returned.
+    pub fn verify_inputs(&self, evidence: &InputEvidence<'_>) -> Result<(), Error> {
         let _ = evidence.byte_len()?;
         {
             // Grammar and byte caps precede all expensive verification. A second

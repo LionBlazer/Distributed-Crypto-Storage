@@ -33,6 +33,14 @@ CA connector also retains its exact endpoint pin check after the handshake.
 `Identity` owns one endpoint's TLS credential, wipes its private PKCS#8 bytes on
 drop and has no Debug implementation. It is distinct from owner FHE/AEAD keys.
 Identity generation and endpoint discovery belong to the calling application.
+
+`ConnectionDeadline` owns an absolute socket watchdog, disarmed and joined on
+drop. It closes the socket at expiry even when partial reads keep progressing;
+it neither stops remote computations nor changes application state. TLS
+handshakes use the existing 15-second budget as an absolute deadline as well as
+an inactivity timeout. `CancellableConnection::set_io_timeout` and `deadline`
+let an explicit application operation choose its own bounded I/O policy after
+the handshake, while retaining cancellation of the same socket.
 An endpoint pin must identify the peer the caller intends to contact; accepting a
 random discovered identity does not authenticate a network's history or defend
 against eclipse attacks. Transport admission grants no SQL write permission, proof

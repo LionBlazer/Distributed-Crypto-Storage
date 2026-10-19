@@ -425,8 +425,25 @@ owning assertions. Their shared private operand implementation contains no SQL
 or Source policy. No new dependency, profile, frame, cap, secret getter,
 serialization, trusted marker or recovery path is introduced.
 
-This epoch stage is source-only pending Root native validation. It enables
+The [producer/epoch validation](../../experiments/hiding-fri-sha256-gate/PRIVATE-INPUT-PRODUCER-EPOCH-VALIDATION.md)
+records the executed native stage. It enables
 private opening reuse; it does not make existing query-specific Source proofs
 reusable across SQL requests or change full-product provenance checks. Persistent
 Source certification, origin/query composition, evaluation-key same-secret
 proofs, fresh agreed heads and live SQL acceptance remain separate obligations.
+
+## Public anchor claim codec
+
+With `key-proofs`, `BfvKeyAnchor::encode_claim` and
+`PublicSetup::decode_key_anchor_claim` encode/decode the fixed 140-byte
+`BFVKAC01` public metadata format. It binds database/key domain/epoch, the full
+original setup identity, parameter-only digest and canonical Gold coefficient
+commitment. Decoding checks exact grammar and the supplied setup association;
+it performs no polynomial transform or evaluation-key decoding. A decoded
+anchor is an untrusted mathematical claim, with no Owner provenance, secret
+possession or proof authority. Clients must keep their original independently
+authenticated anchor. The codec exposes no secret/opening getter and does not
+alter the genuine `verify_key_transform` prerequisite. Both new owning codec
+tests passed with `formation-proofs`; the
+[peer validation](../../docs/private-where-peer.md) also covers the borrowed
+complete-request view and exact encrypted-response binding.

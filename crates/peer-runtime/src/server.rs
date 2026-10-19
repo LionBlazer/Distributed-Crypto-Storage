@@ -16,6 +16,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 mod network;
+mod private_product;
 
 const LISTENER: Token = Token(0);
 const STOP: Token = Token(1);
@@ -254,10 +255,16 @@ impl PeerServer {
 }
 fn serve(socket: TcpStream, acceptor: Acceptor, shared: Arc<Shared>) -> io::Result<()> {
     let (remote, mut stream) = acceptor.accept(socket)?;
+    let initial_deadline =
+        peer_transport::ConnectionDeadline::new(&stream.sock, crate::private_product::IO_BUDGET)?;
     let bytes = read_frame(&mut stream, MAX_FRAME_BYTES)?;
     let wire = decode_request(&bytes)?;
+    drop(initial_deadline);
     if wire.version != 2 {
         return Err(io::Error::other("Unsupported RPC version"));
+    }
+    if let Request::PrivateProduct(request) = wire.request {
+        return private_product::serve(&shared, remote, wire.id, request, bytes.len(), &mut stream);
     }
     let response_limit = match &wire.request {
         Request::FetchPages(_) => crate::MAX_PAGE_BATCH_RESPONSE_BYTES,
@@ -429,6 +436,7 @@ fn dispatch(
             Ok(Response::Done)
         }
         Request::Copy { .. } => unreachable!("copy handled without the local store lock"),
+        Request::PrivateProduct(_) => Err(RemoteError::InvalidRequest),
         Request::InstallSetup(_)
         | Request::Evaluate { .. }
         | Request::Prove { .. }

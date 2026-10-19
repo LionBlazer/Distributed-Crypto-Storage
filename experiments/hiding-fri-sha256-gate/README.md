@@ -1,5 +1,11 @@
 # Hiding-FRI source-opening research gates
 
+The coefficient consumer uses the shared
+[storage-client private predicate compiler](../../crates/storage-client/src/private_predicate/README.md)
+through its explicit `private-input-proofs` feature. The former experiment-owned
+compiler implementation was removed; its domains, accepted plans and proof
+profiles are preserved. The experiment does not acquire SQL or finality authority.
+
 Historical validated source: the [whole-pair private AEAD byte-opening
 candidate](src/opening/README.md) passed release build, strict Clippy, eight fresh
 security analyses, all 47 serial tests and one genuine whole-pair proof/verification.

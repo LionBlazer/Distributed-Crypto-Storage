@@ -9,6 +9,7 @@ publish = false
 [workspace]
 
 [dependencies]
+storage-client = { path = "../../crates/storage-client", features = ["private-input-proofs"] }
 registry200-proof = { path = "../../crates/registry200-proof" }
 registry200-journal = { path = "../../crates/registry200-journal" }
 bfv-ciphertext-formation = { path = "../../crates/bfv-ciphertext-formation" }

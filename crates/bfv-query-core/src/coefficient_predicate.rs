@@ -44,6 +44,40 @@ pub struct PreparedPrivateCoefficientPredicate {
     pub pending: PendingPrivateCoefficientPredicate,
     pub request: Vec<u8>,
 }
+/// Borrowed public ciphertext metadata. Parsing supplies no computation, Source,
+/// freshness or authorization proof.
+pub struct PrivateCoefficientRequest<'a> {
+    view: RequestView<'a>,
+}
+impl PrivateCoefficientRequest<'_> {
+    pub fn query(&self) -> [u8; 32] {
+        self.view.labels.query
+    }
+    pub fn context(&self) -> &QueryContext {
+        &self.view.labels.context
+    }
+    pub fn ciphertexts(&self) -> [&[u8]; 2] {
+        [self.view.original, self.view.predicate]
+    }
+}
+/// Complete public request cap, before any SDK ciphertext allocation.
+pub const MAX_PRIVATE_COEFFICIENT_REQUEST_BYTES: usize = MAX_REQUEST;
+/// Complete public response cap, before any SDK ciphertext allocation.
+pub const MAX_PRIVATE_COEFFICIENT_RESPONSE_BYTES: usize = MAX_RESPONSE;
+impl PublicSetup {
+    /// Check the existing fixed envelope and full setup binding without FHE math.
+    pub fn private_coefficient_request<'a>(
+        &self,
+        wire: &'a [u8],
+    ) -> Result<PrivateCoefficientRequest<'a>> {
+        let view = request_view(wire)?;
+        require_labels(&view.labels, self.geometry, keyset_id(self)?)?;
+        if !view.labels.context.valid() {
+            return Err(Error::BindingMismatch);
+        }
+        Ok(PrivateCoefficientRequest { view })
+    }
+}
 impl PreparedPrivateCoefficientPredicate {
     /// Borrow the exact complete original and predicate ciphertexts in that order.
     /// This checks the prepared envelope against its private pending binding, not
@@ -67,6 +101,20 @@ pub struct EvaluatedPrivateCoefficientPredicate {
     pub ct_ct_multiplications: usize,
 }
 impl EvaluatedPrivateCoefficientPredicate {
+    /// Check the complete public response against the exact original request.
+    /// This supplies binding only; callers still need all computation evidence.
+    pub fn require_request(&self, setup: &PublicSetup, request: &[u8]) -> Result<()> {
+        let input = setup.private_coefficient_request(request)?;
+        let response = response_view(&self.output)?;
+        require_labels(&response.labels, setup.geometry, keyset_id(setup)?)?;
+        if response.labels.query != input.query()
+            || response.labels.context != *input.context()
+            || response.request_digest != <[u8; 32]>::from(Sha256::digest(request))
+        {
+            return Err(Error::BindingMismatch);
+        }
+        Ok(())
+    }
     /// Borrow the complete proposed encrypted result, without decryption or a
     /// computation/freshness grant. Its existing response frame is revalidated.
     pub fn ciphertext_for_experiment(&self) -> Result<&[u8]> {

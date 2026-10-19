@@ -13,7 +13,8 @@ pub struct KeyScope {
     pub bfv_key_domain: [u8; 16],
     pub epoch: u32,
 }
-/// Public association minted by the actual local Owner and independently pinned before queries.
+/// Public association from a local Owner or a decoded, untrusted public claim.
+/// Only an independently authenticated owner/application supplies its authority.
 /// Decoded peer metadata must never replace that independent pin.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BfvKeyAnchor {
@@ -155,6 +156,9 @@ impl PublicSetup {
             .map_err(backend)
     }
 }
+mod claim;
+#[cfg(test)]
+mod claim_tests;
 #[cfg(test)]
 mod tests;
 

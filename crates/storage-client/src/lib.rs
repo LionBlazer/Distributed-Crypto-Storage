@@ -8,6 +8,8 @@ use peer_runtime::{Operation, RawBundle, RemotePeer, Request, Response, Status};
 use sql_plan::{Projection, QueryPlan};
 use std::{fmt, io};
 mod jobs;
+#[cfg(feature = "private-input-proofs")]
+pub mod private_predicate;
 mod query_rpc;
 pub mod relational;
 mod script;

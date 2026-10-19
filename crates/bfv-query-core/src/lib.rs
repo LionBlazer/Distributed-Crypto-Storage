@@ -4,8 +4,9 @@ mod canonical;
 mod coefficient_predicate;
 pub use coefficient_predicate::{
     COEFFICIENT_PREDICATE_ROWS, COEFFICIENT_PREDICATE_SEMANTICS_ID, CoefficientRow,
-    EvaluatedPrivateCoefficientPredicate, PendingPrivateCoefficientPredicate,
-    PreparedPrivateCoefficientPredicate, UnverifiedCoefficientRow,
+    EvaluatedPrivateCoefficientPredicate, MAX_PRIVATE_COEFFICIENT_REQUEST_BYTES,
+    MAX_PRIVATE_COEFFICIENT_RESPONSE_BYTES, PendingPrivateCoefficientPredicate,
+    PreparedPrivateCoefficientPredicate, PrivateCoefficientRequest, UnverifiedCoefficientRow,
     UnverifiedPrivateCoefficientPredicate,
 };
 #[cfg(test)]

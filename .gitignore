@@ -8,6 +8,8 @@ secrets/
 # Local participant data and generated artifacts
 data/
 storage/
+# Rust storage submodules are source code, not participant data.
+!/crates/compact-query/src/storage/
 logs/
 artifacts/
 build/

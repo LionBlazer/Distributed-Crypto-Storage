@@ -11,6 +11,8 @@ client acceptance.
 | [compact-store](../compact-store/README.md) | Exact-head encrypted page integrity |
 | [bfv-query-core](../bfv-query-core/README.md) | Canonical public-only FHE operation adapters |
 | [bfv-query-proof](../bfv-query-proof/README.md) | Actual STARK generation/verification for every BFV residue |
+| [bfv-mul-relin-proof](../bfv-mul-relin-proof/README.md) | Exact private-input BFV multiplication graph and complete proof verification |
+| [bfv-relinearization-key-source](../bfv-relinearization-key-source/README.md) | Canonical public evaluation-key preparation for the pinned original setup |
 | [proof-acceleration](../proof-acceleration/README.md) | Pure bounded CPU-worker policy, without enabling its loader |
 | [version-journal](../version-journal/README.md) | Pinned work/profile validation, ancestry, authorization and durable ordering |
 | [registry200-journal](../registry200-journal/README.md) | Fixed Registry200 application, canonical descriptor/request and genuine Source/Lifecycle admission |
@@ -25,6 +27,46 @@ It exposes no frame payload, keys or GUI clock. `ReplyReceived` is an I/O event,
 not evidence that decoding, authorization or cryptographic verification succeeded.
 Callbacks run synchronously and must return promptly. The separate `with_trace`
 callback retains completed-RPC diagnostics and outcomes.
+
+## Private product stream
+
+`RemotePeer::prove_private_product` sends one owner-authorized mathematical job
+over an independent TLS connection. The peer audits the original custody object
+and exact data/index heads, rebuilds bounded public provenance claims for its
+installed setup, and verifies the fifteen mandatory input frames. Each encoding
+pair retains its real Source-before-child verification. It then performs the
+actual fixed BFV ciphertext product and emits claims and all 118 ordered proof
+records for the 134-node graph. Plaintext SQL, predicate truth tables, rows and
+owner keys never enter this service. The client uses its own independently pinned
+provenance and verifies every input and output proof before returning
+`CheckedPrivateProduct`; a received claim, ciphertext or prefix grants no result.
+
+`DCSPRP01` frames bind the request identity, immutable job digest, random server
+nonce, role and ordinal. The next proof is produced only after a bounded explicit
+client demand. Each original input cap and the complete collection cap apply;
+no aggregate proof blob or journal body is created. The peer retains at most the
+fixed fifteen public input frames, drops them before output proof work, and
+produces one output record at a time. There is no durable job/spool or implicit
+retry identity. Complete application-frame reads/writes produce activity events;
+partial transport reads are excluded from application-frame counters.
+
+One heavy permit spans the connection. Errors, EOF, cancellation and terminal
+delivery drop its in-memory state and permit. I/O has a 180-second inactivity
+budget and an absolute 1800-second socket deadline; these are service resource
+bounds, not query-latency targets. An in-flight synchronous SDK call may still
+finish after cancellation or deadline; later stages and delivery then stop.
+TLS handshakes and initial request delivery also have absolute deadlines.
+
+This service supplies mathematical FHE evidence. It does not authorize SQL,
+establish a fresh agreed head, finalize locks, enforce writer ownership, prove
+evaluation-key same-secret consistency, or claim composed security or a measured
+whole-process resource bound. Current SQL entry points remain fail-closed while
+their full composition is incomplete.
+
+The [native private-WHERE record](../../docs/private-where-peer.md) reports one
+actual full N4 operation on an independent daemon, all input/output proof bytes,
+whole-operation timings, process memory observations and four real peer refusal/
+cancellation cases. It does not establish interactive latency or SQL admission.
 
 The listener uses Mio socket readiness and a dedicated local stop waker instead
 of periodically sleeping before accept. Local stop and authorized Shutdown wake

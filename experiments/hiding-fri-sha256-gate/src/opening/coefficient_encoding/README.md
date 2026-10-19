@@ -10,7 +10,7 @@ grant. The separate integration paths below own the additional actual proofs.
 
 | Direct owner/dependency | Responsibility |
 | --- | --- |
-| [compiler](compiler.rs) / sql-plan | Privately compile fixed-schema WHERE, exact blinded SQL binding and acyclic pre-Source q |
+| [storage-client compiler](../../../../../crates/storage-client/src/private_predicate/compiler.rs) / sql-plan | One shared fixed-schema WHERE compiler, exact blinded SQL binding and acyclic pre-Source q |
 | [Core circuit](../../../../../crates/registry200-proof/src/coefficient_encoding/circuit.rs) | Own guarded caller plaintext/mask/salts, full Expected association, complete trace and mathematical EncodedOpening |
 | [Core producers](../../../../../crates/registry200-proof/src/coefficient_encoding/prover.rs) | Mandatory actual Source verification, child proving/self-verification and opaque bounded evidence |
 | [test attacker](attacker.rs) | Test-only coherent false trace rehashing; no production factory or admission authority |

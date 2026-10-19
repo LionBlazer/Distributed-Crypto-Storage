@@ -5,6 +5,16 @@ retains compact/BFV keys and independently pinned heads; peers retain ciphertext
 public evaluation material and durable version journals. There is no local
 evaluator answering SQL and no dependency on the playground or its fixtures.
 
+The explicit `private-input-proofs` feature adds
+[real N4 private predicate input production](src/private_predicate/README.md) from
+complete fetched canonical images and a caller-owned AEAD/BFV authority. It forms
+ALL original rows and an encrypted age truth table, newly proves Source and both
+Encodings, then uses one Ready proof epoch for two Basis5/Formation chains. Its
+public result is mathematical provenance plus one-use pending request and fifteen
+bounded proof frames. The [native OS-peer validation](../../docs/private-where-peer.md)
+records a successful full hidden-predicate FHE operation and owning failure tests;
+this API does not open the SQL admission guards below or establish fresh heads.
+
 | Direct project dependency | Responsibility |
 | --- | --- |
 | [sql-plan](../sql-plan/README.md) | Typed statement plans, without plaintext execution |

@@ -3,8 +3,10 @@
 #![forbid(unsafe_code)]
 
 mod cancellation;
+mod deadline;
 mod permissionless;
 pub use cancellation::{Cancellation, RequestControl, RequestScope};
+pub use deadline::ConnectionDeadline;
 
 use rustls::{
     ClientConfig, ClientConnection, RootCertStore, ServerConfig, ServerConnection, StreamOwned,
@@ -67,6 +69,9 @@ enum ConnectorMode {
 pub struct Acceptor {
     config: Arc<ServerConfig>,
 }
+/// Server-side TLS stream after endpoint authentication. Authentication itself
+/// supplies no application, computation or agreement authority.
+pub type AcceptedConnection = StreamOwned<ServerConnection, TcpStream>;
 /// A TLS stream whose local socket is interrupted when its operation is cancelled.
 pub struct CancellableConnection {
     stream: StreamOwned<ClientConnection, TcpStream>,
@@ -75,6 +80,18 @@ pub struct CancellableConnection {
 impl Read for CancellableConnection {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
         self.stream.read(bytes)
+    }
+}
+impl CancellableConnection {
+    /// Own an absolute budget in addition to the socket's inactivity timeout.
+    pub fn deadline(&self, budget: Duration) -> io::Result<ConnectionDeadline> {
+        ConnectionDeadline::new(&self.stream.sock, budget)
+    }
+    /// Set explicit operation I/O budgets after the bounded TLS handshake.
+    /// Cancellation still interrupts the registered underlying socket.
+    pub fn set_io_timeout(&self, timeout: Duration) -> io::Result<()> {
+        self.stream.sock.set_read_timeout(Some(timeout))?;
+        self.stream.sock.set_write_timeout(Some(timeout))
     }
 }
 impl Write for CancellableConnection {
@@ -140,6 +157,7 @@ impl Connector {
         socket.set_read_timeout(Some(IO_TIMEOUT))?;
         socket.set_write_timeout(Some(IO_TIMEOUT))?;
         socket.set_nodelay(true)?;
+        let handshake_deadline = ConnectionDeadline::new(&socket, IO_TIMEOUT)?;
         let mut connection = ClientConnection::new(
             self.client_config(endpoint)?,
             ServerName::try_from("dcs-peer").map_err(io::Error::other)?,
@@ -158,6 +176,7 @@ impl Connector {
                 "Peer certificate does not match the configured endpoint",
             ));
         }
+        drop(handshake_deadline);
         Ok(CancellableConnection {
             stream: StreamOwned::new(connection, socket),
             _registration: registration,
@@ -194,6 +213,7 @@ impl Acceptor {
         socket.set_nonblocking(false)?;
         socket.set_read_timeout(Some(IO_TIMEOUT))?;
         socket.set_write_timeout(Some(IO_TIMEOUT))?;
+        let handshake_deadline = ConnectionDeadline::new(&socket, IO_TIMEOUT)?;
         socket.set_nodelay(true)?;
         let mut connection =
             ServerConnection::new(self.config.clone()).map_err(io::Error::other)?;
@@ -205,6 +225,7 @@ impl Acceptor {
             .and_then(|certs| certs.first())
             .ok_or_else(|| io::Error::other("Client authentication is required"))?;
         let identity = fingerprint(cert.as_ref());
+        drop(handshake_deadline);
         Ok((identity, StreamOwned::new(connection, socket)))
     }
 }

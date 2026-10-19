@@ -1,5 +1,5 @@
 //! PUBLIC NONSECRET Source data/blinds. Actual Owner keys stay inside the real Core API.
-use super::{Expected, compiler::CompiledPrivatePredicate, trace::Witness};
+use super::{CompiledPrivatePredicate, Expected, trace::Witness};
 use crate::{
     backend::{Error, Val},
     opening::{fixture as source_fixture, statement as source},

@@ -18,6 +18,18 @@ pub enum Error {
     Verification,
     Proof(BackendError),
 }
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::Encoding => "Noncanonical coefficient proof encoding",
+            Self::ResourceLimit => "Coefficient proof resource limit",
+            Self::Shape => "Coefficient proof shape mismatch",
+            Self::Verification => "Coefficient proof verification failed",
+            Self::Proof(_) => "Coefficient proof backend rejected the relation",
+        })
+    }
+}
+impl std::error::Error for Error {}
 impl From<BackendError> for Error {
     fn from(e: BackendError) -> Self {
         Self::Proof(e)

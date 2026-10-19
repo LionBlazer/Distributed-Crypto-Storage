@@ -26,9 +26,25 @@ Session/scripts/typed catalog reject locking queries before query I/O. The close
 N4/private two-transaction consumer grants no live FOR UPDATE, writer fence, MVCC,
 BFV formation, registry authority, fresh agreed head or finality.
 
-## Current execution boundary
+## Current SQL admission
 
-The fixed-schema `storage-client::Session` accepts genuine proved row SELECT,
+The live `Session::execute`, script and typed SELECT entry points currently reject
+all query/mutation plans before query I/O. Existing arithmetic proof adapters do
+not by themselves establish private source/predicate/formation/completeness and
+fresh agreed-state composition. Parsed locking plans also reject. The private
+product peer stream connects real FHE computation and complete mathematical
+evidence; it is not a SQL result or finalized lock grant.
+The [native private-WHERE record](private-where-peer.md) reports its actual
+successful N4 process operation, complete proof verification and measured limits.
+
+The user selected finalization safety with less than one third malicious confirmed
+computational weight. Missing quorum must wait; partitions must not yield two
+conflicting final lock grants. A concrete weight/election/reconfiguration and
+durable finality protocol still has to implement this contract.
+
+## Historical execution below the admission guard
+
+The historical fixed-schema `storage-client::Session` path implemented row SELECT,
 COUNT/SUM, atomic literal INSERT batches and additive amount UPDATE. Their fixed
 age-only WHERE compiler supports AND/OR/NOT, parentheses, comparisons, [NOT]
 BETWEEN/IN, IS [NOT] NULL and boolean TRUE/FALSE/NULL, preserving SQL UNKNOWN until

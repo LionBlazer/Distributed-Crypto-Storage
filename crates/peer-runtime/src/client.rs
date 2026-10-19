@@ -8,6 +8,7 @@ use std::{
     },
     time::Instant,
 };
+mod private_product;
 
 #[derive(Clone, Debug)]
 pub struct Trace {

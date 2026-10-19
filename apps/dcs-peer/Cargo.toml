@@ -13,11 +13,17 @@ serde_json.workspace = true
 zeroize = "1"
 
 [dev-dependencies]
+bfv-mul-relin-proof = { path = "../../crates/bfv-mul-relin-proof" }
+bfv-key-transform = { path = "../../crates/bfv-key-transform" }
+registry200-proof = { path = "../../crates/registry200-proof" }
+p3-field = "=0.8.0"
+sha2 = "=0.10.9"
+getrandom = "=0.2.17"
 bincode = "=1.3.3"
 bfv-query-core = { path = "../../crates/bfv-query-core" }
 compact-query = { path = "../../crates/compact-query", default-features = false, features = ["bfv-experiment"] }
 compact-store = { path = "../../crates/compact-store" }
 relational-types = { path = "../../crates/relational-types" }
-storage-client = { path = "../../crates/storage-client" }
+storage-client = { path = "../../crates/storage-client", features = ["private-input-proofs"] }
 version-journal = { path = "../../crates/version-journal" }
 rcgen = "=0.14.8"

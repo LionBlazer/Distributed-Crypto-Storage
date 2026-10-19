@@ -19,9 +19,9 @@ impl version_journal::TransitionVerifier for ApplicationVerifier {
         }
     }
 }
-struct ProofPermit<'a>(&'a AtomicBool);
+pub(super) struct ProofPermit<'a>(&'a AtomicBool);
 impl<'a> ProofPermit<'a> {
-    fn acquire(busy: &'a AtomicBool) -> Result<Self, RemoteError> {
+    pub(super) fn acquire(busy: &'a AtomicBool) -> Result<Self, RemoteError> {
         busy.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .map_err(|_| RemoteError::Busy)?;
         Ok(Self(busy))

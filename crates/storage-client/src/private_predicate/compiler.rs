@@ -1,21 +1,20 @@
 //! Private exact-SQL compiler. No stored row is read and no SQL answer is calculated.
-use crate::{
-    backend::{Error, Val},
-    opening::statement as source,
-};
 use p3_field::PrimeField64;
 use registry200_proof::{
+    BackendError as Error, Val,
     admission::CanonicalSource,
     coefficient_encoding::{
         Role, commitment,
         statement::{BfvBinding, Expected},
     },
+    source::statement as source,
 };
 use sha2::{Digest, Sha256};
 use sql_plan::{Projection, QueryPlan, RowWindow};
 use zeroize::Zeroizing;
+
 /// Caller-owned private blind must be high entropy and must never be a public nonce.
-pub(super) struct CompiledPrivatePredicate {
+pub struct CompiledPrivatePredicate {
     identity: [u8; 32],
     public_nonce: [u8; 32],
     mask: Zeroizing<[u8; 32]>,

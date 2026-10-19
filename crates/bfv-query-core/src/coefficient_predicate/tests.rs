@@ -78,6 +78,58 @@ fn forged_response(wire: &[u8], product: &[u8]) -> Vec<u8> {
 }
 
 #[test]
+fn public_request_view_and_response_binding_preserve_every_original_input() {
+    let (owner, setup) = Owner::generate(Geometry::Rows16).unwrap();
+    let peer = PeerEvaluator::from_public_setup(&setup).unwrap();
+    let original = owner
+        .encrypt_original_coefficient_rows_for_experiment(&rows())
+        .unwrap();
+    let prepared = owner
+        .prepare_private_coefficient_predicate_for_experiment(
+            context(),
+            [0x91; 32],
+            &original,
+            &mask([127, 255]),
+        )
+        .unwrap();
+    let view = setup
+        .private_coefficient_request(&prepared.request)
+        .unwrap();
+    assert_eq!(view.query(), [0x91; 32]);
+    assert_eq!(view.context(), &context());
+    assert_eq!(view.ciphertexts(), prepared.operand_ciphertexts().unwrap());
+    let evaluated = peer
+        .evaluate_private_coefficient_predicate_for_experiment(&prepared.request)
+        .unwrap();
+    evaluated
+        .require_request(&setup, &prepared.request)
+        .unwrap();
+    for byte in [16, 48, 80, 96, 208, 320] {
+        let mut response = evaluated.output.clone();
+        response[byte] ^= 1;
+        let changed = EvaluatedPrivateCoefficientPredicate {
+            output: response,
+            ct_ct_multiplications: 1,
+        };
+        assert!(
+            changed.require_request(&setup, &prepared.request).is_err(),
+            "response byte {byte}"
+        );
+    }
+    let (_, foreign) = Owner::generate(Geometry::Rows16).unwrap();
+    assert!(
+        foreign
+            .private_coefficient_request(&prepared.request)
+            .is_err()
+    );
+    assert!(
+        evaluated
+            .require_request(&foreign, &prepared.request)
+            .is_err()
+    );
+}
+
+#[test]
 fn borrowed_operands_are_exact_prepared_bytes_and_mutated_envelopes_are_rejected() {
     let (owner, evaluator) = setup();
     let original = owner

@@ -18,6 +18,12 @@ SQL-success failure. The old SQL scenarios below remain unchanged, unfinished
 functional expectations; the full SQL suite is not green. Their historical
 results are not evidence of current SQL support.
 
+The separate [private-WHERE process gate](../../docs/private-where-peer.md) now
+passes an actual N4 hidden-predicate FHE product with complete input16/output118
+verification. Its `tests/private_product.rs` owns the real-process success case
+and four refusal/cancellation cases. This mathematical stream grants no SQL
+result, finalized head or transaction lock.
+
 Build from the repository root:
 
 ```sh

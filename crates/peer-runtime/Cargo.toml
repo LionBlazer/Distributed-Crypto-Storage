@@ -10,6 +10,8 @@ registry200-journal = { path = "../registry200-journal" }
 peer-transport = { path = "../peer-transport" }
 bfv-query-core = { path = "../bfv-query-core" }
 bfv-query-proof = { path = "../bfv-query-proof" }
+bfv-mul-relin-proof = { path = "../bfv-mul-relin-proof" }
+bfv-relinearization-key-source = { path = "../bfv-relinearization-key-source" }
 version-journal = { path = "../version-journal" }
 compact-store = { path = "../compact-store" }
 proof-acceleration = { path = "../proof-acceleration", default-features = false }

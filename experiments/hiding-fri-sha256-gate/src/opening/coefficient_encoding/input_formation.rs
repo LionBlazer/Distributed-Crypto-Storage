@@ -1,6 +1,6 @@
 //! PUBLIC NONSECRET fixtures. Real input provenance and optional exact FHE output; no SQL grant.
 mod full_product;
-use super::{Statement, compiler::CompiledPrivatePredicate, fixture, require_complete};
+use super::{CompiledPrivatePredicate, Statement, fixture, require_complete};
 use bfv_ciphertext_formation::{EncodedCommitment, Expected as FormationExpected, Prerequisites};
 use bfv_query_core::{
     CoefficientRow, Geometry, KeyScope, Operand, OperandInput, Owner, PeerEvaluator, PublicSetup,

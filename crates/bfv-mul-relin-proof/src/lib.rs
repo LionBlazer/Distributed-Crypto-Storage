@@ -3,13 +3,15 @@
 mod graph;
 mod profile;
 mod provenance;
+mod provenance_codec;
 mod prover;
 mod verifier;
 pub use bfv_mul_relin_circuit::{DEGREE, MAX_CLAIMS_BYTES, NODES};
 pub use bfv_mul_relin_circuit::{GraphClaims, NodeOutput};
 pub use graph::{Expected, PreparedGraph};
 pub use profile::profile_digest;
-pub use provenance::{InputEvidence, Provenance};
+pub use provenance::{INPUT_FRAMES, InputEvidence, MAX_INPUT_BYTES, Provenance, input_frame_limit};
+pub use provenance_codec::MAX_PROVENANCE_CLAIM_BYTES;
 pub use prover::Prover;
 pub use verifier::{CheckedProduct, Verifier};
 pub const PROOF_RECORDS: usize = 118;

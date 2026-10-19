@@ -20,7 +20,7 @@ pub use read::{PageSource, ReadHeads, ReadRequirements};
 pub use read::{ReadView, UpdateView};
 #[cfg(feature = "tfhe-backend")]
 mod owner;
-mod storage;
+pub mod storage;
 #[cfg(feature = "tfhe-backend")]
 mod wire;
 

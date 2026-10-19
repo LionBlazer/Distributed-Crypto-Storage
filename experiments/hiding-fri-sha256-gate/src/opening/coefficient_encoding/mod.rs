@@ -1,5 +1,5 @@
 //! Non-admitting Source/private-query coefficient evidence; no SQL execution or network role.
-mod compiler;
+use storage_client::private_predicate::CompiledPrivatePredicate;
 mod fixture;
 #[cfg(test)]
 mod input_formation;

@@ -1,4 +1,8 @@
-//! Shared canonical storage lifecycle; never owns an FHE key or executes a predicate.
+//! Canonical age/amount table storage with a caller-owned compact-store key.
+//!
+//! Sealing, complete-image restoration and individual row decryption share the
+//! existing schema/index implementation. This module never owns an FHE key,
+//! selects by a predicate, proves SQL, authorizes heads or decides freshness.
 use crate::{
     Error, MAX_TABLE_ROWS, PlainRow, ROW_BYTES, Result, RowIds, SCHEMA, Table, TableId,
     check_schema, index,
@@ -25,7 +29,10 @@ pub(crate) fn seal(
     )
 }
 
-pub(crate) fn seal_partition(
+/// Seals every supplied original row and its canonical private index.
+/// The caller supplies the logical table identity and consumes its row-ID allocation.
+/// This creates storage only; it neither filters rows nor grants query authority.
+pub fn seal_partition(
     owner: &Owner,
     table_id: &TableId,
     rows: &[PlainRow],
@@ -65,7 +72,10 @@ pub(crate) fn seal_partition(
     })
 }
 
-pub(crate) fn restore(
+/// Restores complete canonical images against independently selected heads and TableId.
+/// All encrypted bytes/roots and the owner-authenticated index binding are checked.
+/// Data-page AEAD is checked when a row is read; this is not a private Source proof.
+pub fn restore(
     owner: &Owner,
     (data, index_bytes): (&[u8], &[u8]),
     table_id: &TableId,
@@ -135,7 +145,9 @@ fn validated_images<'a>(
     Ok((data, index))
 }
 
-pub(crate) fn row(owner: &Owner, table: &Table, ordinal: u64, limits: Limits) -> Result<PlainRow> {
+/// Authenticates and decrypts one original row at its exact ordinal.
+/// The caller owns the returned plaintext and must not use this as a SQL executor.
+pub fn row(owner: &Owner, table: &Table, ordinal: u64, limits: Limits) -> Result<PlainRow> {
     let address = table.commitment().layout().address_of(ordinal)?;
     let verified = table.data.lookup(address.page_index, limits)?.verify(
         table.commitment(),
@@ -149,6 +161,9 @@ pub(crate) fn row(owner: &Owner, table: &Table, ordinal: u64, limits: Limits) ->
         amount: u16::from_le_bytes([bytes[1], bytes[2]]),
     })
 }
+
+#[cfg(test)]
+mod api_tests;
 
 /// All plaintext answers must have been checked by the owning backend BEFORE invoking this.
 /// Revisions/nonces and the complete index-page suffix are staged before either image is returned.

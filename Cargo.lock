@@ -1153,16 +1153,22 @@ dependencies = [
 name = "dcs-peer"
 version = "0.1.0"
 dependencies = [
+ "bfv-key-transform",
+ "bfv-mul-relin-proof",
  "bfv-query-core",
  "bfv-query-proof",
  "bincode",
  "compact-query",
  "compact-store",
+ "getrandom 0.2.17",
+ "p3-field",
  "peer-runtime",
  "peer-transport",
  "rcgen",
+ "registry200-proof",
  "relational-types",
  "serde_json",
+ "sha2",
  "storage-client",
  "version-journal",
  "zeroize",
@@ -3591,8 +3597,10 @@ version = "0.1.0"
 name = "peer-runtime"
 version = "0.1.0"
 dependencies = [
+ "bfv-mul-relin-proof",
  "bfv-query-core",
  "bfv-query-proof",
+ "bfv-relinearization-key-source",
  "bincode",
  "compact-store",
  "getrandom 0.2.17",
@@ -4662,18 +4670,25 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 name = "storage-client"
 version = "0.1.0"
 dependencies = [
+ "bfv-basis-convolution",
+ "bfv-ciphertext-formation",
+ "bfv-key-transform",
+ "bfv-mul-relin-proof",
  "bfv-query-core",
  "bfv-query-proof",
  "compact-query",
  "compact-store",
  "ed25519-dalek",
  "getrandom 0.2.17",
+ "p3-field",
  "peer-runtime",
  "proof-acceleration",
  "rcgen",
+ "registry200-proof",
  "relational-types",
  "serde",
  "serde_json",
+ "sha2",
  "sql-plan",
  "version-journal",
  "zeroize",

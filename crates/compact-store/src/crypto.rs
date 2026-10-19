@@ -6,7 +6,7 @@ use zeroize::Zeroizing;
 
 use crate::{Commitment, EncryptedSnapshot, Error, Layout, Limits, Result, VerifiedPage};
 
-/// Sole key owner. No Debug, Clone, serialization, or secret-key accessor.
+/// Owns one guarded key copy. No Debug, Clone, serialization, or key accessor.
 /// The key is zeroized on drop; the application owns plaintext supplied to seal.
 pub struct Owner {
     key: Zeroizing<[u8; 32]>,
@@ -36,16 +36,25 @@ impl PlainPage {
 }
 
 impl Owner {
+    /// Takes ownership of an application's AEAD key and key-domain identity.
+    ///
+    /// The caller must generate a fresh random key and manage domain uniqueness,
+    /// key custody and any explicit copies retained for owner-side proof production.
+    /// This constructor neither exports a key nor authenticates an imported head.
+    pub fn from_key(database: [u8; 16], key_domain: [u8; 16], key: Zeroizing<[u8; 32]>) -> Self {
+        Self {
+            key,
+            database,
+            domain: key_domain,
+        }
+    }
+
     pub fn generate(database: [u8; 16]) -> Result<Self> {
         let mut key = Zeroizing::new([0; 32]);
         let mut domain = [0; 16];
         getrandom::getrandom(key.as_mut()).map_err(|_| Error::Randomness)?;
         getrandom::getrandom(&mut domain).map_err(|_| Error::Randomness)?;
-        Ok(Self {
-            key,
-            database,
-            domain,
-        })
+        Ok(Self::from_key(database, domain, key))
     }
 
     /// Creates a new owner-built immutable read head at revision zero.
@@ -298,6 +307,9 @@ impl Owner {
         Ok(packet)
     }
 }
+
+#[cfg(test)]
+mod key_tests;
 #[cfg(test)]
 mod tests {
     use super::*;

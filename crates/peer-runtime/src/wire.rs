@@ -79,6 +79,8 @@ pub enum Request {
         genesis: Vec<u8>,
         application: Vec<u8>,
     },
+    /// Owner-only bounded streaming FHE computation. Never a SQL or lock grant.
+    PrivateProduct(crate::PrivateProductRequest),
 }
 impl Request {
     pub fn name(&self) -> &'static str {
@@ -104,6 +106,7 @@ impl Request {
             Self::FetchPages(_) => "fetch-pages",
             Self::FetchReadImage(_) => "read-image",
             Self::StoreDelta(_) => "store-delta",
+            Self::PrivateProduct(_) => "private-product",
         }
     }
 }

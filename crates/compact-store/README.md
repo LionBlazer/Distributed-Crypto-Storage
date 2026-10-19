@@ -8,8 +8,13 @@ address-based retrieval, not an FHE evaluator or SQL query proof.
 
 ## Ownership and API
 
-- Owner owns a random 256-bit key and random key-domain ID. It has no printing,
-  cloning, serialization or key-export API. The key is zeroized on drop.
+- Owner owns a 256-bit key and key-domain ID. Owner::generate chooses both randomly.
+  Owner::from_key instead consumes a caller-owned Zeroizing key and explicit
+  database/domain IDs, so an owner application can retain its own guarded copy for
+  private proof production without a key getter or callback. The caller must supply
+  a fresh random key, manage domain uniqueness and protect every retained copy.
+  No key format, head provenance or recovery mechanism is inferred. Owner has no
+  printing, cloning, serialization or key-export API; its key is zeroized on drop.
 - Layout declares a schema ID, row width, rows per page and row count. Rows use
   exactly their supplied bytes, including the final partial page. Layout::address_of
   maps a known logical row ordinal to its page and byte offset.

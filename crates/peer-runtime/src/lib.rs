@@ -8,6 +8,7 @@ mod delta;
 pub mod evidence;
 mod objects;
 mod pages;
+mod private_product;
 mod read_image;
 mod server;
 mod store;
@@ -26,6 +27,7 @@ pub use pages::{
     PageBatchRequest, PageError, PageImage,
 };
 pub use peer_transport::{Connector, Endpoint, Identity, RequestControl, RequestScope};
+pub use private_product::{CheckedPrivateProduct, PrivateProductRequest};
 pub use read_image::{
     MAX_READ_IMAGE_PREFIX_PAGES, MAX_READ_IMAGE_RESPONSE_BYTES, ReadImage, ReadImageRequest,
 };
