@@ -6,6 +6,7 @@ rust-version = "1.99"
 publish = false
 
 [dependencies]
+registry200-joint = { path = "../registry200-joint" }
 work-finality = { path = "../work-finality" }
 version-journal = { path = "../version-journal" }
 registry200-journal = { path = "../registry200-journal" }
@@ -14,6 +15,7 @@ sha2 = "=0.10.9"
 ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std", "fast", "zeroize"] }
 
 [dev-dependencies]
+bfv-query-core = { path = "../bfv-query-core", features = ["key-proofs"] }
 registry200-proof = { path = "../registry200-proof" }
 compact-store = { path = "../compact-store" }
 p3-field = "=0.8.0"

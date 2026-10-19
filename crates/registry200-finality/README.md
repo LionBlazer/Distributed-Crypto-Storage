@@ -5,8 +5,15 @@ weighted multi-slot signer and certificate floor log. It implements a local
 durable protocol boundary. It is not a peer actor, a freshness barrier, an epoch
 activation protocol or permission to accept SQL/row-lock results.
 
+The separate [closed keyless Joint history](src/joint/README.md) composes the new
+FHE/control application with actual weighted checkpoint verification. Its private
+parent type can only originate in full application/QC replay. It has no durable
+signer or floor yet; the original durable adapter below keeps its original
+application and proof contract.
+
 | Direct dependency | Responsibility |
 | --- | --- |
+| [registry200-joint](../registry200-joint/README.md) | Fixed retained FHE plus Source/Lifecycle/Link admission for the separate keyless Joint history |
 | `registry200-journal` | Complete canonical application pins and the actual Source-first/Lifecycle transition verifier |
 | `version-journal` | Canonical Header/Body, actual work/owner/CAS checks, bounded journal persistence and mechanical ancestry floor |
 | `work-finality` | Checked bootstrap weights, actual signatures/QCs, round/lock/POL machine and exclusive multi-slot signer |

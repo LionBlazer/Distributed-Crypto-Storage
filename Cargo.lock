@@ -4194,6 +4194,28 @@ dependencies = [
 name = "registry200-finality"
 version = "0.1.0"
 dependencies = [
+ "bfv-query-core",
+ "compact-store",
+ "ed25519-dalek",
+ "p3-field",
+ "protocol-storage",
+ "registry200-joint",
+ "registry200-journal",
+ "registry200-proof",
+ "sha2",
+ "version-journal",
+ "work-finality",
+ "zeroize",
+]
+
+[[package]]
+name = "registry200-joint"
+version = "0.1.0"
+dependencies = [
+ "bfv-key-transform",
+ "bfv-mul-relin-proof",
+ "bfv-product-evidence",
+ "bfv-query-core",
  "compact-store",
  "ed25519-dalek",
  "p3-field",
@@ -4202,7 +4224,6 @@ dependencies = [
  "registry200-proof",
  "sha2",
  "version-journal",
- "work-finality",
  "zeroize",
 ]
 

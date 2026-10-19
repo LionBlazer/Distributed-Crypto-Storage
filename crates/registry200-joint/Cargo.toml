@@ -1,0 +1,23 @@
+[package]
+name = "registry200-joint"
+version = "0.1.0"
+edition.workspace = true
+rust-version = "1.99"
+publish = false
+
+[dependencies]
+registry200-journal = { path = "../registry200-journal" }
+registry200-proof = { path = "../registry200-proof" }
+bfv-product-evidence = { path = "../bfv-product-evidence" }
+bfv-mul-relin-proof = { path = "../bfv-mul-relin-proof" }
+bfv-query-core = { path = "../bfv-query-core", features = ["formation-proofs"] }
+bfv-key-transform = { path = "../bfv-key-transform" }
+protocol-storage = { path = "../protocol-storage" }
+version-journal = { path = "../version-journal" }
+sha2 = "=0.10.9"
+p3-field = "=0.8.0"
+
+[dev-dependencies]
+compact-store = { path = "../compact-store" }
+zeroize = "=1.9.1"
+ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std", "fast", "zeroize"] }

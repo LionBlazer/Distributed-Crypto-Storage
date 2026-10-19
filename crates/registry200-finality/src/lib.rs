@@ -13,6 +13,8 @@ mod participant;
 mod store;
 mod wire;
 
+pub mod joint;
+
 pub use adapter::{FinalizedHead, RegistryFinality};
 pub use binding::{Binding, DESCRIPTOR_BYTES, Descriptor, profile_digest};
 pub use follower::{Follower, VerifiedCheckpoint};
