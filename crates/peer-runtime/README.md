@@ -620,6 +620,19 @@ heavy work. A permit is resource ownership, never proof validity. The TLS owning
 tests passed in one process; four existing OS-peer rejection/cancellation cases
 also passed. These are not a four-OS-peer finality deployment result; see the
 [native record](../../docs/network-finality.md).
-Production participant-quota/bootstrap integration, system-lane admission, work
-roster activation/reconfiguration and a hidden-SQL lock grant remain open. It
-adds no alternate Jobs application or SQL capability enable flag.
+The participant-quota/bootstrap integration below has now passed its distinct
+four-OS gate. System-lane admission, work roster activation/reconfiguration and
+a hidden-SQL lock grant remain open. It adds no alternate Jobs application or
+SQL capability enable flag.
+
+## Explicit participant finality host
+
+The new [`ParticipantBootstrap`, `ParticipantHost` and `RunningParticipant`
+contract](PARTICIPANT-FINALITY.md) composes the original Registry finality service
+with one actual participant ledger and one proof-scheduling gate. It activates no
+legacy custody-v2/Jobs service in the new root. Its bounded local IPC bootstrap
+and independently supervised daemon path passed the owning four-process
+Source/Lifecycle finality test, including partition/reopen and offline catch-up.
+The [separate native record](../../docs/participant-finality-host.md) gives exact
+measurements and tests; earlier records retain their original scope. The host
+does not enable encrypted SQL.

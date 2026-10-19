@@ -867,3 +867,107 @@ fn final_admissible_header_keeps_its_floor_and_next_slot_is_terminal_after_reope
     assert_eq!(reopened.state.lock().unwrap().history.len(), 3);
     assert!(reopened.outbound().unwrap().is_empty());
 }
+
+#[test]
+fn participant_metadata_last_reopen_and_deleted_wal_never_become_a_new_signer() {
+    use protocol_storage::ParticipantQuota;
+    let f = Fixture::new();
+    let files = Files::new();
+    let root = files.path.join("participant");
+    let quota = ParticipantQuota::create_new(&root, [0x91; 32], 10_000_000_000).unwrap();
+    let paths = crate::participant::Paths::participant(
+        &quota,
+        &f.binding,
+        f.key().verifying_key().to_bytes(),
+    );
+    let mut owned =
+        RegistryFinality::create_participant(&quota, f.binding.clone(), f.key()).unwrap();
+    assert_eq!(std::fs::read_dir(root.join("control")).unwrap().count(), 4);
+    let (header, body) = f.empty(&owned, 0);
+    let descriptor = owned.import_candidate(header, &body).unwrap();
+    f.commit(&mut owned, &descriptor);
+    let floor = owned.finalized_head().unwrap();
+    let used = quota.usage().unwrap();
+    assert_eq!(used.total_bytes(), used.control_bytes());
+    assert!(ParticipantQuota::open_existing(&root, [0x91; 32], 10_000_000_000).is_err());
+    drop(quota); // All child charges still hold the root lock.
+    assert!(ParticipantQuota::open_existing(&root, [0x91; 32], 10_000_000_000).is_err());
+    drop(owned);
+    let quota = ParticipantQuota::open_existing(&root, [0x91; 32], 10_000_000_000).unwrap();
+    let reopened = RegistryFinality::open_participant(&quota, f.binding.clone(), f.key()).unwrap();
+    assert_eq!(reopened.finalized_head().unwrap(), floor);
+    drop(reopened);
+    drop(quota);
+    std::fs::remove_file(&paths.wal).unwrap();
+    let quota = ParticipantQuota::open_existing(&root, [0x91; 32], 10_000_000_000).unwrap();
+    assert!(RegistryFinality::create_participant(&quota, f.binding.clone(), f.key()).is_err());
+    assert!(!paths.wal.exists()); // Existing metadata refused BEFORE any create.
+    assert!(RegistryFinality::open_participant(&quota, f.binding.clone(), f.key()).is_err());
+    assert!(!paths.wal.exists());
+}
+
+#[test]
+fn participant_late_quota_refusal_keeps_partial_files_but_never_publishes_metadata() {
+    use protocol_storage::ParticipantQuota;
+    let f = Fixture::new();
+    let files = Files::new();
+    let root = files.path.join("partial");
+    let initial = 76 + f.binding.journal_genesis().encode().unwrap().len() as u64;
+    let limit = 136 + crate::participant::META_BYTES as u64 + initial + 168 + 144 - 1;
+    let quota = ParticipantQuota::create_new(&root, [0x92; 32], limit).unwrap();
+    let paths = crate::participant::Paths::participant(
+        &quota,
+        &f.binding,
+        f.key().verifying_key().to_bytes(),
+    );
+    assert!(RegistryFinality::create_participant(&quota, f.binding.clone(), f.key()).is_err());
+    assert!(paths.journal.exists());
+    assert!(paths.floor.exists());
+    assert!(!paths.wal.exists());
+    assert!(!paths.metadata.as_ref().unwrap().exists());
+    assert_eq!(quota.usage().unwrap().total_bytes(), 136 + initial + 168);
+    assert!(quota.control_budget().reserve(1).is_ok()); // Known absent preflight is not ambiguous IO.
+    drop(quota);
+    let quota = ParticipantQuota::open_existing(&root, [0x92; 32], limit).unwrap();
+    assert!(RegistryFinality::open_participant(&quota, f.binding.clone(), f.key()).is_err());
+    assert!(!paths.metadata.as_ref().unwrap().exists());
+}
+
+#[test]
+fn participant_owned_floor_io_failure_poison_is_shared_with_depot_and_custody() {
+    use protocol_storage::ParticipantQuota;
+    let f = Fixture::new();
+    let files = Files::new();
+    let root = files.path.join("poison");
+    let quota = ParticipantQuota::create_new(&root, [0x93; 32], 10_000_000_000).unwrap();
+    let mut owned =
+        RegistryFinality::create_participant(&quota, f.binding.clone(), f.key()).unwrap();
+    let (header, body) = f.empty(&owned, 0);
+    let d = owned.import_candidate(header, &body).unwrap();
+    let cert = f.certificate(owned.context(), &d, 0, 0);
+    owned.floor.inject(crate::store::Fault::AfterSync);
+    assert!(
+        owned
+            .receive(
+                &Input::Certificate {
+                    value: d.encode().to_vec(),
+                    certificate: cert
+                }
+                .encode()
+                .unwrap()
+            )
+            .is_err()
+    );
+    assert!(quota.control_budget().reserve(1).is_err());
+    assert!(quota.depot_budget().reserve(1).is_err());
+    assert!(quota.custody_budget().reserve(1).is_err());
+    assert!(owned.finalized_head().is_err());
+    drop(owned);
+    drop(quota);
+    let quota = ParticipantQuota::open_existing(&root, [0x93; 32], 10_000_000_000).unwrap();
+    let reopened = RegistryFinality::open_participant(&quota, f.binding.clone(), f.key()).unwrap();
+    assert_eq!(
+        reopened.finalized_head().unwrap().unwrap().head().block,
+        d.header().id()
+    );
+}

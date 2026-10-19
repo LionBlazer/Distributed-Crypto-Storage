@@ -11,6 +11,7 @@ use peer_transport::{
     CancellableConnection, Cancellation, Connector, Endpoint, read_frame, write_frame,
 };
 use registry200_finality::{Binding, Checkpoint, Follower, VerifiedCheckpoint};
+use std::io::Read;
 use version_journal::{HEADER_BYTES, Header as BlockHeader, MAX_BODY_BYTES};
 
 #[derive(Clone)]
@@ -57,7 +58,9 @@ impl FinalityClient {
             GET_CHECKPOINT => registry200_finality::MAX_CHECKPOINT_BYTES,
             _ => 32,
         };
-        self.read(&mut stream, response)
+        let reply = self.read(&mut stream, response)?;
+        require_end(&mut stream)?;
+        Ok(reply)
     }
 
     fn read(
@@ -111,6 +114,7 @@ impl FinalityClient {
         }
         write_frame(&mut stream, block.body(), MAX_BODY_BYTES)?;
         let (reply, data) = self.read(&mut stream, 0)?;
+        require_end(&mut stream)?;
         if reply == OK && data.is_empty() {
             Ok(())
         } else {
@@ -140,6 +144,7 @@ impl FinalityClient {
         if body.len() != n {
             return Err(invalid());
         }
+        require_end(&mut stream)?;
         Ok(OwnedBlock {
             block: CandidateBlock::new(header, body).map_err(error)?,
             _lease: lease,
@@ -177,6 +182,13 @@ impl FinalityClient {
             _ => Err(invalid()),
         }
     }
+}
+
+fn require_end(stream: &mut impl Read) -> io::Result<()> {
+    if stream.read(&mut [0; 1])? != 0 {
+        return Err(invalid());
+    }
+    Ok(())
 }
 
 /// Transfer one original bounded checkpoint at a time. No actor/shared-state

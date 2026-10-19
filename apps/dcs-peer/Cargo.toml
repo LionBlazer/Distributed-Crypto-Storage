@@ -13,6 +13,11 @@ serde_json.workspace = true
 zeroize = "1"
 
 [dev-dependencies]
+registry200-finality = { path = "../../crates/registry200-finality" }
+registry200-journal = { path = "../../crates/registry200-journal" }
+work-finality = { path = "../../crates/work-finality" }
+protocol-storage = { path = "../../crates/protocol-storage" }
+ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std", "fast", "zeroize"] }
 bfv-mul-relin-proof = { path = "../../crates/bfv-mul-relin-proof" }
 bfv-key-transform = { path = "../../crates/bfv-key-transform" }
 registry200-proof = { path = "../../crates/registry200-proof" }

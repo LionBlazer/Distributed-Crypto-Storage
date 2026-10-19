@@ -41,6 +41,13 @@ impl FloorLog {
     /// no parsed hash is an application/QC authority. The wrapper poisons on an
     /// unreadable/corrupt owned log instead of silently signing past it.
     pub(crate) fn export(&mut self, slot: u64) -> Result<Record> {
+        let result = self.export_checked(slot);
+        if result.is_err() {
+            self.charge.mark_io_failed();
+        }
+        result
+    }
+    fn export_checked(&mut self, slot: u64) -> Result<Record> {
         if slot == 0
             || slot > self.sequence
             || self.position != self.length
@@ -74,17 +81,19 @@ impl FloorLog {
         result
     }
     pub(crate) fn create(path: &Path, binding: &Binding, budget: &ByteBudget) -> Result<Self> {
+        let header = header(binding);
+        let mut permit = budget.preflight_file(path, header.len() as u64)?;
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
             .create_new(true)
-            .open(path)?;
+            .open(permit.path())?;
         file.try_lock().map_err(|_| Error::CorruptFloor)?;
-        let mut charge = budget.register_file(path)?;
-        let header = header(binding);
-        charge.grow(header.len() as u64)?;
-        file.write_all(&header)?;
-        file.sync_all()?;
+        let charge = permit.register_file()?;
+        if let Err(e) = file.write_all(&header).and_then(|()| file.sync_all()) {
+            charge.mark_io_failed();
+            return Err(e.into());
+        }
         Ok(Self {
             file,
             charge,
@@ -99,18 +108,33 @@ impl FloorLog {
         })
     }
     pub(crate) fn open(path: &Path, binding: &Binding, budget: &ByteBudget) -> Result<Self> {
-        let mut file = OpenOptions::new().read(true).write(true).open(path)?;
-        file.try_lock().map_err(|_| Error::CorruptFloor)?;
-        let length = file.metadata()?.len();
-        if length < HEADER_BYTES as u64 || length > version_journal::MAX_JOURNAL_BYTES {
-            return Err(Error::CorruptFloor);
-        }
+        budget.check_existing_file(path)?;
         let charge = budget.register_file(path)?;
-        let mut b = [0; HEADER_BYTES];
-        file.read_exact(&mut b).map_err(|_| Error::CorruptFloor)?;
-        if b.as_slice() != header(binding).as_slice() {
-            return Err(Error::InvalidBinding);
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .map_err(|e| {
+                charge.mark_io_failed();
+                Error::from(e)
+            })?;
+        file.try_lock().map_err(|_| Error::CorruptFloor)?;
+        let inspected = (|| {
+            let length = file.metadata()?.len();
+            if length < HEADER_BYTES as u64 || length > version_journal::MAX_JOURNAL_BYTES {
+                return Err(Error::CorruptFloor);
+            }
+            let mut b = [0; HEADER_BYTES];
+            file.read_exact(&mut b).map_err(|_| Error::CorruptFloor)?;
+            if b.as_slice() != header(binding).as_slice() {
+                return Err(Error::InvalidBinding);
+            }
+            Ok((length, b))
+        })();
+        if inspected.is_err() {
+            charge.mark_io_failed();
         }
+        let (length, b) = inspected?;
         Ok(Self {
             file,
             charge,
@@ -125,6 +149,13 @@ impl FloorLog {
         })
     }
     pub(crate) fn next(&mut self) -> Result<Option<Record>> {
+        let result = self.next_checked();
+        if result.is_err() {
+            self.charge.mark_io_failed();
+        }
+        result
+    }
+    fn next_checked(&mut self) -> Result<Option<Record>> {
         if self.position == self.length {
             return Ok(None);
         }
@@ -176,6 +207,13 @@ impl FloorLog {
         }))
     }
     pub(crate) fn append(&mut self, decision: &Decision) -> Result<()> {
+        let result = self.append_checked(decision);
+        if matches!(&result, Err(Error::Io(_) | Error::CorruptFloor)) {
+            self.charge.mark_io_failed();
+        }
+        result
+    }
+    fn append_checked(&mut self, decision: &Decision) -> Result<()> {
         if self.position != self.length || self.file.metadata()?.len() != self.length {
             return Err(Error::CorruptFloor);
         }

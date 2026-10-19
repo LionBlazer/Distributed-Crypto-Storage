@@ -118,10 +118,11 @@ OS-negative stdout/stderr:
 
 ## Remaining application integration
 
-This service currently consumes the explicit legacy original-app adapter. New
-[participant quota](participant-quota.md) paths, daemon bootstrap, active custody
-ownership and a four-independent-OS finality gate still need integration. The
-original application cannot admit the larger hidden-predicate/FHE evidence graph;
+This record measures the explicit legacy original-app adapter. The subsequent
+[participant-host stage](participant-finality-host.md) integrates typed participant
+quota paths and daemon bootstrap and passes a four-independent-OS control gate.
+Active custody ownership in that host remains separate work. The original
+application cannot admit the larger hidden-predicate/FHE evidence graph;
 a new closed JointApp, retained complete proof graph and actual fresh-head barrier
 are required before enabling SQL locks. Permissionless work admission, safe roster
 activation/epochs, owner key and pending-state recovery, complete SQL coverage and

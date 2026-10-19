@@ -271,6 +271,61 @@ fn empty(
 }
 
 #[test]
+fn actual_tls_status_requires_clean_terminal_and_rejects_trailing_or_truncated_streams() {
+    use std::io::Write;
+    let (binding, _) = binding();
+    let owner = identity();
+    for response_kind in 0..3 {
+        let remote = identity();
+        let acceptor = peer_transport::Acceptor::permissionless(&remote).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = peer_transport::Endpoint {
+            address: listener.local_addr().unwrap(),
+            identity: remote.fingerprint(),
+        };
+        let id = binding.id();
+        let server = std::thread::spawn(move || {
+            let (socket, _) = listener.accept().unwrap();
+            let (_, mut stream) = acceptor.accept(socket).unwrap();
+            let request = peer_transport::read_frame(&mut stream, wire::MAX_CONTROL).unwrap();
+            let (tag, data) = wire::decode(id, &request).unwrap();
+            assert_eq!(tag, wire::STATUS);
+            assert!(data.is_empty());
+            // Deliberately untrusted observation only, never a QC or proof fixture.
+            let mut observed = 1u64.to_le_bytes().to_vec();
+            observed.extend([0; 32]);
+            peer_transport::write_frame(
+                &mut stream,
+                &wire::encode(id, wire::OK, &observed).unwrap(),
+                wire::MAX_CONTROL,
+            )
+            .unwrap();
+            if response_kind == 1 {
+                stream.write_all(&[0xA5]).unwrap();
+            }
+            if response_kind != 2 {
+                stream.conn.send_close_notify();
+                stream.flush().unwrap();
+            }
+        });
+        let connector = peer_transport::Connector::permissionless(&owner).unwrap();
+        let client = FinalityClient::new(connector, endpoint, &binding);
+        match response_kind {
+            0 => assert_eq!(client.observed_slot().unwrap(), 1),
+            1 => assert_eq!(
+                client.observed_slot().unwrap_err().kind(),
+                io::ErrorKind::InvalidData
+            ),
+            _ => assert_eq!(
+                client.observed_slot().unwrap_err().kind(),
+                io::ErrorKind::UnexpectedEof
+            ),
+        }
+        server.join().unwrap();
+    }
+}
+
+#[test]
 fn real_tls_empty_actors_wait_in_two_partitions_then_heal_and_catch_up_an_offline_signer() {
     let (binding, keys) = binding();
     let files = Files::new();

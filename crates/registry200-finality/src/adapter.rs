@@ -1,3 +1,4 @@
+use crate::participant::{self, Paths};
 use crate::{Binding, Descriptor, Error, Hash, Result, store::FloorLog};
 use ed25519_dalek::SigningKey;
 use protocol_storage::{ByteBudget, FileCharge};
@@ -168,6 +169,7 @@ pub struct RegistryFinality {
     floor: FloorLog,
     voter: DurableVoter<ClosedApplication>,
     poisoned: bool,
+    _metadata: Option<FileCharge>,
 }
 impl RegistryFinality {
     /// Explicit NEW installation in an existing caller-owned directory. Partial
@@ -178,49 +180,90 @@ impl RegistryFinality {
         key: SigningKey,
         budget: &ByteBudget,
     ) -> Result<Self> {
-        let directory = directory.canonicalize()?;
-        let journal_path = directory.join("registry-finality-journal-v1");
-        let floor_path = directory.join("registry-finality-floor-v1");
-        let voter_path = directory.join("registry-finality-signer-v1");
+        Self::create_paths(Paths::legacy(directory)?, binding, key, budget)
+    }
+    /// Explicit NEW four-file participant installation. All classes already
+    /// passed ParticipantQuota inventory. Metadata is synced LAST; a partial
+    /// install is never recoverable by silently creating the missing files.
+    pub fn create_participant(
+        quota: &protocol_storage::ParticipantQuota,
+        binding: Binding,
+        key: SigningKey,
+    ) -> Result<Self> {
+        let paths = Paths::participant(quota, &binding, key.verifying_key().to_bytes());
+        Self::create_paths(paths, binding, key, &quota.control_budget())
+    }
+    fn create_paths(
+        paths: Paths,
+        binding: Binding,
+        key: SigningKey,
+        budget: &ByteBudget,
+    ) -> Result<Self> {
+        let signer = key.verifying_key().to_bytes();
+        // Check NEW-marker absence before touching any signer file, and retain
+        // the ONE real permit until metadata-last publication. An old marker
+        // can never authorize recreating a deleted WAL/floor under the same key.
+        let metadata_permit = paths
+            .metadata
+            .as_ref()
+            .map(|p| budget.preflight_file(p, participant::META_BYTES as u64))
+            .transpose()?;
         // Initial Journal writes occur under a real transient reservation; its
         // persistent exact file charge replaces this before signer creation.
         let initial_bytes = 76u64
             .checked_add(binding.journal_genesis().encode()?.len() as u64)
             .ok_or(Error::ResourceLimit)?;
-        let mut initial = budget.reserve(initial_bytes)?;
-        let journal = match DurableJournal::create(
-            &journal_path,
-            binding.journal_genesis().clone(),
-            binding.namespace(),
-        ) {
-            Ok(journal) => journal,
-            Err(error) => {
-                initial.retain_conservatively();
-                return Err(error.into());
-            }
+        let (journal, journal_charge) = if paths.metadata.is_some() {
+            let mut permit = budget.preflight_file(&paths.journal, initial_bytes)?;
+            let journal = DurableJournal::create(
+                permit.path(),
+                binding.journal_genesis().clone(),
+                binding.namespace(),
+            )?;
+            let charge = permit.register_file()?;
+            (journal, charge)
+        } else {
+            let mut initial = budget.reserve(initial_bytes)?;
+            let journal = match DurableJournal::create(
+                &paths.journal,
+                binding.journal_genesis().clone(),
+                binding.namespace(),
+            ) {
+                Ok(journal) => journal,
+                Err(error) => {
+                    initial.retain_conservatively();
+                    return Err(error.into());
+                }
+            };
+            let journal_charge = match initial.retain_file(&paths.journal) {
+                Ok(charge) => charge,
+                Err(error) => {
+                    initial.retain_conservatively();
+                    return Err(error.into());
+                }
+            };
+            (journal, journal_charge)
         };
-        let journal_charge = match initial.retain_file(&journal_path) {
-            Ok(charge) => charge,
-            Err(error) => {
-                initial.retain_conservatively();
-                return Err(error.into());
-            }
-        };
-        let floor = FloorLog::create(&floor_path, &binding, budget)?;
+        let floor = FloorLog::create(&paths.floor, &binding, budget)?;
         let context = binding.initial_context().clone();
+        let metadata_binding = binding.clone();
         let state = Arc::new(Mutex::new(State::new(binding, journal, journal_charge)?));
         let voter = DurableVoter::create_new(
-            voter_path,
+            &paths.wal,
             context,
             ClosedApplication(state.clone()),
             key,
             budget,
         )?;
+        let metadata = metadata_permit
+            .map(|permit| participant::install(permit, &metadata_binding, signer))
+            .transpose()?;
         Ok(Self {
             state,
             floor,
             voter,
             poisoned: false,
+            _metadata: metadata,
         })
     }
     /// Open ONLY existing files, with independent pins and a new complete shared
@@ -232,22 +275,44 @@ impl RegistryFinality {
         key: SigningKey,
         budget: &ByteBudget,
     ) -> Result<Self> {
-        let directory = directory.canonicalize()?;
-        let journal_path = directory.join("registry-finality-journal-v1");
+        Self::open_paths(Paths::legacy(directory)?, binding, key, budget)
+    }
+    /// Existing-only participant recovery, including the metadata-last marker
+    /// and complete original proof/QC/signer replay. No legacy filenames/fallback.
+    pub fn open_participant(
+        quota: &protocol_storage::ParticipantQuota,
+        binding: Binding,
+        key: SigningKey,
+    ) -> Result<Self> {
+        let paths = Paths::participant(quota, &binding, key.verifying_key().to_bytes());
+        Self::open_paths(paths, binding, key, &quota.control_budget())
+    }
+    fn open_paths(
+        paths: Paths,
+        binding: Binding,
+        key: SigningKey,
+        budget: &ByteBudget,
+    ) -> Result<Self> {
+        let metadata = paths
+            .metadata
+            .as_ref()
+            .map(|p| participant::open(p, &binding, key.verifying_key().to_bytes(), budget))
+            .transpose()?;
         let verifier = RegistryVerifier::new(binding.application()?, binding.journal_genesis())?;
+        budget.check_existing_file(&paths.journal)?;
+        let journal_charge = budget.register_file(&paths.journal)?;
         let journal = DurableJournal::open(
-            &journal_path,
+            &paths.journal,
             binding.journal_genesis().clone(),
             binding.namespace(),
             now()?,
             &verifier,
-        )?;
-        let journal_charge = budget.register_file(&journal_path)?;
-        let mut floor = FloorLog::open(
-            &directory.join("registry-finality-floor-v1"),
-            &binding,
-            budget,
-        )?;
+        )
+        .map_err(|e| {
+            journal_charge.mark_io_failed();
+            Error::from(e)
+        })?;
+        let mut floor = FloorLog::open(&paths.floor, &binding, budget)?;
         let initial = binding.initial_context().clone();
         let mut state = State::new(binding, journal, journal_charge)?;
         while let Some(record) = floor.next()? {
@@ -259,7 +324,7 @@ impl RegistryFinality {
         }
         let state = Arc::new(Mutex::new(state));
         let voter = DurableVoter::open_existing(
-            directory.join("registry-finality-signer-v1"),
+            &paths.wal,
             initial,
             ClosedApplication(state.clone()),
             key,
@@ -270,6 +335,7 @@ impl RegistryFinality {
             floor,
             voter,
             poisoned: false,
+            _metadata: metadata,
         };
         owned.synchronize()?;
         Ok(owned)
@@ -409,6 +475,9 @@ impl RegistryFinality {
         // physical extent may be uncertain, so close and require strict reopen.
         if result.is_err() && uncertain_extent {
             self.poisoned = true;
+            if let Ok(state) = self.state.lock() {
+                state.journal_charge.mark_io_failed();
+            }
         }
         result
     }

@@ -6,6 +6,10 @@ rust-version = "1.99"
 publish = false
 
 [dependencies]
+protocol-storage = { path = "../protocol-storage" }
+ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std", "fast", "zeroize"] }
+zeroize = "=1.9.1"
+serde_json.workspace = true
 registry200-journal = { path = "../registry200-journal" }
 registry200-finality = { path = "../registry200-finality" }
 work-finality = { path = "../work-finality" }
@@ -24,9 +28,5 @@ mio = { version = "=1.2.4", default-features = false, features = ["net", "os-pol
 getrandom = "=0.2.17"
 
 [dev-dependencies]
-serde_json.workspace = true
 registry200-proof = { path = "../registry200-proof" }
-protocol-storage = { path = "../protocol-storage" }
-ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std", "fast", "zeroize"] }
-zeroize = "=1.9.1"
 rcgen = "=0.14.8"

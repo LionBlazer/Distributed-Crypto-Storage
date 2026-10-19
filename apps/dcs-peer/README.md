@@ -31,13 +31,15 @@ cargo build --release --locked -p dcs-peer
 ```
 
 The [single launcher](../../tools/launcher/README.md) also packages portable peer
-and GUI executables with trusted AVX2/AVX-512 proof kernels. After reading its
-bootstrap and before serving requests, the daemon initializes
+and GUI executables with trusted AVX2/AVX-512 proof kernels. In `--state-dir` mode,
+after reading its bootstrap and before serving requests, the daemon initializes
 `bfv_query_proof::initialize_backend` from the `proof-kernels` directory beside its
 executable and reports the selected backend on stderr. CPU/OS detection runs once;
 proof operations use the retained implementation. Standalone builds without
 optional kernels use the linked portable engine. A present incompatible or damaged
 selected kernel stops startup. Every variant preserves the same proof parameters.
+The explicit participant-finality mode below uses the original Registry proof
+backend and returns before this optional BFV kernel loader.
 
 Run `dcs-peer --state-dir PATH`. Before accepting connections, stdin must contain
 one bounded JSON `peer_runtime::Bootstrap` frame encoded with the transport's
@@ -140,3 +142,29 @@ and RPC version 1 reject; no old-format fallback or migration exists. Participan
 state uses the [explicit profile-2 namespace](../../docs/salted-custody-objects.md).
 Read-only compatibility preflight precedes directory/lock creation and pending
 cleanup; initialized-v2 current pending recovery remains supported.
+
+## Explicit original-Registry participant finality
+
+`dcs-peer --participant-finality new PATH` and
+`dcs-peer --participant-finality existing PATH` are distinct supervised modes.
+They consume the [four bounded local IPC frames](../../crates/peer-runtime/PARTICIPANT-FINALITY.md)
+with independent work/Journal/binding pins and a privately owned consensus signer.
+They create or open only the new ParticipantQuota namespace, with typed
+metadata-last Registry files and one shared ledger. The old `--state-dir` custody-v2
+bootstrap, tags and storage remain unchanged; this mode launches no custody/Jobs
+service or hidden-SQL capability.
+
+One JSON Ready observation is printed only after actual initialization/replay
+and listener startup. Keep stdin open as the supervisor; EOF closes sockets and
+joins the actor/current native proof before releasing the signer and root lock.
+Unexpected later stdin bytes fail after the same joined cleanup. Private keys
+belong only in trusted IPC, never command-line arguments, logs or peer packets.
+
+The `participant_finality` integration test passed with four real OS peers,
+genuine Source/Lifecycle proofs and weighted QCs. It checks competition, 2+2
+waiting, heal/reopen, 3/4 progress and fresh independent follower verification.
+The three existing shutdown/supervision mode tests also passed. See the
+[native record](../../docs/participant-finality-host.md) for measured resources
+and source identity. System-lane work admission, roster activation/reconfiguration,
+freshness barriers and joint hidden-FHE locks remain open. This control-history
+test does not establish SQL latency or a complete DCS resource guarantee.

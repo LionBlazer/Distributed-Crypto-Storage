@@ -9,6 +9,8 @@ pub mod evidence;
 pub mod finality;
 mod objects;
 mod pages;
+pub mod participant;
+mod participant_bootstrap;
 mod private_product;
 mod proof_gate;
 mod read_image;
@@ -44,6 +46,7 @@ pub use bootstrap::Bootstrap;
 pub use objects::{
     CheckedObject, OBJECT_PROFILE_ID, RawBundle, ReceivedVersionBytes, TargetVersion,
 };
+pub use participant_bootstrap::{PARTICIPANT_BOOTSTRAP_BYTES, ParticipantBootstrap};
 
 /// Reject incompatible participant state before a producer writes or launches.
 pub fn check_workspace(directory: &std::path::Path) -> std::io::Result<()> {

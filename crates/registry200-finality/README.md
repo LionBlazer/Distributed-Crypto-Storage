@@ -105,8 +105,9 @@ The safety premise remains less than one third Byzantine computational weight in
 the **activated** roster, with non-rollback durable honest signing. Checked work
 does not establish that premise, fair election inclusion, balanced failure groups
 or availability if a high-weight participant disappears. The bootstrap roster
-remains fixed. Production participant bootstrap, permissionless system-lane work tickets,
-safe epoch handoff, freshness barriers and a new joint hidden-predicate/FHE/lock
+remains fixed. The participant bootstrap below has passed its own native gate;
+permissionless system-lane work tickets, safe epoch handoff, freshness barriers
+and a new joint hidden-predicate/FHE/lock
 application are still required. This wrapper's local latest floor cannot certify
 globally newest data during an unseen partition and gives no live SQL grant.
 
@@ -131,5 +132,36 @@ application, binding and disk profiles remain unchanged. The executed
 The genuine Source/Lifecycle history test now also constructs a fresh keyless
 follower after private inputs are dropped and rechecks every original Body/QC.
 [Network validation](../../docs/network-finality.md) records its exact scope.
-Production deployment, system-lane,
-reconfiguration and freshness limitations above remain open.
+The participant-host deployment below has a separate four-OS validation record.
+System-lane, reconfiguration and freshness limitations above remain open.
+
+## Participant storage
+
+`RegistryFinality::{create_participant,open_participant}` now compose directly with
+[`ParticipantQuota`](../protocol-storage/README.md). Three new owning filesystem
+cases and a four-independent-OS scenario passed; see the
+[participant-host validation](../../docs/participant-finality-host.md). Earlier
+validation records retain their legacy-directory and preceding-TLS scope.
+
+The explicit participant storage profile derives one typed file identifier from
+the independently pinned binding and local signer public key. Its four control
+files are `hex32.journal`, `hex32.floor`, `hex32.wal` and `hex32.meta`. Every actual
+creator obtains its own real preflight permit in the same control/global ledger;
+every append precharges its complete next extent. Depot and custody handles share
+that ledger, with the existing 256-MiB control ceiling unchanged.
+
+NEW first reserves metadata absence, then creates Journal, floor and signer WAL.
+It syncs the exact binding/signer/profile metadata last, after the other files.
+A quota refusal can therefore leave charged partial files, but cannot publish
+completion metadata. Any ambiguous created artifact or owned write/read error
+poisons the participant ledger. EXISTING inventories all classes, requires the
+exact metadata and all three existing files, then rechecks original application
+proofs, QCs and signer replay. Missing files are never recreated; NEW cannot reset
+a deleted WAL while an old completion marker survives. No legacy adoption,
+migration or automatic partial-install repair is provided.
+
+Metadata uses file sync and, on Unix, a parent-directory sync. Windows directory
+entry power-loss durability remains a host-filesystem assumption; this is not a
+claim that file sync protects against malicious disk rollback. The separate
+[participant daemon source](../peer-runtime/PARTICIPANT-FINALITY.md) keeps the
+original Registry application, fixed bootstrap roster and no-SQL boundary.

@@ -4,6 +4,7 @@ use std::{
     io::{self, Write},
     path::PathBuf,
 };
+mod participant;
 mod supervision;
 fn main() {
     if let Err(error) = run() {
@@ -13,7 +14,20 @@ fn main() {
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
-    if args.next().as_deref() != Some("--state-dir") {
+    let first = args.next();
+    if first.as_deref() == Some("--participant-finality") {
+        let install = match args.next().as_deref() {
+            Some("new") => peer_runtime::participant::ParticipantInstall::New,
+            Some("existing") => peer_runtime::participant::ParticipantInstall::Existing,
+            _ => return Err("Expected participant-finality new|existing".into()),
+        };
+        let directory = PathBuf::from(args.next().ok_or("Missing participant directory")?);
+        if args.next().is_some() {
+            return Err("Unexpected participant argument".into());
+        }
+        return participant::run(&directory, install);
+    }
+    if first.as_deref() != Some("--state-dir") {
         return Err(
             "Usage: dcs-peer --state-dir PATH [--exit-on-stdin-close]; pass a bounded JSON Bootstrap frame on stdin".into(),
         );

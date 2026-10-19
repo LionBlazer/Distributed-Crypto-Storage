@@ -11,6 +11,7 @@ use peer_transport::{
 };
 use registry200_finality::{Binding, Checkpoint, RegistryFinality};
 use std::{
+    io::Write,
     net::{Shutdown, SocketAddr, TcpListener, TcpStream},
     sync::Mutex,
     thread::{self, JoinHandle},
@@ -295,6 +296,19 @@ fn send(
 ) -> io::Result<()> {
     write_frame(stream, &encode(binding, tag, bytes)?, MAX_CONTROL)
 }
+fn finish(stream: &mut AcceptedConnection) -> io::Result<()> {
+    stream.conn.send_close_notify();
+    stream.flush()
+}
+fn terminal(
+    stream: &mut AcceptedConnection,
+    binding: [u8; 32],
+    tag: u8,
+    bytes: &[u8],
+) -> io::Result<()> {
+    send(stream, binding, tag, bytes)?;
+    finish(stream)
+}
 fn serve(
     socket: TcpStream,
     acceptor: &Acceptor,
@@ -311,7 +325,7 @@ fn serve(
     // response ownership. Oversized/control EOF is checked before DTO allocation.
     let lease = match handle.reserve_control() {
         Ok(lease) => lease,
-        Err(_) => return send(&mut stream, binding, BUSY, &[]),
+        Err(_) => return terminal(&mut stream, binding, BUSY, &[]),
     };
     let mut packet = read_frame(&mut stream, MAX_CONTROL)?;
     let (tag, data) = decode(binding, &packet)?;
@@ -325,7 +339,7 @@ fn serve(
             let id = hash(data)?;
             let lease = match bodies.acquire() {
                 Ok(lease) => lease,
-                Err(_) => return send(&mut stream, binding, BUSY, &[]),
+                Err(_) => return terminal(&mut stream, binding, BUSY, &[]),
             };
             Command::GetBlock(id, lease)
         }
@@ -333,7 +347,7 @@ fn serve(
         CHECKPOINT => Command::Checkpoint(Checkpoint::decode(data).map_err(error)?),
         PUT_BLOCK | SUBMIT => {
             if tag == SUBMIT && identity != owner {
-                return send(&mut stream, binding, REJECT, &[]);
+                return terminal(&mut stream, binding, REJECT, &[]);
             }
             if data.len() != HEADER_BYTES + 4 {
                 return Err(invalid());
@@ -346,7 +360,7 @@ fn serve(
             }
             let body = match bodies.acquire() {
                 Ok(lease) => lease,
-                Err(_) => return send(&mut stream, binding, BUSY, &[]),
+                Err(_) => return terminal(&mut stream, binding, BUSY, &[]),
             };
             send(&mut stream, binding, OK, &[])?;
             let bytes = read_frame(&mut stream, n)?;
@@ -363,7 +377,7 @@ fn serve(
         }
         _ => return Err(invalid()),
     };
-    match handle.call_reserved(command, lease) {
+    let result = match handle.call_reserved(command, lease) {
         Ok((reply, _lease)) => match reply {
             Reply::Ok => send(&mut stream, binding, OK, &[]),
             Reply::Status { slot, context } => {
@@ -392,5 +406,7 @@ fn serve(
             },
             &[],
         ),
-    }
+    };
+    result?;
+    finish(&mut stream)
 }
