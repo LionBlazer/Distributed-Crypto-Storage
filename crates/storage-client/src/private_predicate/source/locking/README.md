@@ -129,3 +129,14 @@ The staged-opening case uses a genuinely prepared staged Acquire opening
 to construct a conditional next End mathematical witness, checks its new Registry
 salt/controller binding, and rejects altered openings. It does not submit, prove,
 finalize or accept that End and does not claim client restart works.
+
+## Distinct Joint application
+
+The [Joint historical-parent adapter](joint/README.md) accepts only actual sealed
+`VerifiedJointParent` plus independent installation/BFV pins. It reuses this
+module's private producer under the new genesis and returns a fixed outer Acquire
+request with guarded candidates. The old `LockingParent::new` factory and old
+intent/profile behavior stay unchanged. Both new Joint owning tests and all twelve
+client ownership compile-fail contracts passed; see the
+[Joint validation record](../../../../../../docs/joint-locking-inputs.md).
+No completion, SQL grant, Vault or current-head assertion is added.

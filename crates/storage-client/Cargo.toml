@@ -10,6 +10,8 @@ private-input-proofs = [
     "bfv-query-core/formation-proofs",
     "dep:registry200-proof",
     "dep:registry200-journal",
+    "dep:registry200-joint",
+    "dep:registry200-finality",
     "dep:bfv-key-transform",
     "dep:bfv-basis-convolution",
     "dep:bfv-ciphertext-formation",
@@ -22,6 +24,8 @@ private-input-proofs = [
 [dependencies]
 registry200-proof = { path = "../registry200-proof", optional = true }
 registry200-journal = { path = "../registry200-journal", optional = true }
+registry200-joint = { path = "../registry200-joint", optional = true }
+registry200-finality = { path = "../registry200-finality", optional = true }
 bfv-key-transform = { path = "../bfv-key-transform", optional = true }
 bfv-basis-convolution = { path = "../bfv-basis-convolution", optional = true }
 bfv-ciphertext-formation = { path = "../bfv-ciphertext-formation", optional = true }
@@ -46,3 +50,5 @@ zeroize = "1"
 
 [dev-dependencies]
 rcgen = "=0.14.8"
+protocol-storage = { path = "../protocol-storage" }
+work-finality = { path = "../work-finality" }

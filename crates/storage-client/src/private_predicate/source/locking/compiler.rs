@@ -1,5 +1,7 @@
 //! Fixed local LockingSelect compiler. It never reads stored rows or selects answers.
-use super::{LockingControl, LockingParent};
+#[cfg(test)]
+use super::LockingParent;
+use super::{LockingControl, PreparationParent};
 use p3_field::PrimeField64;
 use registry200_journal::{Operation, intent_query};
 use registry200_proof::{
@@ -98,12 +100,12 @@ impl CompiledLockingSelect {
         })
     }
     /// No Copen/Cmask/Cw/Ccmd/output is used, so this route has no proof fixed point.
-    fn inner_nonce(
+    fn inner_nonce_for(
         &self,
         s: &source::Statement,
         binding: &BfvBinding,
         object: [u8; 32],
-        parent: &LockingParent,
+        parent: &PreparationParent<'_>,
         control: &LockingControl,
     ) -> [u8; 32] {
         let mut h = Sha256::new();
@@ -122,16 +124,16 @@ impl CompiledLockingSelect {
         for value in s.key_commitment {
             h.update(value.as_canonical_u64().to_le_bytes());
         }
-        h.update(parent.head.genesis);
-        h.update(parent.application.id());
-        h.update(parent.application.network);
-        h.update(parent.application.database);
-        h.update(parent.head.database);
-        h.update(parent.head.block);
-        h.update(parent.head.height.to_le_bytes());
-        h.update(parent.head.state_root);
-        h.update(parent.enrollment);
-        h.update(parent.registry);
+        h.update(parent.head().genesis);
+        h.update(parent.application().id());
+        h.update(parent.application().network);
+        h.update(parent.application().database);
+        h.update(parent.head().database);
+        h.update(parent.head().block);
+        h.update(parent.head().height.to_le_bytes());
+        h.update(parent.head().state_root);
+        h.update(parent.enrollment());
+        h.update(parent.registry());
         let actor = &control.actor;
         h.update(actor.transaction.to_le_bytes());
         h.update([actor.principal]);
@@ -140,37 +142,37 @@ impl CompiledLockingSelect {
         h.update(control.controllers[usize::from(actor.principal - 1)]);
         h.finalize().into()
     }
-    pub(super) fn intent(
+    pub(super) fn intent_for(
         &self,
         s: &source::Statement,
         binding: &BfvBinding,
         object: [u8; 32],
-        parent: &LockingParent,
+        parent: &PreparationParent<'_>,
         control: &LockingControl,
     ) -> ([u8; 32], [u8; 32]) {
-        let nonce = self.inner_nonce(s, binding, object, parent, control);
+        let nonce = self.inner_nonce_for(s, binding, object, parent, control);
         let q = intent_query(
-            &parent.application,
-            parent.head.genesis,
-            parent.head.block,
+            parent.application(),
+            parent.head().genesis,
+            parent.head().block,
             nonce,
-            parent.enrollment,
+            parent.enrollment(),
             Operation::Transition,
         );
         (nonce, q)
     }
-    pub(super) fn bind(
+    pub(super) fn bind_for(
         &self,
         source: &CanonicalSource,
         binding: BfvBinding,
         object: [u8; 32],
-        parent: &LockingParent,
+        parent: &PreparationParent<'_>,
         control: &LockingControl,
         salt: [Val; 4],
     ) -> Result<(Expected, Expected), Error> {
         if source.claim().request
             != self
-                .intent(source.claim(), &binding, object, parent, control)
+                .intent_for(source.claim(), &binding, object, parent, control)
                 .1
         {
             return Err(Error::Shape);
@@ -193,6 +195,42 @@ impl CompiledLockingSelect {
             source::encode_digest(root),
         )?;
         Ok((original, query))
+    }
+    #[cfg(test)]
+    pub(super) fn intent(
+        &self,
+        s: &source::Statement,
+        binding: &BfvBinding,
+        object: [u8; 32],
+        parent: &LockingParent,
+        control: &LockingControl,
+    ) -> ([u8; 32], [u8; 32]) {
+        self.intent_for(
+            s,
+            binding,
+            object,
+            &PreparationParent::Legacy(parent),
+            control,
+        )
+    }
+    #[cfg(test)]
+    pub(super) fn bind(
+        &self,
+        source: &CanonicalSource,
+        binding: BfvBinding,
+        object: [u8; 32],
+        parent: &LockingParent,
+        control: &LockingControl,
+        salt: [Val; 4],
+    ) -> Result<(Expected, Expected), Error> {
+        self.bind_for(
+            source,
+            binding,
+            object,
+            &PreparationParent::Legacy(parent),
+            control,
+            salt,
+        )
     }
     pub(super) fn command(
         &self,

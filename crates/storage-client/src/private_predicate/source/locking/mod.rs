@@ -1,7 +1,12 @@
 //! Owner-side joint mathematical inputs. No SQL admission, signer or finality token.
 mod compiler;
+mod joint;
 mod produce;
 pub use compiler::CompiledLockingSelect;
+pub use joint::{
+    JointLockingCandidates, JointLockingParent, JointLockingPreparation, NonAdmittedJointLocking,
+    PreparedJointLockingInputs,
+};
 
 use crate::private_predicate::{ProducedInputs, cryptography, invalid};
 use p3_field::PrimeField64;
@@ -47,6 +52,55 @@ impl LockingParent {
     }
     pub fn application(&self) -> &Application {
         &self.application
+    }
+}
+
+// Closed local routes only. No consumer can nominate a raw Joint parent or
+// replace its sealed provenance through a generic callback/trait implementation.
+enum PreparationParent<'a> {
+    Legacy(&'a LockingParent),
+    Joint(&'a JointLockingParent),
+}
+impl PreparationParent<'_> {
+    fn application(&self) -> &Application {
+        match self {
+            Self::Legacy(p) => &p.application,
+            Self::Joint(p) => p.source_spec(),
+        }
+    }
+    fn head(&self) -> HeadRef {
+        match self {
+            Self::Legacy(p) => p.head,
+            Self::Joint(p) => p.head(),
+        }
+    }
+    fn enrollment(&self) -> [u8; 32] {
+        match self {
+            Self::Legacy(p) => p.enrollment,
+            Self::Joint(p) => p.enrollment(),
+        }
+    }
+    fn registry(&self) -> [u8; 32] {
+        match self {
+            Self::Legacy(p) => p.registry,
+            Self::Joint(p) => p.registry(),
+        }
+    }
+    fn require_object(&self, object: [u8; 32]) -> crate::Result<()> {
+        match self {
+            Self::Legacy(_) => Ok(()),
+            Self::Joint(p) => p.require_object(object),
+        }
+    }
+    fn require_key(
+        &self,
+        bfv: &crate::private_predicate::BfvContext<'_>,
+        key: &bfv_key_transform::Statement,
+    ) -> crate::Result<()> {
+        match self {
+            Self::Legacy(_) => Ok(()),
+            Self::Joint(p) => p.require_key(bfv, key),
+        }
     }
 }
 
@@ -254,7 +308,7 @@ pub struct StagedLockingTransition {
 }
 impl StagedLockingTransition {
     fn new(
-        parent: &LockingParent,
+        parent: &PreparationParent<'_>,
         request: &Request,
         inputs: &ProducedInputs,
         lifecycle: &lifecycle::Evidence,
@@ -275,37 +329,37 @@ impl StagedLockingTransition {
         let source = CanonicalSource::checked_claim(association.query().expected.source_claim())
             .map_err(cryptography)?;
         parent
-            .application
+            .application()
             .require_source(source.claim())
             .map_err(cryptography)?;
         let encoded_request = request.encode().map_err(cryptography)?;
         let decoded = Request::decode(&encoded_request).map_err(cryptography)?;
-        let reconstructed = decoded.source(&parent.application).map_err(cryptography)?;
+        let reconstructed = decoded.source(parent.application()).map_err(cryptography)?;
         let expected = &association.lifecycle().expected;
         let Phase::Transition { old, command } = expected.phase else {
             return Err(invalid("Staged transition requires Acquire"));
         };
         if request.operation != Operation::Transition
-            || request.genesis != parent.head.genesis
-            || request.parent != parent.head.block
-            || request.application != parent.application.id()
-            || request.enrollment != parent.enrollment
+            || request.genesis != parent.head().genesis
+            || request.parent != parent.head().block
+            || request.application != parent.application().id()
+            || request.enrollment != parent.enrollment()
             || request.query
                 != intent_query(
-                    &parent.application,
-                    parent.head.genesis,
-                    parent.head.block,
+                    parent.application(),
+                    parent.head().genesis,
+                    parent.head().block,
                     request.nonce,
-                    parent.enrollment,
+                    parent.enrollment(),
                     Operation::Transition,
                 )
             || reconstructed.values() != source.claim().values()
             || reconstructed.heads != source.claim().heads
             || reconstructed.packets != source.claim().packets
-            || expected.genesis != parent.head.genesis
-            || expected.parent != parent.head.block
-            || encode_digest(expected.enrollment) != parent.enrollment
-            || encode_digest(old) != parent.registry
+            || expected.genesis != parent.head().genesis
+            || expected.parent != parent.head().block
+            || encode_digest(expected.enrollment) != parent.enrollment()
+            || encode_digest(old) != parent.registry()
             || encode_digest(command) != request.command
             || lifecycle.statement().values() != association.lifecycle().values()
         {
@@ -372,7 +426,7 @@ impl StagedLockingTransition {
         w.salts[1] = opening.control.salts[0].map(Val::from_u64);
         if encode_digest(source::commitment::digest(&commitment::enrollment_fields(
             expected, &w,
-        ))) != parent.enrollment
+        ))) != parent.enrollment()
         {
             return Err(invalid(
                 "Staged enrollment opening differs from its actual parent",
@@ -428,8 +482,8 @@ impl StagedLockingTransition {
             controllers,
             salts,
             actor,
-            parent: parent.head,
-            application: parent.application.clone(),
+            parent: parent.head(),
+            application: parent.application().clone(),
             request: encoded_request,
             provenance,
             encrypted_request: inputs.prepared.request.clone(),

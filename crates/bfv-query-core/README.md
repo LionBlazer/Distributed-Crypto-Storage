@@ -72,6 +72,12 @@ opaque 112-byte heads. Generic pending tokens also bind their local owner keyset
 they do not add malicious-response authentication. Results remain Unverified;
 UPDATE/INSERT callers must locally check decoded values before writeback.
 
+`Owner::require_public_setup` checks the original parameters, geometry and full
+keyset association through the existing private validation path. It performs no
+encryption, exposes no secret material and supplies no computation/finality grant.
+The [Joint client gate](../../docs/joint-locking-inputs.md) covers a foreign setup
+with identical geometry and a canonical reconstruction of the correct setup.
+
 `PublicSetup::update_parameters` extracts the pinned parameters, geometry and full
 keyset identity for indexed addition. `PublicUpdateEvaluator` performs the same
 encrypted limb addition as the full evaluator, with identical request/output bytes,

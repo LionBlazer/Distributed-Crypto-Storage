@@ -13,9 +13,10 @@ use zeroize::Zeroizing;
 mod locking;
 mod state;
 pub use locking::{
-    CompiledLockingSelect, LockingActor, LockingCompletion, LockingConflict, LockingControl,
-    LockingParent, LockingPreparation, NonAdmittedLocking, PreparedLockingInputs,
-    StagedLockingTransition,
+    CompiledLockingSelect, JointLockingCandidates, JointLockingParent, JointLockingPreparation,
+    LockingActor, LockingCompletion, LockingConflict, LockingControl, LockingParent,
+    LockingPreparation, NonAdmittedJointLocking, NonAdmittedLocking, PreparedJointLockingInputs,
+    PreparedLockingInputs, StagedLockingTransition,
 };
 pub use state::{
     EncryptedSourceState, SOURCE_STATE_BYTES, SOURCE_STATE_HEADER_BYTES, SourceStateAuthority,

@@ -459,6 +459,15 @@ impl Owner {
     pub fn geometry(&self) -> Geometry {
         self.geometry
     }
+    /// Check this owner's complete original public setup without encryption,
+    /// secret export, anchor resampling or a proof/SQL authority claim.
+    pub fn require_public_setup(&self, original: &PublicSetup) -> Result<()> {
+        original.checked_parameters()?;
+        if original.geometry != self.geometry || keyset_id(original)? != self.keyset_id {
+            return Err(Error::BindingMismatch);
+        }
+        Ok(())
+    }
     pub fn secret_key_serialized_bytes(&self) -> usize {
         Zeroizing::new(self.key.to_bytes()).len()
     }

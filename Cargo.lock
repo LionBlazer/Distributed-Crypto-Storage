@@ -4756,7 +4756,10 @@ dependencies = [
  "p3-field",
  "peer-runtime",
  "proof-acceleration",
+ "protocol-storage",
  "rcgen",
+ "registry200-finality",
+ "registry200-joint",
  "registry200-journal",
  "registry200-proof",
  "relational-types",
@@ -4765,6 +4768,7 @@ dependencies = [
  "sha2",
  "sql-plan",
  "version-journal",
+ "work-finality",
  "zeroize",
 ]
 

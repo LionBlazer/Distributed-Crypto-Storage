@@ -1,8 +1,8 @@
 //! Actual Source/input16/Lifecycle/Link orchestration, with no admission path.
 use super::{
     CompiledLockingSelect, LockingCompletion, LockingConflict, LockingControl, LockingParent,
-    LockingPreparation, NextOwnerOpening, NonAdmittedLocking, PreparedLockingInputs,
-    StagedLockingTransition,
+    LockingPreparation, NextOwnerOpening, NonAdmittedLocking, PreparationParent,
+    PreparedLockingInputs, StagedLockingTransition,
 };
 use crate::private_predicate::{
     BfvContext, FetchedSource, InputProofFrames, ProducedInputs, SourceOwner, cryptography,
@@ -58,10 +58,29 @@ impl SourceOwner {
         parent: &LockingParent,
         control: LockingControl,
     ) -> crate::Result<LockingPreparation> {
+        self.prepare_with_parent(
+            bfv,
+            epoch,
+            fetched,
+            compiled,
+            &PreparationParent::Legacy(parent),
+            control,
+        )
+    }
+    pub(super) fn prepare_with_parent(
+        &self,
+        bfv: BfvContext<'_>,
+        epoch: &mut OwnerProofEpoch<'_>,
+        fetched: FetchedSource<'_>,
+        compiled: &CompiledLockingSelect,
+        parent: &PreparationParent<'_>,
+        control: LockingControl,
+    ) -> crate::Result<LockingPreparation> {
+        parent.require_object(fetched.object)?;
         let object = fetched.object;
         let mut loaded = self.load(fetched)?;
         parent
-            .application
+            .application()
             .require_source(&loaded.draft)
             .map_err(cryptography)?;
         if epoch.stage() != ProofEpochStage::Ready {
@@ -79,6 +98,7 @@ impl SourceOwner {
             .setup
             .verify_key_transform(bfv.anchor, &key_bytes)
             .map_err(cryptography)?;
+        parent.require_key(&bfv, key.statement())?;
         let binding = BfvBinding::new(bfv.anchor.full_setup_id(), key.statement().clone());
 
         // Reconstruct the independently validated parent openings before any new
@@ -98,17 +118,17 @@ impl SourceOwner {
         mathematical.salts[2] = control.salts[1].map(Val::from_u64);
         let draft = lifecycle::statement::Expected::transition(
             &loaded.draft,
-            parent.head.genesis,
-            parent.head.block,
-            parent.enrollment,
-            parent.registry,
+            parent.head().genesis,
+            parent.head().block,
+            parent.enrollment(),
+            parent.registry(),
             [0; 32],
         )
         .map_err(cryptography)?;
         if source_statement::encode_digest(commitment::digest(&life_commitment::enrollment_fields(
             &draft,
             &mathematical,
-        ))) != parent.enrollment
+        ))) != parent.enrollment()
             || source_statement::encode_digest(lifecycle::statement::digest(
                 &life_commitment::registry_fields(
                     &draft,
@@ -116,7 +136,7 @@ impl SourceOwner {
                     &mathematical.old,
                     mathematical.salts[2],
                 ),
-            )) != parent.registry
+            )) != parent.registry()
         {
             return Err(invalid(
                 "Private control opening differs from the validated parent",
@@ -127,12 +147,12 @@ impl SourceOwner {
                 .old
                 .step(
                     mathematical.command.as_ref().unwrap(),
-                    parent.head.block,
+                    parent.head().block,
                     mathematical.ages(),
                 )
                 .map_err(cryptography)?,
         );
-        let (nonce, query) = compiled.intent(&loaded.draft, &binding, object, parent, &control);
+        let (nonce, query) = compiled.intent_for(&loaded.draft, &binding, object, parent, &control);
         loaded.draft.request = query;
         let opening_salt = Zeroizing::new(random_salt()?);
         loaded.draft.open_commitment = commitment::digest(&commitment::opening_fields(
@@ -150,10 +170,10 @@ impl SourceOwner {
         mathematical.salts[5] = (*result_salt).map(Val::from_u64);
         let draft = lifecycle::statement::Expected::transition(
             source.claim(),
-            parent.head.genesis,
-            parent.head.block,
-            parent.enrollment,
-            parent.registry,
+            parent.head().genesis,
+            parent.head().block,
+            parent.enrollment(),
+            parent.registry(),
             [0; 32],
         )
         .map_err(cryptography)?;
@@ -164,10 +184,10 @@ impl SourceOwner {
         ));
         let expected = LifeExpected::transition(
             &source,
-            parent.head.genesis,
-            parent.head.block,
-            parent.enrollment,
-            parent.registry,
+            parent.head().genesis,
+            parent.head().block,
+            parent.enrollment(),
+            parent.registry(),
             source_statement::encode_digest(command),
         )
         .map_err(cryptography)?;
@@ -183,12 +203,12 @@ impl SourceOwner {
         drop(witness);
         let request = Request {
             operation: Operation::Transition,
-            genesis: parent.head.genesis,
-            parent: parent.head.block,
-            application: parent.application.id(),
+            genesis: parent.head().genesis,
+            parent: parent.head().block,
+            application: parent.application().id(),
             nonce,
             query,
-            enrollment: parent.enrollment,
+            enrollment: parent.enrollment(),
             opening: source_statement::encode_digest(source.claim().open_commitment),
             command: source_statement::encode_digest(command),
             packets: source.claim().packets.clone(),
@@ -223,7 +243,7 @@ impl SourceOwner {
         };
         let mask_salt = Zeroizing::new(random_salt()?);
         let (source_expected, mask_expected) = compiled
-            .bind(
+            .bind_for(
                 &source,
                 binding,
                 object,
