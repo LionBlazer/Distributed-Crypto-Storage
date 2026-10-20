@@ -672,3 +672,53 @@ Source/Lifecycle finality test, including partition/reopen and offline catch-up.
 The [separate native record](../../docs/participant-finality-host.md) gives exact
 measurements and tests; earlier records retain their original scope. The host
 does not enable encrypted SQL.
+
+## One-record private-product lookahead (source candidate)
+
+The private client output loop in
+[`client/private_product.rs`](src/client/private_product.rs) sends the first
+`NEXT(0)` only after its actual input16 check. After a complete bounded
+`PROOF(i)` read and cancellation/deadline check, it sends `NEXT(i+1)` before the
+SAME mandatory native `accept(i)` and evidence retention, except at the final
+ordinal. This lets the remote process produce at most one following record while
+the owner verifies the current one. `NEXT` carries only the existing session
+binding, ordinal and empty payload; it is flow credit, never a verified grant.
+
+The server, all wire/profile bytes, exact 118 role order, individual/aggregate
+caps and original 180/1800-second budgets remain unchanged. Record0 is still the
+fixed arithmetic17 proof and the remaining records are the same115 NTT plus2
+Relin proofs. There is no 119th credit, reordering, proof cache or verifier skip.
+Every actual input/output check, END, clean EOF, security union and catalog
+publication gate remains required. A frame that was received successfully is
+still unverified; the new private helper returns only bytes and cannot return
+rows, CheckedProduct, a completed catalog or SQL authority.
+
+No native worker, gate, producer queue, read-ahead heap buffer or detached task is
+added. The server remains synchronous and starts only one credited stage at a
+time. TCP backpressure bounds a completed following record while the owner is
+busy; each payload retains the old16 MiB proof cap plus its fixed headers. The
+owner still holds its ONE existing caller ProofPermit across the genuine RPC;
+the server holds its existing permit until synchronous proving returns. Neither
+native verification nor RPC retains the shared depot mutex. A rejected current
+proof or cancellation can waste at most one already credited following stage;
+in-flight native work is not preempted. Errors close the same scoped connection,
+and existing deadline/connection workers retain their join/cleanup lifecycle.
+
+Four added owning flow tests cover all118 credits with no terminal consumption,
+malformed/truncated/foreign/out-of-order/extra roles, cancellation around credit,
+and actual loopback delivery before the current bytes reach acceptance. Their
+payloads are explicitly untrusted parser fixtures, not positive cryptographic
+or SQL answers. The unchanged real verifier and genuine FHE stream gates own
+proof acceptance and END/EOF success. All four flow tests passed on 2026-10-20
+(0.00 seconds in the test body,18.363 seconds including compilation), as did
+strict release Clippy for all package targets. The frozen1612-file inventory
+matched after both commands. Two genuine input16/output118/END/EOF streams with
+this scheduling subsequently passed in the seven-child-process Host scenario.
+The first complete production-driver call took 1277.232 seconds; the entire
+two-Acquire/restart/recovery command took 3345.196 seconds. Its 1612-file source
+receipt was `A111D4BB49432A017207A04E8FC1FFE9203859870936A48243CD3B699E0A2CE6`;
+the unchanged-source/log receipt was
+`087A6687AB7227FDC828CA588AC47D543E27E99BC3008FDDA751A89635513C3F`.
+The 1792-MiB per-process soft fuse did not fire. These are bounded measurements,
+not a comparable before/after speedup or a complete RAM guarantee. The scheduling
+change itself establishes no current lease or SQL admission.

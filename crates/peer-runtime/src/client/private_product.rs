@@ -4,7 +4,11 @@ use bfv_mul_relin_proof::{Expected, InputEvidence, Provenance, Verifier};
 use bfv_product_evidence::{CatalogId, ProductStore, RecordingVerifier, SharedProductStore};
 use bfv_query_core::EvaluatedPrivateCoefficientPredicate;
 use bfv_relinearization_key_source::PreparedKey;
-use std::io::Read;
+use std::io::{Read, Write};
+
+#[cfg(test)]
+#[path = "private_product_lookahead_tests.rs"]
+mod lookahead_tests;
 
 impl RemotePeer {
     /// Execute the actual private-input FHE product on this peer, verifying all
@@ -170,19 +174,24 @@ impl RemotePeer {
             }
             check_budget(started, cancellation.as_ref())?;
             verifier.verify_inputs(inputs)?;
+            check_budget(started, cancellation.as_ref())?;
+            let demand = binding.send(&mut stream, NEXT, 0, &[])?;
+            sent += demand;
+            self.product_activity(id, ActivityPhase::RequestSent, demand);
             for ordinal in 0..bfv_mul_relin_proof::PROOF_RECORDS {
                 check_budget(started, cancellation.as_ref())?;
-                let demand = binding.send(&mut stream, NEXT, ordinal, &[])?;
-                sent += demand;
-                self.product_activity(id, ActivityPhase::RequestSent, demand);
-                let record = binding.receive_observed(
+                let record = receive_output_record(
                     &mut stream,
-                    PROOF,
+                    &binding,
                     ordinal,
-                    bfv_mul_relin_proof::RECORD_HEADER + bfv_mul_relin_proof::MAX_PROOF_BYTES,
+                    started,
+                    cancellation.as_ref(),
                     &mut observed,
+                    |bytes| {
+                        sent += bytes;
+                        self.product_activity(id, ActivityPhase::RequestSent, bytes);
+                    },
                 )?;
-                check_budget(started, cancellation.as_ref())?;
                 verifier.accept(&record)?;
             }
             let end = binding.receive_observed(
@@ -227,6 +236,43 @@ impl RemotePeer {
             });
         }
     }
+}
+
+// Flow control only: this returns UNVERIFIED bytes, never a proof receipt. Once
+// the complete bounded current record is received, allow exactly one following
+// native stage to overlap this record's mandatory verifier/retention work. The
+// same server proves sequentially; no second local native worker/gate is added.
+fn receive_output_record(
+    stream: &mut (impl Read + Write),
+    binding: &StreamBinding,
+    ordinal: usize,
+    started: Instant,
+    cancellation: Option<&peer_transport::Cancellation>,
+    received: &mut impl FnMut(usize),
+    next_sent: impl FnOnce(usize),
+) -> io::Result<Vec<u8>> {
+    check_budget(started, cancellation)?;
+    if ordinal >= bfv_mul_relin_proof::PROOF_RECORDS {
+        return Err(rejected("proof ordinal limit"));
+    }
+    let record = binding.receive_observed(
+        stream,
+        PROOF,
+        ordinal,
+        bfv_mul_relin_proof::RECORD_HEADER + bfv_mul_relin_proof::MAX_PROOF_BYTES,
+        received,
+    )?;
+    check_budget(started, cancellation)?;
+    let next = ordinal
+        .checked_add(1)
+        .ok_or_else(|| rejected("proof ordinal overflow"))?;
+    if next < bfv_mul_relin_proof::PROOF_RECORDS {
+        let bytes = binding.send(stream, NEXT, next, &[])?;
+        next_sent(bytes);
+    }
+    // Cancellation during the bounded write also prevents native acceptance.
+    check_budget(started, cancellation)?;
+    Ok(record)
 }
 
 // A closed choice of the SAME actual verifier. No peer-supplied verification

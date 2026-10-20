@@ -97,8 +97,9 @@ pub(super) fn serve(
         drop(claims);
         for ordinal in 0..bfv_mul_relin_proof::PROOF_RECORDS {
             budget(shared, stream, started)?;
-            // Demand follows successful client verification of the preceding
-            // stage. Disconnect/cancellation is observed before more native work.
+            // NEXT is ordered flow credit, not proof that the client accepted
+            // an earlier record. A client may allow one following stage ahead;
+            // disconnect/cancellation still prevents later uncredited work.
             binding.receive_observed(stream, NEXT, ordinal, 0, |bytes| {
                 received = received.saturating_add(bytes)
             })?;
