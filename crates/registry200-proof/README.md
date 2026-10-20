@@ -1,5 +1,15 @@
 # Registry200 proof circuits and evidence
 
+The separate [Registry progress module](src/registry_progress/README.md)
+adds separate Source-first Bootstrap803, Control815 and Predicate896 AIR/proof
+frontends with fixed Registry208/Statement96/Progress48/Result160. Genuine
+Source/Encoding SKIP-before-OFFSET/LIMIT, prefix-WAIT, proved End-compaction,
+fresh-blind Resume and genuine NOWAIT failure passed the owning native gates
+recorded in [validation](../../docs/registry-progress-validation.md).
+The v2 step profile uses width 8266 and the distinct v2 Statement96 profile; no
+old proof profile is reinterpreted. This module does not activate SQL or finality;
+existing profiles and admission remain unchanged.
+
 This library owns the single fixed Source-opening and Registry200 lifecycle
 circuits previously owned by the hiding-FRI experiment. It verifies actual
 hiding STARKs; a profile match, owner signature or public claim is insufficient.
