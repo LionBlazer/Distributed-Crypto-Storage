@@ -3,6 +3,8 @@
 use super::*;
 #[path = "host/tests.rs"]
 mod host_tests;
+#[path = "acquire_run_tests.rs"]
+mod run_tests;
 use crate::private_predicate::{EncryptedSourceState, SourceStateAuthority, SourceStateIdentity};
 use bfv_query_core::{
     BfvKeyAnchor, EncryptedOwnerState, OwnerKeyAnchor, OwnerProofEpoch, OwnerStateAuthority,
@@ -323,11 +325,23 @@ use crate::private_predicate::source::locking::joint::tests::os_process;
 #[ignore = "Actual OS FHE input16/output118/END+EOF and durable owner restarts; requires DCS_PEER_EXE; local genuine QC, not four-validator consensus"]
 fn os_fhe_catalog_body_and_completed_lost_ack_recover_original_invocation_then_end() {
     use peer_runtime::{Bootstrap, Connector, RemotePeer, Request, Response};
+    let started = std::time::Instant::now();
+    let phase = |name: &str| {
+        eprintln!(
+            "Acquire recovery pid={} phase={} elapsed_ms={:.3}",
+            std::process::id(),
+            name,
+            started.elapsed().as_secs_f64() * 1000.
+        );
+    };
     let exe = std::path::PathBuf::from(
         std::env::var_os("DCS_PEER_EXE").expect("Actual dcs-peer binary required"),
     );
     assert!(exe.is_absolute() && exe.is_file());
+    let gate = peer_runtime::ProofGate::new();
+    let _permit = gate.try_acquire().unwrap();
     let (mut rig, mut vault) = begun();
+    phase("original-Source-BFV-Bootstrap-Begin-ready");
     let owner_identity = fixture::identity();
     let config = Bootstrap {
         identity: fixture::identity(),
@@ -359,6 +373,7 @@ fn os_fhe_catalog_body_and_completed_lost_ack_recover_original_invocation_then_e
         Response::Setup(_)
     ));
     let work = compute(&rig, &mut vault);
+    phase("original-Compute-fsynced");
     let invocation = work.invocation_id();
     let pending = work.cursor();
     let (provenance, request, frames) = work.into_parts();
@@ -380,6 +395,7 @@ fn os_fhe_catalog_body_and_completed_lost_ack_recover_original_invocation_then_e
     drop(checked);
     drop(shared);
     drop(frames);
+    phase("actual-FHE-input16-output118-END-EOF");
     let draft = vault
         .save_acquire_catalog(
             pending,
@@ -396,6 +412,7 @@ fn os_fhe_catalog_body_and_completed_lost_ack_recover_original_invocation_then_e
         draft.parent().control(),
     );
     let exact = block.encode();
+    phase("catalog-verified-and-signed-Body-ready");
     let checkpoint = qc(&rig.binding, &vault.history, &block);
     let before = vault.cursor().unwrap();
     // Real fsync succeeds, acknowledgement is lost: no prepared bytes returned.
@@ -414,6 +431,7 @@ fn os_fhe_catalog_body_and_completed_lost_ack_recover_original_invocation_then_e
     rig.fresh_quota();
     let mut vault = open_acquire(&rig).unwrap();
     assert_eq!(vault.phase().unwrap(), OwnerVaultPhase::SubmittedUnknown);
+    phase("lost-Body-ACK-full-reopen");
     let cursor = vault.cursor().unwrap();
     let submitted = vault.submission(cursor).unwrap();
     assert_eq!(
@@ -452,6 +470,7 @@ fn os_fhe_catalog_body_and_completed_lost_ack_recover_original_invocation_then_e
     let completed = vault
         .take_recovered_acquire(vault.cursor().unwrap())
         .unwrap();
+    phase("lost-Completed-ACK-full-reopen-and-decrypt");
     assert_eq!(completed.invocation_id(), invocation);
     assert!(completed.is_recovered_invocation());
     assert_eq!(completed.cursor().generation(), 2);
@@ -488,7 +507,53 @@ fn os_fhe_catalog_body_and_completed_lost_ack_recover_original_invocation_then_e
         control::JointControlOutcome::ClosedRegistry
     );
     assert_eq!(completed.cursor().generation(), 3);
+    phase("actual-End-completed");
+    let claim = vault
+        .evidence_ingress()
+        .unwrap()
+        .recording_store()
+        .catalog_claim(catalog)
+        .unwrap();
+    let missing = claim.references().next_back().unwrap();
+    assert_eq!(
+        usize::from(missing.ordinal()),
+        bfv_mul_relin_proof::PROOF_RECORDS - 1
+    );
+    let missing = missing.blob_id();
+    drop(claim);
     drop(vault);
     drop(remote);
     process.finish().unwrap();
+
+    // The original OS computation is finished and joined. Every subsequent
+    // open must still verify its retained product; Completed/End is no cache.
+    rig.fresh_quota();
+    let healthy = open_acquire(&rig).unwrap();
+    assert_eq!(healthy.phase().unwrap(), OwnerVaultPhase::Completed);
+    assert_eq!(healthy.cursor().unwrap().generation(), 3);
+    phase("joined-FHE-healthy-full-reopen");
+    drop(healthy);
+    rig.fresh_quota();
+    let wal_path = rig
+        .quota()
+        .control_file(rig.pins().file_id(), protocol_storage::ControlFile::Wal);
+    let wal_bytes = std::fs::read(&wal_path).unwrap();
+    let name = missing
+        .sha256()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    std::fs::remove_file(
+        rig.quota()
+            .depot_directory()
+            .join(format!("{name}-{:016x}.blob", missing.bytes())),
+    )
+    .unwrap();
+    assert!(open_acquire(&rig).is_err());
+    assert_eq!(std::fs::read(wal_path).unwrap(), wal_bytes);
+    assert!(matches!(
+        rig.quota().depot_budget().reserve(0),
+        Err(protocol_storage::Error::Poisoned)
+    ));
+    phase("missing-genuine-output117-rejected-without-WAL-repair");
 }

@@ -131,3 +131,50 @@ unchanged, with no automatic migration or fallback. The frontend is deliberately
 incomplete and leaves all existing Session/Database/script SQL guards closed.
 Full Host v3 output118/four-validator/owner-process completion remains a separate
 pending gate; existing v2 results above are not v3 validation evidence.
+
+## One-open Acquire replay
+
+The private [Acquire run](acquire_run.rs) groups at most five original WAL
+records for one immutable invocation: Compute, Catalog, signed Body, Completed
+and ACK. Every canonical phase, exact original capsule/inventory/request,
+generation/stamp, catalog, signed Body and managed call/record identity is checked.
+The plan itself verifies nothing. Each exclusive open still freshly reads the
+bounded public evidence and performs the actual required computation proofs.
+
+Within that single open, the same run restores its original private candidate
+once, then performs the strongest required original product/Joint replay once.
+An incomplete Compute still verifies its actual input16/Life/Link; Catalog and
+Body prefixes still require their genuine full product/application check. A
+Completed run actually verifies its QC, all input16/output118/Life/Link and
+original private completion before installing any successor or historical reply.
+Pending metadata can be staged only inside the not-yet-returned open; an error
+discards that owner. The original external duplicate-QC path still performs its
+separate full replay. Control replay and the public work/save/seal/complete drives
+retain their existing fresh checks.
+
+Inventory and catalog can contain different randomized proofs of identical
+claims. Both independent collections are still genuinely verified; this cut
+does not replace either with matching public labels. No accepting callback,
+persisted verification bit, public proof continuation or cross-call cache exists.
+Input proof buffers are dropped before output traversal; no output proof vector,
+second store, ledger or resource gate is retained. The caller continues to own
+one actual native permit over local work. WAL bytes/profiles/caps, original
+logical record numbers, remaining terminal reservations and strict reopen/poison
+behavior are unchanged.
+
+The new [owning rejection case](acquire_run_tests.rs) reuses one genuine Compute/input16 setup, then
+creates independent actual authenticated WALs with reordered phases or changed
+Source/last-input references, backup/capsule/root pins, generation or pending
+identity. The existing one-OS-FHE/local-QC recovery case additionally joins its
+FHE peer, positively reopens the completed history, then removes the real final
+output record and requires strict reopen failure with unchanged WAL/shared
+poison. It is not four-validator consensus. Existing Host process gates remain
+the network boundary. The new rejection case and the complete one-OS-FHE recovery
+case passed their native release gates on 2026-10-20. The latter took 1495.49
+seconds in the test body and includes four full independent reopen attempts,
+lost acknowledgements, End and genuine final-output deletion. The
+[validation record](../../../../../../../../docs/joint-acquire-replay-validation.md)
+pins the source, commands, phase intervals and observed memory. This removes
+repeated work within one open; no comparable before/after latency or RAM
+improvement is claimed. It adds no freshness, current lease, rollback protection
+or SQL admission guarantee.

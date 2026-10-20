@@ -391,7 +391,7 @@ impl OwnerVault {
             .map_err(|e| OwnerVaultError::Owner(cryptography(e)))?;
         let ingress = depot.ingress();
         let mut history = JointHistory::new(pins.binding.clone(), depot)?;
-        let mut records = records.into_iter();
+        let mut records = records.into_iter().peekable();
         let initial = records.next().ok_or(OwnerVaultError::Encoding)?;
         if initial.phase != OwnerVaultPhase::Idle || initial.generation != 0 {
             return Err(OwnerVaultError::Encoding);
@@ -430,8 +430,19 @@ impl OwnerVault {
             replay_sequence: 1,
         };
         vault.check_managed_initial(source, again(&fetched), &initial_parent)?;
-        for record in records {
-            vault.replay_record(record, source, again(&fetched), replay, &mut at, material)?;
+        while let Some(record) = records.next() {
+            if record.acquire.is_some() && vault.saved.phase == OwnerVaultPhase::Idle {
+                vault.replay_acquire_run(
+                    record,
+                    &mut records,
+                    source,
+                    again(&fetched),
+                    (replay, &mut at),
+                    material.ok_or(OwnerVaultError::RecoveryRequired)?,
+                )?;
+            } else {
+                vault.replay_record(record, source, again(&fetched), replay, &mut at)?;
+            }
         }
         if vault.saved.managed.is_some() && vault.saved.phase != OwnerVaultPhase::Idle {
             let records = if vault.saved.phase == OwnerVaultPhase::Completed {
@@ -847,17 +858,11 @@ impl OwnerVault {
         fetched: FetchedSource<'_>,
         external: &[OwnerVaultReplay<'_>],
         at: &mut usize,
-        material: Option<&OwnerVaultAcquireMaterial<'_>>,
     ) -> VaultResult<()> {
         if self.saved.acquire.is_some() || next.acquire.is_some() {
-            return self.replay_acquire_record(
-                next,
-                source,
-                fetched,
-                external,
-                at,
-                material.ok_or(OwnerVaultError::RecoveryRequired)?,
-            );
+            // open_engine exclusively groups Acquire records. A stray record
+            // cannot fall back to the unrelated Control replay path.
+            return Err(OwnerVaultError::Encoding);
         }
         match self.saved.phase {
             OwnerVaultPhase::Idle => {
