@@ -7,10 +7,51 @@ use bfv_query_core::{Geometry, KeyScope, Owner};
 use compact_query::{PlainRow, ReadHeads, RowIds, TableId};
 use peer_runtime::RawBundle;
 use registry200_finality::joint::JointCandidate;
+use std::sync::OnceLock;
 use work_finality::{QuorumCertificate, SignedVote, Step, VoteContext};
 
 const WRAP: [u8; 32] = [0x91; 32];
 const NAMESPACE: [u8; 32] = [0x29; 32];
+
+// One fixed, PUBLIC NONSECRET setup for Control-only scenarios. This retains
+// public values, never an Owner, epoch, verifier result or accepted History.
+// Each Rig still creates and verifies its own Source/Bootstrap and owns separate
+// quota/depot/WAL files. Acquire scenarios keep their actual owner generation.
+struct PublicBfvFixture {
+    setup: bfv_query_core::PublicSetup,
+    anchor: bfv_query_core::BfvKeyAnchor,
+    statement: bfv_key_transform::Statement,
+}
+fn public_bfv_fixture() -> &'static PublicBfvFixture {
+    static FIXTURE: OnceLock<PublicBfvFixture> = OnceLock::new();
+    FIXTURE.get_or_init(|| {
+        let (owner, setup) = Owner::generate(Geometry::Rows16).unwrap();
+        let (anchor, statement) = {
+            let handle = owner
+                .key_anchor(
+                    &setup,
+                    KeyScope {
+                        database: [0x21; 16],
+                        bfv_key_domain: [0x88; 16],
+                        epoch: 1,
+                    },
+                )
+                .unwrap();
+            let anchor = handle.public_anchor().clone();
+            let mut epoch = handle.proof_epoch(&setup).unwrap();
+            epoch.prove_key().unwrap();
+            let verified = setup
+                .verify_key_transform(&anchor, epoch.key_evidence().unwrap().as_bytes())
+                .unwrap();
+            (anchor, verified.statement().clone())
+        };
+        PublicBfvFixture {
+            setup,
+            anchor,
+            statement,
+        }
+    })
+}
 struct Entry {
     checkpoint: JointCheckpoint,
     block: CandidateBlock,
@@ -64,23 +105,39 @@ impl Rig {
                 heads: &heads,
             })
             .unwrap();
-        let (bfv, setup) = Owner::generate(Geometry::Rows16).unwrap();
-        let handle = bfv
-            .key_anchor(
-                &setup,
+        let generated = capture.then(|| Owner::generate(Geometry::Rows16).unwrap());
+        let setup = match &generated {
+            Some((_, setup)) => setup,
+            None => &public_bfv_fixture().setup,
+        };
+        let handle = generated.as_ref().map(|(bfv, _)| {
+            bfv.key_anchor(
+                setup,
                 KeyScope {
                     database: [0x21; 16],
                     bfv_key_domain: [0x88; 16],
                     epoch: 1,
                 },
             )
-            .unwrap();
-        let anchor = handle.public_anchor().clone();
-        let mut epoch = handle.proof_epoch(&setup).unwrap();
-        epoch.prove_key().unwrap();
-        let key = setup
-            .verify_key_transform(&anchor, epoch.key_evidence().unwrap().as_bytes())
-            .unwrap();
+            .unwrap()
+        });
+        let anchor = match &handle {
+            Some(handle) => handle.public_anchor(),
+            None => &public_bfv_fixture().anchor,
+        };
+        let mut epoch = handle
+            .as_ref()
+            .map(|handle| handle.proof_epoch(setup).unwrap());
+        let key = epoch.as_mut().map(|epoch| {
+            epoch.prove_key().unwrap();
+            setup
+                .verify_key_transform(anchor, epoch.key_evidence().unwrap().as_bytes())
+                .unwrap()
+        });
+        let statement = match &key {
+            Some(key) => key.statement(),
+            None => &public_bfv_fixture().statement,
+        };
         let directory = fixture::Directory::new();
         let quota = ParticipantQuota::create_new(
             directory.path("vault-owner"),
@@ -88,7 +145,7 @@ impl Rig {
             fixture::CAPACITY,
         )
         .unwrap();
-        let binding = fixture::binding(&loaded, &setup, &anchor, key.statement(), object, &quota);
+        let binding = fixture::binding(&loaded, setup, anchor, statement, object, &quota);
         let depot = JointDepot::open(quota.depot_budget()).unwrap();
         let ingress = depot.ingress();
         let mut history = JointHistory::new(binding.clone(), depot).unwrap();
@@ -124,11 +181,11 @@ impl Rig {
                         loaded.draft.key_commitment,
                     ),
                 ),
-                &bfv,
-                &setup,
-                &handle,
-                &epoch,
-                key.statement(),
+                &generated.as_ref().unwrap().0,
+                setup,
+                handle.as_ref().unwrap(),
+                epoch.as_ref().unwrap(),
+                statement,
             )
         });
         drop(history);
@@ -136,7 +193,7 @@ impl Rig {
         drop(loaded);
         drop(epoch);
         drop(handle);
-        drop(bfv);
+        drop(generated);
         (
             Self {
                 backups,
