@@ -1,5 +1,7 @@
 //! SOURCE-ONLY owning gates. Real local proofs/QCs and files; no OS consensus,
 //! current lease, full v3 output118 result or generic SQL execution claim.
+#[path = "network/tests.rs"]
+mod network_tests;
 use super::*;
 use crate::private_predicate::{
     JointSqlCall, JointSqlClientBinding, JointSqlHost, JointSqlHostPins, JointSqlPreparation,

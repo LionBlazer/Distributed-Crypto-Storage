@@ -335,6 +335,24 @@ The owner Vault v2 owning and OS-FHE/local-QC recovery cases exercised this
 boundary; see the [native record](../../../../docs/joint-owner-acquire-vault.md).
 That record keeps local-QC recovery separate from actual four-validator agreement.
 
+## Read-only mining metadata
+
+`JointHistory::candidate_header(parent, body, timestamp, now)` checks that the
+supplied sealed historical parent is this exact live history/context/floor and
+checks the actual owner signature for a transition. It delegates next-state,
+branch target and mining timestamp validation to the same internally owned
+Journal. It does not return a generic Journal, validate application proofs, mine,
+publish, issue a receipt or establish network freshness. The owner runner must
+still perform the existing full own-candidate preflight before Body fsync and
+full proof/QC/private completion before success.
+
+The additive [owning metadata test](mining_tests.rs) uses actual Work QCs and
+the real Journal retarget, plus stale parent/time/owner rejection and unchanged
+history. It passed in the release/offline/locked owning gate (4.53 seconds in the
+test body), with strict all-target Clippy. The actual network driver subsequently
+used this API in the successful [seven-process validation](../../../../docs/joint-sql-network-validation.md).
+Read-only mining metadata itself supplies no SQL authority.
+
 ## Same-command signer advance
 
 For a newly deciding command, the private Joint owner receives a move-only

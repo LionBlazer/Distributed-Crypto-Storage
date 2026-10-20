@@ -7,6 +7,12 @@ use super::super::acquire::{
 use super::*;
 use peer_runtime::{RemotePeer, Request, Response};
 
+#[path = "host_process_worker.rs"]
+mod host_worker;
+pub(super) fn run_host() -> io::Result<()> {
+    host_worker::run()
+}
+
 struct AcquireAuthorities {
     base: Authorities,
     capsule: JointRecoveryKey,
@@ -344,8 +350,8 @@ fn owner_a(
         ),
         "Actual original public setup installed on FHE peer",
     )?;
-    for client in &clients {
-        upload(client, &boot, &ingress, &binding)?;
+    for (peer, client) in clients.iter().enumerate() {
+        upload(client, peer, &boot, &ingress, &binding)?;
     }
     submit(&clients, &boot)?;
     let boot_qcs = checkpoints(&clients, &binding, checked(history.context())?, &boot)?;
@@ -387,8 +393,8 @@ fn owner_a(
     let cursor = checked(vault.seal_body(checked(vault.cursor())?, begin))?;
     let ingress = checked(vault.evidence_ingress())?;
     drop(permit);
-    for client in &clients {
-        upload(client, &begin_copy, &ingress, &binding)?;
+    for (peer, client) in clients.iter().enumerate() {
+        upload(client, peer, &begin_copy, &ingress, &binding)?;
     }
     let submitted = checked(vault.submission(cursor))?;
     require(
@@ -493,8 +499,8 @@ fn owner_a(
         "Acquire exact BodyPrepared bytes",
     )?;
     drop(permit);
-    for client in &clients {
-        upload_acquire(client, &exact, &ingress, &binding)?;
+    for (peer, client) in clients.iter().enumerate() {
+        upload_acquire(client, peer, &exact, &ingress, &binding)?;
     }
     submit(&clients, &exact)?;
     phase(started, "A-four-network-ACKs-outcome-unknown");
@@ -794,8 +800,8 @@ fn owner_b(
         "Saved exact new End bytes",
     )?;
     drop(permit);
-    for client in &clients {
-        upload(client, &exact_end, &ingress, &binding)?;
+    for (peer, client) in clients.iter().enumerate() {
+        upload(client, peer, &exact_end, &ingress, &binding)?;
     }
     submit(&clients, &exact_end)?;
     let after_acquire = next_context(&after_begin, &acquire_qcs[0])?;

@@ -6,6 +6,11 @@ use zeroize::Zeroize;
 pub(in crate::private_predicate::source::locking::joint::vault) mod state;
 pub use state::JointSqlClientBinding;
 use state::{Bindings, Call, Managed, Verb};
+mod network;
+pub use network::{
+    JointSqlNetworkConfig, JointSqlNetworkError, JointSqlNetworkHost, JointSqlNetworkInput,
+    JointSqlNetworkOutcome, JointSqlNetworkPending,
+};
 
 pub fn joint_sql_host_profile_digest() -> [u8; 32] {
     hash(&[b"DCS/Joint-SQL-Host/v3/DCSOVL03-DCSOVP03", &owner_vault_profile_digest(),
@@ -222,6 +227,19 @@ impl JointSqlHost {
     }
     pub fn evidence_ingress(&self) -> VaultResult<JointEvidenceIngress> {
         self.vault.evidence_ingress()
+    }
+    #[cfg(test)]
+    pub(in crate::private_predicate::source::locking::joint::vault) fn candidate_header_for_test(
+        &self,
+        parent: &VerifiedJointParent,
+        body: &version_journal::Body,
+        now: u64,
+    ) -> VaultResult<version_journal::Header> {
+        self.vault.live()?;
+        Ok(self
+            .vault
+            .history
+            .candidate_header(parent, body, now, now)?)
     }
     pub fn require_known_parent(
         &mut self,

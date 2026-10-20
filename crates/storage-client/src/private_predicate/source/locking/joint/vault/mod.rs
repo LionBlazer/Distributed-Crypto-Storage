@@ -10,12 +10,14 @@ use bfv_mul_relin_proof::{InputEvidence, Provenance};
 use bfv_query_core::PreparedPrivateCoefficientPredicate;
 pub use durable::{
     JointSqlCall, JointSqlClient, JointSqlClientBinding, JointSqlHost, JointSqlHostPins,
-    JointSqlPreparation, JointSqlReply, OWNER_VAULT_MAX_BODY_BYTES, OWNER_VAULT_MAX_FILE_BYTES,
-    OWNER_VAULT_MAX_RECORD_BYTES, OwnerVault, OwnerVaultAcquireCompletion,
-    OwnerVaultAcquireMaterial, OwnerVaultAcquirePreparation, OwnerVaultAcquireWork,
-    OwnerVaultAuthority, OwnerVaultCompletion, OwnerVaultCursor, OwnerVaultDraft, OwnerVaultError,
-    OwnerVaultIdentity, OwnerVaultPhase, OwnerVaultPins, OwnerVaultReplay, OwnerVaultSubmission,
-    VaultResult, joint_sql_host_profile_digest, owner_vault_profile_digest,
+    JointSqlNetworkConfig, JointSqlNetworkError, JointSqlNetworkHost, JointSqlNetworkInput,
+    JointSqlNetworkOutcome, JointSqlNetworkPending, JointSqlPreparation, JointSqlReply,
+    OWNER_VAULT_MAX_BODY_BYTES, OWNER_VAULT_MAX_FILE_BYTES, OWNER_VAULT_MAX_RECORD_BYTES,
+    OwnerVault, OwnerVaultAcquireCompletion, OwnerVaultAcquireMaterial,
+    OwnerVaultAcquirePreparation, OwnerVaultAcquireWork, OwnerVaultAuthority, OwnerVaultCompletion,
+    OwnerVaultCursor, OwnerVaultDraft, OwnerVaultError, OwnerVaultIdentity, OwnerVaultPhase,
+    OwnerVaultPins, OwnerVaultReplay, OwnerVaultSubmission, VaultResult,
+    joint_sql_host_profile_digest, owner_vault_profile_digest,
 };
 
 /// High-entropy owner-custodied wrapping key, not database or peer authority.

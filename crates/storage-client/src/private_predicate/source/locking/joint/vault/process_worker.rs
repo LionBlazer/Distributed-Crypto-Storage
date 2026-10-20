@@ -5,6 +5,9 @@ mod acquire_worker;
 pub(super) fn run_acquire() -> io::Result<()> {
     acquire_worker::run()
 }
+pub(super) fn run_host() -> io::Result<()> {
+    acquire_worker::run_host()
+}
 
 struct Authorities {
     source: SourceStateAuthority,
@@ -350,8 +353,8 @@ fn owner_a(
     drop(_permit);
     let endpoints: Vec<Endpoint> = read_json(input)?;
     let clients = clients(&endpoints, identity, &binding)?;
-    for client in &clients {
-        upload(client, &boot, &ingress, &binding)?;
+    for (peer, client) in clients.iter().enumerate() {
+        upload(client, peer, &boot, &ingress, &binding)?;
     }
     submit(&clients, &boot)?;
     let qcs = checkpoints(
@@ -403,8 +406,8 @@ fn owner_a(
     persist(&quota, &mut inventory, CURSOR, &cursor_bytes(cursor))?;
     let ingress = checked(vault.evidence_ingress())?;
     drop(_permit);
-    for client in &clients {
-        upload(client, &block, &ingress, &binding)?;
+    for (peer, client) in clients.iter().enumerate() {
+        upload(client, peer, &block, &ingress, &binding)?;
     }
     let submitted = checked(vault.submission(cursor))?;
     require(
@@ -620,8 +623,8 @@ fn owner_b(
     let cursor = checked(vault.seal_body(cursor, end))?;
     let ingress = checked(vault.evidence_ingress())?;
     drop(_permit);
-    for client in &clients {
-        upload(client, &end_copy, &ingress, &binding)?;
+    for (peer, client) in clients.iter().enumerate() {
+        upload(client, peer, &end_copy, &ingress, &binding)?;
     }
     // Returning the exact fsynced bytes precedes network submission.
     let pending = checked(vault.submission(cursor))?;

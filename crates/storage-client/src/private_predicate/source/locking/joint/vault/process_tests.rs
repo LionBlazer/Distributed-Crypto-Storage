@@ -45,8 +45,13 @@ use work_finality::{
 
 #[path = "acquire_process_tests.rs"]
 mod acquire;
+#[path = "host_process_tests.rs"]
+mod host;
+#[path = "process_observation.rs"]
+mod observation;
 #[path = "process_worker.rs"]
 mod process_worker;
+use observation::{Kind as RpcKind, Observation, until};
 
 const WORKER: &str =
     "private_predicate::source::locking::joint::vault::process_tests::owner_process_worker";
@@ -421,26 +426,9 @@ fn transition(
     checked(header.mine(1))?;
     checked(CandidateBlock::new(header, bytes))
 }
-fn until<T>(mut action: impl FnMut() -> io::Result<Option<T>>) -> io::Result<T> {
-    let deadline = Instant::now() + WAIT;
-    loop {
-        match action() {
-            Ok(Some(value)) => return Ok(value),
-            Ok(None) => (),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => (),
-            Err(e) => return Err(e),
-        }
-        if Instant::now() >= deadline {
-            return Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "Actual owner OS operation deadline",
-            ));
-        }
-        std::thread::park_timeout(Duration::from_millis(25));
-    }
-}
 fn upload(
     client: &JointFinalityClient,
+    peer: usize,
     block: &CandidateBlock,
     ingress: &JointEvidenceIngress,
     binding: &JointBinding,
@@ -454,42 +442,45 @@ fn upload(
     };
     for reference in checked(Manifest::decode(&body.proof))?.references() {
         let bytes = checked(ingress.read_public_blob(reference.blob_id(), reference.byte_cap()))?;
-        until(|| {
-            match client.put_proof_blob(
-                block,
-                checked(ProofBlobSelector::manifest(
-                    reference.ordinal().try_into().map_err(io::Error::other)?,
-                ))?,
-                reference.blob_id(),
-                &bytes,
-            ) {
-                Ok(()) => Ok(Some(())),
-                Err(e)
-                    if matches!(
-                        e.kind(),
-                        io::ErrorKind::TimedOut
-                            | io::ErrorKind::ConnectionReset
-                            | io::ErrorKind::ConnectionAborted
-                            | io::ErrorKind::BrokenPipe
-                            | io::ErrorKind::UnexpectedEof
-                            | io::ErrorKind::ConnectionRefused
-                            | io::ErrorKind::NotConnected
-                    ) =>
-                {
-                    Ok(None)
-                }
-                Err(e) => Err(e),
-            }
-        })?;
+        until(
+            Observation::new(RpcKind::Manifest, peer, reference.ordinal(), bytes.len()),
+            || {
+                client
+                    .put_proof_blob(
+                        block,
+                        checked(ProofBlobSelector::manifest(
+                            reference.ordinal().try_into().map_err(io::Error::other)?,
+                        ))?,
+                        reference.blob_id(),
+                        &bytes,
+                    )
+                    .map(|()| Some(()))
+            },
+        )?;
     }
     Ok(())
 }
 fn submit(clients: &[JointFinalityClient], block: &CandidateBlock) -> io::Result<()> {
     require(clients.len() == 4, "Four actual validators required")?;
+    submit_subset(clients, block)
+}
+fn submit_subset(clients: &[JointFinalityClient], block: &CandidateBlock) -> io::Result<()> {
+    require(
+        (1..=4).contains(&clients.len()),
+        "One to four actual validators required for catch-up",
+    )?;
     std::thread::scope(|scope| {
         let workers = clients
             .iter()
-            .map(|client| scope.spawn(move || until(|| client.submit(block).map(|()| Some(())))))
+            .enumerate()
+            .map(|(peer, client)| {
+                scope.spawn(move || {
+                    until(
+                        Observation::new(RpcKind::Submit, peer, 0, block.body().len()),
+                        || client.submit(block).map(|()| Some(())),
+                    )
+                })
+            })
             .collect::<Vec<_>>();
         let results = workers
             .into_iter()
@@ -514,8 +505,10 @@ fn checkpoints(
 ) -> io::Result<Vec<JointCheckpoint>> {
     let mut result = Vec::with_capacity(4);
     let mut decision = None;
-    for client in clients {
-        let qc = until(|| client.checkpoint_after(context.slot() - 1))?;
+    for (peer, client) in clients.iter().enumerate() {
+        let qc = until(Observation::new(RpcKind::Checkpoint, peer, 0, 0), || {
+            client.checkpoint_after(context.slot() - 1)
+        })?;
         require(
             qc.candidate().header() == block.header() && qc.candidate().slot() == context.slot(),
             "QC exact original candidate",
@@ -528,7 +521,10 @@ fn checkpoints(
             "QC semantic decision differs",
         )?;
         decision = Some(semantic);
-        let fetched = until(|| client.candidate_block(block.header().id()).map(Some))?;
+        let fetched = until(
+            Observation::new(RpcKind::Body, peer, 0, block.body().len()),
+            || client.candidate_block(block.header().id()).map(Some),
+        )?;
         require(
             fetched.encode() == block.encode(),
             "Actual peer saved different signed Body",
@@ -635,6 +631,7 @@ fn start_validators(
             && process.ready().profile
                 == peer_runtime::joint_participant::joint_participant_host_profile_digest()
             && process.endpoint() == &endpoints[i];
+        eprintln!("Actual validator peer={i} pid={}", process.pid());
         processes.push(process);
         require(
             good,

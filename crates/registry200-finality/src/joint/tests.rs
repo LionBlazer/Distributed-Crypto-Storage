@@ -1,4 +1,6 @@
 //! PUBLIC NONSECRET keys/openings. Actual application proofs and actual Work QCs.
+#[path = "mining_tests.rs"]
+mod mining_tests;
 use super::*;
 use crate::joint::{CANDIDATE_BYTES, profile_digest};
 use bfv_query_core::{Geometry, KeyScope, Owner};

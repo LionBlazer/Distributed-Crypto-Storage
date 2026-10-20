@@ -13,6 +13,8 @@ use work_finality::consensus::Context;
 mod acquire_candidate;
 #[path = "control_candidate.rs"]
 mod control_candidate;
+#[path = "mining.rs"]
+mod mining;
 
 /// Historical proof+QC metadata, never a current fresh SQL lock or signer floor.
 /// It cannot be nominated using a generic Journal, shards, or an untrusted HeadRef.

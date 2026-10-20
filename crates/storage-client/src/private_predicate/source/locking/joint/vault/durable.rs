@@ -25,7 +25,9 @@ pub use acquire::{
 };
 pub use host::{
     JointSqlCall, JointSqlClient, JointSqlClientBinding, JointSqlHost, JointSqlHostPins,
-    JointSqlPreparation, JointSqlReply, joint_sql_host_profile_digest,
+    JointSqlNetworkConfig, JointSqlNetworkError, JointSqlNetworkHost, JointSqlNetworkInput,
+    JointSqlNetworkOutcome, JointSqlNetworkPending, JointSqlPreparation, JointSqlReply,
+    joint_sql_host_profile_digest,
 };
 
 pub const OWNER_VAULT_MAX_BODY_BYTES: usize = 64 * 1024;

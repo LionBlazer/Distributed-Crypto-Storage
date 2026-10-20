@@ -1,5 +1,13 @@
 # Bounded Joint SQL owner orchestration
 
+The additive [network runner](network/README.md) owns a concrete Host, signer and
+explicit process resource gate. It supplies real transport/FHE orchestration
+without exposing a mutable Vault or opening the generic Session guards. Its
+owning rejection/retry checks and consuming-transfer assertions passed. Its first
+complete real-network/FHE execution and the two-client owner-restart scenario
+also passed; see the [process record](../HOST-PROCESS.md). Prior Host validation
+keeps its separate scope.
+
 This module passed its owning native release gates on 2026-10-20. It owns
 the existing concrete `OwnerVault` and its single WAL writer, ParticipantQuota,
 keyless JointHistory and shared evidence depot. It does not enable Session,

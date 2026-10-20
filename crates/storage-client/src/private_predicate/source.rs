@@ -17,12 +17,14 @@ pub use locking::{
     JOINT_RECOVERY_BYTES, JOINT_RECOVERY_HEADER_BYTES, JointLockingCandidates, JointLockingParent,
     JointLockingPreparation, JointRecovery, JointRecoveryIdentity, JointRecoveryInputs,
     JointRecoveryKey, JointSqlCall, JointSqlClient, JointSqlClientBinding, JointSqlHost,
-    JointSqlHostPins, JointSqlPreparation, JointSqlReply, LockingActor, LockingCompletion,
-    LockingConflict, LockingControl, LockingParent, LockingPreparation, NonAdmittedJointLocking,
-    NonAdmittedLocking, OwnerVaultAcquireCompletion, OwnerVaultAcquireMaterial,
-    OwnerVaultAcquirePreparation, OwnerVaultAcquireWork, PreparedJointLockingInputs,
-    PreparedLockingInputs, RecoverableJointLockingInputs, RecoverableJointLockingPreparation,
-    RecoveredJointComputePrepared, StagedLockingTransition, joint_sql_host_profile_digest,
+    JointSqlHostPins, JointSqlNetworkConfig, JointSqlNetworkError, JointSqlNetworkHost,
+    JointSqlNetworkInput, JointSqlNetworkOutcome, JointSqlNetworkPending, JointSqlPreparation,
+    JointSqlReply, LockingActor, LockingCompletion, LockingConflict, LockingControl, LockingParent,
+    LockingPreparation, NonAdmittedJointLocking, NonAdmittedLocking, OwnerVaultAcquireCompletion,
+    OwnerVaultAcquireMaterial, OwnerVaultAcquirePreparation, OwnerVaultAcquireWork,
+    PreparedJointLockingInputs, PreparedLockingInputs, RecoverableJointLockingInputs,
+    RecoverableJointLockingPreparation, RecoveredJointComputePrepared, StagedLockingTransition,
+    joint_sql_host_profile_digest,
 };
 pub use locking::{CompletedJointBootstrap, JointBootstrapCandidate, PreparedJointBootstrap};
 pub use locking::{

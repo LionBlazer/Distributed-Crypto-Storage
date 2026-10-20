@@ -166,11 +166,12 @@ pub(super) fn phase(started: Instant, stage: &'static str) {
 // catalog roles. Every body/selector/BlobId is checked again by the real server.
 pub(super) fn upload_acquire(
     client: &JointFinalityClient,
+    peer: usize,
     block: &CandidateBlock,
     ingress: &JointEvidenceIngress,
     binding: &JointBinding,
 ) -> io::Result<()> {
-    upload(client, block, ingress, binding)?;
+    upload(client, peer, block, ingress, binding)?;
     let Body::Transition(body) = checked(Body::decode(
         block.body(),
         &binding.journal_genesis().profile,
@@ -191,30 +192,18 @@ pub(super) fn upload_acquire(
             .blob_id(),
     ))?;
     let claim = checked(ingress.catalog_claim(catalog))?;
-    for reference in claim.references() {
+    for (item, reference) in claim.references().enumerate() {
         let bytes = checked(ingress.read_public_blob(reference.blob_id(), reference.byte_cap()))?;
         let selector = checked(ProofBlobSelector::catalog(
             reference.role(),
             reference.ordinal(),
         ))?;
         until(
-            || match client.put_proof_blob(block, selector, reference.blob_id(), &bytes) {
-                Ok(()) => Ok(Some(())),
-                Err(e)
-                    if matches!(
-                        e.kind(),
-                        io::ErrorKind::TimedOut
-                            | io::ErrorKind::ConnectionReset
-                            | io::ErrorKind::ConnectionAborted
-                            | io::ErrorKind::BrokenPipe
-                            | io::ErrorKind::UnexpectedEof
-                            | io::ErrorKind::ConnectionRefused
-                            | io::ErrorKind::NotConnected
-                    ) =>
-                {
-                    Ok(None)
-                }
-                Err(e) => Err(e),
+            Observation::new(RpcKind::Catalog, peer, item, bytes.len()),
+            || {
+                client
+                    .put_proof_blob(block, selector, reference.blob_id(), &bytes)
+                    .map(|()| Some(()))
             },
         )?;
     }
