@@ -103,6 +103,10 @@ impl JointControlCandidate {
         {
             return Err(invalid("Control completion changed signed Body/manifest"));
         }
+        self.require_private_openings()
+    }
+    // The caller has already checked Command shape before this indexing/hash path.
+    pub(super) fn require_private_openings(&self) -> crate::Result<()> {
         let lifecycle::statement::Phase::Transition { command, .. } = self.statement.expected.phase
         else {
             return Err(invalid("Control completion requires Transition"));

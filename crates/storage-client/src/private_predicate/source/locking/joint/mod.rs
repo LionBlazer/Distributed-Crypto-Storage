@@ -3,6 +3,7 @@ mod bootstrap;
 mod completion;
 pub use bootstrap::{CompletedJointBootstrap, JointBootstrapCandidate, PreparedJointBootstrap};
 mod control;
+mod private_state_codec;
 pub use control::{
     CompletedJointControl, JointControlCandidate, JointControlIntent, JointControlOutcome,
     JointControlParent, JointEndDisposition, JointOwnedLockingControl, JointOwnedRecovery,

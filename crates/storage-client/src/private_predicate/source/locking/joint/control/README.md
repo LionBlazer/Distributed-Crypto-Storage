@@ -21,7 +21,7 @@ are historical pins, not proof that no later network state exists.
 `JointRegistryOpening::from_private_parts` consumes guarded Registry, controllers
 and enrollment/current-Registry salts. It accepts canonical empty or failed
 states but returns an **unverified private candidate**. It has no Clone, Debug,
-serialization, secret getter, installation or authority method.
+public secret serialization, getter, installation or authority method.
 
 Every `SourceOwner::prepare_joint_control` matches the complete parent/context
 stamp, audits the actual fetched object and independently pinned heads, opens ALL
@@ -87,3 +87,52 @@ control and `JointOwnedRecovery` options. The complete parent/context stamp is
 checked before any private-control extraction; the unchanged actual Acquire
 producer captures the optional capsule. The owning recovery test uses this route.
 No raw control getter, automatic retry or durable installation is added.
+
+## Private phase payloads
+
+The internal [state owner](state.rs) supplies fixed guarded payloads to the
+adjacent Vault owner. It exposes no public secret getter or serialized proof
+receipt. [Shared Registry grammar](../private_state_codec.rs) owns only the
+existing two-transaction/two-savepoint field order, presence bits, absent zero
+padding, compaction and canonical model checks. Its Registry/Transaction/Savepoint
+widths are 274/129/37 bytes. The existing Acquire capsule uses this same grammar;
+its 1242-byte envelope, private field order and errors remain unchanged.
+
+The NEW Idle payload is 410 bytes: role/version8, Registry274, controllers64 and
+enrollment/current Registry salts64. The NEW Control payload is 731 bytes:
+role/version8, complete original Command88, command/result salts64, original
+revision8, TableId32, all four RowIDs128, next Registry274, controllers64,
+enrollment/next Registry salts64 and private outcome1. These widths describe this
+new private grammar, not an older network frame or a resource/proof claim.
+
+`require_idle_parent` checks the opening's original full parent/context stamp
+before the owner captures Idle. `encode_idle` and `encode_control` return only
+`Zeroizing` fixed arrays. The enclosing owner authenticates the independent full
+binding/parent/context, phase, generation and preceding Idle digest; those pins
+cannot be minted from the payload. `restore_idle` audits the real fetched Source
+through SourceOwner and reopens Cenroll/Cold. `restore_control` also compares the
+actual private table/all four IDs, controllers, predecessor revision and salts;
+selects End by stable transaction ID; and reopens Cmd160, Result144 and Cnext.
+Failed Close has the existing abort outcome3. Complete original Command fields
+are decoded canonically, without `Registry::step`, proof production, re-encryption,
+new nonces or regenerated salts. No ages, amounts or owner key are retained here.
+
+The Control candidate contains only the next Registry and no original old bank
+or salt. The enclosing owner must retain the preceding Idle and bind its exact
+generation/hash. AEAD/grammar/private-root checks do not verify public proofs or
+grant finality. Actual Source/Life/ControlKind, signed Header/Body, QC and exact
+expectation checks through closed History remain mandatory before phase promotion
+or completion. The existing unconditional completion checks are shared unchanged.
+Wrapping-key custody, WAL/fsync, quota ownership and generation CAS belong to the
+Vault, not this codec. Reopened state remains historical and has no current lease
+or whole-vault rollback guarantee.
+
+New owning source tests round-trip canonical full counters/savepoints, reject
+nonbinary/absent-slot/command aliases, and restore actual Begin/End candidates
+after their originals drop. The genuine local proof/QC case rejects changed
+Source/key, old/private fields, final RowID, command salt, query and parent before
+completing the exact original operation. Both tests passed on the native release
+build. The same batch passed the five separate Control WAL file/recovery cases,
+the previous Acquire capsule and private-grammar cases, and the previous Control
+tests; see the [validation record](../../../../../../../../docs/joint-owner-control-vault.md).
+The codec tests do not establish filesystem or network restart behavior.

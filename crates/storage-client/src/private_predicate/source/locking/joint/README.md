@@ -2,8 +2,13 @@
 
 The [typed Bootstrap owner](bootstrap/README.md) produces the initial private
 Registry candidate from closed Pending history. The [typed BEGIN/End owner](control/README.md)
-adds exact own Control completion and the stamped Acquire handoff. Durable Vault
+adds exact own Control completion and the stamped Acquire handoff. Durable Acquire
 installation and encrypted SQL data COMMIT remain separate integration work.
+
+The new [historical Control WAL](vault/DURABLE.md) separately stores guarded
+BEGIN/End banks and exact signed candidate retries under ONE actual quota/depot.
+Its five genuine local proof/file tests passed the native release build. It does
+not persist Acquire input16/pending, Source/BFV keys, current leases or SQL state.
 
 The optional [ComputePrepared recovery module](vault/README.md) captures the
 complete Link/Registry opening into a bounded owner-encrypted in-memory capsule
@@ -62,9 +67,9 @@ tests are preserved. Both new cases and twelve ownership compile-fail contracts
 passed; see the [native record](../../../../../../../docs/joint-locking-inputs.md).
 
 Optional direct `registry200-joint` and `registry200-finality` dependencies are
-enabled under `private-input-proofs`; tests also use the existing
-`protocol-storage` and `work-finality` owners. No Core-to-consumer dependency is
-added. The first fullAcquire integration may phase ownership of the SAME typed
+enabled under `private-input-proofs`. The Control Vault also enables the existing
+`protocol-storage` owner under that feature; tests retain their direct storage and
+`work-finality` dependencies. No Core-to-consumer dependency is added. The first fullAcquire integration may phase ownership of the SAME typed
 depot: clone sealed parent, drop History/all ingress, record via ProductStore,
 drop it, reopen History and actually replay Bootstrap/Begin before Acquire QC.
 No public MutexGuard/callback or second independent quota is needed for that gate.
@@ -141,7 +146,10 @@ The latter accepts `JointOwnedRecovery` options without exposing private banks.
 
 Shared test fixtures are owned once by `joint::tests` and imported by Control,
 recovery and process tests within that cfg(test) boundary. Public libraries gain
-no app dependency. Durable owner storage and SQL Session admission remain absent.
+no app dependency. The historical Control WAL passed its bounded local
+proof/QC/file recovery gates; durable Acquire continuation and SQL Session
+admission remain absent. The [validation record](../../../../../../../docs/joint-owner-control-vault.md)
+distinguishes this local replay from an owner OS restart or network gate.
 
 ## Typed owner Bootstrap candidate
 

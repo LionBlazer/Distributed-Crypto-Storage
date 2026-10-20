@@ -3,6 +3,12 @@ mod compiler;
 mod joint;
 mod produce;
 pub use compiler::CompiledLockingSelect;
+pub use joint::vault::{
+    OWNER_VAULT_MAX_BODY_BYTES, OWNER_VAULT_MAX_FILE_BYTES, OWNER_VAULT_MAX_RECORD_BYTES,
+    OwnerVault, OwnerVaultAuthority, OwnerVaultCompletion, OwnerVaultCursor, OwnerVaultDraft,
+    OwnerVaultError, OwnerVaultIdentity, OwnerVaultPhase, OwnerVaultPins, OwnerVaultReplay,
+    OwnerVaultSubmission, VaultResult, owner_vault_profile_digest,
+};
 pub use joint::{
     CompletedJointAcquire, CompletedJointRow, EncryptedJointRecovery, JOINT_RECOVERY_BYTES,
     JOINT_RECOVERY_HEADER_BYTES, JointLockingCandidates, JointLockingParent,

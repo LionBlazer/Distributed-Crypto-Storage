@@ -9,6 +9,9 @@ use registry200_journal::Control;
 use version_journal::{Body, HeadPair, HeadRef, Journal};
 use work_finality::consensus::Context;
 
+#[path = "control_candidate.rs"]
+mod control_candidate;
+
 /// Historical proof+QC metadata, never a current fresh SQL lock or signer floor.
 /// It cannot be nominated using a generic Journal, shards, or an untrusted HeadRef.
 /// ```compile_fail

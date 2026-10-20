@@ -1,9 +1,17 @@
-//! Owner-only in-memory ComputePrepared recovery. No filesystem or lock lease.
+//! Owner recovery capsules and a separate historical durable Control owner.
 mod codec;
+mod durable;
+mod durable_wal;
 mod restore;
 use super::*;
 use bfv_mul_relin_proof::{InputEvidence, Provenance};
 use bfv_query_core::PreparedPrivateCoefficientPredicate;
+pub use durable::{
+    OWNER_VAULT_MAX_BODY_BYTES, OWNER_VAULT_MAX_FILE_BYTES, OWNER_VAULT_MAX_RECORD_BYTES,
+    OwnerVault, OwnerVaultAuthority, OwnerVaultCompletion, OwnerVaultCursor, OwnerVaultDraft,
+    OwnerVaultError, OwnerVaultIdentity, OwnerVaultPhase, OwnerVaultPins, OwnerVaultReplay,
+    OwnerVaultSubmission, VaultResult, owner_vault_profile_digest,
+};
 
 /// High-entropy owner-custodied wrapping key, not database or peer authority.
 /// No OS backend, password KDF, adjacent key file or durable custody is selected.

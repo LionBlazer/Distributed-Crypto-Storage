@@ -1,10 +1,11 @@
-# In-memory Joint ComputePrepared recovery
+# Owner recovery and historical Control WAL
 
-This owner-only module captures and restores one historical ComputePrepared
-operation. It performs no filesystem I/O, phase installation, signing, network
-request, current-lock check, rollback protection or SQL admission. The directory
-name reserves the ownership boundary for later durable work; this is not a
-durable OwnerVault implementation.
+The ComputePrepared capsule API captures and restores one historical Acquire
+without filesystem I/O. The separate [Control WAL](DURABLE.md) now owns bounded
+owner-private BEGIN/End phase records and exact-byte retries. Its five genuine
+local proof/file tests passed the native release build. Neither API supplies a
+current-lock check, rollback protection or SQL admission. The Control WAL does
+not persist Source/BFV keys or the Acquire pending/capsule collection.
 
 | Direct dependency | Responsibility |
 | --- | --- |
@@ -13,6 +14,8 @@ durable OwnerVault implementation.
 | [Restore](restore.rs) | Independent parent/setup/anchor/ALL33 checks, all commitment openings and actual proof replay |
 | [Lifecycle field owner](../../../../../../../registry200-proof/src/lifecycle/circuit/commitment.rs) | Exact original Enrollment64/Registry200 preimages without unrelated Source DATA |
 | [Core pending owner](../../../../../../../bfv-query-core/src/coefficient_predicate.rs) | Rebuild the exact original encrypted request/pending binding without encryption or FHE |
+| [Control WAL](durable.rs), [file/AEAD engine](durable_wal.rs), [tests](durable_tests.rs) | Historical private bank, phase CAS, exact signed candidate, conservative quota and strict replay |
+| [Participant storage](../../../../../../../protocol-storage/src/lib.rs) | One actual ledger and exclusive namespace; existing CONTROL class ceiling |
 
 `JointRecoveryKey::new(Zeroizing<[u8;32]>)` accepts an independently custodied,
 high-entropy owner wrapping key. It grants no database, peer, controller or signer
@@ -80,9 +83,10 @@ Private payloads and explicit copies use `Zeroizing`/guarded Drop, including err
 branches. This excludes caller copies, native Gold/SDK traces, registers, allocator
 history and temporary cryptographic scratch. Ciphertext can be copied and restored
 twice; move-only Rust handles enforce one use per instance only. Whole-vault
-rollback, durable CAS/fsync, lost-ACK Body phases, owner signing-key custody,
-fresh-head reconciliation, durable End continuation and bounded retained history remain
-unimplemented requirements for the later durable integration.
+rollback, owner signing-key custody, fresh-head reconciliation, durable Acquire
+continuation and history compaction remain separate requirements. The new Control
+WAL implements only its own local phase CAS/fsync/lost-ACK path, under the explicit
+scope and filesystem qualifications in [its contract](DURABLE.md).
 
 Owning source tests include real Bootstrap/Begin/Kind/QCs, actual input16 and Link,
 lexical Owner→Anchor→Ready restoration after originals drop, exact pending/roots,
@@ -95,3 +99,8 @@ release build; the [owner validation record](../../../../../../../../docs/joint-
 pins source and results. These tests establish no new full output118 completion,
 OS restart, current lease or durable anti-rollback claim. The prior real process
 Acquire/contention gates remain separately recorded evidence.
+
+The [Control Vault validation](../../../../../../../../docs/joint-owner-control-vault.md)
+also reran both capsule cases and the private grammar after their shared Registry
+codec extraction. This batch does not add an OS owner restart or new FHE network
+pass.

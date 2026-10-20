@@ -1,6 +1,7 @@
 //! Owner-only BEGIN/End products. All banks remain historical candidates.
 mod completion;
 mod produce;
+pub(in crate::private_predicate::source::locking::joint) mod state;
 use super::*;
 pub use completion::{CompletedJointControl, JointControlOutcome};
 use registry200_finality::joint::{ControlExpectation, VerifiedJointControl};

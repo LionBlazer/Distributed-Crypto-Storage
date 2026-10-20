@@ -21,6 +21,12 @@ pub use source::{
     JointControlParent, JointEndDisposition, JointOwnedLockingControl, JointOwnedRecovery,
     JointRegistryOpening, PreparedJointControl,
 };
+pub use source::{
+    OWNER_VAULT_MAX_BODY_BYTES, OWNER_VAULT_MAX_FILE_BYTES, OWNER_VAULT_MAX_RECORD_BYTES,
+    OwnerVault, OwnerVaultAuthority, OwnerVaultCompletion, OwnerVaultCursor, OwnerVaultDraft,
+    OwnerVaultError, OwnerVaultIdentity, OwnerVaultPhase, OwnerVaultPins, OwnerVaultReplay,
+    OwnerVaultSubmission, VaultResult, owner_vault_profile_digest,
+};
 
 use bfv_mul_relin_proof::{InputEvidence, Provenance};
 use bfv_query_core::{BfvKeyAnchor, Owner, PreparedPrivateCoefficientPredicate, PublicSetup};
