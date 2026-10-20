@@ -59,6 +59,58 @@ enum OwnerAuthorityFrame {
     Control,
     Acquire,
 }
+
+// Host A: initial inventory, four fixed phase reports, final inventory. This
+// finite test-only bound allows a complete burst while the supervisor is idle.
+const MAX_OWNER_REPORTS: usize = 6;
+
+fn read_owner_reports(
+    stdout: impl Read,
+    sender: mpsc::SyncSender<io::Result<Vec<u8>>>,
+) -> io::Result<()> {
+    let mut stdout = BufReader::new(stdout);
+    let mut prelude_bytes = 0usize;
+    let mut reports = 0usize;
+    loop {
+        // libtest prefixes bounded text. Only this exact marker introduces a
+        // public binary frame. Payloads retain their original 64-KiB cap.
+        let mut line = Vec::new();
+        let n = stdout
+            .by_ref()
+            .take(64 * 1024 + 1)
+            .read_until(b'\n', &mut line)?;
+        if n == 0 {
+            return Ok(());
+        }
+        if n > 64 * 1024 || !line.ends_with(b"\n") {
+            return Err(io::Error::other("Unbounded owner report prelude"));
+        }
+        prelude_bytes = prelude_bytes
+            .checked_add(n)
+            .ok_or_else(|| io::Error::other("Owner prelude overflow"))?;
+        if prelude_bytes > 64 * 1024 {
+            return Err(io::Error::other("Owner prelude limit"));
+        }
+        if line.ends_with(b"DCS-OWNER-PUBLIC-REPORT-01\n") {
+            reports += 1;
+            if reports > MAX_OWNER_REPORTS {
+                return Err(io::Error::other("Unexpected owner report count"));
+            }
+            let bytes = peer_transport::read_frame(&mut stdout, 64 * 1024)?;
+            sender
+                .try_send(Ok(bytes))
+                .map_err(|_| io::Error::other("Unexpected owner report count"))?;
+        }
+    }
+}
+
+fn require_reports_drained(reports: &mpsc::Receiver<io::Result<Vec<u8>>>) -> io::Result<()> {
+    match reports.try_recv() {
+        Err(mpsc::TryRecvError::Disconnected | mpsc::TryRecvError::Empty) => Ok(()),
+        Ok(_) => Err(io::Error::other("Unexpected trailing owner report")),
+    }
+}
+
 impl OwnerAuthorityFrame {
     fn bytes(&self) -> usize {
         match self {
@@ -133,39 +185,8 @@ impl OwnerProcess {
             .stdout
             .take()
             .ok_or_else(|| io::Error::other("Missing owner stdout"))?;
-        let (sender, reports) = mpsc::sync_channel(2);
-        let reader = std::thread::spawn(move || {
-            let mut stdout = BufReader::new(stdout);
-            let mut prelude_bytes = 0usize;
-            loop {
-                // libtest prefixes its own bounded textual status. Only this
-                // exact marker introduces a public binary report frame.
-                let mut line = Vec::new();
-                let n = stdout
-                    .by_ref()
-                    .take(64 * 1024 + 1)
-                    .read_until(b'\n', &mut line)?;
-                if n == 0 {
-                    return Ok(());
-                }
-                if n > 64 * 1024 || !line.ends_with(b"\n") {
-                    return Err(io::Error::other("Unbounded owner report prelude"));
-                }
-                prelude_bytes = prelude_bytes
-                    .checked_add(n)
-                    .ok_or_else(|| io::Error::other("Owner prelude overflow"))?;
-                if prelude_bytes > 64 * 1024 {
-                    return Err(io::Error::other("Owner prelude limit"));
-                }
-                // libtest may place 'test <name> ... ' before the marker.
-                if line.ends_with(b"DCS-OWNER-PUBLIC-REPORT-01\n") {
-                    let bytes = peer_transport::read_frame(&mut stdout, 64 * 1024)?;
-                    sender
-                        .try_send(Ok(bytes))
-                        .map_err(|_| io::Error::other("Unexpected owner report count"))?;
-                }
-            }
-        });
+        let (sender, reports) = mpsc::sync_channel(MAX_OWNER_REPORTS);
+        let reader = std::thread::spawn(move || read_owner_reports(stdout, sender));
         Ok(Self {
             owned,
             reports,
@@ -203,7 +224,8 @@ impl OwnerProcess {
             .unwrap()
             .join()
             .map_err(|_| io::Error::other("Owner stdout reader panicked"))?;
-        process.and(reader)
+        process.and(reader)?;
+        require_reports_drained(&self.reports)
     }
 }
 impl Drop for OwnerProcess {
@@ -373,5 +395,51 @@ impl StorageProcess {
     }
     pub(crate) fn finish(mut self) -> io::Result<()> {
         self.owned.finish()
+    }
+}
+
+#[cfg(test)]
+mod owner_report_tests {
+    use super::*;
+
+    fn script(count: usize) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for i in 0..count {
+            bytes.extend_from_slice(b"DCS-OWNER-PUBLIC-REPORT-01\n");
+            peer_transport::write_frame(&mut bytes, &[i as u8], 64 * 1024).unwrap();
+        }
+        bytes
+    }
+
+    #[test]
+    fn complete_report_burst_is_bounded_without_requiring_receiver_scheduling() {
+        let (sender, receiver) = mpsc::sync_channel(MAX_OWNER_REPORTS);
+        // Join the actual framed reader BEFORE receiving anything: the old
+        // two-slot queue failed this valid finite script on its third report.
+        let reader = std::thread::spawn(move || read_owner_reports(script(6).as_slice(), sender));
+        reader.join().unwrap().unwrap();
+        for i in 0..6 {
+            assert_eq!(receiver.try_recv().unwrap().unwrap(), [i]);
+        }
+        require_reports_drained(&receiver).unwrap();
+    }
+
+    #[test]
+    fn report_count_is_bounded_even_if_the_channel_has_spare_capacity() {
+        let (sender, receiver) = mpsc::sync_channel(MAX_OWNER_REPORTS + 1);
+        assert!(read_owner_reports(script(7).as_slice(), sender).is_err());
+        for i in 0..6 {
+            assert_eq!(receiver.try_recv().unwrap().unwrap(), [i]);
+        }
+        require_reports_drained(&receiver).unwrap();
+    }
+
+    #[test]
+    fn joined_reader_cannot_hide_a_trailing_framed_report() {
+        let (sender, receiver) = mpsc::sync_channel(MAX_OWNER_REPORTS);
+        read_owner_reports(script(3).as_slice(), sender).unwrap();
+        assert_eq!(receiver.try_recv().unwrap().unwrap(), [0]);
+        assert_eq!(receiver.try_recv().unwrap().unwrap(), [1]);
+        assert!(require_reports_drained(&receiver).is_err());
     }
 }
