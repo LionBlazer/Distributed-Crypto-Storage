@@ -1,62 +1,27 @@
 mod predicate;
+mod transaction;
 
 use crate::{
     Column, Error, LockStrength, LockWait, LockingClause, MAX_SQL_BYTES, Projection, QueryPlan,
-    RowValues, RowWindow,
+    RowValues, RowWindow, StatementPlan,
 };
 
 /// Parses the supported fixed-schema grammar, consuming the entire input.
 /// No SQL clause is silently discarded or evaluated in plaintext as a fallback.
 pub fn parse_sql(sql: &str) -> Result<QueryPlan, Error> {
-    if sql.len() > MAX_SQL_BYTES {
-        return Err(Error::InvalidInput("SQL exceeds 4096 bytes".into()));
-    }
-    let tokens = tokenize(sql)?;
-    let mut parser = Parser {
-        tokens,
-        index: 0,
-        predicate_budget: 0,
-    };
-    let plan = if parser.take("SELECT") {
-        parser.select()?
-    } else if parser.take("INSERT") {
-        parser.expect("INTO")?;
-        parser.expect("RECORDS")?;
-        if parser.take("(") {
-            for token in ["AGE", ",", "AMOUNT", ")"] {
-                parser.expect(token)?;
-            }
-        }
-        parser.expect("VALUES")?;
-        let mut rows = Vec::new();
-        loop {
-            parser.expect("(")?;
-            let age = parser.number("age must be in 0..=255")?;
-            parser.expect(",")?;
-            let amount = parser.number("amount must be in 0..=65535")?;
-            parser.expect(")")?;
-            rows.push(RowValues { age, amount });
-            if !parser.take(",") {
-                break;
-            }
-        }
-        QueryPlan::Insert { rows }
-    } else if parser.take("UPDATE") {
-        for token in ["RECORDS", "SET", "AMOUNT", "=", "AMOUNT", "+"] {
-            parser.expect(token)?;
-        }
-        let delta = parser.number::<u16>("delta must be in 0..=65535")?;
-        QueryPlan::AddAmount {
-            predicate: parser.predicate()?,
-            delta,
-        }
-    } else {
-        return Err(unsupported("expected SELECT, INSERT or UPDATE"));
-    };
-    parser.take(";");
-    if parser.index != parser.tokens.len() {
-        return Err(unsupported("extra clauses or multiple statements"));
-    }
+    let mut parser = Parser::new(sql)?;
+    let plan = parser.query()?;
+    parser.finish()?;
+    Ok(plan)
+}
+
+/// Parses one bounded top-level query or transaction-control statement.
+/// All transaction characteristics and CHAIN options remain explicit syntax;
+/// no transaction state is inspected, created, committed or rolled back.
+pub fn parse_statement(sql: &str) -> Result<StatementPlan, Error> {
+    let mut parser = Parser::new(sql)?;
+    let plan = parser.statement()?;
+    parser.finish()?;
     Ok(plan)
 }
 
@@ -105,6 +70,62 @@ struct Parser {
 }
 
 impl Parser {
+    fn new(sql: &str) -> Result<Self, Error> {
+        if sql.len() > MAX_SQL_BYTES {
+            return Err(Error::InvalidInput("SQL exceeds 4096 bytes".into()));
+        }
+        Ok(Self {
+            tokens: tokenize(sql)?,
+            index: 0,
+            predicate_budget: 0,
+        })
+    }
+    fn finish(&mut self) -> Result<(), Error> {
+        self.take(";");
+        if self.index != self.tokens.len() {
+            return Err(unsupported("extra clauses or multiple statements"));
+        }
+        Ok(())
+    }
+    fn query(&mut self) -> Result<QueryPlan, Error> {
+        let plan = if self.take("SELECT") {
+            self.select()?
+        } else if self.take("INSERT") {
+            self.expect("INTO")?;
+            self.expect("RECORDS")?;
+            if self.take("(") {
+                for token in ["AGE", ",", "AMOUNT", ")"] {
+                    self.expect(token)?;
+                }
+            }
+            self.expect("VALUES")?;
+            let mut rows = Vec::new();
+            loop {
+                self.expect("(")?;
+                let age = self.number("age must be in 0..=255")?;
+                self.expect(",")?;
+                let amount = self.number("amount must be in 0..=65535")?;
+                self.expect(")")?;
+                rows.push(RowValues { age, amount });
+                if !self.take(",") {
+                    break;
+                }
+            }
+            QueryPlan::Insert { rows }
+        } else if self.take("UPDATE") {
+            for token in ["RECORDS", "SET", "AMOUNT", "=", "AMOUNT", "+"] {
+                self.expect(token)?;
+            }
+            let delta = self.number::<u16>("delta must be in 0..=65535")?;
+            QueryPlan::AddAmount {
+                predicate: self.predicate()?,
+                delta,
+            }
+        } else {
+            return Err(unsupported("expected SELECT, INSERT or UPDATE"));
+        };
+        Ok(plan)
+    }
     fn select(&mut self) -> Result<QueryPlan, Error> {
         if self.take("COUNT") {
             for token in ["(", "*", ")"] {

@@ -5,10 +5,15 @@
 mod error;
 mod parser;
 mod plan;
+mod statement;
 
 pub use error::Error;
-pub use parser::parse_sql;
+pub use parser::{parse_sql, parse_statement};
 pub use plan::{
     Column, LockStrength, LockWait, LockingClause, MAX_SQL_BYTES, Predicate, Projection, QueryPlan,
     RowValues, RowWindow,
+};
+pub use statement::{
+    Deferrability, IsolationLevel, StatementPlan, TransactionAccess, TransactionChain,
+    TransactionMode,
 };

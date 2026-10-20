@@ -76,3 +76,61 @@ The [SQL locking-plan validation](../../experiments/hiding-fri-sha256-gate/SQL-L
 records 24 parser PASS cases, six focused experimental cases and both parsed-query
 CLI gates. All 195 names were discovered; the old 189 were not rerun. Parsing still
 confers no live grant or source/control authority.
+
+## Top-level transaction statement plans
+
+`parse_statement` returns `StatementPlan::Query(QueryPlan)` for the same query
+grammar, or a distinct `Begin`, `Commit` or `Rollback` plan. It shares the one
+private tokenizer, query parser and complete-input check with `parse_sql`.
+The existing `parse_sql` remains the query-only API and rejects transaction
+commands. Neither entry point changes a session or executes data operations.
+
+The transaction syntax accepts `BEGIN [WORK | TRANSACTION]` or `START TRANSACTION`,
+followed by PostgreSQL transaction modes. `TransactionMode` retains each requested
+isolation level, read/write mode and deferrability option in its original order.
+Commas between modes are optional. Repeated and conflicting items remain in the
+list rather than being overwritten; validating their effective semantics and
+rejecting unsupported settings belongs to the eventual executor. An empty list
+leaves defaults unspecified. In particular, `ReadUncommitted` is preserved as its
+own requested level, with no backend-specific normalization.
+
+`COMMIT`/`END` and `ROLLBACK`/`ABORT` accept optional `WORK` or `TRANSACTION` and
+`AND [NO] CHAIN`. `TransactionChain::{Unspecified, Chain, NoChain}` distinguishes
+omission from both explicit options. Equivalent command aliases and the optional
+`WORK`/`TRANSACTION` spelling are normalized; the AST is not a lossless SQL text
+codec. No parser inherits settings or starts a chained transaction.
+
+The same 4096-byte whole-input cap, optional single trailing semicolon and ASCII
+lexical subset apply. Malformed options, multiple statements, comments and quoted
+identifiers reject explicitly. SAVEPOINT/RELEASE, ROLLBACK TO, SET TRANSACTION,
+two-phase transaction commands and other PostgreSQL syntax remain unsupported.
+These plans do not implement isolation, transaction execution, lock ownership,
+freshness, proof verification or a network SQL acceptance path.
+
+Primary syntax references: [PG18 BEGIN](https://www.postgresql.org/docs/18/sql-begin.html),
+[START TRANSACTION](https://www.postgresql.org/docs/18/sql-start-transaction.html),
+[COMMIT](https://www.postgresql.org/docs/18/sql-commit.html),
+[ROLLBACK](https://www.postgresql.org/docs/18/sql-rollback.html), and the
+[REL_18_0 grammar](https://github.com/postgres/postgres/blob/REL_18_0/src/backend/parser/gram.y)
+(`TransactionStmt`, `TransactionStmtLegacy`, `transaction_mode_list`,
+`opt_transaction_chain`).
+
+Native release validation on 2026-10-20 passed all 35 API cases: the 24 existing
+cases and 11 new `tests/statements.rs` cases. The whole test command took 2.374
+seconds including compilation and startup. Strict all-target Clippy, the default
+core check and workspace format check also passed. The frozen 1,585-file source
+receipt has SHA-256
+`882FC07B4CC92F6A5F472286BAF29EDF1A3610B2CD26257986B2D5B11D04E2E7`;
+the unchanged-source/log after receipt has SHA-256
+`69F0AA1ED6A85518561E5BA237DDB6D74FD33B5AD47D327DD035432CED4F1212`.
+Only this validation paragraph changed after that batch. The historical parser
+validation above keeps its separate source and execution scope.
+
+```powershell
+cargo test --release --offline --locked -p sql-plan
+cargo clippy --release --offline --locked -p sql-plan --all-targets -- -D warnings
+cargo check --release --offline --locked
+cargo fmt --all -- --check
+```
+
+These are pure parser/core checks, not SQL execution or distributed-lock tests.
