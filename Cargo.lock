@@ -442,6 +442,7 @@ dependencies = [
  "fhe-math",
  "p3-air",
  "p3-challenger",
+ "p3-commit",
  "p3-field",
  "p3-lookup",
  "p3-matrix",

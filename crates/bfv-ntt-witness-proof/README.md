@@ -73,3 +73,54 @@ they do not establish the performance or resource use of this extraction.
 
 The [proof-library extraction validation](../../experiments/bfv-mul-relin-proof/LIBRARY-EXTRACTION-VALIDATION.md) records the current
 relocation, owning native tests and preserved proof policy.
+
+
+### Sequential hash implementation parity
+
+The ignored owning test
+`tests::hash_parity::one_public_ntt_preserves_complete_proof_preprocessing_and_transcript`
+uses one deterministic PUBLIC NONSECRET forward N8192/basis0 request. It calls
+production `prove` and `verify`, checks all 8192 output coefficients against the
+native SDK, and rejects a decoded/reencoded genuine proof after a semantic
+sumcheck mutation. Existing genuine tests are unchanged.
+
+A bounded test-only capture reconstructs the actual public preprocessing PCS
+commitment, records all eight words of its Merkle root, and replays the genuine
+SDK verifier with a named challenger to finalize its 64-byte state digest.
+It drops each extra proving codeword before verification. It adds no production
+API, profile, randomness, thread, timeout or security-policy change. `p3-commit`
+is a pinned dev dependency solely for the actual PCS commitment trait.
+
+To compare two hash implementations, run the same test sequentially before and
+after replacing only the hash implementation. Use the same release/native build
+configuration and exact sources for everything else. For example, in PowerShell
+from the workspace root (create the ignored `.local` parent first):
+
+```powershell
+$env:DCS_NTT_HASH_PARITY_EXPORT = (Join-Path (Get-Location) '.local/ntt-hash-baseline')
+Remove-Item Env:DCS_NTT_HASH_PARITY_BASELINE -ErrorAction SilentlyContinue
+cargo test --release --offline --locked -p bfv-ntt-witness-proof --lib tests::hash_parity::one_public_ntt_preserves_complete_proof_preprocessing_and_transcript -- --exact --ignored --test-threads=1 --nocapture
+# Import the separately reviewed hash implementation, then build and run again.
+$env:DCS_NTT_HASH_PARITY_BASELINE = $env:DCS_NTT_HASH_PARITY_EXPORT
+$env:DCS_NTT_HASH_PARITY_EXPORT = (Join-Path (Get-Location) '.local/ntt-hash-buffered')
+cargo test --release --offline --locked -p bfv-ntt-witness-proof --lib tests::hash_parity::one_public_ntt_preserves_complete_proof_preprocessing_and_transcript -- --exact --ignored --test-threads=1 --nocapture
+Remove-Item Env:DCS_NTT_HASH_PARITY_BASELINE, Env:DCS_NTT_HASH_PARITY_EXPORT
+```
+
+The optional environment paths must be absolute and inside this checkout's
+ignored `.local`. The export directory and its seven files must be new. The
+candidate reads bounded complete baseline files and fails on a missing file,
+length difference or any byte difference. Artifacts contain the full canonical
+request, output, profile, complete encoded proof, preprocessing root, finalized
+verifier transcript and serialized actual security report. They contain no
+credentials, secret keys or participant data and must not be committed. Without
+these environment variables the ignored test still verifies the genuine claim
+and rejection but writes no artifacts. Printed component timings are observations;
+there is no speed assertion or claim of an end-to-end improvement.
+
+The owning parity gate and canonical adapter tests passed; see the
+[native observations](../../docs/hash-compatibility-validation.md). The tested
+buffering candidate was not retained because complete-test timings showed no
+stable gain. The production hash implementation, protocol and old tests remain
+unchanged. `verifier-transcript.bin` stores the final challenger digest, not an
+event log of transcript messages.

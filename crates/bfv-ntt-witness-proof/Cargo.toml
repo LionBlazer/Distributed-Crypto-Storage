@@ -21,6 +21,7 @@ sha2 = "=0.10.9"
 
 [dev-dependencies]
 p3-challenger = "=0.8.0"
+p3-commit = "=0.8.0"
 p3-field = "=0.8.0"
 p3-matrix = "=0.8.0"
 p3-symmetric = "=0.8.0"

@@ -7,6 +7,7 @@ use p3_challenger::CanSample;
 use p3_symmetric::CryptographicHasher;
 use std::sync::OnceLock;
 mod attacks;
+mod hash_parity;
 fn directions() -> [Direction; 2] {
     [Direction::Forward, Direction::Inverse]
 }

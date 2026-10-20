@@ -493,3 +493,156 @@ fn assessment_uses_actual_constraints_and_rejects_foreign_shapes_before_sdk() {
     let missing = VerifierInstances::new(vec![VerifierInstance::new(&air, &vk, 10, &[])]);
     assert!(matches!(assess(&c, &missing), Err(Error::InvalidShape)));
 }
+
+// These public bytes exercise SHA512 padding and buffering, not proof acceptance.
+static HASH_LEAF_LABEL: [u8; 257] = [b'L'; 257];
+static HASH_NODE_LABEL: [u8; 257] = [b'N'; 257];
+static HASH_TRANSCRIPT_LABEL: [u8; 257] = [b'T'; 257];
+static HASH_STATEMENT_LABEL: [u8; 257] = [b'S'; 257];
+
+fn offset_domains(length: usize) -> Domains {
+    Domains::new(
+        &HASH_LEAF_LABEL[..length],
+        &HASH_NODE_LABEL[..length],
+        &HASH_TRANSCRIPT_LABEL[..length],
+        &HASH_STATEMENT_LABEL[..length],
+    )
+    .unwrap()
+}
+
+fn public_hash_word(at: usize) -> u64 {
+    const EDGES: [u64; 8] = [
+        0,
+        1,
+        u64::MAX,
+        1 << 63,
+        0x0807_0605_0403_0201,
+        0xfedc_ba98_7654_3210,
+        0x8000_0000_0000_0001,
+        0x0100_0000_0000_0080,
+    ];
+    if at < EDGES.len() {
+        EDGES[at]
+    } else {
+        EDGES[at % EDGES.len()]
+            ^ (at as u64)
+                .wrapping_mul(0x9e37_79b9_7f4a_7c15)
+                .rotate_left((at % 64) as u32)
+    }
+}
+
+fn public_hash_byte(at: usize) -> u8 {
+    (at as u8).wrapping_mul(193).wrapping_add(0x80)
+}
+
+// The independent oracle assembles the explicitly specified canonical message
+// and calls one-shot SHA512; it does not share either streaming writer.
+fn canonical_word_digest(domain: &[u8], words: &[u64]) -> [u64; 8] {
+    let mut message = domain.to_vec();
+    for word in words {
+        message.extend_from_slice(&word.to_le_bytes());
+    }
+    let digest: [u8; 64] = Sha512::digest(&message).into();
+    core::array::from_fn(|i| u64::from_le_bytes(digest[8 * i..8 * (i + 1)].try_into().unwrap()))
+}
+
+fn canonical_byte_digest(domain: &[u8], bytes: &[u8]) -> [u8; 64] {
+    let mut message = domain.to_vec();
+    message.extend_from_slice(bytes);
+    Sha512::digest(&message).into()
+}
+
+#[test]
+fn sha512_word_interfaces_match_canonical_bytes_at_every_prefix_offset_and_block_tail() {
+    let words = (0..255).map(public_hash_word).collect::<Vec<_>>();
+    // Explicit independent LE64 fixture: zero, one, all high bits, then bit63.
+    assert_eq!(
+        words[..4]
+            .iter()
+            .flat_map(|word| word.to_le_bytes())
+            .collect::<Vec<_>>(),
+        [
+            0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255,
+            0, 0, 0, 0, 0, 0, 0, 128,
+        ]
+    );
+    // 1..128 covers every SHA512 domain offset; longer prefixes cover full
+    // prefix blocks. Word tails cross both the 112-byte padding and 128-byte block.
+    for prefix in (1..=128).chain([129, 255, 256, 257]) {
+        let d = offset_domains(prefix);
+        for length in [0, 1, 2, 7, 8, 13, 14, 15, 16, 17, 31, 32, 33, 255] {
+            let input = &words[..length];
+            assert_eq!(
+                d.leaf_hasher().hash_iter(input.iter().copied()),
+                canonical_word_digest(d.leaf(), input),
+                "leaf prefix={prefix} words={length}"
+            );
+            assert_eq!(
+                d.node_hasher().hash_iter(input.iter().copied()),
+                canonical_word_digest(d.node(), input),
+                "node prefix={prefix} words={length}"
+            );
+        }
+    }
+}
+
+#[test]
+fn sha512_transcript_matches_canonical_bytes_at_every_prefix_offset_and_block_tail() {
+    let bytes = (0..4097).map(public_hash_byte).collect::<Vec<_>>();
+    for prefix in (1..=128).chain([129, 255, 256, 257]) {
+        let d = offset_domains(prefix);
+        for length in [
+            0, 1, 2, 7, 8, 63, 64, 111, 112, 127, 128, 129, 255, 256, 257, 4097,
+        ] {
+            let input = &bytes[..length];
+            assert_eq!(
+                d.transcript_hasher().hash_iter(input.iter().copied()),
+                canonical_byte_digest(d.transcript(), input),
+                "transcript prefix={prefix} bytes={length}"
+            );
+        }
+    }
+}
+
+#[test]
+fn sha512_interfaces_consume_long_single_pass_iterators_once_without_a_length_hint() {
+    use std::cell::Cell;
+    const WORDS: usize = 8193;
+    const BYTES: usize = 131_073;
+    let d = offset_domains(127);
+    let words = (0..WORDS).map(public_hash_word).collect::<Vec<_>>();
+    let bytes = (0..BYTES).map(public_hash_byte).collect::<Vec<_>>();
+    for node in [false, true] {
+        let consumed = Cell::new(0);
+        let input = std::iter::from_fn(|| {
+            let at = consumed.get();
+            if at == WORDS {
+                return None;
+            }
+            consumed.set(at + 1);
+            Some(public_hash_word(at))
+        });
+        assert_eq!(input.size_hint(), (0, None));
+        let actual = if node {
+            d.node_hasher().hash_iter(input)
+        } else {
+            d.leaf_hasher().hash_iter(input)
+        };
+        assert_eq!(consumed.get(), WORDS);
+        let domain = if node { d.node() } else { d.leaf() };
+        assert_eq!(actual, canonical_word_digest(domain, &words));
+    }
+    let consumed = Cell::new(0);
+    let input = std::iter::from_fn(|| {
+        let at = consumed.get();
+        if at == BYTES {
+            return None;
+        }
+        consumed.set(at + 1);
+        Some(public_hash_byte(at))
+    });
+    assert_eq!(input.size_hint(), (0, None));
+    let actual = d.transcript_hasher().hash_iter(input);
+    assert_eq!(consumed.get(), BYTES);
+    assert_eq!(actual, canonical_byte_digest(d.transcript(), &bytes));
+}

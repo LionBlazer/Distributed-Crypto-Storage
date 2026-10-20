@@ -92,3 +92,19 @@ The standalone consumer retains exactly its previous resolved package features,
 plus this featureless local library. Existing root lock entries are unchanged;
 the seven added registry packages match the already validated standalone SDK.
 See the [consumer's limits and measurements](../bfv-ntt-witness-proof/README.md).
+
+## Canonical SHA512 compatibility gates
+
+Three short owning tests compare the leaf, node and transcript adapters against
+independent one-shot SHA512 of their complete canonical byte streams. Coverage
+includes every domain-prefix offset in a 128-byte block, padding/block edges,
+empty input, LE64/high-bit words and long single-pass iterators without a length
+hint. Existing genuine SDK proofs and rejection cases stay intact.
+
+The original production hash writers are retained. A fixed-buffer candidate
+preserved complete proof bytes but did not demonstrate a stable complete-test
+improvement in sequential native measurements. Its implementation and writer-only
+observation are excluded from this revision. The
+[hash validation](../../docs/hash-compatibility-validation.md) records the actual
+positive/negative gates, full artifact parity and measured limits. This is no
+claim of faster SQL or a cheaper cryptographic protocol.
