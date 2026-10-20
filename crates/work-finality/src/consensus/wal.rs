@@ -44,6 +44,60 @@ pub struct DurableVoter<V: ApplicationVerifier> {
     #[cfg(test)]
     fault: Option<Fault>,
 }
+
+/// One newly decided command, after its actual application check and WAL fsync.
+/// This exclusive borrow refers to the SAME voter and captured verifier; it is
+/// not constructible from a Decision, checkpoint, replay or recorded success.
+/// Dropping it leaves the already durable decision intact, without advancing.
+///
+/// This is mathematical protocol evidence, not proof of an application floor.
+/// The closed application owner must complete its own full preflight and durable
+/// floor installation before consuming `advance`, just as for `DurableVoter::advance`.
+/// No finalized head, current lease, SQL grant or rollback protection is supplied.
+///
+/// ```compile_fail
+/// fn make<V: work_finality::consensus::ApplicationVerifier>(voter: &mut work_finality::consensus::DurableVoter<V>) {
+///     let _ = work_finality::consensus::FreshDecision { voter };
+/// }
+/// ```
+/// ```compile_fail
+/// fn copy<'a, V: work_finality::consensus::ApplicationVerifier>(d: &work_finality::consensus::FreshDecision<'a, V>) {
+///     let _: work_finality::consensus::FreshDecision<'a, V> = d.clone();
+/// }
+/// ```
+/// ```compile_fail
+/// fn twice<V: work_finality::consensus::ApplicationVerifier>(d: work_finality::consensus::FreshDecision<'_, V>) {
+///     d.advance().unwrap();
+///     d.advance().unwrap();
+/// }
+/// ```
+#[must_use = "Install the application's durable floor before advancing, or explicitly drop this same-call handoff"]
+pub struct FreshDecision<'v, V: ApplicationVerifier> {
+    voter: &'v mut DurableVoter<V>,
+}
+impl<V: ApplicationVerifier> FreshDecision<'_, V> {
+    pub fn context(&self) -> &Context {
+        &self.voter.context
+    }
+    pub fn decision(&self) -> &Decision {
+        self.voter
+            .machine
+            .decision()
+            .expect("only a newly durable deciding command creates this exclusive borrow")
+    }
+    /// Consume the same-command application check. Position, exact QC/Context,
+    /// bounds, precharge and durable advance writes are still checked. The
+    /// application floor is the closed caller's obligation, never a caller flag.
+    pub fn advance(self) -> Result<()> {
+        self.voter.live()?;
+        self.voter.check_position()?;
+        self.voter.append_application_checked_advance()
+    }
+    #[cfg(test)]
+    pub(crate) fn inject(&mut self, fault: Fault) {
+        self.voter.inject(fault);
+    }
+}
 impl<V: ApplicationVerifier> DurableVoter<V> {
     /// Only for an explicitly NEW signer installation. Never call this as a
     /// recovery fallback. Recreating/rolling back a signer file with the same key
@@ -241,6 +295,24 @@ impl<V: ApplicationVerifier> DurableVoter<V> {
         self.machine = prepared;
         Ok(actions)
     }
+    /// Run the unchanged genuine command/WAL path and, ONLY when this command
+    /// newly decides, borrow its exact durable decision for same-call advance.
+    /// Machine::apply rejects an already decided machine, so recovery or a later
+    /// command cannot turn a stored decision into this handoff. No actions or
+    /// handoff escape if application validation or the deciding WAL write fails.
+    /// Closed adapters retain the actions until their actual floor work succeeds.
+    pub fn handle_for_finalization(
+        &mut self,
+        input: Input,
+    ) -> Result<(Vec<Action>, Option<FreshDecision<'_, V>>)> {
+        let actions = self.handle(input)?;
+        let fresh = if self.machine.decision().is_some() {
+            Some(FreshDecision { voter: self })
+        } else {
+            None
+        };
+        Ok((actions, fresh))
+    }
     /// Persist the next slot using ONLY this signer's durable decision. The key
     /// never leaves this owner and callers cannot nominate a successor context.
     /// Application/floor integrations must install their actual durable floor
@@ -251,6 +323,13 @@ impl<V: ApplicationVerifier> DurableVoter<V> {
         let decision = self.machine.decision().ok_or(Error::Stale)?;
         self.context
             .verify_application(&self.verifier, decision.value())?;
+        self.append_application_checked_advance()
+    }
+    // Exactly two owned paths reach this suffix: ordinary advance after a fresh
+    // application check, or the exclusive new-command handoff after its own
+    // actual check and deciding fsync. Both check live state and file position.
+    fn append_application_checked_advance(&mut self) -> Result<()> {
+        let decision = self.machine.decision().ok_or(Error::Stale)?;
         let next = self.context.after_decision(decision)?;
         let sequence = self.sequence.checked_add(1).ok_or(Error::ResourceLimit)?;
         let record = encode_record(sequence, self.previous, &[6], &[0])?;

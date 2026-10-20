@@ -310,13 +310,45 @@ fn real_signed_bootstrap_begin_kind_and_alternate_qc_reopen_then_missing_or_corr
     );
     assert!(owner.checkpoint_after(1).unwrap().is_none());
 
+    let before_decision_checks = owner
+        .state
+        .lock()
+        .unwrap()
+        .completed_application_checks
+        .load(std::sync::atomic::Ordering::SeqCst);
     owner.receive_checkpoint(&qc).unwrap();
+    assert_eq!(
+        owner
+            .state
+            .lock()
+            .unwrap()
+            .completed_application_checks
+            .load(std::sync::atomic::Ordering::SeqCst),
+        before_decision_checks + 2,
+        "The genuine decision and full floor preflight both check Source/Life/Kind; same-call advance adds no third traversal"
+    );
     let final_parent = owner.finalized_parent().unwrap().unwrap();
     let next = owner.context().unwrap().clone();
     assert_ne!(first.control(), final_parent.control());
     let before = quota.usage().unwrap().total_bytes();
     let alternate = JointCheckpoint::new(d.clone(), 7, certificate(&previous, &d, 7, 1)).unwrap();
+    let before_retry_checks = owner
+        .state
+        .lock()
+        .unwrap()
+        .completed_application_checks
+        .load(std::sync::atomic::Ordering::SeqCst);
     assert!(owner.receive_checkpoint(&alternate).unwrap().is_empty());
+    assert_eq!(
+        owner
+            .state
+            .lock()
+            .unwrap()
+            .completed_application_checks
+            .load(std::sync::atomic::Ordering::SeqCst),
+        before_retry_checks + 1,
+        "A later genuine alternate-QC retry still freshly verifies all actual premises"
+    );
     assert_eq!(owner.context().unwrap(), &next);
     assert_eq!(
         owner.finalized_parent().unwrap().unwrap().decision_id(),

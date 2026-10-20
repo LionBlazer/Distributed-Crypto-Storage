@@ -14,7 +14,7 @@ pub use messages::{Action, Decision, Input, Proposal, RoundStep, Timeout};
 pub use rules::{
     ApplicationContext, ApplicationError, ApplicationVerifier, ConsensusRulesId, Context, Rules,
 };
-pub use wal::DurableVoter;
+pub use wal::{DurableVoter, FreshDecision};
 
 use crate::Error as EvidenceError;
 

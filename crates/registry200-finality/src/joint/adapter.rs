@@ -24,7 +24,7 @@ use std::{
 use version_journal::{DurableJournal, HeadRef, Header};
 use work_finality::consensus::{
     Action, ApplicationContext, ApplicationError, ApplicationVerifier, Context, Decision,
-    DurableVoter, Input, Timeout,
+    DurableVoter, FreshDecision, Input, Timeout,
 };
 
 // The shared bounded floor stores the same complete candidate width, never a
@@ -57,6 +57,8 @@ struct State {
     current: Context,
     last_context: Option<Context>,
     finalized: Option<VerifiedJointParent>,
+    #[cfg(test)]
+    completed_application_checks: std::sync::atomic::AtomicUsize,
 }
 
 // A same-call handoff, never a reusable proof receipt. The exclusive State
@@ -125,6 +127,8 @@ impl State {
             current,
             last_context: None,
             finalized: None,
+            #[cfg(test)]
+            completed_application_checks: std::sync::atomic::AtomicUsize::new(0),
         }
     }
     fn verify(&self, context: &Context, value: &[u8]) -> Result<(HeadRef, Control)> {
@@ -158,6 +162,9 @@ impl State {
             state_root: d.header.state_root,
         };
         self.journal.journal().validated_shards(head)?;
+        #[cfg(test)]
+        self.completed_application_checks
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok((head, control))
     }
     fn preflight<'state, 'decision>(
@@ -187,6 +194,18 @@ impl State {
         // application/quorum/successor preflight for every actual floor record.
         self.preflight(decision)?.install()
     }
+}
+
+fn install_current_decision(
+    state: &mut State,
+    floor: &mut FloorLog,
+    decision: &Decision,
+) -> Result<()> {
+    // Keep the complete actual application/QC/cap preflight and the same
+    // exclusive State borrow through the floor's successful fsync and install.
+    let prepared = state.preflight(decision)?;
+    floor.append(decision)?;
+    prepared.install()
 }
 
 #[derive(Clone)]
@@ -554,13 +573,32 @@ impl DurableJointFinality {
     }
     fn drive(&mut self, input: Input) -> Result<Vec<Action>> {
         self.live()?;
-        let actions = match self.voter.handle(input) {
+        let finished = match self.voter.handle_for_finalization(input) {
+            Ok((actions, Some(fresh))) => {
+                match Self::synchronize_fresh(
+                    &self.state,
+                    &mut self.floor,
+                    fresh,
+                    #[cfg(test)]
+                    &mut self.poison_before_advance,
+                ) {
+                    Ok(()) => Ok(actions),
+                    Err(error) => {
+                        self.poisoned = true;
+                        Err(error)
+                    }
+                }
+            }
+            Ok((actions, None)) => Ok(actions),
+            Err(error) => Err(error.into()),
+        };
+        let actions = match finished {
             Ok(actions) => actions,
             Err(e) => {
                 if self.voter.is_poisoned() {
                     self.poisoned = true;
                 }
-                return Err(e.into());
+                return Err(e);
             }
         };
         if let Err(e) = self.synchronize() {
@@ -569,14 +607,44 @@ impl DurableJointFinality {
         }
         Ok(actions)
     }
+    fn synchronize_fresh(
+        state: &Arc<Mutex<State>>,
+        floor: &mut FloorLog,
+        fresh: FreshDecision<'_, ClosedJointApplication>,
+        #[cfg(test)] poison_before_advance: &mut bool,
+    ) -> Result<()> {
+        let mut guard = state.lock().map_err(|_| Error::Poisoned)?;
+        if guard.current.id() != fresh.context().id() {
+            return Err(crate::Error::CorruptFloor.into());
+        }
+        // The capability came only from THIS owner's private voter and its
+        // captured ClosedJointApplication. It is not accepted as an argument
+        // from a client, checkpoint DTO, different owner or recovery path.
+        install_current_decision(&mut guard, floor, fresh.decision())?;
+        drop(guard);
+        #[cfg(test)]
+        Self::inject_advance_refusal(state, poison_before_advance)?;
+        // The floor was actually fsynced and installed above. Only this same
+        // command's redundant signer application traversal is omitted.
+        fresh.advance()?;
+        Ok(())
+    }
+    #[cfg(test)]
+    fn inject_advance_refusal(state: &Arc<Mutex<State>>, refuse: &mut bool) -> Result<()> {
+        if std::mem::take(refuse) {
+            state
+                .lock()
+                .map_err(|_| Error::Poisoned)?
+                .charge
+                .mark_io_failed();
+        }
+        Ok(())
+    }
     fn synchronize(&mut self) -> Result<()> {
         if let Some(decision) = self.voter.decision() {
             let mut state = self.state.lock().map_err(|_| Error::Poisoned)?;
             if state.current.id() == self.voter.context().id() {
-                // All fallible protocol/cap checks BEFORE durable floor append.
-                let prepared = state.preflight(decision)?;
-                self.floor.append(decision)?;
-                prepared.install()?;
+                install_current_decision(&mut state, &mut self.floor, decision)?;
             } else {
                 let installed = state.finalized.as_ref().ok_or(crate::Error::CorruptFloor)?;
                 if installed.slot() != self.voter.context().slot()
@@ -589,13 +657,7 @@ impl DurableJointFinality {
             }
             drop(state); // advance invokes the SAME actual app, which locks State.
             #[cfg(test)]
-            if std::mem::take(&mut self.poison_before_advance) {
-                self.state
-                    .lock()
-                    .map_err(|_| Error::Poisoned)?
-                    .charge
-                    .mark_io_failed();
-            }
+            Self::inject_advance_refusal(&self.state, &mut self.poison_before_advance)?;
             self.voter.advance()?;
         }
         if self.state.lock().map_err(|_| Error::Poisoned)?.current.id() != self.voter.context().id()

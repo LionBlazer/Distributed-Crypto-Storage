@@ -334,3 +334,37 @@ returns only `()`, and neither imports nor mints a reusable checked receipt.
 The owner Vault v2 owning and OS-FHE/local-QC recovery cases exercised this
 boundary; see the [native record](../../../../docs/joint-owner-acquire-vault.md).
 That record keeps local-QC recovery separate from actual four-validator agreement.
+
+## Same-command signer advance
+
+For a newly deciding command, the private Joint owner receives a move-only
+`FreshDecision` from its SAME private DurableVoter only after the actual captured
+ClosedJointApplication has checked the candidate and its deciding WAL record has
+fsynced. The owner retains the complete independent `State::preflight`: original
+Context, parent, exact candidate, actual owner/Source/Lifecycle/Kind or full Acquire
+proofs, QC, Control, successor and history caps are all checked again. The SAME
+State guard spans floor append/fsync and argument-free PreparedFinalization
+installation. Only then does the owner consume the original borrowed decision's
+advance, retaining the actual WAL position, QC/Context, caps, precharge and fsync.
+This removes one application traversal from that synchronous decision path; it
+does not remove the full application preflight before a floor is published.
+
+The core handoff itself authenticates no application floor. This closed ordering
+has no caller-supplied verifier, callback, flag, Decision or receipt and exposes no
+token-taking import. A failure still poisons the closed owner; uncertain writes
+retain their charge. Scope exit cannot undo the deciding WAL or make a new grant.
+Floor-ahead recovery and full reopen use the original independent synchronize,
+State verification and ordinary fresh signer advance. Latest historical retries
+continue to verify actual premises even with another genuine QC for the same
+semantic decision; no client/checkpoint or cached-candidate shortcut is added.
+
+The existing genuine signed Bootstrap/Begin/Kind owning case additionally counts
+completed actual application checks: two on its newly decided Begin command, and
+one fresh check on the later alternate-QC retry. Its original floor/WAL/Control,
+reopen, missing/corrupt-premise and byte assertions remain. Existing floor-sync
+loss, torn floor, post-floor advance refusal, terminal and corrupt-WAL cases use
+the same owning APIs. All seven Joint cases passed the release native gate on
+2026-10-20 (76.47 seconds in tests; 85.52 seconds including compilation). The 38
+core consensus cases and three ownership compile-fail checks also passed. Earlier
+records remain pinned to their original source. These cases establish no new SQL,
+current lease, whole-query latency or RAM guarantee.

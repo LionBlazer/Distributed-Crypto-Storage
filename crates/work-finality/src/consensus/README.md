@@ -136,6 +136,41 @@ updated. All 33 consensus cases passed the release native gate on 2026-10-20
 abstract application is genuine puzzle/signature validation, not a SQL/FHE proof,
 distributed deployment or measured whole-operation performance improvement.
 
+### Newly durable decision handoff (source candidate)
+
+`DurableVoter::handle_for_finalization` calls the SAME ordinary `handle` engine.
+Only a newly deciding, successfully fsynced command returns `FreshDecision`.
+The move-only private-field value exclusively borrows that voter, including its
+captured verifier, Context and exact original Decision/QC. An already decided
+machine rejects the next command before it can create another handoff. There is
+no constructor from a Decision, checkpoint, serialized marker or recovery result.
+Dropping the borrow leaves the original decision durable and does not advance it.
+
+`FreshDecision::advance(self)` consumes only that command's actual application
+check. It retains live/position checking, exact QC/Context successor derivation,
+overflow/cap checks, quota precharge and the original write/fsync/publication
+suffix. Ordinary `advance` still performs its own fresh application check and
+shares only that mechanical suffix. WAL recovery replays actual checks for both
+the deciding record and any advance record; no handoff is serialized. There is
+no cross-command proof cache, unchecked flag, caller-selected successor or new
+work/vote/WAL profile, codec, quota, timeout or action ordering.
+
+This generic core cannot validate an application's floor. Its existing contract
+still requires the closed application owner to install the real durable floor
+before advancing. The Joint owner retains its complete actual preflight and
+floor fsync/install before consuming the handoff inside one synchronous command.
+No supplied callback, verifier, Decision or floor boolean enters that closed path.
+Generic mathematical advance does not establish finality, freshness or SQL rights.
+
+Five added owning source cases use the real WorkTicket verifier and genuine QCs:
+same exact WAL bytes as ordinary advance; scope exit/reopen without reissuing a
+handoff; actual vote-quorum and older-round commit paths; deciding-fsync failure;
+and quota refusal plus actual partial/post-fsync advance failures. Three ownership
+compile-fail examples cover construction, copying and reuse. Existing test bodies
+remain unchanged. All 38 consensus cases and three ownership compile-fail checks
+passed the release native gates on 2026-10-20. No whole-operation speed, memory or
+distributed liveness improvement is established.
+
 ### Application and local-control boundary
 
 `ApplicationVerifier::verify(&ApplicationContext, descriptor)` is captured by the

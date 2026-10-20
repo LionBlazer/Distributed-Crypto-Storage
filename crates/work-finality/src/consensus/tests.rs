@@ -2379,3 +2379,396 @@ fn noncurrent_prevote_is_authenticated_without_app_replay_but_old_precommit_stay
     drop(reopened);
     assert_eq!(fs::read(&path).unwrap(), exact_wal);
 }
+
+#[test]
+fn fresh_decision_advance_reuses_only_its_actual_check_and_preserves_ordinary_wal_bytes() {
+    let f = multi_fixture();
+    let files = OwnedFiles::new();
+    let path = files.path("fresh-advance");
+    let ordinary_path = files.path("ordinary-advance");
+    let budget = ByteBudget::new(MAX_SHARED_BYTES).unwrap();
+    let (application, calls) = counted_ticket_application(&f);
+    let mut voter = DurableVoter::create_new(
+        &path,
+        f.context.clone(),
+        application.clone(),
+        f.key(0),
+        &budget,
+    )
+    .unwrap();
+    let mut ordinary = DurableVoter::create_new(
+        &ordinary_path,
+        f.context.clone(),
+        f.application.clone(),
+        f.key(0),
+        &budget,
+    )
+    .unwrap();
+    let vote_context = f
+        .context
+        .vote(7, Step::Precommit, Some(f.context.value_id(&f.a).unwrap()))
+        .unwrap();
+    let votes: Vec<_> = (1..4)
+        .map(|n| f.vote(n, 7, Step::Precommit, Some(&f.a)))
+        .collect();
+    let qc = QuorumCertificate::assemble(f.context.set(), &vote_context, &votes).unwrap();
+    qc.verify(f.context.set(), &vote_context).unwrap();
+    assert_ne!(qc, f.qc(0, Step::Precommit, &f.a));
+    let input = Input::Certificate {
+        value: f.a.clone(),
+        certificate: qc.clone(),
+    };
+    let ordinary_actions = ordinary.handle(input.clone()).unwrap();
+    ordinary.advance().unwrap();
+    let next = ordinary.context().clone();
+
+    let (actions, fresh) = voter.handle_for_finalization(input).unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(actions, ordinary_actions);
+    let fresh = fresh.expect("A new durable deciding command owns its handoff");
+    assert_eq!(fresh.context(), &f.context);
+    assert_eq!(fresh.decision().value(), f.a);
+    assert_eq!(fresh.decision().certificate(), &qc);
+    assert_eq!(
+        fresh.context().after_decision(fresh.decision()).unwrap(),
+        next
+    );
+    fresh.advance().unwrap();
+
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(voter.context(), &next);
+    assert!(voter.decision().is_none());
+    assert!(voter.outbound().unwrap().is_empty());
+    drop(voter);
+    drop(ordinary);
+    let exact_wal = fs::read(&path).unwrap();
+    assert_eq!(exact_wal, fs::read(&ordinary_path).unwrap());
+
+    // Both original records still run the actual application on independent
+    // replay. The same-call handoff itself has no serialized representation.
+    let mut rejecting = application.clone();
+    rejecting.actual.network = [99; 32];
+    assert!(matches!(
+        DurableVoter::open_existing(&path, f.context.clone(), rejecting, f.key(0), &budget),
+        Err(Error::CorruptWal)
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    let reopened =
+        DurableVoter::open_existing(&path, f.context.clone(), application, f.key(0), &budget)
+            .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
+    assert_eq!(reopened.context(), &next);
+    drop(reopened);
+    assert_eq!(fs::read(&path).unwrap(), exact_wal);
+}
+
+#[test]
+fn fresh_decision_drop_and_recovery_never_reissue_a_handoff_for_an_existing_decision() {
+    let f = multi_fixture();
+    let files = OwnedFiles::new();
+    let path = files.path("dropped-fresh-decision");
+    let budget = ByteBudget::new(MAX_SHARED_BYTES).unwrap();
+    let (application, calls) = counted_ticket_application(&f);
+    let mut voter = DurableVoter::create_new(
+        &path,
+        f.context.clone(),
+        application.clone(),
+        f.key(0),
+        &budget,
+    )
+    .unwrap();
+    {
+        let (actions, fresh) = voter
+            .handle_for_finalization(Input::Propose(f.a.clone()))
+            .unwrap();
+        assert!(fresh.is_none());
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::Proposal(_), Action::Vote(_)]
+        ));
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let input = Input::Certificate {
+        value: f.a.clone(),
+        certificate: f.qc(0, Step::Precommit, &f.a),
+    };
+    let decision;
+    {
+        let (actions, fresh) = voter.handle_for_finalization(input.clone()).unwrap();
+        assert!(matches!(actions.as_slice(), [Action::Decided(_)]));
+        let fresh = fresh.unwrap();
+        decision = fresh.decision().clone();
+        assert_eq!(fresh.context(), &f.context);
+        // Scope exit releases only the exclusive borrow, not the durable record.
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(voter.context(), &f.context);
+    assert_eq!(voter.decision(), Some(&decision));
+    let length = voter.file_bytes();
+    let used = budget.used().unwrap();
+    assert!(matches!(
+        voter.handle_for_finalization(input.clone()),
+        Err(Error::Stale)
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(voter.file_bytes(), length);
+    assert_eq!(budget.used().unwrap(), used);
+    drop(voter);
+    let exact_decision_wal = fs::read(&path).unwrap();
+
+    let mut reopened =
+        DurableVoter::open_existing(&path, f.context.clone(), application, f.key(0), &budget)
+            .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
+    assert_eq!(reopened.decision(), Some(&decision));
+    assert!(matches!(
+        reopened.handle_for_finalization(input),
+        Err(Error::Stale)
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
+    assert_eq!(reopened.file_bytes(), length);
+    reopened.advance().unwrap(); // Ordinary recovery retains its fresh app check.
+    assert_eq!(calls.load(Ordering::SeqCst), 5);
+    assert_eq!(
+        reopened.context().previous_decision(),
+        decision.semantic_id()
+    );
+    drop(reopened);
+    assert!(fs::read(&path).unwrap().starts_with(&exact_decision_wal));
+}
+
+#[test]
+fn fresh_decision_requires_actual_application_for_vote_quorum_and_older_commit_paths() {
+    let f = multi_fixture();
+    let files = OwnedFiles::new();
+    let budget = ByteBudget::new(MAX_SHARED_BYTES).unwrap();
+    let (application, calls) = counted_ticket_application(&f);
+    let mut voter = DurableVoter::create_new(
+        files.path("vote-decision"),
+        f.context.clone(),
+        application.clone(),
+        f.key(3),
+        &budget,
+    )
+    .unwrap();
+    {
+        let (_, fresh) = voter
+            .handle_for_finalization(Input::Proposal(f.proposal(0, &f.a, None)))
+            .unwrap();
+        assert!(fresh.is_none());
+    }
+    for n in [0, 1] {
+        let (_, fresh) = voter
+            .handle_for_finalization(Input::Vote(f.vote(n, 0, Step::Prevote, Some(&f.a))))
+            .unwrap();
+        assert!(fresh.is_none());
+    }
+    {
+        let (_, fresh) = voter
+            .handle_for_finalization(Input::Vote(f.vote(0, 0, Step::Precommit, Some(&f.a))))
+            .unwrap();
+        assert!(fresh.is_none());
+    }
+    let (actions, fresh) = voter
+        .handle_for_finalization(Input::Vote(f.vote(1, 0, Step::Precommit, Some(&f.a))))
+        .unwrap();
+    let fresh = fresh.unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 2); // Proposal plus actual deciding drive.
+    assert!(
+        actions
+            .iter()
+            .any(|action| matches!(action, Action::Decided(_)))
+    );
+    fresh
+        .decision()
+        .certificate()
+        .verify(
+            f.context.set(),
+            &f.context
+                .vote(0, Step::Precommit, Some(f.context.value_id(&f.a).unwrap()))
+                .unwrap(),
+        )
+        .unwrap();
+    fresh.advance().unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(voter.context().slot(), 2);
+
+    let mut older = DurableVoter::create_new(
+        files.path("older-commit-decision"),
+        f.context.clone(),
+        application,
+        f.key(0),
+        &budget,
+    )
+    .unwrap();
+    for n in [1, 2] {
+        let (_, fresh) = older
+            .handle_for_finalization(Input::Vote(f.vote(n, 1, Step::Prevote, None)))
+            .unwrap();
+        assert!(fresh.is_none());
+    }
+    assert_eq!(older.round(), 1);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    let mut invalid = f.a.clone();
+    *invalid.last_mut().unwrap() ^= 1;
+    assert!(matches!(
+        older.handle_for_finalization(Input::Certificate {
+            certificate: f.qc(0, Step::Precommit, &invalid),
+            value: invalid,
+        }),
+        Err(Error::ApplicationRejected)
+    ));
+    assert!(older.decision().is_none());
+    let (_, fresh) = older
+        .handle_for_finalization(Input::Certificate {
+            certificate: f.qc(0, Step::Precommit, &f.a),
+            value: f.a.clone(),
+        })
+        .unwrap();
+    let fresh = fresh.unwrap();
+    assert_eq!(fresh.decision().certificate().context().round(), 0);
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
+    fresh.advance().unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
+    assert_eq!(older.context().slot(), 2);
+}
+
+#[test]
+fn failed_deciding_fsync_returns_no_handoff_and_recovery_checks_actual_application() {
+    let f = multi_fixture();
+    let files = OwnedFiles::new();
+    for (name, fault) in [
+        ("decision-lost", Fault::AfterSync),
+        ("decision-torn", Fault::Partial(7)),
+    ] {
+        let budget = ByteBudget::new(MAX_SHARED_BYTES).unwrap();
+        let (application, calls) = counted_ticket_application(&f);
+        let path = files.path(name);
+        let mut voter = DurableVoter::create_new(
+            &path,
+            f.context.clone(),
+            application.clone(),
+            f.key(0),
+            &budget,
+        )
+        .unwrap();
+        voter.inject(fault);
+        let input = Input::Certificate {
+            value: f.a.clone(),
+            certificate: f.qc(0, Step::Precommit, &f.a),
+        };
+        assert!(matches!(
+            voter.handle_for_finalization(input.clone()),
+            Err(Error::Io(_))
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(voter.is_poisoned());
+        assert!(voter.decision().is_none());
+        assert!(voter.outbound().is_err());
+        drop(voter);
+        let exact = fs::read(&path).unwrap();
+        let result = DurableVoter::open_existing(
+            &path,
+            f.context.clone(),
+            application,
+            f.key(0),
+            &ByteBudget::new(MAX_SHARED_BYTES).unwrap(),
+        );
+        if name == "decision-lost" {
+            let mut reopened = result.unwrap();
+            assert_eq!(calls.load(Ordering::SeqCst), 2);
+            assert!(reopened.decision().is_some());
+            assert!(matches!(
+                reopened.handle_for_finalization(input),
+                Err(Error::Stale)
+            ));
+            reopened.advance().unwrap();
+            assert_eq!(calls.load(Ordering::SeqCst), 3);
+        } else {
+            assert!(matches!(result, Err(Error::CorruptWal)));
+            assert_eq!(fs::read(&path).unwrap(), exact);
+        }
+    }
+}
+
+#[test]
+fn fresh_advance_preserves_quota_refusal_and_uncertain_write_recovery() {
+    let f = multi_fixture();
+    let files = OwnedFiles::new();
+    let budget = ByteBudget::new(MAX_SHARED_BYTES).unwrap();
+    let (application, calls) = counted_ticket_application(&f);
+    let path = files.path("fresh-quota");
+    let mut voter = DurableVoter::create_new(
+        &path,
+        f.context.clone(),
+        application.clone(),
+        f.key(0),
+        &budget,
+    )
+    .unwrap();
+    let input = Input::Certificate {
+        value: f.a.clone(),
+        certificate: f.qc(0, Step::Precommit, &f.a),
+    };
+    let (_, fresh) = voter.handle_for_finalization(input.clone()).unwrap();
+    let pressure = budget
+        .reserve(MAX_SHARED_BYTES - budget.used().unwrap())
+        .unwrap();
+    let used = budget.used().unwrap();
+    assert!(matches!(
+        fresh.unwrap().advance(),
+        Err(Error::ResourceLimit)
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(voter.context(), &f.context);
+    assert!(voter.decision().is_some());
+    assert_eq!(budget.used().unwrap(), used);
+    drop(pressure);
+    voter.advance().unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    drop(voter);
+
+    for (name, fault) in [
+        ("advance-lost", Fault::AfterSync),
+        ("advance-torn", Fault::Partial(7)),
+    ] {
+        let budget = ByteBudget::new(MAX_SHARED_BYTES).unwrap();
+        let (application, calls) = counted_ticket_application(&f);
+        let path = files.path(name);
+        let mut voter = DurableVoter::create_new(
+            &path,
+            f.context.clone(),
+            application.clone(),
+            f.key(0),
+            &budget,
+        )
+        .unwrap();
+        let (_, fresh) = voter.handle_for_finalization(input.clone()).unwrap();
+        let mut fresh = fresh.unwrap();
+        let next = fresh.context().after_decision(fresh.decision()).unwrap();
+        fresh.inject(fault); // Existing real owned-file fault, only a cfg(test) seam.
+        assert!(matches!(fresh.advance(), Err(Error::Io(_))));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(voter.is_poisoned());
+        assert!(voter.outbound().is_err());
+        drop(voter);
+        let exact = fs::read(&path).unwrap();
+        let result = DurableVoter::open_existing(
+            &path,
+            f.context.clone(),
+            application,
+            f.key(0),
+            &ByteBudget::new(MAX_SHARED_BYTES).unwrap(),
+        );
+        if name == "advance-lost" {
+            let reopened = result.unwrap();
+            assert_eq!(calls.load(Ordering::SeqCst), 3);
+            assert_eq!(reopened.context(), &next);
+            assert!(reopened.decision().is_none());
+            drop(reopened);
+        } else {
+            assert!(matches!(result, Err(Error::CorruptWal)));
+        }
+        assert_eq!(fs::read(&path).unwrap(), exact);
+    }
+}
