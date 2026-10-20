@@ -170,13 +170,13 @@ impl JointBinding {
     pub fn initial_context(&self) -> &Context {
         &self.initial
     }
-    pub(super) fn require_durable(&self) -> Result<()> {
+    pub(crate) fn require_durable(&self) -> Result<()> {
         if self.rules.application_id() != durable_profile_digest() {
             return Err(Error::Binding);
         }
         Ok(())
     }
-    pub(super) fn namespace(&self) -> Hash {
+    pub(crate) fn namespace(&self) -> Hash {
         digest(
             b"dcs/registry200-finality/joint-journal-namespace/v1",
             &[&durable_profile_digest(), &self.id],

@@ -136,13 +136,21 @@ pub(super) fn spawn(
     owned: RegistryFinality,
     gate: crate::ProofGate,
 ) -> io::Result<(Handle, JoinHandle<io::Result<()>>)> {
-    spawn_owned(Owner::Original(owned), gate, "dcs-registry-finality-owner")
+    spawn_owned(
+        Owner::Original(Box::new(owned)),
+        gate,
+        "dcs-registry-finality-owner",
+    )
 }
 pub(super) fn spawn_joint(
     owned: DurableJointFinality,
     gate: crate::ProofGate,
 ) -> io::Result<(Handle, JoinHandle<io::Result<()>>)> {
-    spawn_owned(Owner::Joint(owned), gate, "dcs-joint-finality-owner")
+    spawn_owned(
+        Owner::Joint(Box::new(owned)),
+        gate,
+        "dcs-joint-finality-owner",
+    )
 }
 fn spawn_owned(
     mut owned: Owner,

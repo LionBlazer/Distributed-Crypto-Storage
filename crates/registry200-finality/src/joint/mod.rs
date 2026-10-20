@@ -6,7 +6,7 @@ mod adapter;
 mod binding;
 mod bootstrap;
 mod control;
-mod history;
+pub(crate) mod history;
 mod wire;
 
 pub use crate::CandidateBlock;
@@ -36,6 +36,21 @@ pub enum Error {
 impl From<registry200_joint::Error> for Error {
     fn from(e: registry200_joint::Error) -> Self {
         Self::Joint(e)
+    }
+}
+impl From<registry200_joint::progress::Error> for Error {
+    fn from(e: registry200_joint::progress::Error) -> Self {
+        use registry200_joint::progress::Error as Progress;
+        match e {
+            Progress::Encoding => Self::Encoding,
+            Progress::Domain => Self::Binding,
+            Progress::ResourceLimit => Self::ResourceLimit,
+            Progress::Transition | Progress::Verification => {
+                Self::Journal(version_journal::Error::RejectedComputationProof)
+            }
+            Progress::Journal(error) => Self::Journal(error),
+            Progress::Storage(error) => Self::Joint(registry200_joint::Error::Storage(error)),
+        }
     }
 }
 impl From<version_journal::Error> for Error {

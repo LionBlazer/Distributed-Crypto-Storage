@@ -17,7 +17,7 @@ const CAPACITY: u64 = 10_000_000_000;
 fn rules() -> Rules {
     Rules::multi_slot(
         durable_profile_digest(),
-        super::super::CANDIDATE_BYTES as u32,
+        crate::joint::CANDIDATE_BYTES as u32,
         32,
         [100, 200, 300],
         10,
@@ -67,7 +67,7 @@ fn install_with_signer(
     (directory, quota, binding, owner)
 }
 fn empty(owner: &DurableJointFinality) -> CandidateBlock {
-    let state = owner.state.lock().unwrap();
+    let state = owner.engine.state.lock().unwrap();
     proposed(state.journal.journal(), &Body::Empty)
 }
 fn import(owner: &mut DurableJointFinality, block: &CandidateBlock) -> JointCandidate {
@@ -96,7 +96,7 @@ fn blob_path(directory: &Path, id: protocol_storage::BlobId) -> PathBuf {
 #[test]
 fn fixed_durable_rules_and_metadata_last_refuse_foreign_or_missing_signer_installations() {
     let (directory, quota, binding, owner) = install(2);
-    assert_ne!(durable_profile_digest(), super::super::profile_digest());
+    assert_ne!(durable_profile_digest(), crate::joint::profile_digest());
     assert!(
         JointBinding::new(
             [0x19; 32],
@@ -109,8 +109,8 @@ fn fixed_durable_rules_and_metadata_last_refuse_foreign_or_missing_signer_instal
         .is_err()
     );
     let old_rules = Rules::multi_slot(
-        super::super::profile_digest(),
-        super::super::CANDIDATE_BYTES as u32,
+        crate::joint::profile_digest(),
+        crate::joint::CANDIDATE_BYTES as u32,
         32,
         [100, 200, 300],
         10,
@@ -170,7 +170,7 @@ fn real_signed_bootstrap_begin_kind_and_alternate_qc_reopen_then_missing_or_corr
     let app = Application::new(f.descriptor.clone(), binding.journal_genesis()).unwrap();
     let ingress = owner.evidence_ingress().unwrap();
     let (boot, enrollment) = {
-        let state = owner.state.lock().unwrap();
+        let state = owner.engine.state.lock().unwrap();
         let journal = state.journal.journal();
         let e = lifecycle::statement::Expected::bootstrap(
             &f.source,
@@ -186,7 +186,7 @@ fn real_signed_bootstrap_begin_kind_and_alternate_qc_reopen_then_missing_or_corr
         (body, enrollment)
     };
     let block = {
-        let state = owner.state.lock().unwrap();
+        let state = owner.engine.state.lock().unwrap();
         proposed(state.journal.journal(), &boot)
     };
     let boot_d = import(&mut owner, &block);
@@ -201,7 +201,7 @@ fn real_signed_bootstrap_begin_kind_and_alternate_qc_reopen_then_missing_or_corr
         panic!("genuine bootstrap must activate")
     };
     let begin = {
-        let state = owner.state.lock().unwrap();
+        let state = owner.engine.state.lock().unwrap();
         let (body, _) = proof_body(
             f,
             &app,
@@ -214,7 +214,7 @@ fn real_signed_bootstrap_begin_kind_and_alternate_qc_reopen_then_missing_or_corr
         body
     };
     let begin_block = {
-        let state = owner.state.lock().unwrap();
+        let state = owner.engine.state.lock().unwrap();
         proposed(state.journal.journal(), &begin)
     };
     let d = import(&mut owner, &begin_block);
@@ -256,7 +256,7 @@ fn real_signed_bootstrap_begin_kind_and_alternate_qc_reopen_then_missing_or_corr
             .unwrap();
     changed.sign(app.genesis(), &SigningKey::from_bytes(&[0x64; 32]));
     let changed = {
-        let state = owner.state.lock().unwrap();
+        let state = owner.engine.state.lock().unwrap();
         let journal = state.journal.journal();
         let body = Body::Transition(changed);
         // The honest Begin is already retained but not finalized. This is a
@@ -294,10 +294,10 @@ fn real_signed_bootstrap_begin_kind_and_alternate_qc_reopen_then_missing_or_corr
         .map(|path| fs::metadata(path).unwrap().len())
     };
     let files_before_handoff = file_bytes();
-    let wal_bytes = owner.voter.file_bytes();
+    let wal_bytes = owner.engine.voter.file_bytes();
     let outbound = owner.outbound().unwrap();
     {
-        let mut state = owner.state.lock().unwrap();
+        let mut state = owner.engine.state.lock().unwrap();
         let history_len = state.history.len();
         let journal_bytes = state.journal.disk_bytes();
         {
@@ -311,7 +311,7 @@ fn real_signed_bootstrap_begin_kind_and_alternate_qc_reopen_then_missing_or_corr
         assert_eq!(state.journal.disk_bytes(), journal_bytes);
     }
     assert_eq!(file_bytes(), files_before_handoff);
-    assert_eq!(owner.voter.file_bytes(), wal_bytes);
+    assert_eq!(owner.engine.voter.file_bytes(), wal_bytes);
     assert_eq!(owner.outbound().unwrap(), outbound);
     assert_eq!(quota.usage().unwrap().total_bytes(), used_before_handoff);
     assert_eq!(
@@ -323,14 +323,14 @@ fn real_signed_bootstrap_begin_kind_and_alternate_qc_reopen_then_missing_or_corr
     // An actual Source/Life/Kind result cannot finalize a mismatching context.
     // The frame is local; no voter/floor mutation occurs on this rejected take.
     {
-        let handoff = owner.state.lock().unwrap().handoff.clone();
+        let handoff = owner.engine.state.lock().unwrap().handoff.clone();
         let capture = handoff.begin(previous.id()).unwrap();
-        ClosedJointApplication(owner.state.clone())
+        ClosedApplication(owner.engine.state.clone())
             .check(&previous, &d.encode())
             .unwrap();
         let mut checked = capture.take().unwrap();
         checked.application.context[0] ^= 1;
-        let mut state = owner.state.lock().unwrap();
+        let mut state = owner.engine.state.lock().unwrap();
         assert!(matches!(
             state.preflight_checked(&decision, checked),
             Err(Error::Context)
@@ -344,11 +344,12 @@ fn real_signed_bootstrap_begin_kind_and_alternate_qc_reopen_then_missing_or_corr
         );
     }
     assert_eq!(file_bytes(), files_before_handoff);
-    assert_eq!(owner.voter.file_bytes(), wal_bytes);
+    assert_eq!(owner.engine.voter.file_bytes(), wal_bytes);
     assert_eq!(owner.outbound().unwrap(), outbound);
     assert_eq!(quota.usage().unwrap().total_bytes(), used_before_handoff);
 
     let before_decision_checks = owner
+        .engine
         .state
         .lock()
         .unwrap()
@@ -357,6 +358,7 @@ fn real_signed_bootstrap_begin_kind_and_alternate_qc_reopen_then_missing_or_corr
     owner.receive_checkpoint(&qc).unwrap();
     assert_eq!(
         owner
+            .engine
             .state
             .lock()
             .unwrap()
@@ -371,6 +373,7 @@ fn real_signed_bootstrap_begin_kind_and_alternate_qc_reopen_then_missing_or_corr
     let before = quota.usage().unwrap().total_bytes();
     let alternate = JointCheckpoint::new(d.clone(), 7, certificate(&previous, &d, 7, 1)).unwrap();
     let before_retry_checks = owner
+        .engine
         .state
         .lock()
         .unwrap()
@@ -379,6 +382,7 @@ fn real_signed_bootstrap_begin_kind_and_alternate_qc_reopen_then_missing_or_corr
     assert!(owner.receive_checkpoint(&alternate).unwrap().is_empty());
     assert_eq!(
         owner
+            .engine
             .state
             .lock()
             .unwrap()
@@ -484,7 +488,7 @@ fn floor_ack_loss_and_post_floor_advance_refusal_recover_but_torn_floor_never_re
             Pins::Joint(&binding),
             keys().remove(0).verifying_key().to_bytes(),
         );
-        owner.floor.inject(fault);
+        owner.engine.floor.inject(fault);
         assert!(matches!(
             owner.receive_checkpoint(&qc),
             Err(Error::Durable(crate::Error::Io(_)))
@@ -527,7 +531,7 @@ fn floor_ack_loss_and_post_floor_advance_refusal_recover_but_torn_floor_never_re
         Pins::Joint(&binding),
         keys().remove(0).verifying_key().to_bytes(),
     );
-    owner.poison_before_advance = true;
+    owner.engine.poison_before_advance = true;
     assert!(matches!(
         owner.receive_checkpoint(&qc),
         Err(Error::Consensus(work_finality::consensus::Error::Poisoned))
@@ -571,7 +575,7 @@ fn terminal_two_headers_are_both_admissible_and_reopen_retains_last_floor_withou
     let current = owner.context().unwrap().clone();
     assert_eq!(final_parent.slot(), 2);
     assert_eq!(current.slot(), 3);
-    assert_eq!(owner.state.lock().unwrap().history.len(), 3);
+    assert_eq!(owner.engine.state.lock().unwrap().history.len(), 3);
     let used = quota.usage().unwrap().total_bytes();
     let block = empty(&owner);
     assert!(matches!(
@@ -594,6 +598,7 @@ fn terminal_two_headers_are_both_admissible_and_reopen_retains_last_floor_withou
     );
     assert_eq!(
         reopened
+            .engine
             .state
             .lock()
             .unwrap()
@@ -640,7 +645,7 @@ fn fresh_append_quota_refusal_publishes_nothing_and_retry_commits_exact_record()
     let (directory, quota, binding, mut owner) = install(2);
     let block = empty(&owner);
     let before = {
-        let state = owner.state.lock().unwrap();
+        let state = owner.engine.state.lock().unwrap();
         (
             state.journal.disk_bytes(),
             state.charge.bytes().unwrap(),
@@ -659,10 +664,13 @@ fn fresh_append_quota_refusal_publishes_nothing_and_retry_commits_exact_record()
             protocol_storage::Error::ResourceLimit
         )))
     ));
-    assert!(!owner.poisoned, "a refused precharge is not uncertain I/O");
+    assert!(
+        !owner.engine.poisoned,
+        "a refused precharge is not uncertain I/O"
+    );
     assert_eq!(owner.context().unwrap(), &context);
     {
-        let state = owner.state.lock().unwrap();
+        let state = owner.engine.state.lock().unwrap();
         assert_eq!(
             (
                 state.journal.disk_bytes(),
@@ -680,7 +688,7 @@ fn fresh_append_quota_refusal_publishes_nothing_and_retry_commits_exact_record()
     let expected_disk =
         before.0 + (4 + version_journal::HEADER_BYTES + 32 + block.body().len()) as u64;
     {
-        let state = owner.state.lock().unwrap();
+        let state = owner.engine.state.lock().unwrap();
         assert_eq!(state.journal.disk_bytes(), expected_disk);
         assert_eq!(state.charge.bytes().unwrap(), expected_disk);
     }
@@ -703,7 +711,7 @@ fn fresh_append_quota_refusal_publishes_nothing_and_retry_commits_exact_record()
     );
     assert_eq!(reopened.context().unwrap().slot(), 2);
     assert_eq!(
-        reopened.state.lock().unwrap().journal.disk_bytes(),
+        reopened.engine.state.lock().unwrap().journal.disk_bytes(),
         expected_disk
     );
 }
@@ -717,7 +725,7 @@ fn known_candidate_import_rechecks_genuine_kind_before_any_charge_or_publication
     let app = Application::new(f.descriptor.clone(), binding.journal_genesis()).unwrap();
     let ingress = owner.evidence_ingress().unwrap();
     let (boot, enrollment) = {
-        let state = owner.state.lock().unwrap();
+        let state = owner.engine.state.lock().unwrap();
         let journal = state.journal.journal();
         let e = lifecycle::statement::Expected::bootstrap(
             &f.source,
@@ -740,7 +748,7 @@ fn known_candidate_import_rechecks_genuine_kind_before_any_charge_or_publication
         panic!("real bootstrap must activate")
     };
     let (block, kind) = {
-        let state = owner.state.lock().unwrap();
+        let state = owner.engine.state.lock().unwrap();
         let journal = state.journal.journal();
         let (body, kind) = proof_body(f, &app, journal, &ingress, false, enrollment, registry);
         (proposed(journal, &body), kind.unwrap())
@@ -766,6 +774,7 @@ fn known_candidate_import_rechecks_genuine_kind_before_any_charge_or_publication
     );
     assert!(
         owner
+            .engine
             .state
             .lock()
             .unwrap()
@@ -777,7 +786,7 @@ fn known_candidate_import_rechecks_genuine_kind_before_any_charge_or_publication
     );
     let genuine_qc = checkpoint(&owner, &candidate, 0, 0);
     let snapshot = |owner: &DurableJointFinality| {
-        let state = owner.state.lock().unwrap();
+        let state = owner.engine.state.lock().unwrap();
         (
             state.journal.disk_bytes(),
             state.charge.bytes().unwrap(),
@@ -797,7 +806,7 @@ fn known_candidate_import_rechecks_genuine_kind_before_any_charge_or_publication
     let at = corrupt.len() - 1;
     corrupt[at] ^= 1;
     fs::write(&path, corrupt).unwrap();
-    let voter_bytes = owner.voter.file_bytes();
+    let voter_bytes = owner.engine.voter.file_bytes();
     let outbound = owner.outbound().unwrap();
     assert!(matches!(
         owner.receive_checkpoint(&genuine_qc),
@@ -805,10 +814,11 @@ fn known_candidate_import_rechecks_genuine_kind_before_any_charge_or_publication
             work_finality::consensus::Error::ApplicationRejected
         ))
     ));
-    assert_eq!(owner.voter.file_bytes(), voter_bytes);
+    assert_eq!(owner.engine.voter.file_bytes(), voter_bytes);
     assert_eq!(owner.outbound().unwrap(), outbound);
     assert!(
         owner
+            .engine
             .state
             .lock()
             .unwrap()

@@ -7,8 +7,8 @@ use registry200_finality::{
 use work_finality::consensus::{Action, Context, Timeout};
 
 pub(super) enum Owner {
-    Original(RegistryFinality),
-    Joint(DurableJointFinality),
+    Original(Box<RegistryFinality>),
+    Joint(Box<DurableJointFinality>),
 }
 #[derive(Clone)]
 pub(super) enum Pins {

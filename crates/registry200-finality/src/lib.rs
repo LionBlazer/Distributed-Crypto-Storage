@@ -14,7 +14,9 @@ mod pins;
 mod store;
 mod wire;
 
+mod closed;
 pub mod joint;
+pub mod progress;
 
 pub use adapter::{FinalizedHead, RegistryFinality};
 pub use binding::{Binding, DESCRIPTOR_BYTES, Descriptor, profile_digest};

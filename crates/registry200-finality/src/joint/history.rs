@@ -451,7 +451,7 @@ impl JointHistory {
     }
 }
 
-pub(super) fn verify_candidate(
+pub(crate) fn verify_candidate(
     binding: &JointBinding,
     journal: &Journal,
     verifier: &JointVerifier,
@@ -498,7 +498,7 @@ fn verify_candidate_owned(
     let old = parent_heads(binding, journal, parent)?;
     Ok((candidate_control(binding, old, body.wire)?, acquired))
 }
-pub(super) fn require_candidate_context(
+pub(crate) fn require_candidate_context(
     binding: &JointBinding,
     context: &Context,
     parent: HeadRef,
@@ -515,7 +515,7 @@ pub(super) fn require_candidate_context(
     }
     Ok(())
 }
-pub(super) fn parent_heads(
+pub(crate) fn parent_heads(
     binding: &JointBinding,
     journal: &Journal,
     parent: HeadRef,
@@ -526,7 +526,7 @@ pub(super) fn parent_heads(
     let spec = application.source_spec();
     Ok(spec.control(journal.validated_shards(parent)?)?)
 }
-pub(super) fn candidate_control(
+pub(crate) fn candidate_control(
     binding: &JointBinding,
     old: HeadPair,
     body: &[u8],
@@ -547,4 +547,4 @@ pub(super) fn candidate_control(
 
 #[cfg(test)]
 #[path = "tests.rs"]
-pub(super) mod tests;
+pub(crate) mod tests;

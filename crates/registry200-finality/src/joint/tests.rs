@@ -34,9 +34,9 @@ use work_finality::{
 };
 use zeroize::Zeroizing;
 
-pub(in crate::joint) struct Directory(PathBuf);
+pub(crate) struct Directory(PathBuf);
 impl Directory {
-    pub(in crate::joint) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let parent = std::env::temp_dir().canonicalize().unwrap();
         for _ in 0..128 {
@@ -53,7 +53,7 @@ impl Directory {
         }
         panic!("bounded directory allocation exhausted")
     }
-    pub(in crate::joint) fn root(&self) -> PathBuf {
+    pub(crate) fn root(&self) -> PathBuf {
         self.0.join("participant")
     }
 }
@@ -82,13 +82,14 @@ impl Drop for Directory {
         }
     }
 }
-pub(in crate::joint) struct Fixture {
-    pub(in crate::joint) descriptor: Descriptor,
-    pub(in crate::joint) setup: bfv_query_core::PublicSetup,
-    pub(in crate::joint) source: source::Statement,
-    pub(in crate::joint) witness: lifecycle::circuit::Witness,
+pub(crate) struct Fixture {
+    pub(crate) descriptor: Descriptor,
+    pub(crate) progress_descriptor: registry200_joint::progress::Descriptor,
+    pub(crate) setup: bfv_query_core::PublicSetup,
+    pub(crate) source: source::Statement,
+    pub(crate) witness: lifecycle::circuit::Witness,
 }
-pub(in crate::joint) fn fixture() -> &'static Fixture {
+pub(crate) fn fixture() -> &'static Fixture {
     static PUBLIC: OnceLock<Fixture> = OnceLock::new();
     PUBLIC.get_or_init(|| {
         let key = [0x71; 32];
@@ -167,11 +168,22 @@ pub(in crate::joint) fn fixture() -> &'static Fixture {
             key_claim.statement(),
         )
         .unwrap();
+        // Same genuinely generated/verified public setup+Key33 prerequisite.
+        // No private SDK owner is retained by the process-wide fixture.
+        let progress_descriptor = registry200_joint::progress::Descriptor::checked(
+            ApplicationDescriptor::from_application(&app).unwrap(),
+            [0x51; 32],
+            &setup,
+            anchor.public_anchor(),
+            key_claim.statement(),
+        )
+        .unwrap();
         let mut plain = [0; 2348];
         plain[..12].copy_from_slice(&data);
         plain[12..].copy_from_slice(&index);
         Fixture {
             descriptor,
+            progress_descriptor,
             setup,
             source,
             witness: lifecycle::circuit::Witness {
@@ -191,7 +203,7 @@ pub(in crate::joint) fn fixture() -> &'static Fixture {
         }
     })
 }
-pub(in crate::joint) fn genesis(d: &Descriptor) -> Genesis {
+pub(crate) fn genesis(d: &Descriptor) -> Genesis {
     let app = d.source_spec().unwrap();
     Genesis {
         network_id: app.network,
@@ -219,7 +231,7 @@ pub(in crate::joint) fn genesis(d: &Descriptor) -> Genesis {
         initial_shards: app.initial_shards(),
     }
 }
-pub(in crate::joint) fn keys() -> Vec<SigningKey> {
+pub(crate) fn keys() -> Vec<SigningKey> {
     let mut keys: Vec<_> = (1..=4).map(|n| SigningKey::from_bytes(&[n; 32])).collect();
     keys.sort_by_key(|k| k.verifying_key().to_bytes());
     keys
@@ -235,7 +247,7 @@ fn rules() -> Rules {
     )
     .unwrap()
 }
-pub(in crate::joint) fn work(rules: &Rules) -> WorkGenesis {
+pub(crate) fn work(rules: &Rules) -> WorkGenesis {
     let seed = NetworkSeed::new(
         rules.seed_domain([0x19; 32]),
         [10; 32],
@@ -261,7 +273,7 @@ fn binding(g: Genesis, claim: SetupClaim) -> JointBinding {
     )
     .unwrap()
 }
-pub(in crate::joint) fn certificate(
+pub(crate) fn certificate(
     context: &Context,
     d: &JointCandidate,
     round: u64,
@@ -476,7 +488,7 @@ fn actual_empty_quorum_duplicate_rounds_share_successor_and_invalid_inputs_do_no
     );
 }
 
-pub(in crate::joint) fn proof_body(
+pub(crate) fn proof_body(
     f: &Fixture,
     app: &Application,
     journal: &Journal,
@@ -640,7 +652,7 @@ pub(in crate::joint) fn proof_body(
     body.sign(app.genesis(), &SigningKey::from_bytes(&[0x64; 32]));
     (Body::Transition(body), kind)
 }
-pub(in crate::joint) fn proposed(journal: &Journal, body: &Body) -> CandidateBlock {
+pub(crate) fn proposed(journal: &Journal, body: &Body) -> CandidateBlock {
     let head = journal.best_validated();
     let mut header = journal
         .candidate(head.block, body, 1001 + head.height)

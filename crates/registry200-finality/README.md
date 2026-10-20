@@ -33,7 +33,7 @@ proof profiles and byte formats.
 | `propose`, `receive`, `on_timeout` | Actual local proposal, bounded signed remote input, or local clock control; no generic verifier callback |
 | `finalized_head` | Metadata available only after durable decision, floor installation and next-slot signer synchronization |
 
-Private `pins.rs` selects only Original or Joint installation domains for the
+Private `pins.rs` selects Original, Joint or Progress installation domains for the
 SAME actual FloorLog and participant files. Original choices preserve every
 existing magic/hash/profile byte. Joint uses its own fixed Rules/storage profile
 and accepts no old-application fallback; see its module README for the executed
@@ -181,3 +181,16 @@ entry power-loss durability remains a host-filesystem assumption; this is not a
 claim that file sync protects against malicious disk rollback. The separate
 [participant daemon source](../peer-runtime/PARTICIPANT-FINALITY.md) keeps the
 original Registry application, fixed bootstrap roster and no-SQL boundary.
+
+## Registry208 progress finality
+
+The [Progress finality module](src/progress/README.md) adds distinct typed
+binding/value/checkpoint/history/durable ownership for the new closed
+Registry208 application. It shares the private durable mechanics with the
+legacy Joint owner; old public APIs and protocol domains remain separate.
+The owning native gate passed all 26 library cases and 21 compile-fail examples,
+including existing durability regressions. Strict consumer Clippy and six
+existing TLS actor tests passed too; see the
+[Progress validation record](../../docs/progress-finality-validation.md).
+New Result160 owner completion, actual Progress runtime/OS consensus and SQL
+execution remain separate gates.
