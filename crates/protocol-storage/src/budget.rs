@@ -30,6 +30,7 @@ struct Record {
     bytes: u64,
     class: Class,
     status: Status,
+    identity: Arc<()>,
 }
 pub(crate) struct State {
     used: u64,
@@ -105,6 +106,7 @@ impl State {
                 bytes,
                 class,
                 status: Status::Retained,
+                identity: Arc::new(()),
             },
         );
         Ok(())
@@ -200,6 +202,7 @@ impl Budget {
         }
         Ok(FileCharge {
             budget: self.clone(),
+            identity: Arc::clone(&state.files.get(&path).ok_or(Error::Poisoned)?.identity),
             path,
         })
     }
@@ -244,6 +247,7 @@ impl Budget {
                 bytes: initial,
                 class: self.class,
                 status: Status::Pending(token),
+                identity: Arc::new(()),
             },
         );
         Ok(FilePermit {
@@ -330,6 +334,11 @@ macro_rules! quota_methods {
     };
 }
 impl ByteBudget {
+    /// Observe only the shared ledger's live/poisoned state, without reserving
+    /// bytes or a reservation slot. This supplies no file or proof authority.
+    pub fn require_live(&self) -> Result<()> {
+        self.inner.check_live()
+    }
     pub fn new(limit: u64) -> Result<Self> {
         if limit == 0 || limit > MAX_SHARED_BYTES {
             return Err(Error::InvalidConfig);
@@ -387,6 +396,7 @@ impl FilePermit {
             self.promoted = true;
             Ok(FileCharge {
                 budget: self.budget.clone(),
+                identity: Arc::clone(&record.identity),
                 path,
             })
         } else {
@@ -442,6 +452,7 @@ pub struct Reservation {
 pub struct FileCharge {
     budget: Budget,
     path: PathBuf,
+    identity: Arc<()>,
 }
 impl FileCharge {
     pub fn bytes(&self) -> Result<u64> {
@@ -473,6 +484,83 @@ impl FileCharge {
             .bytes = bytes;
         Ok(())
     }
+    /// Move only the required bytes of a live, nonempty reservation into this
+    /// existing file's absolute extent, under one ledger lock. Total/class usage
+    /// stays unchanged. The reservation must belong to the same ledger, owner
+    /// and class; this handle must still name the same retained record generation.
+    ///
+    /// The actual canonical regular-file extent must equal its current charge.
+    /// After success, append the exact growth before another transfer/register
+    /// call; uncertain writes must retain the charge and call `mark_io_failed`.
+    /// This performs no write, sync, content check, durable CAS or proof check.
+    /// Existing `grow`/`retain_file` contracts are unchanged.
+    pub fn grow_reserved(&mut self, next_extent: u64, reservation: &mut Reservation) -> Result<()> {
+        let same_owner = match (&self.budget.owner, &reservation.budget.owner) {
+            (None, None) => true,
+            (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+            _ => false,
+        };
+        if !Arc::ptr_eq(&self.budget.state, &reservation.budget.state)
+            || self.budget.class != reservation.budget.class
+            || !same_owner
+        {
+            return Err(Error::InvalidConfig);
+        }
+        let mut state = self.budget.state.lock().map_err(|_| Error::Poisoned)?;
+        state.live()?;
+        if !reservation.active || reservation.bytes == 0 {
+            return Err(Error::ResourceLimit);
+        }
+        let record = state.files.get(&self.path).ok_or(Error::CorruptFile)?;
+        if record.class != self.budget.class
+            || record.status != Status::Retained
+            || !Arc::ptr_eq(&record.identity, &self.identity)
+        {
+            return Err(Error::CorruptFile);
+        }
+        let current = record.bytes;
+        let delta = next_extent.checked_sub(current).ok_or(Error::CorruptFile)?;
+        let remaining = reservation
+            .bytes
+            .checked_sub(delta)
+            .ok_or(Error::ResourceLimit)?;
+        let reservations = if self.budget.owner.is_some() && remaining == 0 {
+            state.reservations.checked_sub(1).ok_or(Error::Poisoned)?
+        } else {
+            state.reservations
+        };
+        // Do not call Budget::existing here: its error path takes this same
+        // ledger lock. Inspect the owned path directly and poison only the NEW
+        // scoped namespace when its actual retained file has changed/disappeared.
+        let (path, actual) = match regular_file(&self.path) {
+            Ok(value) => value,
+            Err(error) => {
+                if self.budget.owner.is_some() {
+                    state.poisoned = true;
+                }
+                return Err(error);
+            }
+        };
+        if path != self.path || actual != current {
+            if self.budget.owner.is_some() {
+                state.poisoned = true;
+            }
+            return Err(Error::CorruptFile);
+        }
+        // All fallible checks precede accounting mutation. No charge/release
+        // window exists: the same already-charged bytes change owners atomically.
+        state
+            .files
+            .get_mut(&self.path)
+            .ok_or(Error::CorruptFile)?
+            .bytes = next_extent;
+        reservation.bytes = remaining;
+        state.reservations = reservations;
+        if remaining == 0 {
+            reservation.active = false;
+        }
+        Ok(())
+    }
     /// Error-only ownership after a precharged file write or sync becomes
     /// uncertain. Persistent bytes stay charged; a NEW namespace is poisoned.
     /// Legacy budgets retain their previous conservative accounting behavior.
@@ -491,6 +579,7 @@ impl FileCharge {
         {
             return Err(Error::CorruptFile);
         }
+        let identity = Arc::clone(&old.identity);
         state.files.remove(&self.path);
         state.files.insert(
             path.clone(),
@@ -498,6 +587,7 @@ impl FileCharge {
                 bytes,
                 class: self.budget.class,
                 status: Status::Retained,
+                identity,
             },
         );
         self.path = path;
@@ -571,6 +661,7 @@ impl Reservation {
                     bytes,
                     class: self.budget.class,
                     status: Status::Retained,
+                    identity: Arc::new(()),
                 },
             );
         }
@@ -578,6 +669,7 @@ impl Reservation {
         self.active = false;
         Ok(FileCharge {
             budget: self.budget.clone(),
+            identity: Arc::clone(&state.files.get(&path).ok_or(Error::Poisoned)?.identity),
             path,
         })
     }

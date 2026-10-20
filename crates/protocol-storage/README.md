@@ -228,3 +228,74 @@ Strict Clippy for storage, work-finality and registry200-finality, Core default
 member compilation, workspace format and requirements mirror checks passed.
 [Participant quota validation](../../docs/participant-quota.md) records commands,
 source pins, the Windows lock-test correction and resource-observation limits.
+
+### Transfer a reservation into existing file growth
+
+`FileCharge::grow_reserved(next_extent, &mut reservation)` atomically transfers
+only the required growth from an active, nonempty lease into the existing file
+charge. The exact ledger, ownership scope, class and retained record generation
+must match. It takes one ledger lock; total and per-class usage do not change.
+Only the growth delta is consumed, and a partial remainder remains reserved.
+Complete consumption ends the reservation slot exactly once. An exhausted lease
+rejects until explicitly resized; an active nonempty lease permits checked
+zero-growth without spending bytes. Shrinking, insufficient leases, foreign
+ledgers/classes, stale handles and poisoned state reject before accounting changes.
+
+Before transfer, the actual canonical regular file must have exactly its current
+charged extent. A missing, nonregular or changed retained file poisons a scoped
+participant namespace while preserving both file and lease charges. Legacy
+unscoped accounting retains its previous error/poison contract. After success,
+the caller appends the exact precharged growth before another transfer or file
+registration; uncertain write/sync calls `mark_io_failed` and retains the charge.
+The caller continues to own its actual exclusive file/namespace lifecycle.
+
+Each new in-memory ledger record has a private identity shared by its valid
+`FileCharge` handles. Removing and recreating the same path and extent cannot
+reactivate an old handle for this method. Retargeting the same record preserves
+its identity. This is local bookkeeping: it authenticates neither file contents
+nor a durable generation, rollback protection, finality or proof. The older
+`grow` and `retain_file` behavior, all caps and participant profiles are unchanged.
+This method writes no bytes, performs no fsync and implements no OwnerVault CAS.
+
+The nine added transfer tests use actual public files and participant ledgers for full-quota
+transfer/reopen, partial-lease Drop, unchanged legacy APIs, cross-ledger/class
+rejection, arithmetic/exhaustion bounds, unlink/recreate stale handles and valid
+siblings, retarget identity, actual extent/type/missing-file faults and exact
+reservation-slot release. The earlier native counts above describe prior source.
+
+`ByteBudget::require_live()` is a separate allocation-free observation of the
+same ledger's live/poisoned state. Unlike `reserve(0)`, it consumes no reservation
+slot, so an owner with an already-reserved terminal append can check shared poison
+even when all 4096 slots are occupied. It grants no file, write, proof or phase
+authority and changes no accounting, caps, profiles or older methods. Its added
+full-slots/shared-poison test checks liveness while every slot remains occupied.
+The older reservation method still checks its slot ceiling before its poison
+check; the cross-class poison assertion releases those leases first.
+
+On 2026-10-20 Windows release validation passed all **37 storage tests** (the
+27 existing cases and ten additions), **46 work-finality tests**, and the five
+work-finality ownership compile-fail examples. The complete Cargo commands were:
+
+```sh
+cargo test --release --offline --locked -p protocol-storage --lib -- --nocapture --test-threads=1
+cargo test --release --offline --locked -p work-finality --lib -- --nocapture --test-threads=1
+cargo test --release --offline --locked -p protocol-storage -p work-finality --doc -- --test-threads=1
+cargo clippy --release --offline --locked -p protocol-storage -p work-finality -p registry200-finality -p storage-client -p peer-runtime -p dcs-peer --features private-input-proofs --all-targets -- -D warnings
+cargo fmt --all -- --check
+```
+
+The unchanged native runner recorded whole-command durations of 4.972 s, 5.378 s,
+1.914 s, 5.123 s and 1.649 s respectively. These are local storage/build checks,
+not SQL latency measurements. All 1561 source files and captured logs were checked
+unchanged after the batch. The local source receipt SHA-256 is
+`CE912FEE6ECAE78A771BF9A7AE7F344BCE90082FE4DB6BAEEA27A272A81DB813`;
+the after receipt is
+`A1A3E135EB2C5417A85E7FD2D1D298B28F0FB59E367FE015BB992829A559A898`.
+Only this documentation was then updated. An initial sandboxed format command
+failed with OS error 5 before writing; the same formatter succeeded with the
+permitted execution context. No native test failed in this batch.
+
+This validation establishes reservation accounting and the preserved consuming
+library contracts. Durable owner phase transitions, actual proof/QC recovery and
+OS owner restart require separate owning validation; this helper does not supply
+those guarantees.
