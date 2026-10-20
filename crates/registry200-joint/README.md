@@ -122,7 +122,35 @@ composition. `tests.rs` keeps explicitly non-secret fixtures at this boundary.
 Six passing owning tests cover canonical pins/caps, unchanged inner query binding,
 readonly role/cap enumeration, bounded setup/ingress reopen, rejection of
 hash-valid noncatalog bytes by the same parser, and genuine signed Source/Bootstrap/Begin+Kind
-admission with fresh replay. They do not replace the pending full retained
+admission with fresh replay. They do not substitute for the later full retained
 Acquire and independently running peer/finality integration gate. See the
 [native validation record](../../docs/joint-admission.md) for exact commands,
 the separate closed keyless history cases, negative challenges and measured scope.
+
+## Returning the same fresh Acquire result
+
+`AcquireExpected::new` captures independently selected own outer Request,
+Provenance, complete encrypted request and locally recorded CatalogId. It checks
+their full application/setup/Key33/Source/heads/query/CT association. This metadata
+constructor verifies no proof or quorum and cannot construct `CheckedAcquire`.
+
+`JointVerifier::check_acquire_block` takes the actual Journal/Header/Body and these
+pins. One fixed private per-call adapter executes the same complete `check` path
+during `Journal::reverify_block`; it captures only this call's actual replay result.
+The result is released after input16, all118 records, Source/Lifecycle and
+PredicateAcquire have succeeded. Owner signature, canonical Body/state/header
+checks are performed by the actual Journal. An Empty or foreign request cannot
+produce this result. There is no public verifier callback, acceptance flag,
+persisted verification bit or cached backend/result. Ordinary `check`/Journal
+consumers keep their previous full checks and discard the owned result.
+
+`CheckedAcquire` exposes the exact public association and actual checked response,
+not a lock or a current-head token. The [closed finality owner](../registry200-finality/src/joint/README.md)
+must still bind the exact QC, context/slot, semantic decision and original block.
+The new full four-validator/FHE owning source case is at the
+[client boundary](../storage-client/src/private_predicate/source/locking/joint/tests/full_acquire.rs);
+it passed with actual four-OS QCs, fresh keyless replay, one exact client completion
+and hostile-evidence checks, as recorded in the
+[native process record](../../docs/joint-participant-finality.md). Real prior-lock
+contention and general SQL admission remain separate. Individual
+input128/output-SDK policies and all existing wire/byte/element budgets are unchanged.

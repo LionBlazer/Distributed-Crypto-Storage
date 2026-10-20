@@ -1,6 +1,9 @@
 //! Closed keyless history. Only actual Joint mathematics plus weighted QC advance it.
-use super::{CandidateBlock, Error, Hash, JointBinding, JointCandidate, JointCheckpoint, Result};
-use registry200_joint::{Descriptor, JointDepot, JointVerifier};
+use super::{
+    AcquireExpectation, CandidateBlock, Error, Hash, JointBinding, JointCandidate, JointCheckpoint,
+    Result, VerifiedJointAcquire,
+};
+use registry200_joint::{AcquireExpected, CheckedAcquire, Descriptor, JointDepot, JointVerifier};
 use registry200_journal::Control;
 use version_journal::{Body, HeadRef, Journal};
 use work_finality::consensus::Context;
@@ -116,6 +119,27 @@ impl JointHistory {
         checkpoint: &JointCheckpoint,
         block: &CandidateBlock,
     ) -> Result<VerifiedJointParent> {
+        self.apply_owned(checkpoint, block, None)
+            .map(|(parent, _)| parent)
+    }
+    /// Apply the exact independently pinned own Acquire in the next slot, or
+    /// genuinely recheck the latest identical semantic decision. No signer is
+    /// needed and no generic historical Parent can construct the returned value.
+    pub fn apply_acquire(
+        &mut self,
+        checkpoint: &JointCheckpoint,
+        block: &CandidateBlock,
+        expected: &AcquireExpectation,
+    ) -> Result<VerifiedJointAcquire> {
+        let (_, acquired) = self.apply_owned(checkpoint, block, Some(expected))?;
+        acquired.ok_or(Error::Context)
+    }
+    fn apply_owned(
+        &mut self,
+        checkpoint: &JointCheckpoint,
+        block: &CandidateBlock,
+        own: Option<&AcquireExpectation>,
+    ) -> Result<(VerifiedJointParent, Option<VerifiedJointAcquire>)> {
         self.live()?;
         let candidate = checkpoint.candidate();
         if candidate.header() != block.header() {
@@ -131,6 +155,9 @@ impl JointHistory {
         } else {
             (&self.context, self.journal.ancestry_floor())
         };
+        if let Some(own) = own {
+            own.require_context(&self.binding, context, parent)?;
+        }
         let decision = context.verify_commit(
             &candidate.encode(),
             checkpoint.round(),
@@ -143,14 +170,17 @@ impl JointHistory {
                 return Err(Error::Context);
             }
         }
-        let control = verify_candidate(
+        let (control, acquired) = verify_candidate_owned(
             &self.binding,
             &self.journal,
             &self.verifier,
             context,
             parent,
             candidate,
-            block.body(),
+            CandidateBody {
+                wire: block.body(),
+                own: own.map(AcquireExpectation::inputs),
+            },
         )?;
         let head = HeadRef {
             genesis: candidate.header.genesis,
@@ -164,7 +194,19 @@ impl JointHistory {
             if head != last.checked.head || control != last.checked.control {
                 return Err(Error::Context);
             }
-            return Ok(last.checked.clone()); // full actual revalidation above, even for duplicate QC
+            let receipt = own.and_then(|own| {
+                acquired.map(|acquired| {
+                    VerifiedJointAcquire::checked(
+                        own,
+                        next.id(),
+                        last.checked.clone(),
+                        block,
+                        checkpoint,
+                        acquired,
+                    )
+                })
+            });
+            return Ok((last.checked.clone(), receipt)); // full actual revalidation above
         }
         let checked = VerifiedJointParent {
             binding: self.binding.id(),
@@ -175,6 +217,18 @@ impl JointHistory {
             control,
         };
         let old_context = self.context.clone();
+        let receipt = own.and_then(|own| {
+            acquired.map(|acquired| {
+                VerifiedJointAcquire::checked(
+                    own,
+                    next.id(),
+                    checked.clone(),
+                    block,
+                    checkpoint,
+                    acquired,
+                )
+            })
+        });
         // import_block is atomic on invalid data/resource errors. It uses only
         // this concrete JointVerifier, never a caller-selected generic verifier.
         self.journal.import_block(
@@ -195,7 +249,7 @@ impl JointHistory {
             checked: checked.clone(),
         });
         self.context = next;
-        Ok(checked)
+        Ok((checked, receipt))
     }
     fn live(&self) -> Result<()> {
         if self.poisoned {
@@ -215,6 +269,33 @@ pub(super) fn verify_candidate(
     d: &JointCandidate,
     body: &[u8],
 ) -> Result<Control> {
+    verify_candidate_owned(
+        binding,
+        journal,
+        verifier,
+        context,
+        parent,
+        d,
+        CandidateBody {
+            wire: body,
+            own: None,
+        },
+    )
+    .map(|(control, _)| control)
+}
+struct CandidateBody<'a> {
+    wire: &'a [u8],
+    own: Option<&'a AcquireExpected>,
+}
+fn verify_candidate_owned(
+    binding: &JointBinding,
+    journal: &Journal,
+    verifier: &JointVerifier,
+    context: &Context,
+    parent: HeadRef,
+    d: &JointCandidate,
+    body: CandidateBody<'_>,
+) -> Result<(Control, Option<CheckedAcquire>)> {
     if d.binding != binding.id()
         || d.slot != context.slot()
         || d.previous != context.previous_decision()
@@ -224,13 +305,19 @@ pub(super) fn verify_candidate(
     {
         return Err(Error::Context);
     }
-    journal.reverify_block(&d.header, body, crate::adapter::now()?, verifier)?;
+    let now = crate::adapter::now()?;
+    let acquired = if let Some(own) = body.own {
+        Some(verifier.check_acquire_block(journal, &d.header, body.wire, now, own)?)
+    } else {
+        journal.reverify_block(&d.header, body.wire, now, verifier)?;
+        None
+    };
     // Snapshot only after the actual owner/header/application proof checks.
     // SourceSpec derives from immutable independently pinned NEW application.
     let application = binding.application()?;
     let spec = application.source_spec();
     let old = spec.control(journal.validated_shards(parent)?)?;
-    let next = match Body::decode(body, journal.profile())? {
+    let next = match Body::decode(body.wire, journal.profile())? {
         Body::Empty => old,
         Body::Transition(body) => {
             if body.updates.len() != 1 || body.updates[0].id != spec.control_id {
@@ -239,7 +326,7 @@ pub(super) fn verify_candidate(
             body.updates[0].new
         }
     };
-    Ok(Control::decode(spec, next)?)
+    Ok((Control::decode(spec, next)?, acquired))
 }
 
 #[cfg(test)]

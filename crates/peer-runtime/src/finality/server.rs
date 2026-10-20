@@ -394,7 +394,9 @@ fn serve(
                 send(&mut stream, binding, BLOCK, &header)?;
                 write_frame(&mut stream, block.block.body(), MAX_BODY_BYTES)
             }
-            Reply::Outbound(_) => Err(invalid()),
+            Reply::Outbound(_) | Reply::JointSnapshot(_) | Reply::JointCheckpoint(_) => {
+                Err(invalid())
+            }
         },
         Err(e) => send(
             &mut stream,

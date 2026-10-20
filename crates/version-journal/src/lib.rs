@@ -270,7 +270,9 @@ impl AuthorizedTransition {
     pub fn sign(&mut self, genesis: Hash, owner: &SigningKey) {
         self.owner_signature = owner.sign(&self.signing_message(genesis)).to_bytes();
     }
-    pub(crate) fn check_authorization(&self, owner: &[u8; 32], genesis: Hash) -> Result<()> {
+    /// Owner permission for these exact canonical fields only; no computation,
+    /// completeness, agreement, current-head or SQL authority is established.
+    pub fn check_authorization(&self, owner: &[u8; 32], genesis: Hash) -> Result<()> {
         let key = VerifyingKey::from_bytes(owner).map_err(|_| Error::InvalidOwnerKey)?;
         key.verify_strict(
             &self.signing_message(genesis),

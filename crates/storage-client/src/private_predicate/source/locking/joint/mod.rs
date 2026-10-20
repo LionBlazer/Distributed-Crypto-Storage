@@ -1,7 +1,9 @@
 //! Owner-side preparation for the distinct Joint application. No SQL/lock grant.
+mod completion;
 use super::*;
 use crate::private_predicate::{BfvContext, FetchedSource};
 use bfv_query_core::{OwnerProofEpoch, ProofEpochStage};
+pub use completion::{CompletedJointAcquire, CompletedJointRow};
 use registry200_finality::joint::{JointBinding, VerifiedJointParent};
 use registry200_joint::{
     Application as JointApplication, Descriptor, Lane, Request as JointRequest,
@@ -144,7 +146,8 @@ impl JointLockingParent {
     }
 }
 
-/// Guarded candidates only; no completion, installation, serialization or import.
+/// Guarded candidates with one-shot verified completion; no installation,
+/// serialization or import.
 ///
 /// ```compile_fail
 /// use storage_client::private_predicate::JointLockingCandidates;
@@ -157,7 +160,9 @@ impl JointLockingParent {
 pub struct JointLockingCandidates {
     _completion: LockingCompletion,
     _staged: StagedLockingTransition,
-    _binding: [u8; 32],
+    _binding: JointBinding,
+    _parent: VerifiedJointParent,
+    _outer_request: Vec<u8>,
 }
 
 /// Actual mathematical products for one exact historical Joint parent. The
@@ -170,7 +175,9 @@ pub struct JointLockingCandidates {
 pub struct PreparedJointLockingInputs {
     prepared: PreparedLockingInputs,
     request: JointRequest,
-    binding: [u8; 32],
+    binding: JointBinding,
+    parent: VerifiedJointParent,
+    outer_request: Vec<u8>,
 }
 impl PreparedJointLockingInputs {
     pub fn inputs(&self) -> &ProducedInputs {
@@ -211,6 +218,8 @@ impl PreparedJointLockingInputs {
                 _completion: completion,
                 _staged: staged,
                 _binding: self.binding,
+                _parent: self.parent,
+                _outer_request: self.outer_request,
             },
         )
     }
@@ -263,10 +272,13 @@ impl crate::private_predicate::SourceOwner {
             LockingPreparation::Prepared(prepared) => {
                 let request = JointRequest::new(&app, Lane::Acquire, prepared.request.clone())
                     .map_err(cryptography)?;
+                let outer_request = request.encode().map_err(cryptography)?;
                 JointLockingPreparation::Prepared(Box::new(PreparedJointLockingInputs {
                     prepared: *prepared,
                     request,
-                    binding: parent.binding_id(),
+                    binding: parent.binding.clone(),
+                    parent: parent.verified.clone(),
+                    outer_request,
                 }))
             }
             LockingPreparation::NonAdmitted(nonadmitted) => {

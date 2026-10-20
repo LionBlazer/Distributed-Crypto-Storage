@@ -79,3 +79,65 @@ passed with four independent daemon processes, typed participant quota/bootstrap
 and genuine Source/Lifecycle Bodies. It also tests clean, trailing and truncated
 terminal TLS streams. Permissionless roster activation/reconfiguration, the
 system lane, current SQL freshness and a hidden-predicate lock grant remain open.
+
+## Distinct Joint participant service (source candidate)
+
+`FinalityServer::bind_joint` consumes a real `DurableJointFinality` and the host's
+same `ProofGate`. It returns `JointFinalityServer`; its supervisor and the old
+service use the same private closed `Owner::Original|Joint` actor loop. A host
+owns one signer, one timer, one participant ledger and one actual evidence depot.
+The old `DCSRFN01` bytes and 180-second request behavior remain separate from new
+`DCSJFN01`/`joint_profile_digest` and its explicit 1800-second operation budget.
+This is a bounded protocol policy, not a latency or whole-process RAM measurement.
+
+| Additional direct project dependency | Responsibility |
+| --- | --- |
+| [registry200-joint](../../../registry200-joint/README.md) | Independently pinned application/setup, canonical manifest roles and same-depot public ingress |
+| [bfv-product-evidence](../../../bfv-product-evidence/README.md) | Canonical unverified catalog reference enumeration; genuine replay stays inside the fixed Joint verifier |
+| [protocol-storage](../../../protocol-storage/README.md) | Typed depot/participant quota and unchanged 32-MiB public blob bound |
+| [version-journal](../../../version-journal/README.md) | The existing exact owner authorization signature and canonical Header/Body |
+
+`JointFinalityClient::put_proof_blob` presents the complete canonical owner-signed
+Body plus a fixed role/ordinal and claimed byte identity in a bounded control
+frame. The server requires the independently configured owner TLS identity and
+the actual database-owner signature. It derives the allowed ID/cap from that
+manifest and, for product parts, the same stored canonical catalog. It rejects a
+foreign ID before allocating a blob payload. This grants only retention of public
+bytes, never computation acceptance. Public GET rehashes exact local bytes and
+returns one bounded blob. Exactly one download/receive and one export lease,
+each at most 32 MiB, are shared across all workers and the sequential relay.
+Legacy Body and control reservations keep their separate unchanged bounds.
+
+Every new candidate prefetches all fixed manifest references and every catalog
+reference before entering the actor or taking the actual proof gate. No network
+call runs under a journal/application mutex. Only missing files may be fetched;
+corruption, poison and identity failures are not repaired as missing evidence.
+The actor checks the exact current slot/context/parent again after acquiring the
+gate and invokes real Joint admission. Empty is a no-blob operation with actual
+Journal/QC verification. An exact latest-body/QC retry invokes the durable
+last-context, semantic-successor and full-proof replay path; current-parent
+prefetch is not misapplied to historical duplicates.
+
+An absolute Joint expiry follows the operation through prefetch and queueing,
+including the relay's local outbound and candidate-body metadata calls.
+Expired queued work rejects before admission. Socket cancellation may end I/O
+but cannot preempt an already-started synchronous proof, erase a lock, manufacture
+a timeout or release the compute/signing owner in the background. The service
+joins that work before releasing its gate/store. Clients must resolve a lost
+acknowledgement through an actual independently verified checkpoint, not a status
+observation. Owner resubmission may be necessary for an unproposed candidate.
+
+The new owning `apps/dcs-peer/tests/joint_finality.rs` source builds genuine
+Bootstrap/Begin/ControlKind evidence and launches four distinct OS validators.
+It covers public evidence prefetch, a reachable 2+2 observation window without
+QC, actual quorum after healing, new-PID reopen, owner/missing/tampered/foreign
+request rejection, lost ACK and exact duplicate replay. This test passed in
+292.03 seconds, followed by the original four-OS participant regression in
+676.75 seconds. The [native record](../../../../docs/joint-participant-finality.md)
+distinguishes that source from the subsequent certificate/queue corrections.
+The full Acquire 16+118 process gate and exact FHE result/Result144 completion
+also passed on four OS validators plus a separate FHE peer, with fresh client
+replay and hostile-proof checks; see the same native record. Real prior-lock
+contention, a fresh-head barrier, owner Vault and delegated rights remain
+separate requirements. No ordinary SELECT lane, SQL grant,
+plaintext fallback or quorum-as-computation shortcut is introduced here.

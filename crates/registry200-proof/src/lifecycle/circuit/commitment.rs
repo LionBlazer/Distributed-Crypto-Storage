@@ -115,11 +115,34 @@ pub fn command_fields_opening(
     out
 }
 pub fn result_fields(s: &Statement, w: &Witness, step: &super::model::Step) -> Vec<Val> {
+    let c = w.command.as_ref().unwrap();
+    result_fields_opening(
+        s,
+        &ResultFieldsOpening {
+            operation: c.operation,
+            outcome: step.outcome,
+            transaction: c.transaction,
+            flags: [step.returned, step.skipped, step.visit],
+            salt: w.salts[5],
+        },
+    )
+}
+/// Private preimage metadata only. Rehashing it verifies no query, proof, quorum
+/// or current head. The original trace writer and owner completion share this
+/// exact fixed144 encoding, with no plaintext Source/model execution required.
+pub struct ResultFieldsOpening {
+    pub operation: super::model::Operation,
+    pub outcome: u8,
+    pub transaction: u64,
+    pub flags: [[bool; 4]; 3],
+    pub salt: [Val; 4],
+}
+/// Requires a Transition statement, as does the existing result writer.
+pub fn result_fields_opening(s: &Statement, opening: &ResultFieldsOpening) -> Vec<Val> {
     let e = &s.expected;
     let Phase::Transition { old, command } = e.phase else {
         unreachable!()
     };
-    let c = w.command.as_ref().unwrap();
     let mut out = source::words(&RESULT_DOMAIN)
         .chain([Val::from_u8(2)])
         .chain(e.context())
@@ -127,13 +150,13 @@ pub fn result_fields(s: &Statement, w: &Witness, step: &super::model::Step) -> V
         .chain(command)
         .chain(s.next)
         .collect::<Vec<_>>();
-    out.push(Val::from_u8(c.operation as u8));
-    out.push(Val::from_u8(step.outcome));
-    out.extend(limbs(c.transaction));
-    for flags in [step.returned, step.skipped, step.visit] {
-        out.extend(flags.map(|b| Val::from_bool(b && step.outcome == 0)));
+    out.push(Val::from_u8(opening.operation as u8));
+    out.push(Val::from_u8(opening.outcome));
+    out.extend(limbs(opening.transaction));
+    for flags in opening.flags {
+        out.extend(flags.map(|b| Val::from_bool(b && opening.outcome == 0)));
     }
-    out.extend(w.salts[5]);
+    out.extend(opening.salt);
     out.extend([Val::ZERO; 7]);
     assert_eq!(out.len(), 144);
     out
@@ -176,3 +199,7 @@ pub fn proposed(e: &Expected, w: &Witness) -> Result<Statement, Error> {
     }
     Ok(s)
 }
+
+#[cfg(test)]
+#[path = "result_fields_tests.rs"]
+mod result_fields_tests;

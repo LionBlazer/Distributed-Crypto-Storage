@@ -1,4 +1,6 @@
+use super::owner::{Candidate, Certificate, Owner, Snapshot};
 use super::*;
+use registry200_finality::joint::{DurableJointFinality, JointCheckpoint};
 use registry200_finality::{Checkpoint, Descriptor, RegistryFinality};
 use std::{
     sync::mpsc::{self, Receiver, SyncSender, TrySendError},
@@ -15,6 +17,11 @@ pub(super) enum Command {
     Checkpoint(Checkpoint),
     GetCheckpoint(u64),
     Outbound(usize),
+    JointSnapshot,
+    JointBlock(OwnedBlock, bool, Snapshot),
+    JointInput(Vec<u8>, Snapshot),
+    JointCheckpoint(JointCheckpoint, Snapshot),
+    GetJointCheckpoint(u64),
 }
 pub(super) enum Reply {
     Status { slot: u64, context: [u8; 32] },
@@ -23,11 +30,14 @@ pub(super) enum Reply {
     Block(OwnedBlock),
     Checkpoint(Option<Checkpoint>),
     Outbound(Option<Vec<u8>>),
+    JointSnapshot(Snapshot),
+    JointCheckpoint(Option<JointCheckpoint>),
 }
 struct Envelope {
     command: Command,
     reply: SyncSender<io::Result<(Reply, CommandLease)>>,
     bytes: CommandLease,
+    expires: Option<Instant>,
 }
 #[derive(Clone)]
 pub(super) struct Handle {
@@ -72,6 +82,7 @@ impl Handle {
             command,
             reply: tx,
             bytes: lease,
+            expires: None,
         }) {
             Ok(()) => (),
             Err(TrySendError::Full(_)) => return Err(busy()),
@@ -79,15 +90,69 @@ impl Handle {
         }
         rx.recv_timeout(RPC_BUDGET).map_err(|_| closed())?
     }
+    /// Preserve ONE absolute Joint expiry across prefetch and queue waiting.
+    /// Once enqueued, join synchronous work: a socket cancellation never drops
+    /// the signer/gate while actual native proof verification is still running.
+    pub(super) fn call_joint(&self, command: Command, expires: Instant) -> io::Result<Reply> {
+        let bytes = match &command {
+            Command::JointInput(b, _) => b.len(),
+            Command::JointCheckpoint(c, _) => {
+                c.certificate().len() + registry200_finality::joint::CANDIDATE_BYTES + 12
+            }
+            _ => 256,
+        };
+        if bytes > work_finality::consensus::MAX_INPUT_BYTES {
+            return Err(invalid());
+        }
+        let lease = self.bytes.acquire(bytes)?;
+        self.call_reserved_joint(command, lease, expires)
+            .map(|(r, _)| r)
+    }
+    pub(super) fn call_reserved_joint(
+        &self,
+        command: Command,
+        lease: CommandLease,
+        expires: Instant,
+    ) -> io::Result<(Reply, CommandLease)> {
+        if self.stop.load(Ordering::Acquire) {
+            return Err(closed());
+        }
+        require_time(expires)?;
+        let (tx, rx) = mpsc::sync_channel(1);
+        match self.tx.try_send(Envelope {
+            command,
+            reply: tx,
+            bytes: lease,
+            expires: Some(expires),
+        }) {
+            Ok(()) => (),
+            Err(TrySendError::Full(_)) => return Err(busy()),
+            Err(TrySendError::Disconnected(_)) => return Err(closed()),
+        }
+        rx.recv().map_err(|_| closed())?
+    }
 }
 pub(super) fn spawn(
-    mut owned: RegistryFinality,
+    owned: RegistryFinality,
     gate: crate::ProofGate,
 ) -> io::Result<(Handle, JoinHandle<io::Result<()>>)> {
+    spawn_owned(Owner::Original(owned), gate, "dcs-registry-finality-owner")
+}
+pub(super) fn spawn_joint(
+    owned: DurableJointFinality,
+    gate: crate::ProofGate,
+) -> io::Result<(Handle, JoinHandle<io::Result<()>>)> {
+    spawn_owned(Owner::Joint(owned), gate, "dcs-joint-finality-owner")
+}
+fn spawn_owned(
+    mut owned: Owner,
+    gate: crate::ProofGate,
+    name: &str,
+) -> io::Result<(Handle, JoinHandle<io::Result<()>>)> {
     // Binding, current timeout and outbound state must be readable before launch.
-    owned.binding().map_err(error)?;
+    owned.pins()?.id();
     active_timer(&owned)?;
-    owned.outbound().map_err(error)?;
+    owned.outbound()?;
     let (tx, rx) = mpsc::sync_channel(MAX_COMMANDS);
     let handle = Handle {
         tx,
@@ -96,7 +161,7 @@ pub(super) fn spawn(
     };
     let stop = handle.stop.clone();
     let join = std::thread::Builder::new()
-        .name("dcs-registry-finality-owner".into())
+        .name(name.into())
         .spawn(move || {
             let result = run(&mut owned, gate, stop.clone(), rx);
             stop.store(true, Ordering::Release);
@@ -105,7 +170,7 @@ pub(super) fn spawn(
     Ok((handle, join))
 }
 fn run(
-    owned: &mut RegistryFinality,
+    owned: &mut Owner,
     gate: crate::ProofGate,
     stop: Arc<AtomicBool>,
     rx: Receiver<Envelope>,
@@ -121,7 +186,10 @@ fn run(
         });
         match rx.recv_timeout(wait) {
             Ok(envelope) => {
-                let answer = process(owned, &gate, &mut pending, envelope.command)
+                let answer = envelope
+                    .expires
+                    .map_or(Ok(()), require_time)
+                    .and_then(|()| process(owned, &gate, &mut pending, envelope.command))
                     .map(|reply| (reply, envelope.bytes));
                 let _ = envelope.reply.send(answer);
             }
@@ -137,7 +205,7 @@ fn run(
             due = deadline(timer)?;
         }
         if let Some(candidate) = pending.as_ref() {
-            if candidate.slot() != owned.context().slot() {
+            if candidate.slot() != owned.context()?.slot() {
                 pending = None;
                 proposed = None;
             } else if let Some(current) = timer
@@ -148,14 +216,7 @@ fn run(
                 // A client may submit to every validator. Only the actual
                 // elected proposer signs; other owners retain the same bounded
                 // candidate for a later round. No caller selects our key/round.
-                match owned.propose(candidate) {
-                    Ok(_)
-                    | Err(registry200_finality::Error::Consensus(
-                        work_finality::consensus::Error::WrongProposer
-                        | work_finality::consensus::Error::Stale,
-                    )) => (),
-                    Err(e) => return Err(error(e)),
-                }
+                owned.propose(candidate)?;
                 proposed = Some((current.slot(), current.round()));
                 let active = active_timer(owned)?;
                 if active != timer {
@@ -169,7 +230,7 @@ fn run(
         {
             match gate.try_acquire() {
                 Ok(_permit) => {
-                    owned.on_timeout(current).map_err(error)?;
+                    owned.timeout(current)?;
                     timer = active_timer(owned)?;
                     due = deadline(timer)?;
                 }
@@ -184,16 +245,9 @@ fn run(
     // owns the signer/key or any actor lock, and cancellation never unlocks it.
     Ok(())
 }
-fn active_timer(owned: &RegistryFinality) -> io::Result<Option<Timeout>> {
-    match owned.timeout() {
-        Ok(timer) => Ok(Some(timer)),
-        // A prevote/precommit timer is disabled until the actual required ANY
-        // quorum exists. Absence of quorum means wait, never terminate/unlock.
-        Err(registry200_finality::Error::Consensus(work_finality::consensus::Error::Stale)) => {
-            Ok(None)
-        }
-        Err(e) => Err(error(e)),
-    }
+fn active_timer(owned: &Owner) -> io::Result<Option<Timeout>> {
+    // The closed owner's Original arm preserves the exact Stale=>wait rule.
+    owned.active_timer()
 }
 fn deadline(timer: Option<Timeout>) -> io::Result<Option<Instant>> {
     timer
@@ -205,30 +259,48 @@ fn deadline(timer: Option<Timeout>) -> io::Result<Option<Instant>> {
         .transpose()
 }
 fn process(
-    owned: &mut RegistryFinality,
+    owned: &mut Owner,
     gate: &crate::ProofGate,
-    pending: &mut Option<Descriptor>,
+    pending: &mut Option<Candidate>,
     command: Command,
 ) -> io::Result<Reply> {
     match command {
         Command::Status => Ok(Reply::Status {
-            slot: owned.context().slot(),
-            context: owned.context().id(),
+            slot: owned.context()?.slot(),
+            context: owned.context()?.id(),
         }),
+        Command::JointSnapshot => {
+            require_joint(owned)?;
+            Ok(Reply::JointSnapshot(owned.snapshot()?))
+        }
         Command::GetBlock(id, lease) => Ok(Reply::Block(OwnedBlock {
-            block: owned.candidate_block(id).map_err(error)?,
+            block: owned.block(id)?,
             _lease: lease,
         })),
-        Command::GetCheckpoint(slot) => Ok(Reply::Checkpoint(
-            owned.checkpoint_after(slot).map_err(error)?,
-        )),
+        Command::GetCheckpoint(slot) => {
+            require_original(owned)?;
+            let checkpoint = match owned.checkpoint(slot)? {
+                Some(Certificate::Original(c)) => Some(c),
+                None => None,
+                Some(Certificate::Joint(_)) => return Err(invalid()),
+            };
+            Ok(Reply::Checkpoint(checkpoint))
+        }
+        Command::GetJointCheckpoint(slot) => {
+            require_joint(owned)?;
+            let checkpoint = match owned.checkpoint(slot)? {
+                Some(Certificate::Joint(c)) => Some(c),
+                None => None,
+                Some(Certificate::Original(_)) => return Err(invalid()),
+            };
+            Ok(Reply::JointCheckpoint(checkpoint))
+        }
         Command::Outbound(index) => {
             if index >= MAX_COMMANDS {
                 return Err(invalid());
             }
             let action = owned
-                .outbound()
-                .map_err(error)?
+                .outbound()?
                 .into_iter()
                 .filter(|action| {
                     matches!(
@@ -254,17 +326,17 @@ fn process(
             ))
         }
         Command::Block(owned_block, propose) => {
+            require_original(owned)?;
             let _permit = gate.try_acquire().map_err(|_| busy())?;
-            let d = owned
-                .import_candidate(owned_block.block.header().clone(), owned_block.block.body())
-                .map_err(error)?;
+            let d = owned.import(&owned_block.block)?;
             if propose {
                 *pending = Some(d);
             }
             Ok(Reply::Ok)
         }
         Command::Input(bytes) => {
-            let input = Input::decode(owned.context(), &bytes).map_err(error)?;
+            require_original(owned)?;
+            let input = Input::decode(owned.context()?, &bytes).map_err(error)?;
             let value = match &input {
                 Input::Proposal(p) => Some(p.value()),
                 Input::Certificate { value, .. } => Some(value.as_slice()),
@@ -272,36 +344,136 @@ fn process(
             };
             if let Some(value) = value {
                 let d = Descriptor::decode(value).map_err(error)?;
-                if !owned.has_candidate(d.header().id()).map_err(error)? {
+                if !owned.has(d.header().id())? {
                     return Ok(Reply::NeedBlock(d.header().id()));
                 }
             }
             let _permit = gate.try_acquire().map_err(|_| busy())?;
-            owned.receive(&bytes).map_err(error)?;
+            owned.receive(&bytes)?;
             Ok(Reply::Ok)
         }
         Command::Checkpoint(checkpoint) => {
-            if checkpoint.descriptor().slot() != owned.context().slot() {
+            require_original(owned)?;
+            if checkpoint.descriptor().slot() != owned.context()?.slot() {
                 return Err(invalid());
             }
             // Actual QC validation precedes even the missing-body fetch hint.
             owned
-                .context()
+                .context()?
                 .verify_commit(
                     &checkpoint.descriptor().encode(),
                     checkpoint.round(),
                     checkpoint.certificate(),
                 )
                 .map_err(error)?;
-            if !owned
-                .has_candidate(checkpoint.descriptor().header().id())
-                .map_err(error)?
-            {
+            if !owned.has(checkpoint.descriptor().header().id())? {
                 return Ok(Reply::NeedBlock(checkpoint.descriptor().header().id()));
             }
             let _permit = gate.try_acquire().map_err(|_| busy())?;
-            owned.receive_checkpoint(&checkpoint).map_err(error)?;
+            owned.commit(&Certificate::Original(checkpoint))?;
+            Ok(Reply::Ok)
+        }
+        Command::JointBlock(block, propose, snapshot) => {
+            require_joint(owned)?;
+            let _permit = gate.try_acquire().map_err(|_| busy())?;
+            require_snapshot(owned, snapshot)?;
+            if block.block.header().id() == snapshot.parent {
+                // Retry ONLY the actual last selected header/body. The real
+                // durable last-context/QC/all-proof path is mandatory again.
+                if version_journal::hash(block.block.body()) != block.block.header().body_hash {
+                    return Err(invalid());
+                }
+                let previous = snapshot.slot.checked_sub(2).ok_or_else(invalid)?;
+                let checkpoint = owned.checkpoint(previous)?.ok_or_else(invalid)?;
+                if checkpoint.candidate().header() != block.block.header() {
+                    return Err(invalid());
+                }
+                owned.commit(&checkpoint)?;
+                return Ok(Reply::Ok);
+            }
+            let candidate = owned.import(&block.block)?;
+            if propose {
+                *pending = Some(candidate)
+            }
+            Ok(Reply::Ok)
+        }
+        Command::JointInput(bytes, snapshot) => {
+            require_joint(owned)?;
+            require_snapshot(owned, snapshot)?;
+            let input = Input::decode(owned.context()?, &bytes).map_err(error)?;
+            let value = match &input {
+                Input::Proposal(p) => Some(p.value()),
+                Input::Certificate { value, .. } => Some(value.as_slice()),
+                _ => None,
+            };
+            if let Some(value) = value {
+                let candidate = owned.pins()?.candidate(value)?;
+                if !owned.has(candidate.header().id())? {
+                    return Ok(Reply::NeedBlock(candidate.header().id()));
+                }
+            }
+            let _permit = gate.try_acquire().map_err(|_| busy())?;
+            require_snapshot(owned, snapshot)?;
+            owned.receive(&bytes)?;
+            Ok(Reply::Ok)
+        }
+        Command::JointCheckpoint(checkpoint, snapshot) => {
+            require_joint(owned)?;
+            require_snapshot(owned, snapshot)?;
+            let current = owned.context()?.slot();
+            if checkpoint.candidate().slot() == current {
+                // The actual current QC precedes even a missing-body hint.
+                owned
+                    .context()?
+                    .verify_commit(
+                        &checkpoint.candidate().encode(),
+                        checkpoint.round(),
+                        checkpoint.certificate(),
+                    )
+                    .map_err(error)?;
+                if !owned.has(checkpoint.candidate().header().id())? {
+                    return Ok(Reply::NeedBlock(checkpoint.candidate().header().id()));
+                }
+            } else if checkpoint.candidate().slot().checked_add(1) != Some(current) {
+                return Err(invalid());
+            }
+            let _permit = gate.try_acquire().map_err(|_| busy())?;
+            require_snapshot(owned, snapshot)?;
+            // A last-slot retry is checked by DurableJointFinality using its
+            // retained real lastContext, QC, semantic successor and ALL proofs.
+            owned.commit(&Certificate::Joint(checkpoint))?;
             Ok(Reply::Ok)
         }
     }
 }
+fn require_original(owned: &Owner) -> io::Result<()> {
+    match owned {
+        Owner::Original(_) => Ok(()),
+        Owner::Joint(_) => Err(invalid()),
+    }
+}
+fn require_joint(owned: &Owner) -> io::Result<()> {
+    match owned {
+        Owner::Joint(_) => Ok(()),
+        Owner::Original(_) => Err(invalid()),
+    }
+}
+fn require_snapshot(owned: &Owner, expected: Snapshot) -> io::Result<()> {
+    if owned.snapshot()? != expected {
+        return Err(invalid());
+    }
+    Ok(())
+}
+fn require_time(expires: Instant) -> io::Result<()> {
+    if Instant::now() >= expires {
+        return Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "Joint operation expired before admission",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "joint_queue_tests.rs"]
+mod joint_queue_tests;

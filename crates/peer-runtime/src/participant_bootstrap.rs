@@ -1,6 +1,8 @@
 //! Independently pinned local IPC bootstrap; never a network admission packet.
+mod joint;
 use crate::{Endpoint, Identity, finality::MAX_PEERS};
 use ed25519_dalek::SigningKey;
+pub use joint::JointParticipantBootstrap;
 use registry200_finality::Binding;
 use serde::{
     Deserialize, Deserializer,

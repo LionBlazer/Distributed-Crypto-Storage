@@ -2,12 +2,14 @@
 //! Construction, content identities and historical computation are not SQL grants.
 #![forbid(unsafe_code)]
 
+mod acquire;
 mod depot;
 mod descriptor;
 mod manifest;
 mod request;
 mod verifier;
 
+pub use acquire::{AcquireExpected, CheckedAcquire};
 pub use depot::{
     JointDepot, JointEvidenceIngress, MAX_SETUP_BYTES, MAX_SETUP_CLAIM_BYTES, SetupClaim,
 };

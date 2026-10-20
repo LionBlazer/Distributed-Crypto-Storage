@@ -4,6 +4,26 @@ A standalone process hosting [peer-runtime](../../crates/peer-runtime/README.md)
 through [peer-transport](../../crates/peer-transport/README.md). It has no playground,
 GUI, local SQL simulator or owner FHE/AEAD secret dependency.
 
+The distinct source-candidate `--participant-joint-finality new|existing PATH`
+uses the [typed Joint service](../../crates/peer-runtime/src/finality/README.md#distinct-joint-participant-service-source-candidate).
+It does not change the original participant or legacy custody mode. Trusted
+private stdin supplies five bounded metadata frames: versioned config with
+kind `registry200-joint-participant-finality-v1`, WorkGenesis, exact two-shard
+JournalGenesis, Joint descriptor and SetupClaim. New then consumes the exact
+one/two public setup chunks in claim order through the same participant depot.
+Existing accepts no replacement setup and replays retained setup, evidence,
+Journal/QC/floor/WAL before emitting `JointParticipantReady`. Config pins the
+full binding, roster, TLS endpoints, owner fingerprint and namespace. Only TLS
+and Work signing keys enter this private IPC; no owner FHE/AEAD secret enters.
+EOF closes sockets and joins actual synchronous verification/signing before
+shutdown. The four-OS-peer Bootstrap/Begin/Empty owning test and the original
+participant regression passed. The full fixed-N4 hidden-predicate Acquire gate
+also passed with four validators, a separate FHE process and exact fresh client
+completion; see the [native validation record](../../docs/joint-participant-finality.md).
+Current SQL admission and durable owner-state/lease installation remain unavailable;
+an independent legacy FHE process remains a separate role, not an in-process
+fallback or an unaccounted custody directory under the participant root.
+
 Current SQL admission is explicitly unavailable. The shared Jobs verifier rejects
 INSERT/UPDATE transitions on Mine, Publish, relay and durable reopen even with a
 valid owner signature and genuine arithmetic. SELECT/aggregates/INSERT/UPDATE

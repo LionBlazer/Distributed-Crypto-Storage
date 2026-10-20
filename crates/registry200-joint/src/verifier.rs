@@ -1,6 +1,7 @@
 //! Closed local proof composition. All premises are replayed on every check.
 use crate::{
-    Application, Descriptor, Error, JointDepot, Lane, Manifest, Request, Result, SetupClaim,
+    AcquireExpected, Application, CheckedAcquire, Descriptor, Error, JointDepot, Lane, Manifest,
+    Request, Result, SetupClaim,
 };
 use bfv_product_evidence::{CatalogId, ProductStore};
 use bfv_query_core::PublicSetup;
@@ -8,7 +9,8 @@ use registry200_journal::Control;
 use registry200_proof::{
     admission, coefficient_encoding, control_kind, lifecycle, predicate_acquire, source, wire,
 };
-use version_journal::{Genesis, TransitionStatement, TransitionVerifier};
+use std::cell::RefCell;
+use version_journal::{Genesis, Header, Journal, TransitionStatement, TransitionVerifier};
 
 pub struct JointVerifier {
     application: Application,
@@ -37,6 +39,36 @@ impl JointVerifier {
     /// Journal must first authenticate the owner and validated parent. This
     /// method supplies no current-head, finality, lease, or SQL capability.
     pub fn check(&self, s: TransitionStatement<'_>) -> Result<()> {
+        self.evaluate(s, None).map(|_| ())
+    }
+    /// Authenticate the actual complete block through the Journal and return
+    /// this call's fresh Acquire result. The fixed private adapter below cannot
+    /// accept a supplied verifier, callback, successor, or cached success flag.
+    /// A generic Journal still supplies no finality/current-head authority.
+    pub fn check_acquire_block(
+        &self,
+        journal: &Journal,
+        header: &Header,
+        body: &[u8],
+        now: u64,
+        expected: &AcquireExpected,
+    ) -> Result<CheckedAcquire> {
+        if expected.application_id() != self.application.id() {
+            return Err(Error::Domain);
+        }
+        let verifier = AcquireBlockVerifier {
+            verifier: self,
+            expected,
+            result: RefCell::new(None),
+        };
+        journal.reverify_block(header, body, now, &verifier)?;
+        verifier.result.into_inner().ok_or(Error::Verification)
+    }
+    fn evaluate(
+        &self,
+        s: TransitionStatement<'_>,
+        own: Option<&AcquireExpected>,
+    ) -> Result<Option<CheckedAcquire>> {
         let a = &self.application;
         let spec = a.source_spec();
         if s.genesis != a.genesis()
@@ -75,6 +107,9 @@ impl JointVerifier {
         let manifest = Manifest::decode(s.proof)?;
         if manifest.lane() != request.lane() {
             return Err(Error::Domain);
+        }
+        if let Some(own) = own {
+            own.require_manifest(&request, &manifest)?;
         }
         let r = request.inner();
         let source = r.source(spec)?;
@@ -139,17 +174,22 @@ impl JointVerifier {
                 )
                 .map_err(|_| Error::Verification)?;
             }
-            Lane::Acquire => self.acquire(&mut store, &request, &manifest, &expected)?,
+            Lane::Acquire => {
+                return self
+                    .acquire(&mut store, &request, manifest, &expected, own)
+                    .map(Some);
+            }
         }
-        Ok(())
+        Ok(None)
     }
     fn acquire(
         &self,
         store: &mut ProductStore,
         r: &Request,
-        m: &Manifest,
+        m: Manifest,
         e: &admission::Expected,
-    ) -> Result<()> {
+        own: Option<&AcquireExpected>,
+    ) -> Result<CheckedAcquire> {
         let id = CatalogId::from_blob(m.reference(0)?)?;
         let catalog = store.catalog_claim(id)?;
         let provenance = {
@@ -179,21 +219,22 @@ impl JointVerifier {
             catalog.request(),
             bfv_query_core::MAX_PRIVATE_COEFFICIENT_REQUEST_BYTES,
         )?;
-        {
-            // Replays original Key+Source+both Encoding+ten Basis+two Formation,
-            // then ALL118 output records. No QC/catalog/cache replaces any proof.
-            let _replayed = store.replay(
-                id,
-                self.application.descriptor().source_object(),
-                provenance,
-                &request,
-            )?;
+        let provenance_claim = provenance.encode_claim().map_err(|_| Error::Domain)?;
+        if let Some(own) = own {
+            own.require_inputs(&provenance_claim, &request)?;
         }
-        drop(request);
+        // Replays original Key+Source+both Encoding+ten Basis+two Formation,
+        // then ALL118 output records. No QC/catalog/cache replaces any proof.
+        let replayed = store.replay(
+            id,
+            self.application.descriptor().source_object(),
+            provenance,
+            &request,
+        )?;
         // Assemble unchanged bounded prerequisite envelopes from ONE literal
         // retained Source. These existing verifiers really recheck it again.
         let source = store.read_public_blob(catalog.source(), wire::frame::MAX_SOURCE_BYTES)?;
-        let child = read(store, m, 1)?;
+        let child = read(store, &m, 1)?;
         let pair = wire::frame::join(
             wire::frame::Role::Transition,
             &[m.next_root(), m.result_root()],
@@ -214,10 +255,10 @@ impl JointVerifier {
             .map_err(|_| Error::Verification)?
         };
         drop(source);
-        let lifecycle = claim(e, m)?;
+        let lifecycle = claim(e, &m)?;
         let link = predicate_acquire::Expected::new(&query_statement, &lifecycle)
             .map_err(|_| Error::Domain)?;
-        let bytes = read(store, m, 2)?;
+        let bytes = read(store, &m, 2)?;
         predicate_acquire::verify(
             &link,
             &predicate_acquire::Prerequisites {
@@ -227,6 +268,35 @@ impl JointVerifier {
             &bytes,
         )
         .map_err(|_| Error::Verification)?;
+        Ok(CheckedAcquire {
+            request: r.encode()?,
+            provenance: provenance_claim,
+            encrypted_request: request,
+            manifest: m,
+            catalog: id,
+            replayed,
+        })
+    }
+}
+// Per-call ownership only. Even a successful Journal check must have executed
+// the Acquire branch exactly once; nothing is persisted or reused by this cell.
+struct AcquireBlockVerifier<'a> {
+    verifier: &'a JointVerifier,
+    expected: &'a AcquireExpected,
+    result: RefCell<Option<CheckedAcquire>>,
+}
+impl TransitionVerifier for AcquireBlockVerifier<'_> {
+    fn verify(&self, s: TransitionStatement<'_>) -> version_journal::Result<()> {
+        let checked = self
+            .verifier
+            .evaluate(s, Some(self.expected))
+            .map_err(|_| version_journal::Error::RejectedComputationProof)?
+            .ok_or(version_journal::Error::RejectedComputationProof)?;
+        let mut slot = self.result.borrow_mut();
+        if slot.is_some() {
+            return Err(version_journal::Error::RejectedComputationProof);
+        }
+        *slot = Some(checked);
         Ok(())
     }
 }

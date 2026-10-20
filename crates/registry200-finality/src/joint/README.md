@@ -1,4 +1,4 @@
-# Closed Joint history and durable owner
+# Closed Joint history, exact Acquire operation and durable owner
 
 This module checks historical checkpoints for the NEW fixed Registry200 Joint
 application. Its four keyless owning cases and two ownership contracts passed,
@@ -106,6 +106,22 @@ old WAL proposal replay; only the latest complete Context is retained for
 idempotent alternate-QC retry. The last allowed Header is admitted, not lost to
 an off-by-one bound. Attempts beyond the terminal bound close this owner.
 
+Within that single locked synchronization call, a private move-only
+`PreparedFinalization` holds an exclusive borrow of the same State, the original
+preflight Decision and its actually checked head/control/successor. The borrow
+keeps that MutexGuard alive and prevents intervening State changes. After floor
+fsync, its argument-free consuming `install()` performs only the mechanical
+ancestry/state update; no second input or separately maintained snapshot exists.
+Dropping the handoff installs nothing. Nothing is cached across calls or exposed
+as a verification receipt. Floor replay on reopen still runs full preflight for
+each already-durable record; floor-ahead reconciliation and the independent
+actual verifier in `voter.advance` remain unchanged. This source optimization has
+no measured latency or RAM claim. Its additional owning assertions prepare and
+drop a genuine Source/Lifecycle/Kind decision without head, control-file size,
+quota, WAL or outbound-action changes, then use ordinary successful finalization,
+alternate QC and fresh full reopening. These assertions passed with all 19
+registry200-finality runtime tests. This does not establish full Acquire latency.
+
 Existing-only recovery restores the independently pinned setup, reopens the
 actual Journal with full Joint verification, replays each floor's actual QC and
 computation, then replays the signer WAL and synchronizes a durable decision/floor
@@ -140,10 +156,12 @@ follows from these source bounds.
 The keyless owner has no mutable Journal/store getter, signer key, outbound vote,
 WAL or floor-log API. Fresh reconstruction must replay original blocks and QCs
 with the original local evidence and independent binding. The separate durable
-owner above adds signer/floor persistence. Network transport/prefetch,
-owner Vault/staged-state promotion, exact signed-byte lost-ACK recovery, delegated
-rights and fresh operation-specific Acquire completion remain separate required
-integration work. Without quorum no lock/End permission may be returned.
+owner above adds signer/floor persistence. Owner Vault/staged-state promotion,
+exact signed-byte lost-ACK recovery and
+delegated rights remain separate required integration work. The distinct network
+service and exact historical Acquire completion have since passed the full
+[four-validator/FHE gate](../../../../docs/joint-participant-finality.md).
+Without quorum no lock/End permission may be returned.
 
 No ordinary SELECT lane, plaintext query fallback, selected-answer fixture,
 Source replacement, evidence GC/snapshot shortcut or SQL admission is added.
@@ -176,8 +194,9 @@ file both reject the same original QC/body without changing Context, parent,
 floor, best head or Journal accounting. Deletion also poisons new shared-ledger
 reservations; diagnostic usage remains readable. See the
 [native validation record](../../../../docs/joint-admission.md).
-Full Acquire retained evidence and independent-process/finality/SQL gates remain
-pending; no expensive positive is replaced by a simulated success test.
+Those initial cases gave no full Acquire process credit. The later retained
+evidence/finality/completion gate passed as recorded below; general SQL remains
+unavailable. No expensive positive is replaced by a simulated success test.
 
 Five additional durable runtime cases and two ownership compile-fail examples
 passed; see the [durable native record](../../../../docs/durable-joint-finality.md).
@@ -192,5 +211,48 @@ Closed-WAL corruption uses actual file bytes after releasing its exclusive lock.
 These do not claim arbitrary filesystem write-fault coverage or malicious rollback
 protection; the unchanged work-finality writer owns its partial/sync fault tests.
 Together with the original and keyless regressions, 19 distinct runtime cases
-and seven compile-fail contracts passed. Full Acquire, independent-process Joint
-finality and fresh completion remain pending.
+and seven compile-fail contracts passed. The later independent-process Joint
+finality and full historical Acquire completion gates are recorded below.
+
+## Exact own operation, with the fresh response
+
+`AcquireExpectation::new(binding, sealed_parent, current_context, AcquireExpected)`
+captures independently authenticated public input pins. It checks the complete
+installation/descriptor, active parent and next slot/previous semantic decision.
+The kernel expectation includes the exact own outer request, Provenance, complete
+encrypted request and CatalogId. This constructor grants no verification authority.
+
+`JointHistory::apply_acquire(checkpoint, original_block, expectation)` shares the
+ordinary `apply` lifecycle and checks the genuine QC, exact Header/Body, direct
+parent/height, Context, slot and deterministic successor. Its fixed kernel adapter
+returns the same fresh input16/output118 result only after genuine Life/Link checks.
+Ordinary Journal import still performs its full proof check; no previously streamed
+product or cached parent replaces verification. No result escapes before successful
+import and ancestry restriction. The same API can recheck only the latest identical
+semantic decision, with another genuinely verified QC, while replaying all premises.
+
+`VerifiedJointAcquire` owns the exact original Header/Body and QC bytes, before/after
+heads, previous/actual semantic decisions, slot and before/after context IDs, plus
+the kernel's exact request/manifest/catalog association and checked response. It
+has private fields and no Clone, deserialization or raw-parent constructor. A
+keyless client needs no validator signer to obtain it. Later End/reacquire cannot
+turn this particular linearized operation into a generic current lock or permanent
+lease. Current-network reconciliation, owner Vault/CAS, exact-byte lost-ACK retry
+and generic SQL acceptance remain outside this value.
+
+The new full owning source scenario in
+[storage-client](../../../storage-client/src/private_predicate/source/locking/joint/tests/full_acquire.rs)
+uses four independent OS validators for its QC and a separate actual OS FHE peer,
+with one participant/depot per process and phased ownership of the SAME client
+depot. A test-local supervisor is its only app-source include. Its first native
+run completed input16/output118 with a clean stream end and uploaded all evidence
+to the four validators, but reached its 30-minute observation deadline before an
+Acquire QC was available. A later run on the corrected source passed the entire
+scenario, including all four actual QCs, fresh client proof verification, exact
+Result144 completion, stale-QC rejection, fresh latest retry, missing output117
+and independently challenged corrupt Link. See the
+[native record](../../../../docs/joint-participant-finality.md) for pinned source,
+binary, timing and resources. It establishes the fixed historical operation;
+real prior-lock contention, current lease and general SQL remain separate.
+No profile, frame cap, arithmetic relation or old ordinary-apply rejection
+is changed by this return boundary.

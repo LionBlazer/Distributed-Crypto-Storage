@@ -1,12 +1,14 @@
 //! Closed historical Joint verification and a distinct durable participant owner.
 //! Neither path is a fresh SQL grant or accepts an arbitrary supplied Journal.
 
+mod acquire;
 mod adapter;
 mod binding;
 mod history;
 mod wire;
 
 pub use crate::CandidateBlock;
+pub use acquire::{AcquireExpectation, VerifiedJointAcquire};
 pub use adapter::{DurableJointFinality, participant_storage_profile_digest};
 pub use binding::{JointBinding, durable_profile_digest, profile_digest};
 pub use history::{JointHistory, VerifiedJointParent};

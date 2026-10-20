@@ -263,6 +263,53 @@ fn real_signed_bootstrap_begin_kind_and_alternate_qc_reopen_then_missing_or_corr
             .is_err()
     );
     assert_eq!(owner.context().unwrap(), &previous);
+
+    // Preparing a genuine decision does not install it. Dropping the private
+    // handoff releases only its exclusive State borrow, with no durable effect.
+    let decision = previous
+        .verify_commit(&d.encode(), qc.round(), qc.certificate())
+        .unwrap();
+    let used_before_handoff = quota.usage().unwrap().total_bytes();
+    let handoff_paths = Paths::participant(
+        &quota,
+        Pins::Joint(&binding),
+        keys().remove(0).verifying_key().to_bytes(),
+    );
+    let file_bytes = || {
+        [
+            &handoff_paths.journal,
+            &handoff_paths.floor,
+            &handoff_paths.wal,
+        ]
+        .map(|path| fs::metadata(path).unwrap().len())
+    };
+    let files_before_handoff = file_bytes();
+    let wal_bytes = owner.voter.file_bytes();
+    let outbound = owner.outbound().unwrap();
+    {
+        let mut state = owner.state.lock().unwrap();
+        let history_len = state.history.len();
+        let journal_bytes = state.journal.disk_bytes();
+        {
+            let _prepared = state.preflight(&decision).unwrap();
+        }
+        assert_eq!(state.current, previous);
+        assert_eq!(state.journal.journal().ancestry_floor(), first.head());
+        assert_eq!(state.finalized.as_ref().unwrap().head(), first.head());
+        assert_eq!(state.finalized.as_ref().unwrap().control(), first.control());
+        assert_eq!(state.history.len(), history_len);
+        assert_eq!(state.journal.disk_bytes(), journal_bytes);
+    }
+    assert_eq!(file_bytes(), files_before_handoff);
+    assert_eq!(owner.voter.file_bytes(), wal_bytes);
+    assert_eq!(owner.outbound().unwrap(), outbound);
+    assert_eq!(quota.usage().unwrap().total_bytes(), used_before_handoff);
+    assert_eq!(
+        owner.checkpoint_after(0).unwrap().unwrap().encode(),
+        boot_qc.encode()
+    );
+    assert!(owner.checkpoint_after(1).unwrap().is_none());
+
     owner.receive_checkpoint(&qc).unwrap();
     let final_parent = owner.finalized_parent().unwrap().unwrap();
     let next = owner.context().unwrap().clone();

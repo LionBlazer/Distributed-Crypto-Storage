@@ -7,6 +7,7 @@ use peer_runtime::RawBundle;
 use registry200_proof::admission::CanonicalSource;
 use zeroize::Zeroizing;
 mod fixture;
+mod full_acquire;
 
 fn context<'a>(
     owner: &'a Owner,

@@ -99,3 +99,18 @@ quorum, provide MVCC/writer fencing or accept SQL results. Hidden LockingSelect
 compilation, one-Source joint input16/Lifecycle/Link orchestration, FHE-output
 completion and agreed fresh-head admission remain separate work. No query-domain
 rewrite, new old-operation allowlist or privacy relaxation is introduced here.
+
+## Result144 opening without a Source/model copy
+
+`circuit::commitment::ResultFieldsOpening` and `result_fields_opening` encode the
+same existing transition context, old/command/next roots, opcode/outcome, two u32
+transaction limbs, success-gated returned/skipped/visit flags, salt and padding.
+The original `result_fields` writer delegates directly to this pure helper. This
+allows owner completion to rehash its guarded original flags without reconstructing
+a plaintext Source witness or executing the native query/model. It is preimage
+encoding only: it proves no operation, key possession, authorization or freshness.
+
+The new parity source case retains the exact pre-extraction builder as its oracle,
+checks all seven opcodes/four outcomes and u64 limb boundaries, and asserts fixed
+offsets/padding. No AIR expression, profile, commitment domain or proof limit changes.
+Its native result is separate from the historical producer validation above.

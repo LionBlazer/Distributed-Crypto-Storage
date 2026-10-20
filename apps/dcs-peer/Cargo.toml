@@ -16,6 +16,7 @@ zeroize = "1"
 bfv-product-evidence = { path = "../../crates/bfv-product-evidence" }
 registry200-finality = { path = "../../crates/registry200-finality" }
 registry200-journal = { path = "../../crates/registry200-journal" }
+registry200-joint = { path = "../../crates/registry200-joint" }
 work-finality = { path = "../../crates/work-finality" }
 protocol-storage = { path = "../../crates/protocol-storage" }
 ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std", "fast", "zeroize"] }

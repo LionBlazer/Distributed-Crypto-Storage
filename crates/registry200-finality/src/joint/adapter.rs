@@ -56,6 +56,48 @@ struct State {
     last_context: Option<Context>,
     finalized: Option<VerifiedJointParent>,
 }
+
+// A same-call handoff, never a reusable proof receipt. The exclusive State
+// borrow keeps the actual MutexGuard alive until this value is consumed.
+struct PreparedFinalization<'state, 'decision> {
+    state: &'state mut State,
+    decision: &'decision Decision,
+    head: HeadRef,
+    control: Control,
+    next: Context,
+}
+impl PreparedFinalization<'_, '_> {
+    fn install(self) -> Result<()> {
+        let Self {
+            state,
+            decision,
+            head,
+            control,
+            next,
+        } = self;
+        // No proof or successor verification is repeated here. These exact
+        // outputs and original Decision came from preflight. The exclusive
+        // borrow has prevented any intervening State mutation or guard release.
+        state.journal.restrict_ancestry_floor(head)?;
+        state.finalized = Some(VerifiedJointParent::checked(
+            &state.binding,
+            head,
+            state.current.slot(),
+            decision.semantic_id(),
+            control,
+        ));
+        state.last_context = Some(state.current.clone());
+        state.history.insert(
+            next.slot(),
+            Historical {
+                context: next.id(),
+                parent: head,
+            },
+        );
+        state.current = next;
+        Ok(())
+    }
+}
 impl State {
     fn new(
         binding: JointBinding,
@@ -116,7 +158,10 @@ impl State {
         self.journal.journal().validated_shards(head)?;
         Ok((head, control))
     }
-    fn preflight(&self, decision: &Decision) -> Result<(HeadRef, Control, Context)> {
+    fn preflight<'state, 'decision>(
+        &'state mut self,
+        decision: &'decision Decision,
+    ) -> Result<PreparedFinalization<'state, 'decision>> {
         if decision.context_id() != self.current.id() {
             return Err(Error::Context);
         }
@@ -127,28 +172,18 @@ impl State {
         if self.history.len() > self.binding.journal_genesis().profile.max_headers as usize {
             return Err(Error::ResourceLimit);
         }
-        Ok((head, control, next))
+        Ok(PreparedFinalization {
+            state: self,
+            decision,
+            head,
+            control,
+            next,
+        })
     }
     fn install(&mut self, decision: &Decision) -> Result<()> {
-        let (head, control, next) = self.preflight(decision)?;
-        self.journal.restrict_ancestry_floor(head)?;
-        self.finalized = Some(VerifiedJointParent::checked(
-            &self.binding,
-            head,
-            self.current.slot(),
-            decision.semantic_id(),
-            control,
-        ));
-        self.last_context = Some(self.current.clone());
-        self.history.insert(
-            next.slot(),
-            Historical {
-                context: next.id(),
-                parent: head,
-            },
-        );
-        self.current = next;
-        Ok(())
+        // Recovery has no same-call prepared result: perform the complete
+        // application/quorum/successor preflight for every actual floor record.
+        self.preflight(decision)?.install()
     }
 }
 
@@ -373,6 +408,18 @@ impl DurableJointFinality {
                 .to_vec(),
         )?)
     }
+    /// Availability only. Cached presence never replaces actual proof checking.
+    pub fn has_candidate(&self, id: Hash) -> Result<bool> {
+        self.live()?;
+        Ok(self
+            .state
+            .lock()
+            .map_err(|_| Error::Poisoned)?
+            .journal
+            .journal()
+            .body(id)
+            .is_some())
+    }
     pub fn import_candidate(&mut self, header: Header, body: &[u8]) -> Result<JointCandidate> {
         self.live()?;
         let terminal = {
@@ -526,9 +573,9 @@ impl DurableJointFinality {
             let mut state = self.state.lock().map_err(|_| Error::Poisoned)?;
             if state.current.id() == self.voter.context().id() {
                 // All fallible protocol/cap checks BEFORE durable floor append.
-                state.preflight(decision)?;
+                let prepared = state.preflight(decision)?;
                 self.floor.append(decision)?;
-                state.install(decision)?;
+                prepared.install()?;
             } else {
                 let installed = state.finalized.as_ref().ok_or(crate::Error::CorruptFloor)?;
                 if installed.slot() != self.voter.context().slot()

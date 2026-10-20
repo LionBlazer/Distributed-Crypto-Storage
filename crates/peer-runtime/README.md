@@ -17,6 +17,8 @@ client acceptance.
 | [proof-acceleration](../proof-acceleration/README.md) | Pure bounded CPU-worker policy, without enabling its loader |
 | [version-journal](../version-journal/README.md) | Pinned work/profile validation, ancestry, authorization and durable ordering |
 | [registry200-journal](../registry200-journal/README.md) | Fixed Registry200 application, canonical descriptor/request and genuine Source/Lifecycle admission |
+| [registry200-finality](../registry200-finality/README.md) | Closed original/Joint durable proof admission, weighted QC, floor and WAL ownership |
+| [registry200-joint](../registry200-joint/README.md) | Fixed Joint descriptors/manifests and same typed public evidence ingress |
 
 `PeerServer::bind` owns its TCP endpoint and a caller-provided directory lock;
 `run` serves it and `spawn` creates a supervised server. The process deployment is

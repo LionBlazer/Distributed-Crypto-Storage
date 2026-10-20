@@ -12,6 +12,7 @@ ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std
 zeroize = "=1.9.1"
 serde_json.workspace = true
 registry200-journal = { path = "../registry200-journal" }
+registry200-joint = { path = "../registry200-joint" }
 registry200-finality = { path = "../registry200-finality" }
 work-finality = { path = "../work-finality" }
 peer-transport = { path = "../peer-transport" }

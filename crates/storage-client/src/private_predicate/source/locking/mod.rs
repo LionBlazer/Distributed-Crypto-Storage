@@ -4,8 +4,8 @@ mod joint;
 mod produce;
 pub use compiler::CompiledLockingSelect;
 pub use joint::{
-    JointLockingCandidates, JointLockingParent, JointLockingPreparation, NonAdmittedJointLocking,
-    PreparedJointLockingInputs,
+    CompletedJointAcquire, CompletedJointRow, JointLockingCandidates, JointLockingParent,
+    JointLockingPreparation, NonAdmittedJointLocking, PreparedJointLockingInputs,
 };
 
 use crate::private_predicate::{ProducedInputs, cryptography, invalid};

@@ -49,6 +49,8 @@ serde_json.workspace = true
 zeroize = "1"
 
 [dev-dependencies]
+bfv-product-evidence = { path = "../bfv-product-evidence" }
+peer-transport = { path = "../peer-transport" }
 rcgen = "=0.14.8"
 protocol-storage = { path = "../protocol-storage" }
 work-finality = { path = "../work-finality" }

@@ -139,4 +139,6 @@ request with guarded candidates. The old `LockingParent::new` factory and old
 intent/profile behavior stay unchanged. Both new Joint owning tests and all twelve
 client ownership compile-fail contracts passed; see the
 [Joint validation record](../../../../../../docs/joint-locking-inputs.md).
-No completion, SQL grant, Vault or current-head assertion is added.
+The distinct Joint adapter now also owns one-shot completion of its exact
+proof-and-QC-verified Acquire. Legacy preparation and generic SQL guards are
+unchanged; no Vault installation or generic current-head/lease assertion is added.

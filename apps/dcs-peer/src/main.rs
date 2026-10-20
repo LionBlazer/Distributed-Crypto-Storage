@@ -4,6 +4,7 @@ use std::{
     io::{self, Write},
     path::PathBuf,
 };
+mod joint_participant;
 mod participant;
 mod supervision;
 fn main() {
@@ -15,6 +16,18 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let first = args.next();
+    if first.as_deref() == Some("--participant-joint-finality") {
+        let install = match args.next().as_deref() {
+            Some("new") => peer_runtime::participant::ParticipantInstall::New,
+            Some("existing") => peer_runtime::participant::ParticipantInstall::Existing,
+            _ => return Err("Expected participant-joint-finality new|existing".into()),
+        };
+        let directory = PathBuf::from(args.next().ok_or("Missing Joint participant directory")?);
+        if args.next().is_some() {
+            return Err("Unexpected Joint participant argument".into());
+        }
+        return joint_participant::run(&directory, install);
+    }
     if first.as_deref() == Some("--participant-finality") {
         let install = match args.next().as_deref() {
             Some("new") => peer_runtime::participant::ParticipantInstall::New,
