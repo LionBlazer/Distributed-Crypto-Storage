@@ -1,5 +1,34 @@
 # Closed fixed-source Registry progress application
 
+## v3 application and closed original-stream import
+
+The Progress APPLICATION contract domain is now v3. Its digest explicitly names
+cold full native replay OR the keyless owner's original genuine input16/output118
+stream plus SAME-depot full byte association within one execute. Core896 and all
+individual math profiles, field/wire geometry, and 02 metadata grammar stay exact.
+Contract32 in descriptor/manifest and derived App/G/operation IDs decisively
+separate v2: old descriptors/manifests reject; old Request application/G fails
+installed association. There is no old-QC, bank, seed or Binding migration/relabel.
+
+`ProgressVerifier::prepare_import_recorded` is a fixed, single-use Predicate-only
+adapter. It consumes `ScopedRecordedProduct`, checks its SAME actual depot and
+all original byte references against independently installed full setup/anchor/
+ALL33/Source/query pins, then performs the existing actual Source/query/Core896
+verification. The result is ordinary mathematical `VerifiedOperation`; its public
+`product()->Option<&ReplayedProduct>` still means complete actual checked math,
+from original native stream plus byte association rather than a second native
+pass. Boot/Control/Empty/second use reject this adapter. No flag/callback can mint
+it. It supplies no owner/QC/current-head/SQL grant.
+
+All existing cold `check/check_block/prepare_import` paths, including every
+validator vote/import/floor/reopen and duplicate, still unconditionally invoke
+full native replay. Fresh exact Header/current Journal/QC and owner private
+completion remain separate mandatory layers. The selected v3-contract case and
+actual five-product/eleven-QC Driver composition passed; see the
+[v3 validation record](../../../../docs/progress-driver-scoped-completion.md).
+Earlier v2 execution records remain historical.
+
+
 This namespace composes actual retained FHE evidence with the NEW Core
 Registry208 / Statement96 / Progress48 / Result160 relations. The Core gates and
 full local FHE/application gate passed the
@@ -116,7 +145,7 @@ that exact prepared block. Future finality must first check its own full semanti
 QC and durable accounting. Separate checks/reopens verify proofs again, including
 known blocks. There is no persisted/cross-query verified marker or caller callback.
 
-## Executed owning tests and remaining integration
+## Historical v2 owning tests and remaining integration
 
 Owning source tests share one bounded public generated setup/anchor/Key33 fixture,
 use real owner-signed bodies and Source+Bootstrap803 then Source+Control815 under
@@ -178,9 +207,11 @@ not caller authentication from q. End compaction carries waiters by stable ID.
 
 The separate [Progress finality library](../../../registry200-finality/src/progress/README.md)
 now provides typed Work/Rules binding, actual QC and historical parent/operation
-verification with strict durable replay. A fresh grant, durable parked WAL/owner
-epoch custody, cancellation/rollback/deadlock policy, mutable-tuple EPQ and network
-owner orchestration remain absent. No rows for Parked/Error or End
+verification with strict durable replay. The separate
+[v3 Driver gate](../../../../docs/progress-driver-scoped-completion.md) covers
+fixed-source owner custody, durable parked WAL and network orchestration.
+General fresh-grant policy, parked cancellation/rollback, deadlocks and
+mutable-tuple EPQ remain open. No rows for Parked/Error or End
 permission without a real quorum follow. No SQL enable switch, ordinary read lane
 or old-binding compatibility path exists. History compaction and repeated replay
 cost remain unresolved within participant quota; no QC/snapshot proof shortcut

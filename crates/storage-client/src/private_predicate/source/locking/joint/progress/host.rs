@@ -8,7 +8,7 @@ use super::{
     state::{Bank, Book, Kind, RawCall},
     wal::{self, Reader, Wal},
 };
-use bfv_product_evidence::CatalogId;
+use bfv_product_evidence::{CatalogId, RecordingScope, ScopedRecordedProduct};
 use ed25519_dalek::SigningKey;
 use peer_runtime::{ProofGate, RecordedPrivateProduct, RemotePeer};
 use protocol_storage::{ControlFile, ParticipantQuota, Reservation};
@@ -20,6 +20,21 @@ use registry200_joint::progress::{Lane, Manifest, ProgressDepot, ProgressEvidenc
 use registry200_proof::registry_progress::circuit::State;
 use version_journal::{AuthorizedTransition, Body, HeadRef, ShardUpdate};
 use zeroize::Zeroize;
+mod network;
+pub use network::{Config, Driver, Run};
+
+// Operation-local, private metadata. No constructor, flag or serialized form
+// confers computation, PoW, QC, SQL or installed-bank authority.
+struct Proposal {
+    cursor: Cursor,
+    attempt: Zeroizing<Vec<u8>>,
+    context: work_finality::consensus::Context,
+    parent: registry200_finality::progress::VerifiedParent,
+    catalog: Option<CatalogId>,
+    body: Body,
+    body_bytes: Vec<u8>,
+    header: Option<version_journal::Header>,
+}
 
 /// One exact logical call. Its SQL stays owner-private and is never serialized.
 /// Explicit named-control constructors do not claim parser support for that SQL.
@@ -167,7 +182,105 @@ pub struct Computed {
     stamp: [u8; 32],
     record: RecordedPrivateProduct,
 }
+// These move-only frames exist in one Driver call only. Neither Owner nor WAL
+// stores mathematical authority; a new call/reopen always takes the cold route.
+struct LiveComputed<'run> {
+    stamp: [u8; 32],
+    record: ScopedRecordedProduct<'run>,
+}
+struct PreparedRecording<'run> {
+    before_cursor: Cursor,
+    before_attempt: Zeroizing<Vec<u8>>,
+    context: work_finality::consensus::Context,
+    parent: registry200_finality::progress::VerifiedParent,
+    computed: LiveComputed<'run>,
+}
+struct SubmittedRecording<'run> {
+    prepared: PreparedRecording<'run>,
+    after_cursor: Cursor,
+    after_attempt: Zeroizing<Vec<u8>>,
+    catalog: CatalogId,
+    header: version_journal::Header,
+    body: Vec<u8>,
+}
+// A private byte association guard, never a proof/status constructor. Actual
+// Attempt decoding, custody, current Context/QC and result opening remain below.
+fn require_recorded_attempt_bytes(
+    before: &[u8],
+    after: &[u8],
+    catalog: CatalogId,
+    stamp: [u8; 32],
+) -> Result<()> {
+    let split = before.len().checked_sub(40).ok_or(Error::Pins)?;
+    if before.len() != after.len()
+        || before[split..] != [0; 40]
+        || before[..split] != after[..split]
+        || after[split..split + 32] != *catalog.blob_id().sha256()
+        || after[split + 32..] != catalog.blob_id().bytes().to_le_bytes()
+        || stamp != hash(&[b"DCS/Progress-owner/current-work/v1", before])
+    {
+        return Err(Error::Pins);
+    }
+    Ok(())
+}
+enum ComputedRef<'a, 'run> {
+    Cold(&'a Computed),
+    Live(&'a LiveComputed<'run>),
+}
+impl ComputedRef<'_, '_> {
+    fn stamp(&self) -> [u8; 32] {
+        match self {
+            Self::Cold(c) => c.stamp,
+            Self::Live(c) => c.stamp,
+        }
+    }
+    fn catalog(&self) -> CatalogId {
+        match self {
+            Self::Cold(c) => c.record.catalog(),
+            Self::Live(c) => c.record.catalog(),
+        }
+    }
+    fn product(&self) -> &bfv_mul_relin_proof::CheckedProduct {
+        match self {
+            Self::Cold(c) => c.record.checked().product(),
+            Self::Live(c) => c.record.product(),
+        }
+    }
+    fn response(&self) -> &[u8] {
+        match self {
+            Self::Cold(c) => c.record.checked().encrypted_response(),
+            Self::Live(c) => c.record.encrypted_response(),
+        }
+    }
+}
 impl Work {
+    fn compute_recorded<'run>(
+        self,
+        peer: &RemotePeer,
+        scope: &'run mut RecordingScope,
+    ) -> Result<LiveComputed<'run>> {
+        let _permit = self.gate.try_acquire().map_err(|_| Error::Busy)?;
+        let PublicInputs {
+            provenance,
+            request,
+            frames,
+        } = self.inputs;
+        let evidence =
+            bfv_mul_relin_proof::InputEvidence::from_frames(frames.each_ref().map(Vec::as_slice))
+                .map_err(crypto)?;
+        let record = peer.prove_private_product_recorded_scoped_shared(
+            self.object,
+            provenance,
+            &request,
+            &evidence,
+            self.ingress.recording_store(),
+            scope,
+        )?;
+        Ok(LiveComputed {
+            stamp: self.stamp,
+            record,
+        })
+    }
     pub fn compute(self, peer: &RemotePeer) -> Result<Computed> {
         let _permit = self.gate.try_acquire().map_err(|_| Error::Busy)?;
         let PublicInputs {
@@ -589,52 +702,40 @@ impl Owner {
         now: u64,
         mining_attempts: u64,
     ) -> Result<Submission> {
+        let computed_ref = computed.as_ref().map(ComputedRef::Cold);
+        let mut proposal = self.proposal(cursor, computed_ref.as_ref(), signer)?;
+        let mut header = self
+            .history
+            .candidate_header(&proposal.body, now, now)
+            .map_err(crypto)?;
+        header.mine(mining_attempts).map_err(crypto)?;
+        proposal.header = Some(header);
+        self.publish_proposal(proposal, computed_ref.as_ref(), now)
+    }
+    fn proposal(
+        &self,
+        cursor: Cursor,
+        computed: Option<&ComputedRef<'_, '_>>,
+        signer: &SigningKey,
+    ) -> Result<Proposal> {
         self.require(cursor)?;
         if self.phase != Phase::Prepared {
             return Err(Error::Phase);
         }
-        let a = self.attempt.as_ref().ok_or(Error::Phase)?;
         if signer.verifying_key().to_bytes() != self.pins.binding.journal_genesis().owner {
             return Err(Error::Pins);
         }
-        let catalog = match (a.lane(), computed) {
-            (Lane::Control, None) => None,
-            (Lane::Predicate, Some(c)) => {
-                if c.stamp != hash(&[b"DCS/Progress-owner/current-work/v1", &a.encode()?]) {
-                    return Err(Error::Pins);
-                }
-                let claim =
-                    a.inventory
-                        .require_catalog(&self.ingress, &self.pins, c.record.catalog())?;
-                let checked = c.record.checked();
-                if claim.graph_identity() != checked.product().identity()
-                    || claim.response().sha256()
-                        != &<[u8; 32]>::from(Sha256::digest(checked.encrypted_response()))
-                    || claim.response().bytes() != checked.encrypted_response().len() as u64
-                {
-                    return Err(Error::Pins);
-                }
-                Some(c.record.catalog())
-            }
-            _ => return Err(Error::Phase),
-        };
-        let manifest = match catalog {
-            Some(c) => Manifest::predicate(a.next_root, a.result_root, c, a.inventory.id(18)?),
-            None => Manifest::control(
-                a.next_root,
-                a.result_root,
-                a.inventory.id(3)?,
-                a.inventory.id(18)?,
-            ),
-        }
-        .map_err(crypto)?;
+        let a = self.attempt.as_ref().ok_or(Error::Phase)?;
+        let catalog = self.catalog_identity(a, computed)?;
+        let manifest = self.proposal_manifest(a, catalog)?;
         let app = app(&self.pins.binding)?;
         let parent = self
             .history
             .checked_parent()
             .map_err(crypto)?
-            .ok_or(Error::Phase)?;
-        let mut t = AuthorizedTransition {
+            .ok_or(Error::Phase)?
+            .clone();
+        let mut transition = AuthorizedTransition {
             parent: parent.head().block,
             request: a.request.encode().map_err(crypto)?,
             updates: vec![ShardUpdate {
@@ -649,39 +750,170 @@ impl Owner {
             proof: manifest.encode(),
             owner_signature: [0; 64],
         };
-        t.sign(app.genesis(), signer);
-        let body = Body::Transition(t);
-        let mut header = self
-            .history
-            .candidate_header(&body, now, now)
-            .map_err(crypto)?;
-        header.mine(mining_attempts).map_err(crypto)?;
-        let encoded = body
+        transition.sign(app.genesis(), signer);
+        let body = Body::Transition(transition);
+        let body_bytes = body
             .encode(&self.pins.binding.journal_genesis().profile)
             .map_err(crypto)?;
-        if encoded.len() > MAX_BODY_BYTES {
+        if body_bytes.len() > MAX_BODY_BYTES {
             return Err(Error::ResourceLimit);
         }
-        let block = CandidateBlock::new(header, encoded).map_err(crypto)?;
+        Ok(Proposal {
+            cursor,
+            attempt: a.encode()?,
+            context: self.history.context().map_err(crypto)?.clone(),
+            parent,
+            catalog,
+            body,
+            body_bytes,
+            header: None,
+        })
+    }
+    fn catalog_identity(
+        &self,
+        a: &Attempt,
+        computed: Option<&ComputedRef<'_, '_>>,
+    ) -> Result<Option<CatalogId>> {
+        match (a.lane(), computed) {
+            (Lane::Control, None) => Ok(None),
+            (Lane::Predicate, Some(c)) => {
+                if c.stamp() != hash(&[b"DCS/Progress-owner/current-work/v1", &a.encode()?]) {
+                    return Err(Error::Pins);
+                }
+                let id = c.catalog();
+                let claim = self.ingress.catalog_claim(id).map_err(crypto)?;
+                if claim.graph_identity() != c.product().identity()
+                    || claim.response().sha256() != &<[u8; 32]>::from(Sha256::digest(c.response()))
+                    || claim.response().bytes() != c.response().len() as u64
+                {
+                    return Err(Error::Pins);
+                }
+                Ok(Some(id))
+            }
+            _ => Err(Error::Phase),
+        }
+    }
+    fn proposal_manifest(&self, a: &Attempt, catalog: Option<CatalogId>) -> Result<Manifest> {
+        match catalog {
+            Some(id) => Manifest::predicate(a.next_root, a.result_root, id, a.inventory.id(18)?),
+            None => Manifest::control(
+                a.next_root,
+                a.result_root,
+                a.inventory.id(3)?,
+                a.inventory.id(18)?,
+            ),
+        }
+        .map_err(crypto)
+    }
+    fn publish_proposal(
+        &mut self,
+        proposal: Proposal,
+        computed: Option<&ComputedRef<'_, '_>>,
+        now: u64,
+    ) -> Result<Submission> {
+        self.require(proposal.cursor)?;
+        if self.phase != Phase::Prepared {
+            return Err(Error::Phase);
+        }
+        let a = self.attempt.as_ref().ok_or(Error::Phase)?;
+        let parent = self
+            .history
+            .checked_parent()
+            .map_err(crypto)?
+            .ok_or(Error::Phase)?;
+        if a.encode()?.as_slice() != proposal.attempt.as_slice()
+            || self.history.context().map_err(crypto)? != &proposal.context
+            || parent.binding_id() != proposal.parent.binding_id()
+            || parent.application_descriptor().encode()
+                != proposal.parent.application_descriptor().encode()
+            || parent.head() != proposal.parent.head()
+            || parent.slot() != proposal.parent.slot()
+            || parent.decision_id() != proposal.parent.decision_id()
+            || parent.control() != proposal.parent.control()
+            || self.catalog_identity(a, computed)? != proposal.catalog
+            || proposal
+                .body
+                .encode(&self.pins.binding.journal_genesis().profile)
+                .map_err(crypto)?
+                != proposal.body_bytes
+        {
+            return Err(Error::Pins);
+        }
+        let manifest = self.proposal_manifest(a, proposal.catalog)?;
+        // Full concrete own request/update/signature association, not a stored
+        // hash/flag. No private proposal can replace this actual current check.
         OperationExpectation::transition(
             &self.pins.binding,
             parent,
             self.history.context().map_err(crypto)?,
             &a.request,
             manifest,
-            &body,
+            &proposal.body,
         )
         .map_err(crypto)?;
+        let header = proposal.header.ok_or(Error::Phase)?;
+        let mut expected_header = self
+            .history
+            .candidate_header(&proposal.body, header.timestamp, now)
+            .map_err(crypto)?;
+        expected_header.nonce = header.nonce;
+        if header != expected_header || !header.target.permits(header.id()) {
+            return Err(Error::Cryptography);
+        }
+        if let Some(id) = proposal.catalog {
+            a.inventory.require_catalog(&self.ingress, &self.pins, id)?;
+        }
+        let block = CandidateBlock::new(header, proposal.body_bytes).map_err(crypto)?;
         let mut bytes = Zeroizing::new(Vec::new());
         bytes.extend_from_slice(b"POSUBM01");
-        put_catalog(&mut bytes, catalog);
+        put_catalog(&mut bytes, proposal.catalog);
         wal::blob(&mut bytes, &block.encode())?;
         self.wal
             .append(&bytes, self.lease.as_mut().ok_or(Error::Phase)?)?;
-        self.attempt.as_mut().ok_or(Error::Phase)?.catalog = catalog;
+        self.attempt.as_mut().ok_or(Error::Phase)?.catalog = proposal.catalog;
         self.block = Some(block);
         self.phase = Phase::Submitted;
         self.pending_submission(self.cursor()?)?.ok_or(Error::Phase)
+    }
+    fn publish_recorded_proposal<'run>(
+        &mut self,
+        proposal: Proposal,
+        computed: LiveComputed<'run>,
+        now: u64,
+    ) -> Result<SubmittedRecording<'run>> {
+        let before_cursor = self.cursor()?;
+        if proposal.cursor != before_cursor {
+            return Err(Error::Cas);
+        }
+        let before_attempt = self.attempt.as_ref().ok_or(Error::Phase)?.encode()?;
+        let context = self.history.context().map_err(crypto)?.clone();
+        let parent = self
+            .history
+            .checked_parent()
+            .map_err(crypto)?
+            .ok_or(Error::Phase)?
+            .clone();
+        let computed_ref = ComputedRef::Live(&computed);
+        let submission = self.publish_proposal(proposal, Some(&computed_ref), now)?;
+        let after_attempt = self.attempt.as_ref().ok_or(Error::Phase)?.encode()?;
+        Ok(SubmittedRecording {
+            prepared: PreparedRecording {
+                before_cursor,
+                before_attempt,
+                context,
+                parent,
+                computed,
+            },
+            after_cursor: submission.cursor(),
+            after_attempt,
+            catalog: self
+                .attempt
+                .as_ref()
+                .and_then(|a| a.catalog)
+                .ok_or(Error::Phase)?,
+            header: submission.block().header().clone(),
+            body: submission.block().body().to_vec(),
+        })
     }
     pub fn pending_submission(&self, cursor: Cursor) -> Result<Option<Submission>> {
         self.require(cursor)?;
@@ -706,18 +938,103 @@ impl Owner {
             return Err(Error::Phase);
         }
         let _permit = self.gate.try_acquire().map_err(|_| Error::Busy)?;
-        let result = self.complete_checked(qc, material, fetched);
+        let result = self.complete_checked(qc, material, fetched, None);
         if result.is_err() {
             self.wal.poison();
         }
         result?;
         self.delivery.as_ref().ok_or(Error::Phase)
     }
+    fn complete_recorded(
+        &mut self,
+        cursor: Cursor,
+        qc: &Checkpoint,
+        frame: &mut Option<SubmittedRecording<'_>>,
+        material: &Material<'_>,
+        fetched: FetchedSource<'_>,
+    ) -> Result<()> {
+        self.require(cursor)?;
+        if self.phase != Phase::Submitted {
+            return Err(Error::Phase);
+        }
+        // Busy leaves this private move slot intact only within this execute.
+        let _permit = self.gate.try_acquire().map_err(|_| Error::Busy)?;
+        let frame = frame.take().ok_or(Error::Phase)?;
+        let result = (|| {
+            self.require_recorded_pair(cursor, &frame, material)?;
+            self.complete_checked(qc, material, fetched, Some(frame.prepared.computed.record))
+        })();
+        if result.is_err() {
+            self.wal.poison();
+        }
+        result
+    }
+    fn require_recorded_pair(
+        &self,
+        cursor: Cursor,
+        frame: &SubmittedRecording<'_>,
+        material: &Material<'_>,
+    ) -> Result<()> {
+        self.require(cursor)?;
+        if self.phase != Phase::Submitted {
+            return Err(Error::Phase);
+        }
+        let a = self.attempt.as_ref().ok_or(Error::Phase)?;
+        let p = &frame.prepared;
+        let parent = self
+            .history
+            .checked_parent()
+            .map_err(crypto)?
+            .ok_or(Error::Phase)?;
+        let block = self.block.as_ref().ok_or(Error::Phase)?;
+        if cursor != frame.after_cursor
+            || p.before_cursor.sequence.checked_add(1) != Some(frame.after_cursor.sequence)
+            || a.encode()?.as_slice() != frame.after_attempt.as_slice()
+            || a.custody != material.fingerprint(&self.pins)?
+            || self.history.context().map_err(crypto)? != &p.context
+            || parent.binding_id() != p.parent.binding_id()
+            || parent.application_descriptor().encode()
+                != p.parent.application_descriptor().encode()
+            || parent.head() != p.parent.head()
+            || parent.slot() != p.parent.slot()
+            || parent.decision_id() != p.parent.decision_id()
+            || parent.control() != p.parent.control()
+            || block.header() != &frame.header
+            || block.body() != frame.body.as_slice()
+            || frame.catalog != p.computed.record.catalog()
+            || a.catalog != Some(frame.catalog)
+            || p.computed.stamp != hash(&[b"DCS/Progress-owner/current-work/v1", &p.before_attempt])
+        {
+            return Err(Error::Pins);
+        }
+        require_recorded_attempt_bytes(
+            &p.before_attempt,
+            &frame.after_attempt,
+            frame.catalog,
+            p.computed.stamp,
+        )?;
+        let mut before = Attempt::decode(&p.before_attempt)?;
+        if before.catalog.is_some() || before.lane() != Lane::Predicate {
+            return Err(Error::Pins);
+        }
+        before.catalog = Some(frame.catalog);
+        if before.encode()?.as_slice() != frame.after_attempt.as_slice() {
+            return Err(Error::Pins);
+        }
+        self.catalog_identity(
+            &Attempt::decode(&p.before_attempt)?,
+            Some(&ComputedRef::Live(&p.computed)),
+        )?;
+        // Full original-byte reads occur in the consuming fixed Kernel route
+        // and the unchanged Completion tail, not in this cheap frame guard.
+        Ok(())
+    }
     fn complete_checked(
         &mut self,
         qc: &Checkpoint,
         material: &Material<'_>,
         fetched: FetchedSource<'_>,
+        recorded: Option<ScopedRecordedProduct<'_>>,
     ) -> Result<()> {
         let (bank, book, outcome) = Completion {
             pins: &self.pins,
@@ -732,7 +1049,7 @@ impl Owner {
             fetched,
             record: self.wal.sequence + 1,
         }
-        .check()?;
+        .check_with_recording(recorded)?;
         let mut bytes = Zeroizing::new(Vec::new());
         bytes.extend_from_slice(b"POCOMM01");
         wal::blob(&mut bytes, &qc.encode())?;

@@ -17,8 +17,8 @@ use bfv_query_core::{
     PublicSetup,
 };
 pub use host::{
-    Bootstrap, Call, Computed, ControlOutcome, Cursor, Outcome, Owner, Preparation, Reply, Row,
-    Submission, Work,
+    Bootstrap, Call, Computed, Config, ControlOutcome, Cursor, Driver, Outcome, Owner, Preparation,
+    Reply, Row, Run, Submission, Work,
 };
 use registry200_finality::progress::{Binding, Checkpoint};
 use registry200_joint::progress::{Application, Descriptor};

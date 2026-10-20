@@ -45,9 +45,9 @@ pub type Result<T> = core::result::Result<T, Error>;
 pub fn contract_digest() -> [u8; 32] {
     use registry200_proof::registry_progress as core;
     let mut h = Sha256::new();
-    h.update(b"DCS/REGISTRY-PROGRESS-JOINT/v2/N4-T2-fixed-source-fixed-Key33/no-SQL-no-finality");
+    h.update(b"DCS/REGISTRY-PROGRESS-JOINT/v3/N4-T2-fixed-source-fixed-Key33/no-SQL-no-finality");
     h.update(b"Registry208-Statement96-Progress48-Result160/Bootstrap803-Control815-Predicate896/WAIT-NOWAIT-SKIP-one-hidden-bank/no-public-status");
-    h.update(b"new-Application-and-G/inner-SourceSpec-unchanged-intent_query/owner-signed-whole-body-external/sticky-enrollment-single-Control-CAS/actual-full-replay-every-call/no-legacy-Life-Link-result-casts");
+    h.update(b"new-Application-and-G/inner-SourceSpec-unchanged-intent_query/owner-signed-whole-body-external/sticky-enrollment-single-Control-CAS/cold-actual-full-replay-every-call/scoped-owner-original-native-input16-output118-plus-SAME-depot-all-byte-association-before-import/no-cross-call-authority/no-legacy-Life-Link-result-casts");
     h.update(b"DCSPAD02:contract32-spec312-object32-setup25632-setup51264-anchor140-Key33u64-zero12/DCSPRQ02:lane1-zero7-App32-inner2716/DCSPMF02:contract32-lane1-zero7-next32-result32-2(hash32-len64)/DCSPST02:App32-len64-count1-zero7-1or2(hash32-len64)/EOF");
     h.update(core::bootstrap_profile_digest());
     h.update(core::transition::profile_digest(false));

@@ -6,6 +6,7 @@ rust-version = "1.99"
 publish = false
 
 [dependencies]
+bfv-product-evidence = { path = "../bfv-product-evidence" }
 registry200-joint = { path = "../registry200-joint" }
 registry200-proof = { path = "../registry200-proof" }
 work-finality = { path = "../work-finality" }

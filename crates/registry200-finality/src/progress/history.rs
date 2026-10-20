@@ -3,6 +3,7 @@ use super::{
     Binding, Candidate, CandidateBlock, Checkpoint, Error, Hash, OperationExpectation, Result,
     VerifiedOperation,
 };
+use bfv_product_evidence::ScopedRecordedProduct;
 use registry200_joint::progress::{Descriptor, ProgressDepot, ProgressVerifier};
 use registry200_journal::Control;
 use version_journal::{Body, HeadPair, HeadRef, Header, Journal};
@@ -201,7 +202,7 @@ impl History {
         checkpoint: &Checkpoint,
         block: &CandidateBlock,
     ) -> Result<VerifiedParent> {
-        Ok(self.apply_owned(checkpoint, block, None)?.parent)
+        Ok(self.apply_owned(checkpoint, block, None, None)?.parent)
     }
     /// Own association, fixed full proof replay, QC and floor all precede this
     /// one-shot receipt. A latest retry remains historical and read-only.
@@ -211,7 +212,7 @@ impl History {
         block: &CandidateBlock,
         expected: &OperationExpectation,
     ) -> Result<VerifiedOperation> {
-        let applied = self.apply_owned(checkpoint, block, Some(expected))?;
+        let applied = self.apply_owned(checkpoint, block, Some(expected), None)?;
         let Applied {
             parent,
             next_context,
@@ -228,11 +229,38 @@ impl History {
             operation,
         ))
     }
+    /// Fresh Predicate only, from the SAME local execute's genuine stream.
+    /// Own exact Body/context and actual weighted QC precede import; historical
+    /// retries, signers, floors and reopen continue unconditional cold replay.
+    pub fn apply_recorded_operation(
+        &mut self,
+        checkpoint: &Checkpoint,
+        block: &CandidateBlock,
+        expected: &OperationExpectation,
+        recorded: ScopedRecordedProduct<'_>,
+    ) -> Result<VerifiedOperation> {
+        let applied = self.apply_owned(checkpoint, block, Some(expected), Some(recorded))?;
+        let Applied {
+            parent,
+            next_context,
+            operation,
+        } = applied;
+        let operation = operation.ok_or(Error::Context)?;
+        Ok(VerifiedOperation::checked(
+            expected,
+            parent,
+            next_context,
+            block,
+            checkpoint,
+            operation,
+        ))
+    }
     fn apply_owned(
         &mut self,
         checkpoint: &Checkpoint,
         block: &CandidateBlock,
         own: Option<&OperationExpectation>,
+        recorded: Option<ScopedRecordedProduct<'_>>,
     ) -> Result<Applied> {
         self.live()?;
         let candidate = checkpoint.candidate();
@@ -240,6 +268,9 @@ impl History {
             return Err(Error::Context);
         }
         let duplicate = candidate.slot() != self.context.slot();
+        if recorded.is_some() && (duplicate || own.is_none()) {
+            return Err(Error::Context);
+        }
         let (context, parent) = if duplicate {
             let last = self.last.as_ref().ok_or(Error::Context)?;
             if last.context.slot() != candidate.slot() {
@@ -307,13 +338,23 @@ impl History {
         let before_context = context.clone();
         let now = crate::adapter::now()?;
         let (pending, operation) = if let Some(expected) = own {
-            let (pending, checked) = self.verifier.prepare_import(
-                &mut self.journal,
-                candidate.header.clone(),
-                block.body(),
-                now,
-                expected.operation_id(),
-            )?;
+            let (pending, checked) = match recorded {
+                Some(recorded) => self.verifier.prepare_import_recorded(
+                    &mut self.journal,
+                    candidate.header.clone(),
+                    block.body(),
+                    now,
+                    expected.operation_id(),
+                    recorded,
+                )?,
+                None => self.verifier.prepare_import(
+                    &mut self.journal,
+                    candidate.header.clone(),
+                    block.body(),
+                    now,
+                    expected.operation_id(),
+                )?,
+            };
             (pending, Some(checked))
         } else {
             // Empty is authenticated by the real Journal, but never produces an

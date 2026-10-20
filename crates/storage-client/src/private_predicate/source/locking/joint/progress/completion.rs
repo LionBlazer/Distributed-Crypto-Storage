@@ -35,6 +35,12 @@ pub(super) struct Completion<'a> {
 }
 impl Completion<'_> {
     pub fn check(self) -> Result<(Bank, Book, Outcome)> {
+        self.check_with_recording(None)
+    }
+    pub(super) fn check_with_recording(
+        self,
+        recorded: Option<bfv_product_evidence::ScopedRecordedProduct<'_>>,
+    ) -> Result<(Bank, Book, Outcome)> {
         let Self {
             pins,
             history,
@@ -48,6 +54,9 @@ impl Completion<'_> {
             fetched,
             record,
         } = self;
+        if recorded.is_some() && a.call.kind != Kind::Acquire {
+            return Err(Error::Phase);
+        }
         if a.custody != material.fingerprint(pins)? || book.flight != Some(a.call) {
             return Err(Error::Pins);
         }
@@ -113,9 +122,13 @@ impl Completion<'_> {
         }
         // Any error after this operation may have advanced History. Its owner
         // unconditionally poisons itself until strict replay; no result escapes.
-        let receipt = history
-            .apply_operation(checkpoint, block, &expected)
-            .map_err(crypto)?;
+        let receipt = match recorded {
+            Some(recorded) => {
+                history.apply_recorded_operation(checkpoint, block, &expected, recorded)
+            }
+            None => history.apply_operation(checkpoint, block, &expected),
+        }
+        .map_err(crypto)?;
         let actual = receipt.operation();
         let step = actual.transition_step().ok_or(Error::Phase)?;
         step.statement().require_expected(&e).map_err(crypto)?;

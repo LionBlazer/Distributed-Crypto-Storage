@@ -1,5 +1,40 @@
 # Retained BFV product evidence
 
+## Scoped original native mathematics
+
+`RecordingScope` and move-only `ScopedRecordedProduct<'run>` add a second actual
+producer of `ReplayedProduct`: the original genuine input16/output118 verifier
+finishes after bound END/EOF, then `CompletedRecording::publish_scoped_shared`
+publishes its catalog and keeps its mathematical result in one local scope.
+`SharedProductStore::consume_scoped_recording` consumes that exact result, requires
+the SAME store Arc/ledger and exact original catalog, and rereads every setup,
+input, claims and ordered output reference under its original cap/hash/EOF rules.
+Independent object, full setup SHA256/SHA512, canonical Provenance, request,
+response and graph identity must match. The rereads associate the original native
+verification; hashing does not prove the computation and is not a second native
+verification. The common private storage retains only CheckedProduct, encrypted
+response, catalog metadata and a store handle, never a native key/backend/trace
+or proof bank. The recorder captures one additional bounded response copy.
+
+`ProductStore::replay` and `SharedProductStore::replay` ALWAYS perform all original
+native proof checks. Their public signatures and existing consumers are unchanged.
+`ReplayedProduct::product/encrypted_response/into_parts` keep their complete actual
+mathematical meaning under both producers. Scope is an ordinary lifetime fence,
+not a generative brand, freshness proof or consensus permission. No Clone, serde,
+raw constructor, restored success flag or arbitrary checked-plus-response factory
+exists. Public errors/drop retain no cross-call mathematical authority.
+
+The new Progress application uses a distinct v3 contract digest and therefore a
+new App/G/Rules/Binding. Old descriptors/manifests/G/QCs/private banks are not
+relabelled or migrated. Its keyless Owner alone composes same-execute mathematics
+with actual Source/query/Core896, current signed Body/context/weighted QC,
+Result160 and atomic private fsync. All validators, votes/import/floors, cold
+owners, reopen and historical retries remain full native paths. The selected
+scoped evidence tests and the v3 five-product/eleven-QC Driver workflow passed;
+see the [v3 validation record](../../docs/progress-driver-scoped-completion.md).
+Earlier execution records retain their exact source/profile scope.
+
+
 This Core library retains the PUBLIC bytes of the existing ordinary private-WHERE
 input16 and full134 product. It owns no FHE/AEAD secret, proof producer, SQL
 compiler, fixture, transport, application vote or consensus policy. A content
@@ -137,7 +172,7 @@ replay materializes those original input frames (up to 348,130,800 bytes) and
 temporary pair assembly buffers, then drops them before output replay. Setup,
 graph claims, prepared public key, SDK scratch and filesystem buffers also exist.
 There is no output graph proof Vec. These structural bounds establish no
-whole-process 1–2-GiB measurement or filesystem-allocation/power-loss guarantee.
+whole-process 1â€“2-GiB measurement or filesystem-allocation/power-loss guarantee.
 File sync and immutable publication retain the existing protocol-storage
 guarantee; a missing directory entry after a crash fails fresh verification.
 

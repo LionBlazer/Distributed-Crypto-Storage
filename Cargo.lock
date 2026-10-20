@@ -4198,6 +4198,7 @@ dependencies = [
 name = "registry200-finality"
 version = "0.1.0"
 dependencies = [
+ "bfv-product-evidence",
  "bfv-query-core",
  "compact-store",
  "ed25519-dalek",

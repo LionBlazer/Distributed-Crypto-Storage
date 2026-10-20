@@ -3,7 +3,7 @@ use super::{
     Application, Descriptor, Error, Lane, Manifest, OperationId, ProgressDepot, Request, Result,
     SetupClaim,
 };
-use bfv_product_evidence::{CatalogId, ReplayedProduct, SharedProductStore};
+use bfv_product_evidence::{CatalogId, ReplayedProduct, ScopedRecordedProduct, SharedProductStore};
 use bfv_query_core::PublicSetup;
 use registry200_journal::Control;
 use registry200_proof::{
@@ -37,7 +37,7 @@ impl ProgressVerifier {
     /// Historical mathematical check only. The Journal owns actual owner/Header
     /// authentication; Work/QC/current-head admission is a separate future layer.
     pub fn check(&self, s: TransitionStatement<'_>) -> Result<VerifiedOperation> {
-        self.evaluate(s, None)
+        self.evaluate(s, None, None)
     }
     /// Fixed actual Journal path. The independent expected ID is checked before
     /// native application work; this read-only method imports/publishes nothing.
@@ -78,10 +78,36 @@ impl ProgressVerifier {
         let checked = adapter.result.into_inner().ok_or(Error::Verification)?;
         Ok((pending, checked))
     }
+    /// Keyless owner handoff within the SAME execute: native input16/output118
+    /// already completed, then all retained bytes and fixed Core896 are checked.
+    /// Cold, signer, floor, reopen and duplicate paths never call this method.
+    pub fn prepare_import_recorded<'journal>(
+        &self,
+        journal: &'journal mut Journal,
+        header: Header,
+        body: &[u8],
+        now: u64,
+        expected: OperationId,
+        recorded: ScopedRecordedProduct<'_>,
+    ) -> Result<(PendingImport<'journal>, VerifiedOperation)> {
+        let adapter = RecordedBlockVerifier {
+            verifier: self,
+            expected,
+            recorded: RefCell::new(Some(recorded)),
+            result: RefCell::new(None),
+        };
+        let pending = journal.prepare_import(header, body, now, &adapter)?;
+        let checked = adapter.result.into_inner().ok_or(Error::Verification)?;
+        if adapter.recorded.into_inner().is_some() {
+            return Err(Error::Verification);
+        }
+        Ok((pending, checked))
+    }
     fn evaluate(
         &self,
         s: TransitionStatement<'_>,
         own: Option<OperationId>,
+        recorded: Option<ScopedRecordedProduct<'_>>,
     ) -> Result<VerifiedOperation> {
         let a = &self.application;
         let spec = a.source_spec();
@@ -115,6 +141,9 @@ impl ProgressVerifier {
         let next = Control::decode(spec, after)?;
         let request = Request::decode(s.request)?;
         request.require_application(a)?;
+        if recorded.is_some() && request.lane() != Lane::Predicate {
+            return Err(Error::Domain);
+        }
         if request.inner().parent != s.parent.block {
             return Err(Error::Domain);
         }
@@ -191,7 +220,14 @@ impl ProgressVerifier {
                     .map_err(|_| Error::Verification)?;
                     OperationProof::Control(checked)
                 } else {
-                    self.predicate(store, &request, &manifest, &canonical, enrollment, registry)?
+                    self.predicate(
+                        store,
+                        &request,
+                        &manifest,
+                        &canonical,
+                        (enrollment, registry),
+                        recorded,
+                    )?
                 }
             }
             _ => return Err(Error::Transition),
@@ -209,9 +245,10 @@ impl ProgressVerifier {
         r: &Request,
         m: &Manifest,
         source: &CanonicalSource,
-        enrollment: [u8; 32],
-        old: [u8; 32],
+        prior: ([u8; 32], [u8; 32]),
+        recorded: Option<ScopedRecordedProduct<'_>>,
     ) -> Result<OperationProof> {
+        let (enrollment, old) = prior;
         let catalog_id = CatalogId::from_blob(m.reference(0))?;
         let catalog = store.catalog_claim(catalog_id)?;
         let provenance = {
@@ -240,14 +277,24 @@ impl ProgressVerifier {
             catalog.request(),
             bfv_query_core::MAX_PRIVATE_COEFFICIENT_REQUEST_BYTES,
         )?;
-        // G commits the NEW descriptor: object, BOTH setup hashes, full anchor,
-        // ALL33 and graph/role profiles. No supplied checked result is accepted.
-        let product = store.replay(
-            catalog_id,
-            self.application.descriptor().source_object(),
-            provenance,
-            &request,
-        )?;
+        // G still pins object, both setup hashes, full anchor, ALL33 and
+        // profiles. A scoped stream supplies actual native mathematics only;
+        // its SAME store and every retained byte are independently checked.
+        let product = match recorded {
+            Some(recorded) => store.consume_scoped_recording(
+                recorded,
+                catalog_id,
+                self.application.descriptor().source_object(),
+                provenance,
+                &request,
+            )?,
+            None => store.replay(
+                catalog_id,
+                self.application.descriptor().source_object(),
+                provenance,
+                &request,
+            )?,
+        };
         let source = store.read_public_blob(
             catalog.source(),
             registry200_proof::wire::frame::MAX_SOURCE_BYTES,
@@ -361,7 +408,9 @@ impl VerifiedOperation {
             }
         }
     }
-    /// Present iff Predicate, and only after BOTH product replay and Core896.
+    /// Present iff Predicate, after actual complete product math and Core896.
+    /// The owner same-execute route consumes the original genuine stream; all
+    /// cold routes perform native replay. Neither route supplies QC authority.
     pub fn product(&self) -> Option<&ReplayedProduct> {
         match &self.proof {
             OperationProof::Predicate { product, .. } => Some(product),
@@ -378,7 +427,33 @@ impl TransitionVerifier for BlockVerifier<'_> {
     fn verify(&self, s: TransitionStatement<'_>) -> version_journal::Result<()> {
         let checked = self
             .verifier
-            .evaluate(s, Some(self.expected))
+            .evaluate(s, Some(self.expected), None)
+            .map_err(|_| version_journal::Error::RejectedComputationProof)?;
+        let mut result = self.result.borrow_mut();
+        if result.is_some() {
+            return Err(version_journal::Error::RejectedComputationProof);
+        }
+        *result = Some(checked);
+        Ok(())
+    }
+}
+// Literal single-use adapter. No generic accepting callback or restored flag.
+struct RecordedBlockVerifier<'a, 'run> {
+    verifier: &'a ProgressVerifier,
+    expected: OperationId,
+    recorded: RefCell<Option<ScopedRecordedProduct<'run>>>,
+    result: RefCell<Option<VerifiedOperation>>,
+}
+impl TransitionVerifier for RecordedBlockVerifier<'_, '_> {
+    fn verify(&self, s: TransitionStatement<'_>) -> version_journal::Result<()> {
+        let recorded = self
+            .recorded
+            .borrow_mut()
+            .take()
+            .ok_or(version_journal::Error::RejectedComputationProof)?;
+        let checked = self
+            .verifier
+            .evaluate(s, Some(self.expected), Some(recorded))
             .map_err(|_| version_journal::Error::RejectedComputationProof)?;
         let mut result = self.result.borrow_mut();
         if result.is_some() {

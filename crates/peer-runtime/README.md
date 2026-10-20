@@ -1,5 +1,27 @@
 # Peer runtime
 
+## Scoped product completion for the v3 owner
+
+`RemotePeer::prove_private_product_recorded_scoped_shared` uses the SAME concrete
+private-product RPC and mandatory actual input16/output118 verifier. Its final
+live cancellation/deadline fence remains between actual END/EOF/native finish and
+catalog publication. It returns evidence-owned move-only `ScopedRecordedProduct`
+inside the caller's local `RecordingScope`; the existing ephemeral/exclusive/shared
+APIs keep their original return types and complete checking. No new wire, verifier
+callback, secret, worker policy, cap or timeout is introduced. Store locks cover
+only bounded I/O, and the host releases its one native permit before network QC.
+
+The new Progress v3 keyless Owner consumes this original native result within the
+same synchronous Driver call, then requires fresh full retained-byte association,
+actual Source/query/Core896/current context/weighted QC/private result/WAL fsync.
+This is not a second native product replay. Every validator/signer/floor/import,
+cold completion, reopen and duplicate remains unconditional full native replay.
+New App/G/Rules/Binding IDs reject old v2 material without migration or fallback.
+The scoped RPC route was exercised by the actual v3 Driver workflow; see the
+[v3 validation record](../../docs/progress-driver-scoped-completion.md).
+Historical v2 results below retain their exact source/profile scope.
+
+
 Independent-process encrypted object custody, genuine BFV proving and durable
 cumulative-work version propagation. No owner AEAD/FHE secret or plaintext row
 type lives here. Applications own database creation, keys, complete selection and
@@ -202,7 +224,7 @@ path adds no source/completeness or freshness proof. The complete disk buffer an
 Merkle hash/tree work remain; latency and process memory need separate measurement.
 
 `PageBatchRequest::new` binds an immutable object ID, both independently trusted
-compact-store heads, and 1–64 unique `PageAddress { image: PageImage, index }`
+compact-store heads, and 1â€“64 unique `PageAddress { image: PageImage, index }`
 values. `RemotePeer::fetch_pages` returns Merkle-verified ciphertext pages in the
 same requested order. The complete encoded runtime response is at most 1 MiB
 (excluding the transport frame prefix and TLS), and its announced frame length is
@@ -245,7 +267,7 @@ apply before allocation. This is a byte budget, not an unbounded SQL row limit.
 
 `ReadImageRequest` / `FetchReadImage` is a separate static-footprint custody
 operation: one complete canonical data image plus every index membership response
-in `[0, prefix_pages)`, in order. It permits 0–512 prefix pages and at most 16 MiB
+in `[0, prefix_pages)`, in order. It permits 0â€“512 prefix pages and at most 16 MiB
 for the **complete encoded runtime response**, excluding frame-prefix/TLS bytes.
 The exact data length, proof geometry and aggregate response length are checked
 before allocating images/pages. The response keeps an actual authenticated full
@@ -732,4 +754,6 @@ profiles, with the same ledger/gate ownership and unchanged old wire/deadlines.
 The new four-OS Source/Bootstrap803/Control815 gate passed, as did the existing
 Joint process regression and focused runtime/API checks; see the
 [validation record](../../docs/progress-network-validation.md).
-New-G Predicate/Result160 owner WAIT continuation remains a separate gate.
+The separate [v3 Driver record](../../docs/progress-driver-scoped-completion.md)
+now covers the fixed new-G Predicate/Result160 WAIT continuation; transport alone
+grants no SQL or current-head authority.

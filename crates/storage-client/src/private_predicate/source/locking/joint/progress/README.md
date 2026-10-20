@@ -1,9 +1,43 @@
 # Progress installation owner
 
+## v3 same-execute completion
+
+The new Progress APPLICATION contract v3 yields a new App/G/Rules/Binding; old v2
+requests, manifests, QCs and private WAL/banks are rejected, never migrated or
+relabelled. The 02 grammar and Core896/math profiles remain exact. Only the
+keyless Owner's private live Driver path reuses the original genuine stream's
+completed native mathematics within one synchronous call. It retains a move-only
+`PreparedRecording`/`SubmittedRecording` pair: full original Attempt+Cursor,
+actual Context/parent, then full fsynced after-Attempt/Cursor/catalog/Header/Body.
+The Work stamp binds the BEFORE encoding with catalog=None; Submit atomically
+adds its actual catalog. Both exact encodings are checked, not a modified stamp.
+
+After an independently valid exact QC the SAME native gate is reacquired before
+consuming the frame. SAME-store full original-byte association and actual
+Source/query/Core896/current Journal/QC/Result160/whole old+next private roots and
+unchanged Commit fsync remain mandatory. Only that fsync frees a Parked global
+flight or installs Done/Error/Control. No frame, boolean receipt, SDK key/proof
+bank or completed response is stored as cross-call authority. Native permits and
+store locks release before validator upload/consensus waiting; an internal Busy
+may retain the frame only within this call. Every public Pending/error/drop
+discards it.
+
+Public Work::compute/submit/complete stay cold with unchanged contracts. EVERY
+cold/reopen/duplicate/validator path still performs full native input16/output118
+checks; Submitted recovery uses original Body first and cold completion, while
+cold Prepared may require actual Work again. Done-only decryption, no Parked
+rows/ACK/lastCompleted, original statement/ALL33 and unsupported SQL boundaries
+stay exact. The fixed v3 Driver gate passed with five genuine FHE jobs, eleven
+actual QCs, one full parked Owner replay and exactly forty WAL records; see the
+[validation record](../../../../../../../../docs/progress-driver-scoped-completion.md).
+Owner82 measurements remain separately scoped. No controlled full-query speedup
+is established.
+
+
 This module adds the distinct, closed `private_predicate::progress` owner. The
 historical Joint host, wire formats, SQL Session capability guards and all proof
-profiles remain unchanged. Six fast owning tests and one genuine OS
-FHE/local-QC/recovery gate passed; see the
+profiles remain unchanged. The earlier Owner82 (v2) record covers six fast owning
+tests and one genuine OS FHE/local-QC/recovery gate; see the
 [validation record](../../../../../../../../docs/progress-owner-validation.md).
 This is the current fixed four-row schema, not general SQL.
 
@@ -126,7 +160,7 @@ cold recovery decrypts the original actual product again, never stored rows.
 Any missing original, authentication failure, strict tail failure, quota/record
 exhaustion or missing proof/QC rejects instead of selecting a fallback.
 
-## Verification scope
+## Historical Owner82 (v2) verification
 
 Six fast tests passed in 0.07 seconds (36.30 seconds including the rebuild).
 They exercise canonical
@@ -145,10 +179,21 @@ Done-only decryption, ACK and actual End815/QC. It reports phase intervals and
 never substitutes a fixture answer. Its three-key QCs are explicitly local
 mathematical fixtures; it does not claim four-validator network agreement.
 
-Full real WAIT continuation still requires the next Driver/network gate with
-A lock, B Parked, A End and B fresh resume (at least three actual products), plus
-NOWAIT failure/savepoint coverage. Parked RollbackTo/cancellation, deadlock
-handling, EPQ, general SQL/schema/MVCC/writers and a Session/PGwire bridge remain
-explicitly unsupported. Existing SQL execution guards remain closed until the
-appropriate actual composition and current-head contract are independently
-validated. This source adds no new public capability claim.
+The fixed-source WAIT/ordinary End/resume, SKIP LOCKED and NOWAIT workflow is now
+covered by the v3 Driver gate. Parked RollbackTo/cancellation, deadlocks, EPQ,
+general SQL/schema/MVCC/writers, Session/PGwire, delegated rights and general
+latest-head/lease admission remain unfinished; existing capability guards stay
+closed. This gate does not cover every savepoint/error scenario.
+
+## Closed network Driver source
+
+The additive [network Driver](host/network/README.md) consumes this actual Owner,
+uses its SAME ingress/quota/ProofGate and the real remote product route, uploads
+exact saved public premises, independently checks one weighted QC and then calls
+actual Owner completion. Waiting is owned; terminal Outcome is borrowed only
+after every worker/watcher joins. The private shared Proposal path preserves
+public submit/WAL/profile contracts and mines bounded chunks before full-current
+publication checks. The current owning network filter passed 17 tests (one heavy
+case initially ignored), and strict all-target storage-client Clippy passed.
+The full v3 gate supplies bounded network evidence; earlier Owner82 and
+compile-fail records keep their own scope. Session remains a separate boundary.

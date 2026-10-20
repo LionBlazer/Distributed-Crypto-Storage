@@ -11,7 +11,9 @@ mod shared;
 mod storage;
 
 pub use catalog::{CatalogClaim, CatalogId, CatalogReference, MAX_CATALOG_BYTES, profile_digest};
-pub use record::{CompletedRecording, RecordedProduct, RecordingVerifier};
+pub use record::{
+    CompletedRecording, RecordedProduct, RecordingScope, RecordingVerifier, ScopedRecordedProduct,
+};
 pub use replay::ReplayedProduct;
 pub use shared::SharedProductStore;
 pub use storage::ProductStore;
@@ -50,5 +52,7 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 pub type Result<T> = std::result::Result<T, Error>;
 
+#[cfg(test)]
+mod scoped_recording_tests;
 #[cfg(test)]
 mod tests;

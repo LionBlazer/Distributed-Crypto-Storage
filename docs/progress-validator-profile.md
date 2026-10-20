@@ -69,7 +69,8 @@ The test has separate upload and control scheduling, unlike the full Driver.
 It is not a controlled before/after latency comparison. It does not exercise
 fresh FHE generation, owner completion, SQL lock contention, WAL recovery,
 production signer restart or a fresh agreed-head lease. The complete five-job
-WAIT/SKIP LOCKED/NOWAIT gate remains open for the v3 implementation.
+WAIT/SKIP LOCKED/NOWAIT workflow subsequently passed in the separate
+[v3 Driver gate](progress-driver-scoped-completion.md).
 
 The [fast-check rule](../AGENTS.md#verification-and-completion) keeps ordinary
 changes on the smallest relevant checks and reserves expensive gates for

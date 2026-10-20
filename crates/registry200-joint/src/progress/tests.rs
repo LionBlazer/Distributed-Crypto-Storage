@@ -830,3 +830,96 @@ fn genuine_new_genesis_bootstrap_and_control_require_actual_proofs_and_own_inten
 
 #[path = "predicate_tests.rs"]
 mod predicate;
+
+// Exact pre-handoff application contract. This public metadata helper produces
+// no proof or certificate and never installs a legacy application.
+fn legacy_v2_contract_digest() -> [u8; 32] {
+    use registry200_proof::registry_progress as core;
+    let mut h = Sha256::new();
+    h.update(b"DCS/REGISTRY-PROGRESS-JOINT/v2/N4-T2-fixed-source-fixed-Key33/no-SQL-no-finality");
+    h.update(b"Registry208-Statement96-Progress48-Result160/Bootstrap803-Control815-Predicate896/WAIT-NOWAIT-SKIP-one-hidden-bank/no-public-status");
+    h.update(b"new-Application-and-G/inner-SourceSpec-unchanged-intent_query/owner-signed-whole-body-external/sticky-enrollment-single-Control-CAS/actual-full-replay-every-call/no-legacy-Life-Link-result-casts");
+    h.update(b"DCSPAD02:contract32-spec312-object32-setup25632-setup51264-anchor140-Key33u64-zero12/DCSPRQ02:lane1-zero7-App32-inner2716/DCSPMF02:contract32-lane1-zero7-next32-result32-2(hash32-len64)/DCSPST02:App32-len64-count1-zero7-1or2(hash32-len64)/EOF");
+    h.update(core::bootstrap_profile_digest());
+    h.update(core::transition::profile_digest(false));
+    h.update(core::transition::profile_digest(true));
+    h.update(bfv_product_evidence::profile_digest());
+    h.update(bfv_mul_relin_proof::profile_digest());
+    h.update(bfv_key_transform::profile_digest());
+    for n in [
+        DESCRIPTOR_BYTES,
+        REQUEST_BYTES,
+        MANIFEST_BYTES,
+        MAX_SETUP_BYTES,
+        MAX_SETUP_CLAIM_BYTES,
+        protocol_storage::MAX_BLOB_BYTES as usize,
+    ] {
+        h.update((n as u64).to_le_bytes());
+    }
+    h.finalize().into()
+}
+
+#[test]
+fn v3_handoff_contract_rejects_v2_descriptor_manifest_request_and_genesis() {
+    let f = fixture(); // Reuse the existing bounded public setup, no extra proof.
+    let legacy = legacy_v2_contract_digest();
+    assert_ne!(legacy, contract_digest());
+    let mut old_descriptor = f.descriptor.encode();
+    old_descriptor[8..40].copy_from_slice(&legacy);
+    assert!(Descriptor::decode(&old_descriptor).is_err());
+    let mut h = Sha256::new();
+    h.update(b"DCS/REGISTRY-PROGRESS-JOINT/application/v2");
+    h.update(&old_descriptor);
+    let old_app: [u8; 32] = h.finalize().into();
+    assert_ne!(old_app, f.descriptor.id());
+    let g = genesis(&f.descriptor);
+    let mut old_g = g.clone();
+    old_g.application_commitment = old_app;
+    assert_ne!(old_g.id().unwrap(), g.id().unwrap());
+    assert!(Application::new(f.descriptor.clone(), &old_g).is_err());
+    let a = Application::new(f.descriptor.clone(), &g).unwrap();
+    let source = id(b"explicitly unproved public Source reference");
+    let child = id(b"explicitly unproved public Core reference");
+    let mut old_manifest = Manifest::bootstrap([0; 32], source, child)
+        .unwrap()
+        .encode();
+    old_manifest[8..40].copy_from_slice(&legacy);
+    assert!(Manifest::decode(&old_manifest).is_err());
+    // Outer Request has an application ID rather than a contract32 cell. A
+    // canonical legacy-shaped request may parse as untrusted metadata, but it
+    // must fail independent installed application/G association before native.
+    let mut inner = InnerRequest {
+        operation: Operation::Bootstrap,
+        genesis: old_g.id().unwrap(),
+        parent: old_g.id().unwrap(),
+        application: a.source_spec().id(),
+        nonce: [1; 32],
+        query: [0; 32],
+        enrollment: [0; 32],
+        opening: [0; 32],
+        command: [0; 32],
+        packets: f.source.packets.clone(),
+    };
+    inner.query = intent_query(
+        a.source_spec(),
+        inner.genesis,
+        inner.parent,
+        inner.nonce,
+        inner.enrollment,
+        inner.operation,
+    );
+    let mut request = b"DCSPRQ02".to_vec();
+    request.extend([0; 8]);
+    request.extend(old_app);
+    request.extend(inner.encode().unwrap());
+    let untrusted = Request::decode(&request).unwrap();
+    assert!(untrusted.require_application(&a).is_err());
+    assert!(
+        OperationId::new(
+            &a,
+            &untrusted,
+            &Manifest::bootstrap([0; 32], source, child).unwrap()
+        )
+        .is_err()
+    );
+}

@@ -1,5 +1,30 @@
 # Closed Registry208 finality
 
+## v3 keyless owner same-execute handoff
+
+`History::apply_recorded_operation` accepts only a fresh Predicate and consumes an
+evidence-owned original native `ScopedRecordedProduct`. It checks the complete
+independent `OperationExpectation`, signed Body/Header, current parent/Context,
+actual weighted QC and semantic successor before the fixed recorded Kernel
+import. The same Journal commit/floor/context and sealed receipt tail is used.
+Historical/duplicate calls reject this entry; ordinary `apply/apply_operation`,
+every durable signer/vote/import/floor and every reopen retain full native replay.
+The durable cold policy literal is unchanged. The new direct dependency on
+bfv-product-evidence owns only this concrete move-only handoff type, not a runtime
+or peer-verifier callback.
+
+The Kernel APPLICATION v3 contract deliberately changes its digest, so derived
+App/G/Rules/Binding/work seed IDs change too. Old v2 descriptors/manifests/request
+App/G/QCs/banks cannot be imported as v3. There is no migration, compatibility
+lane or persisted checked authority. Original input16/output118 native work must
+already have run in THIS synchronous owner call; fresh all-byte association is
+not called a native replay. Actual Source/query/Core896 still runs, and the Owner
+still opens Result160/whole private roots and fsyncs before output. The
+owner-recorded handoff, weighted-QC completion and mandatory cold reopen passed
+in the [v3 Driver gate](../../../../docs/progress-driver-scoped-completion.md).
+Earlier finality test records retain their exact source/profile scope.
+
+
 This module owns independently pinned Work/Journal lineage for the new
 [Registry208 application](../../../registry200-joint/src/progress/README.md).
 It provides keyless historical verification and a durable participant owner.
@@ -73,7 +98,7 @@ directory durability guarantee.
 | [protocol-storage](../../../protocol-storage/README.md) | One participant ledger, precharged control files and typed immutable depot |
 | [registry200-journal](../../../registry200-journal/README.md) | Canonical SourceSpec and public Control CAS |
 
-## Executed validation scope
+## Historical v2 validation scope
 
 All 26 library tests and 21 compile-fail examples passed in the owning native
 gate. The new cases use explicitly public nonsecret fixtures, real
@@ -98,8 +123,8 @@ receipts, timing, failure coverage and scope.
 
 A separate [runtime gate](../../../../docs/progress-network-validation.md) passed
 with real Source/Bootstrap803/Control815 and four independent peer processes.
-A new-G full Predicate input16/output118 finality/runtime gate remains required
-before claiming that boundary.
-Owner State208/Result160 completion, durable Parked
-calls, WAIT/deadlock/rollback continuation, mutable EPQ, Session integration and
-permissionless roster activation are not implemented here.
+The separate [v3 Driver gate](../../../../docs/progress-driver-scoped-completion.md)
+now covers the fixed new-G Predicate input16/output118 composition, owner
+Result160 completion and durable WAIT/End/resume. This finality library does not
+own the private bank or SQL interface. Deadlock/parked rollback policy, mutable
+EPQ, Session integration and permissionless roster activation remain open.

@@ -2,13 +2,14 @@ use crate::{
     CatalogClaim, CatalogId, Error, ProductStore, Result, SharedProductStore,
     access::StoreAccess,
     catalog::{CLAIMS, INPUT_START, MAX_SETUP_BYTES, PARTS, RECORDS},
+    replay::CompletedMath,
     storage,
 };
 use bfv_mul_relin_proof::{CheckedProduct, Expected, InputEvidence, Verifier};
 use bfv_relinearization_key_source::PreparedKey;
 use protocol_storage::{BlobId, MAX_BLOB_BYTES};
 use registry200_proof::coefficient_encoding::wire::BorrowedFrame;
-use std::io::Read;
+use std::{io::Read, marker::PhantomData};
 
 /// All original mathematical checks succeeded, then an immutable catalog was
 /// published. The catalog remains an untrusted identity on subsequent use.
@@ -28,20 +29,77 @@ impl RecordedProduct {
     }
 }
 
+/// A local lifetime fence, not a verifier, freshness proof or generative brand.
+/// Only a completed genuine recorder can publish a scoped mathematical result.
+#[derive(Default)]
+pub struct RecordingScope {
+    _private: (),
+}
+
+/// Move-only result of the actual input16/output118 stream in one local scope.
+/// It retains no SDK key, native backend or proof bank. Reuse still requires
+/// every original byte and independent pin to match in the SAME shared depot.
+/// ```compile_fail
+/// fn copy(v: bfv_product_evidence::ScopedRecordedProduct<'_>) { let _ = v.clone(); }
+/// ```
+/// ```compile_fail
+/// fn escape<'a>(v: bfv_product_evidence::ScopedRecordedProduct<'a>)
+///     -> bfv_product_evidence::ScopedRecordedProduct<'static> { v }
+/// ```
+pub struct ScopedRecordedProduct<'run> {
+    pub(crate) math: CompletedMath,
+    pub(crate) catalog: Box<CatalogClaim>,
+    pub(crate) id: CatalogId,
+    pub(crate) store: SharedProductStore,
+    _scope: PhantomData<&'run mut RecordingScope>,
+}
+impl ScopedRecordedProduct<'_> {
+    pub fn catalog(&self) -> CatalogId {
+        self.id
+    }
+    pub fn product(&self) -> &CheckedProduct {
+        &self.math.product
+    }
+    pub fn encrypted_response(&self) -> &[u8] {
+        &self.math.response
+    }
+}
+
 /// Opaque completed verification after actual END/EOF. The transport owner can
 /// recheck cancellation/deadline before `publish`. Dropping it publishes no
 /// catalog and releases no already retained file charge.
 pub struct CompletedRecording<'a> {
     store: StoreAccess<'a>,
-    product: CheckedProduct,
+    math: CompletedMath,
     catalog: CatalogClaim,
 }
 impl CompletedRecording<'_> {
     pub fn publish(mut self) -> Result<RecordedProduct> {
         let id = CatalogId::from_blob(self.store.put(&self.catalog.encode()?)?)?;
         Ok(RecordedProduct {
-            product: self.product,
+            product: self.math.product,
             catalog: id,
+        })
+    }
+    /// Publish only the actual shared-store recording after genuine END/EOF.
+    /// The scope supplies a lifetime fence; it supplies no checked mathematics.
+    pub fn publish_scoped_shared<'run>(
+        mut self,
+        _scope: &'run mut RecordingScope,
+    ) -> Result<ScopedRecordedProduct<'run>> {
+        if !matches!(&self.store, StoreAccess::Shared(_)) {
+            return Err(Error::Association);
+        }
+        let id = CatalogId::from_blob(self.store.put(&self.catalog.encode()?)?)?;
+        let StoreAccess::Shared(store) = self.store else {
+            return Err(Error::Association);
+        };
+        Ok(ScopedRecordedProduct {
+            math: self.math,
+            catalog: Box::new(self.catalog),
+            id,
+            store,
+            _scope: PhantomData,
         })
     }
 }
@@ -58,6 +116,7 @@ pub struct RecordingVerifier<'a> {
     setup_len: u64,
     parts: [Option<BlobId>; PARTS],
     binding: [u8; 64],
+    response: Vec<u8>,
     failed: bool,
 }
 impl<'a> RecordingVerifier<'a> {
@@ -138,6 +197,7 @@ impl<'a> RecordingVerifier<'a> {
             setup_len,
             parts,
             binding,
+            response: response.to_vec(),
             failed: false,
         })
     }
@@ -237,7 +297,10 @@ impl<'a> RecordingVerifier<'a> {
         };
         Ok(CompletedRecording {
             store: self.store,
-            product,
+            math: CompletedMath {
+                product,
+                response: self.response,
+            },
             catalog,
         })
     }

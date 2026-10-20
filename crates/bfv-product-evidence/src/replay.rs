@@ -2,6 +2,7 @@ use crate::{
     CatalogClaim, CatalogId, Error, ProductStore, Result, SharedProductStore,
     access::StoreAccess,
     catalog::{CLAIMS, RECORDS},
+    record::ScopedRecordedProduct,
     storage,
 };
 use bfv_mul_relin_proof::{
@@ -10,21 +11,34 @@ use bfv_mul_relin_proof::{
 use bfv_relinearization_key_source::PreparedKey;
 use registry200_proof::{coefficient_encoding::wire, source::statement::encode_digest};
 
-/// Fresh actual mathematical verification. This retains no input proof buffer,
+/// Private common storage. Its only producers are actual native stream finish
+/// and actual cold verifier finish; byte association alone cannot construct it.
+pub(crate) struct CompletedMath {
+    pub(crate) product: CheckedProduct,
+    pub(crate) response: Vec<u8>,
+}
+
+/// Complete actual mathematical verification, from either fresh cold replay or
+/// the consumed SAME-execute native recording plus full byte association. This retains no input proof buffer,
 /// verifier backend, private opening, application receipt or agreed-head token.
+/// ```compile_fail
+/// fn forge(value: bfv_product_evidence::ReplayedProduct)
+///     -> bfv_product_evidence::ReplayedProduct {
+///     bfv_product_evidence::ReplayedProduct { math: value.math }
+/// }
+/// ```
 pub struct ReplayedProduct {
-    product: CheckedProduct,
-    response: Vec<u8>,
+    math: CompletedMath,
 }
 impl ReplayedProduct {
     pub fn product(&self) -> &CheckedProduct {
-        &self.product
+        &self.math.product
     }
     pub fn encrypted_response(&self) -> &[u8] {
-        &self.response
+        &self.math.response
     }
     pub fn into_parts(self) -> (CheckedProduct, Vec<u8>) {
-        (self.product, self.response)
+        (self.math.product, self.math.response)
     }
 }
 impl ProductStore {
@@ -49,6 +63,45 @@ impl ProductStore {
     }
 }
 impl SharedProductStore {
+    /// Consume genuine same-scope native mathematics, then reread ALL original
+    /// bytes under the unchanged role caps. This is not another native pass.
+    /// It grants no current head, SQL, signer, floor or consensus authority.
+    pub fn consume_scoped_recording(
+        &self,
+        recorded: ScopedRecordedProduct<'_>,
+        id: CatalogId,
+        object: [u8; 32],
+        provenance: Provenance,
+        request: &[u8],
+    ) -> Result<ReplayedProduct> {
+        require_recording_origin(self, id, &recorded.store, recorded.id)?;
+        let mut access = StoreAccess::Shared(self.clone());
+        let catalog = access.catalog_claim(id)?;
+        if catalog.encode()? != recorded.catalog.encode()?
+            || catalog.binding != storage::binding(object, &provenance, request)?
+            || catalog.graph != recorded.math.product.identity()
+        {
+            return Err(Error::Association);
+        }
+        access.check_setup(&catalog.setup, catalog.setup_len, &provenance)?;
+        for (part, reference) in catalog.references().skip(catalog.setup.len()).enumerate() {
+            let bytes = access.read(reference.blob_id(), reference.byte_cap())?;
+            match part {
+                0 if bytes != provenance.encode_claim()? => return Err(Error::Association),
+                1 if bytes != request => return Err(Error::Association),
+                2 if bytes != recorded.math.response => return Err(Error::Association),
+                _ => {}
+            }
+        }
+        if storage::require_response(&provenance, request, &recorded.math.response)?
+            != recorded.math.product.output_ciphertext()
+        {
+            return Err(Error::Association);
+        }
+        Ok(ReplayedProduct {
+            math: recorded.math,
+        })
+    }
     /// Perform the SAME fresh original proof replay. Only each bounded blob
     /// read/hash/EOF holds the store lock; all SDK/proof work runs after it is
     /// released. The process owner must hold its one actual native resource gate.
@@ -130,7 +183,9 @@ fn replay_in(
     if product.identity() != catalog.graph {
         return Err(Error::Association);
     }
-    Ok(ReplayedProduct { product, response })
+    Ok(ReplayedProduct {
+        math: CompletedMath { product, response },
+    })
 }
 fn input_frames(
     store: &mut StoreAccess<'_>,
@@ -164,4 +219,18 @@ fn input_frames(
         )?;
     }
     Ok(frames)
+}
+
+// Ordinary identity guard only. Success cannot construct any checked product.
+pub(crate) fn require_recording_origin(
+    store: &SharedProductStore,
+    id: CatalogId,
+    original: &SharedProductStore,
+    original_id: CatalogId,
+) -> Result<()> {
+    if !std::sync::Arc::ptr_eq(&store.inner, &original.inner) || id != original_id {
+        Err(Error::Association)
+    } else {
+        Ok(())
+    }
 }

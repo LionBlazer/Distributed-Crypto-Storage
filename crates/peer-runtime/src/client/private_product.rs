@@ -1,7 +1,10 @@
 use super::*;
 use crate::private_product::*;
 use bfv_mul_relin_proof::{Expected, InputEvidence, Provenance, Verifier};
-use bfv_product_evidence::{CatalogId, ProductStore, RecordingVerifier, SharedProductStore};
+use bfv_product_evidence::{
+    CatalogId, ProductStore, RecordingScope, RecordingVerifier, ScopedRecordedProduct,
+    SharedProductStore,
+};
 use bfv_query_core::EvaluatedPrivateCoefficientPredicate;
 use bfv_relinearization_key_source::PreparedKey;
 use std::io::{Read, Write};
@@ -21,7 +24,8 @@ impl RemotePeer {
         ciphertext: &[u8],
         inputs: &InputEvidence<'_>,
     ) -> io::Result<CheckedPrivateProduct> {
-        self.private_product(object, provenance, ciphertext, inputs, None)
+        self.private_product(object, provenance, ciphertext, inputs, None, None)?
+            .ordinary()
             .map(|(checked, _)| checked)
     }
     /// Execute the SAME genuine proof path and retain its public evidence in
@@ -36,13 +40,16 @@ impl RemotePeer {
         inputs: &InputEvidence<'_>,
         store: &mut ProductStore,
     ) -> io::Result<RecordedPrivateProduct> {
-        let (checked, catalog) = self.private_product(
-            object,
-            provenance,
-            ciphertext,
-            inputs,
-            Some(RecordingTarget::Exclusive(store)),
-        )?;
+        let (checked, catalog) = self
+            .private_product(
+                object,
+                provenance,
+                ciphertext,
+                inputs,
+                Some(RecordingTarget::Exclusive(store)),
+                None,
+            )?
+            .ordinary()?;
         Ok(RecordedPrivateProduct {
             checked,
             catalog: catalog.ok_or_else(|| rejected("missing completed product catalog"))?,
@@ -60,26 +67,54 @@ impl RemotePeer {
         inputs: &InputEvidence<'_>,
         store: SharedProductStore,
     ) -> io::Result<RecordedPrivateProduct> {
-        let (checked, catalog) = self.private_product(
-            object,
-            provenance,
-            ciphertext,
-            inputs,
-            Some(RecordingTarget::Shared(store)),
-        )?;
+        let (checked, catalog) = self
+            .private_product(
+                object,
+                provenance,
+                ciphertext,
+                inputs,
+                Some(RecordingTarget::Shared(store)),
+                None,
+            )?
+            .ordinary()?;
         Ok(RecordedPrivateProduct {
             checked,
             catalog: catalog.ok_or_else(|| rejected("missing completed product catalog"))?,
         })
     }
-    fn private_product(
+    /// Preserve the genuine completed stream in one local scope. All original
+    /// native verification, END/EOF and cancellation fences run before publish.
+    /// This supplies mathematics only; a caller must still bind actual finality.
+    pub fn prove_private_product_recorded_scoped_shared<'run>(
+        &self,
+        object: [u8; 32],
+        provenance: Provenance,
+        ciphertext: &[u8],
+        inputs: &InputEvidence<'_>,
+        store: SharedProductStore,
+        scope: &'run mut RecordingScope,
+    ) -> io::Result<ScopedRecordedProduct<'run>> {
+        match self.private_product(
+            object,
+            provenance,
+            ciphertext,
+            inputs,
+            Some(RecordingTarget::Shared(store)),
+            Some(scope),
+        )? {
+            ProductResult::Scoped(record) => Ok(record),
+            ProductResult::Ordinary(..) => Err(rejected("missing scoped recording")),
+        }
+    }
+    fn private_product<'run>(
         &self,
         object: [u8; 32],
         provenance: Provenance,
         ciphertext: &[u8],
         inputs: &InputEvidence<'_>,
         recording: Option<RecordingTarget<'_>>,
-    ) -> io::Result<(CheckedPrivateProduct, Option<CatalogId>)> {
+        scope: Option<&'run mut RecordingScope>,
+    ) -> io::Result<ProductResult<'run>> {
         let started = Instant::now();
         let cancellation = self.control.as_ref().and_then(|control| control.current());
         check_budget(started, cancellation.as_ref())?;
@@ -100,7 +135,7 @@ impl RemotePeer {
         })?;
         let mut sent = 0;
         let mut received = 0;
-        let result = (|| -> io::Result<(CheckedPrivateProduct, Option<CatalogId>)> {
+        let result = (|| -> io::Result<ProductResult<'run>> {
             let mut stream = self
                 .connector
                 .connect_cancellable(&self.endpoint, cancellation.as_ref())?;
@@ -202,15 +237,16 @@ impl RemotePeer {
                 &mut observed,
             )?;
             check_budget(started, cancellation.as_ref())?;
-            let (product, catalog) =
-                verifier.finish(&end, &mut stream, started, cancellation.as_ref())?;
-            Ok((
-                CheckedPrivateProduct {
-                    product,
-                    response: response.output,
-                },
-                catalog,
-            ))
+            match verifier.finish(&end, &mut stream, started, cancellation.as_ref(), scope)? {
+                FinishedProduct::Ordinary(product, catalog) => Ok(ProductResult::Ordinary(
+                    CheckedPrivateProduct {
+                        product,
+                        response: response.output,
+                    },
+                    catalog,
+                )),
+                FinishedProduct::Scoped(record) => Ok(ProductResult::Scoped(record)),
+            }
         })();
         if let Some(trace) = &self.trace {
             trace(Trace {
@@ -304,15 +340,19 @@ impl ProductVerification<'_> {
             Self::Recorded(v) => v.accept(bytes).map_err(retention_error),
         }
     }
-    fn finish(
+    fn finish<'run>(
         self,
         end: &[u8],
         stream: &mut impl Read,
         started: Instant,
         cancellation: Option<&peer_transport::Cancellation>,
-    ) -> io::Result<(bfv_mul_relin_proof::CheckedProduct, Option<CatalogId>)> {
+        scope: Option<&'run mut RecordingScope>,
+    ) -> io::Result<FinishedProduct<'run>> {
         match self {
             Self::Ephemeral(v) => {
+                if scope.is_some() {
+                    return Err(rejected("scoped ephemeral verification"));
+                }
                 if !end.is_empty() {
                     return Err(rejected("nonempty terminal"));
                 }
@@ -321,13 +361,25 @@ impl ProductVerification<'_> {
                     return Err(rejected("trailing stream bytes"));
                 }
                 check_budget(started, cancellation)?;
-                Ok(((*v).finish().map_err(rejected)?, None))
+                Ok(FinishedProduct::Ordinary(
+                    (*v).finish().map_err(rejected)?,
+                    None,
+                ))
             }
             Self::Recorded(v) => {
                 let completed = (*v).finish(end, stream).map_err(retention_error)?;
                 check_budget(started, cancellation)?;
-                let (product, catalog) = completed.publish().map_err(retention_error)?.into_parts();
-                Ok((product, Some(catalog)))
+                if let Some(scope) = scope {
+                    Ok(FinishedProduct::Scoped(
+                        completed
+                            .publish_scoped_shared(scope)
+                            .map_err(retention_error)?,
+                    ))
+                } else {
+                    let (product, catalog) =
+                        completed.publish().map_err(retention_error)?.into_parts();
+                    Ok(FinishedProduct::Ordinary(product, Some(catalog)))
+                }
             }
         }
     }
@@ -351,4 +403,22 @@ fn check_budget(
         ));
     }
     Ok(())
+}
+
+// Closed concrete results, never caller-created verification policy.
+enum FinishedProduct<'run> {
+    Ordinary(bfv_mul_relin_proof::CheckedProduct, Option<CatalogId>),
+    Scoped(ScopedRecordedProduct<'run>),
+}
+enum ProductResult<'run> {
+    Ordinary(CheckedPrivateProduct, Option<CatalogId>),
+    Scoped(ScopedRecordedProduct<'run>),
+}
+impl ProductResult<'_> {
+    fn ordinary(self) -> io::Result<(CheckedPrivateProduct, Option<CatalogId>)> {
+        match self {
+            Self::Ordinary(checked, catalog) => Ok((checked, catalog)),
+            Self::Scoped(_) => Err(rejected("unexpected scoped product")),
+        }
+    }
 }
