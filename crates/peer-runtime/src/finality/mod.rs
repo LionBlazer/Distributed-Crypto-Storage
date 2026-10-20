@@ -1,6 +1,6 @@
-//! Concrete original Registry200 application actor over actual bounded TLS.
-//! Trusted composition supplies the already-owned journal/signer and the real
-//! PeerServer proof gate. Neither endpoint metadata nor this service grants SQL.
+//! Closed Original, Joint and Progress durable actors over bounded TLS.
+//! Trusted composition supplies the already-owned journal/signer and actual
+//! ProofGate. Endpoint metadata and transport replies do not grant SQL.
 mod actor;
 mod client;
 mod joint_client;
@@ -8,15 +8,25 @@ mod joint_prefetch;
 mod joint_server;
 mod joint_wire;
 mod owner;
+mod progress_client;
+mod progress_wire;
+mod proof_application;
+mod proof_client;
 mod server;
 mod wire;
 
 pub use client::FinalityClient;
 pub use joint_client::JointFinalityClient;
 pub use joint_prefetch::ProofBlobSelector;
-pub use joint_server::{JointFinalityServer, RunningJointFinality};
+pub use joint_server::{
+    JointFinalityServer, ProgressFinalityServer, RunningJointFinality, RunningProgressFinality,
+};
 pub use joint_wire::{
     OPERATION_BUDGET as JOINT_OPERATION_BUDGET, profile_digest as joint_profile_digest,
+};
+pub use progress_client::{ProgressFinalityClient, ProgressProofBlobSelector};
+pub use progress_wire::{
+    OPERATION_BUDGET as PROGRESS_OPERATION_BUDGET, profile_digest as progress_profile_digest,
 };
 pub use server::{FinalityServer, ListenerConfig, RunningFinality};
 pub use wire::profile_digest;

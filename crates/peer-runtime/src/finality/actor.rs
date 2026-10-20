@@ -1,6 +1,5 @@
 use super::owner::{Candidate, Certificate, Owner, Snapshot};
 use super::*;
-use registry200_finality::joint::{DurableJointFinality, JointCheckpoint};
 use registry200_finality::{Checkpoint, Descriptor, RegistryFinality};
 use std::{
     sync::mpsc::{self, Receiver, SyncSender, TrySendError},
@@ -20,7 +19,7 @@ pub(super) enum Command {
     JointSnapshot,
     JointBlock(OwnedBlock, bool, Snapshot),
     JointInput(Vec<u8>, Snapshot),
-    JointCheckpoint(JointCheckpoint, Snapshot),
+    JointCheckpoint(Certificate, Snapshot),
     GetJointCheckpoint(u64),
 }
 pub(super) enum Reply {
@@ -31,7 +30,7 @@ pub(super) enum Reply {
     Checkpoint(Option<Checkpoint>),
     Outbound(Option<Vec<u8>>),
     JointSnapshot(Snapshot),
-    JointCheckpoint(Option<JointCheckpoint>),
+    JointCheckpoint(Option<Certificate>),
 }
 struct Envelope {
     command: Command,
@@ -142,15 +141,14 @@ pub(super) fn spawn(
         "dcs-registry-finality-owner",
     )
 }
-pub(super) fn spawn_joint(
-    owned: DurableJointFinality,
+pub(super) fn spawn_proof(
+    owned: Owner,
     gate: crate::ProofGate,
 ) -> io::Result<(Handle, JoinHandle<io::Result<()>>)> {
-    spawn_owned(
-        Owner::Joint(Box::new(owned)),
-        gate,
-        "dcs-joint-finality-owner",
-    )
+    if matches!(&owned, Owner::Original(_)) {
+        return Err(invalid());
+    }
+    spawn_owned(owned, gate, "dcs-proof-finality-owner")
 }
 fn spawn_owned(
     mut owned: Owner,
@@ -290,16 +288,15 @@ fn process(
             let checkpoint = match owned.checkpoint(slot)? {
                 Some(Certificate::Original(c)) => Some(c),
                 None => None,
-                Some(Certificate::Joint(_)) => return Err(invalid()),
+                Some(Certificate::Joint(_) | Certificate::Progress(_)) => return Err(invalid()),
             };
             Ok(Reply::Checkpoint(checkpoint))
         }
         Command::GetJointCheckpoint(slot) => {
             require_joint(owned)?;
             let checkpoint = match owned.checkpoint(slot)? {
-                Some(Certificate::Joint(c)) => Some(c),
-                None => None,
                 Some(Certificate::Original(_)) => return Err(invalid()),
+                other => other,
             };
             Ok(Reply::JointCheckpoint(checkpoint))
         }
@@ -449,7 +446,7 @@ fn process(
             require_snapshot(owned, snapshot)?;
             // A last-slot retry is checked by DurableJointFinality using its
             // retained real lastContext, QC, semantic successor and ALL proofs.
-            owned.commit(&Certificate::Joint(checkpoint))?;
+            owned.commit(&checkpoint)?;
             Ok(Reply::Ok)
         }
     }
@@ -457,12 +454,12 @@ fn process(
 fn require_original(owned: &Owner) -> io::Result<()> {
     match owned {
         Owner::Original(_) => Ok(()),
-        Owner::Joint(_) => Err(invalid()),
+        Owner::Joint(_) | Owner::Progress(_) => Err(invalid()),
     }
 }
 fn require_joint(owned: &Owner) -> io::Result<()> {
     match owned {
-        Owner::Joint(_) => Ok(()),
+        Owner::Joint(_) | Owner::Progress(_) => Ok(()),
         Owner::Original(_) => Err(invalid()),
     }
 }

@@ -188,3 +188,14 @@ The three existing shutdown/supervision mode tests also passed. See the
 and source identity. System-lane work admission, roster activation/reconfiguration,
 freshness barriers and joint hidden-FHE locks remain open. This control-history
 test does not establish SQL latency or a complete DCS resource guarantee.
+
+## Progress participant mode
+
+`--participant-progress-finality new|existing PATH` is an explicit, distinct
+[Progress installation](../../crates/peer-runtime/PROGRESS-PARTICIPANT.md).
+It uses version-2 trusted IPC, independently pinned new Rules/Work/G/Binding,
+public setup chunks only on New, and strict cold replay on Existing.
+It starts no legacy custody or SQL fallback and prints only public Ready metadata.
+The four-OS Progress gate and existing Joint regression passed; see the
+[native record](../../docs/progress-network-validation.md). No full Predicate/WAIT
+owner result or performance claim follows from this entry point.

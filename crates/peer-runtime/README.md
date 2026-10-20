@@ -722,3 +722,14 @@ the unchanged-source/log receipt was
 The 1792-MiB per-process soft fuse did not fire. These are bounded measurements,
 not a comparable before/after speedup or a complete RAM guarantee. The scheduling
 change itself establishes no current lease or SQL admission.
+
+## Distinct Progress participants
+
+[Progress participant transport](PROGRESS-PARTICIPANT.md) adds typed
+ProgressFinalityClient, bind_progress and explicit new/existing process startup.
+One private transport/prefetch engine serves both active Joint and Progress
+profiles, with the same ledger/gate ownership and unchanged old wire/deadlines.
+The new four-OS Source/Bootstrap803/Control815 gate passed, as did the existing
+Joint process regression and focused runtime/API checks; see the
+[validation record](../../docs/progress-network-validation.md).
+New-G Predicate/Result160 owner WAIT continuation remains a separate gate.

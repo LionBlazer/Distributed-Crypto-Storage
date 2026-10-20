@@ -1,18 +1,19 @@
-//! Joint-only typed TLS service. Prefetch is outside owner/state/proof locks;
+//! Closed typed Joint/Progress TLS service. Prefetch is outside owner/state/proof locks;
 //! the actual durable owner then rechecks every proof and the current snapshot.
 use super::{
     actor::{self, Command, Handle, Reply},
-    joint_client::{decode_id, encode_id},
     joint_prefetch::{self, BlobGate, ProofBlobSelector},
     joint_wire as joint,
+    owner::{Certificate, Owner},
+    proof_application::{Installed, Kind},
+    proof_client::{Client, decode_id, encode_id},
     wire::*,
     *,
 };
 use peer_transport::{
     AcceptedConnection, Acceptor, Cancellation, Connector, Endpoint, read_frame, write_frame,
 };
-use registry200_finality::joint::{DurableJointFinality, JointBinding, JointCheckpoint};
-use registry200_joint::JointEvidenceIngress;
+use registry200_finality::{joint::DurableJointFinality, progress::DurableFinality};
 use std::{
     io::Write,
     net::{Shutdown, TcpListener, TcpStream},
@@ -24,79 +25,70 @@ use version_journal::{HEADER_BYTES, Header as BlockHeader, MAX_BODY_BYTES};
 
 mod relay;
 
-pub struct JointFinalityServer {
+struct ProofServer {
     listener: TcpListener,
     endpoint: Endpoint,
     config: ListenerConfig,
-    owned: DurableJointFinality,
-    binding: JointBinding,
-    ingress: JointEvidenceIngress,
+    owned: Owner,
+    application: Installed,
     gate: crate::ProofGate,
 }
-pub struct RunningJointFinality {
+struct Running {
     endpoint: Endpoint,
     handle: Handle,
     sockets: Arc<Mutex<Vec<Arc<TcpStream>>>>,
     cancellation: Cancellation,
     thread: Option<JoinHandle<io::Result<()>>>,
 }
-impl super::FinalityServer {
-    /// Distinct durable Joint entry. No legacy mode, depot, gate or signer is
-    /// created here; trusted composition supplies the SAME actual owners.
-    pub fn bind_joint(
+fn validate_neighbors(neighbors: &[Endpoint]) -> io::Result<()> {
+    if neighbors.len() > MAX_PEERS
+        || neighbors
+            .iter()
+            .enumerate()
+            .any(|(i, p)| neighbors[..i].contains(p))
+    {
+        return Err(invalid());
+    }
+    Ok(())
+}
+impl ProofServer {
+    fn bind(
         config: ListenerConfig,
-        owned: DurableJointFinality,
+        owned: Owner,
+        application: Installed,
         gate: crate::ProofGate,
-    ) -> io::Result<JointFinalityServer> {
-        if config.neighbors.len() > MAX_PEERS
-            || config
-                .neighbors
-                .iter()
-                .enumerate()
-                .any(|(i, p)| config.neighbors[..i].contains(p))
-        {
-            return Err(invalid());
-        }
-        let binding = owned.binding().map_err(error)?;
-        let ingress = owned.evidence_ingress().map_err(error)?;
+    ) -> io::Result<Self> {
+        validate_neighbors(&config.neighbors)?;
         let listener = TcpListener::bind(config.listen)?;
         listener.set_nonblocking(true)?;
         let endpoint = Endpoint {
             address: listener.local_addr()?,
             identity: config.identity,
         };
-        Ok(JointFinalityServer {
+        Ok(ProofServer {
             listener,
             endpoint,
             config,
             owned,
-            binding,
-            ingress,
+            application,
             gate,
         })
     }
 }
-impl JointFinalityServer {
+impl ProofServer {
     pub fn endpoint(&self) -> &Endpoint {
         &self.endpoint
     }
     pub fn set_neighbors(&mut self, neighbors: Vec<Endpoint>) -> io::Result<()> {
-        if neighbors.len() > MAX_PEERS
-            || neighbors
-                .iter()
-                .enumerate()
-                .any(|(i, p)| neighbors[..i].contains(p))
-        {
-            return Err(invalid());
-        }
+        validate_neighbors(&neighbors)?;
         self.config.neighbors = neighbors;
         Ok(())
     }
-    pub fn spawn(self) -> io::Result<RunningJointFinality> {
+    pub fn spawn(self) -> io::Result<Running> {
         let endpoint = self.endpoint.clone();
         let sockets = Arc::new(Mutex::new(Vec::new()));
         let cancellation = Cancellation::default();
-        let (handle, owner) = actor::spawn_joint(self.owned, self.gate)?;
+        let (handle, owner) = actor::spawn_proof(self.owned, self.gate)?;
         let owner = Arc::new(Mutex::new(Some(owner)));
         let owner_on_exit = owner.clone();
         let request = handle.clone();
@@ -108,8 +100,7 @@ impl JointFinalityServer {
                 let result = listen(
                     self.listener,
                     self.config,
-                    self.binding,
-                    self.ingress,
+                    self.application,
                     request.clone(),
                     resources.clone(),
                     cancel.clone(),
@@ -127,7 +118,7 @@ impl JointFinalityServer {
                 result.and(joined)
             });
         match join {
-            Ok(thread) => Ok(RunningJointFinality {
+            Ok(thread) => Ok(Running {
                 endpoint,
                 handle,
                 sockets,
@@ -144,7 +135,7 @@ impl JointFinalityServer {
         }
     }
 }
-impl RunningJointFinality {
+impl Running {
     pub fn endpoint(&self) -> &Endpoint {
         &self.endpoint
     }
@@ -160,7 +151,7 @@ impl RunningJointFinality {
         }
     }
 }
-impl Drop for RunningJointFinality {
+impl Drop for Running {
     fn drop(&mut self) {
         let _ = self.stop();
     }
@@ -187,8 +178,7 @@ impl Drop for Registration {
 struct Service {
     acceptor: Acceptor,
     owner: [u8; 32],
-    binding: JointBinding,
-    ingress: JointEvidenceIngress,
+    application: Installed,
     handle: Handle,
     bodies: BodyGate,
     blobs: BlobGate,
@@ -209,8 +199,7 @@ impl Service {
         expires: Instant,
     ) -> io::Result<super::owner::Snapshot> {
         let Self {
-            binding,
-            ingress,
+            application,
             blobs,
             handle,
             connector,
@@ -224,7 +213,7 @@ impl Service {
             // must route it through the actual last QC/context/full-proof replay.
             return Ok(current);
         }
-        match joint_prefetch::prefetch_local(binding, ingress, blobs, block, current, expires) {
+        match joint_prefetch::prefetch_local(application, blobs, block, current, expires) {
             Ok(()) => return Ok(current),
             Err(e) if e.kind() == io::ErrorKind::NotFound => (),
             Err(e) => return Err(e),
@@ -235,12 +224,10 @@ impl Service {
         );
         for endpoint in neighbors {
             cancellation.check()?;
-            let client =
-                super::JointFinalityClient::new(connector.clone(), endpoint.clone(), binding)
-                    .with_cancellation(cancellation.clone());
-            match joint_prefetch::prefetch(
-                &client, binding, ingress, blobs, block, current, expires,
-            ) {
+            let client = application
+                .client(connector.clone(), endpoint.clone())
+                .with_cancellation(cancellation.clone());
+            match joint_prefetch::prefetch(&client, application, blobs, block, current, expires) {
                 Ok(()) => return Ok(current),
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Err(e),
                 Err(e) => last = e,
@@ -252,8 +239,7 @@ impl Service {
 fn listen(
     listener: TcpListener,
     config: ListenerConfig,
-    binding: JointBinding,
-    ingress: JointEvidenceIngress,
+    application: Installed,
     handle: Handle,
     sockets: Arc<Mutex<Vec<Arc<TcpStream>>>>,
     cancellation: Cancellation,
@@ -263,8 +249,7 @@ fn listen(
     let service = Service {
         acceptor: config.acceptor,
         owner: config.owner,
-        binding,
-        ingress,
+        application,
         handle: handle.clone(),
         bodies,
         blobs,
@@ -325,11 +310,12 @@ fn listen(
 }
 fn send(
     stream: &mut AcceptedConnection,
+    kind: Kind,
     binding: [u8; 32],
     tag: u8,
     bytes: &[u8],
 ) -> io::Result<()> {
-    write_frame(stream, &joint::encode(binding, tag, bytes)?, MAX_CONTROL)
+    write_frame(stream, &kind.encode(binding, tag, bytes)?, MAX_CONTROL)
 }
 fn finish(stream: &mut AcceptedConnection) -> io::Result<()> {
     stream.conn.send_close_notify();
@@ -337,11 +323,12 @@ fn finish(stream: &mut AcceptedConnection) -> io::Result<()> {
 }
 fn terminal(
     stream: &mut AcceptedConnection,
+    kind: Kind,
     binding: [u8; 32],
     tag: u8,
     bytes: &[u8],
 ) -> io::Result<()> {
-    send(stream, binding, tag, bytes)?;
+    send(stream, kind, binding, tag, bytes)?;
     finish(stream)
 }
 fn result_tag(e: &io::Error) -> u8 {
@@ -355,8 +342,7 @@ fn serve(socket: TcpStream, service: &Service) -> io::Result<()> {
     let Service {
         acceptor,
         owner,
-        binding,
-        ingress,
+        application,
         handle,
         bodies,
         blobs,
@@ -364,17 +350,18 @@ fn serve(socket: TcpStream, service: &Service) -> io::Result<()> {
         ..
     } = service;
     let (identity, mut stream) = acceptor.accept(socket)?;
-    let id = binding.id();
-    let expires = super::JointFinalityClient::expires()?;
+    let id = application.id();
+    let kind = application.kind();
+    let expires = Client::expires()?;
     let _deadline = peer_transport::ConnectionDeadline::new(&stream.sock, joint::OPERATION_BUDGET)?;
     stream.sock.set_read_timeout(Some(joint::IO_BUDGET))?;
     stream.sock.set_write_timeout(Some(joint::IO_BUDGET))?;
     let lease = match handle.reserve_control() {
         Ok(l) => l,
-        Err(_) => return terminal(&mut stream, id, BUSY, &[]),
+        Err(_) => return terminal(&mut stream, kind, id, BUSY, &[]),
     };
     let mut packet = read_frame(&mut stream, MAX_CONTROL)?;
-    let (tag, data) = joint::decode(id, &packet)?;
+    let (tag, data) = kind.decode(id, &packet)?;
     if tag == joint::GET_BLOB {
         if data.len() != 44 {
             return Err(invalid());
@@ -387,15 +374,15 @@ fn serve(socket: TcpStream, service: &Service) -> io::Result<()> {
         }
         let _export = match blobs.export() {
             Ok(l) => l,
-            Err(_) => return terminal(&mut stream, id, BUSY, &[]),
+            Err(_) => return terminal(&mut stream, kind, id, BUSY, &[]),
         };
-        let bytes = match ingress.read_public_blob(blob, cap) {
+        let bytes = match application.read(blob, cap) {
             Ok(b) => b,
-            Err(_) => return terminal(&mut stream, id, REJECT, &[]),
+            Err(_) => return terminal(&mut stream, kind, id, REJECT, &[]),
         };
         let mut head = Vec::with_capacity(40);
         encode_id(blob, &mut head);
-        send(&mut stream, id, joint::BLOB, &head)?;
+        send(&mut stream, kind, id, joint::BLOB, &head)?;
         write_frame(&mut stream, &bytes, cap)?;
         return finish(&mut stream);
     }
@@ -403,7 +390,7 @@ fn serve(socket: TcpStream, service: &Service) -> io::Result<()> {
         // Both owner TLS and ACTUAL canonical owner signature/membership are
         // checked before acquiring/allocating any announced blob payload.
         if identity != *owner {
-            return terminal(&mut stream, id, REJECT, &[]);
+            return terminal(&mut stream, kind, id, REJECT, &[]);
         }
         let fixed = 8 + 40 + HEADER_BYTES + 4;
         if data.len() < fixed {
@@ -428,20 +415,19 @@ fn serve(socket: TcpStream, service: &Service) -> io::Result<()> {
         } else {
             Some(current.parent)
         };
-        let (blob, cap) = match joint_prefetch::authorized_reference(
-            binding, ingress, &block, parent, selector,
-        ) {
-            Ok(x) => x,
-            Err(_) => return terminal(&mut stream, id, REJECT, &[]),
-        };
+        let (blob, cap) =
+            match joint_prefetch::authorized_reference(application, &block, parent, selector) {
+                Ok(x) => x,
+                Err(_) => return terminal(&mut stream, kind, id, REJECT, &[]),
+            };
         if blob != claimed {
-            return terminal(&mut stream, id, REJECT, &[]);
+            return terminal(&mut stream, kind, id, REJECT, &[]);
         }
         let _download = match blobs.download() {
             Ok(l) => l,
-            Err(_) => return terminal(&mut stream, id, BUSY, &[]),
+            Err(_) => return terminal(&mut stream, kind, id, BUSY, &[]),
         };
-        send(&mut stream, id, OK, &[])?;
+        send(&mut stream, kind, id, OK, &[])?;
         let bytes = read_frame(&mut stream, blob.bytes() as usize)?;
         joint_prefetch::require_blob(blob, cap, &bytes)?;
         cancellation.check()?;
@@ -451,10 +437,10 @@ fn serve(socket: TcpStream, service: &Service) -> io::Result<()> {
                 "Joint upload expired",
             ));
         }
-        if ingress.retain_public_blob(&bytes).map_err(error)? != blob {
+        if application.retain(&bytes)? != blob {
             return Err(invalid());
         }
-        return terminal(&mut stream, id, OK, &[]);
+        return terminal(&mut stream, kind, id, OK, &[]);
     }
     let command = match tag {
         STATUS if data.is_empty() => Command::Status,
@@ -468,18 +454,17 @@ fn serve(socket: TcpStream, service: &Service) -> io::Result<()> {
             let hash = hash(data)?;
             let body = match bodies.acquire() {
                 Ok(l) => l,
-                Err(_) => return terminal(&mut stream, id, BUSY, &[]),
+                Err(_) => return terminal(&mut stream, kind, id, BUSY, &[]),
             };
             Command::GetBlock(hash, body)
         }
         GET_CHECKPOINT => Command::GetJointCheckpoint(word(data)?),
-        CHECKPOINT => Command::JointCheckpoint(
-            JointCheckpoint::decode(data).map_err(error)?,
-            snapshot(handle, expires)?,
-        ),
+        CHECKPOINT => {
+            Command::JointCheckpoint(Certificate::decode(kind, data)?, snapshot(handle, expires)?)
+        }
         PUT_BLOCK | SUBMIT => {
             if tag == SUBMIT && identity != *owner {
-                return terminal(&mut stream, id, REJECT, &[]);
+                return terminal(&mut stream, kind, id, REJECT, &[]);
             }
             if data.len() != HEADER_BYTES + 4 {
                 return Err(invalid());
@@ -492,9 +477,9 @@ fn serve(socket: TcpStream, service: &Service) -> io::Result<()> {
             }
             let body = match bodies.acquire() {
                 Ok(l) => l,
-                Err(_) => return terminal(&mut stream, id, BUSY, &[]),
+                Err(_) => return terminal(&mut stream, kind, id, BUSY, &[]),
             };
-            send(&mut stream, id, OK, &[])?;
+            send(&mut stream, kind, id, OK, &[])?;
             let bytes = read_frame(&mut stream, n)?;
             if bytes.len() != n {
                 return Err(invalid());
@@ -502,7 +487,7 @@ fn serve(socket: TcpStream, service: &Service) -> io::Result<()> {
             let block = CandidateBlock::new(header, bytes).map_err(error)?;
             let current = match service.prepare(&block, expires) {
                 Ok(s) => s,
-                Err(e) => return terminal(&mut stream, id, result_tag(&e), &[]),
+                Err(e) => return terminal(&mut stream, kind, id, result_tag(&e), &[]),
             };
             Command::JointBlock(
                 OwnedBlock {
@@ -517,44 +502,43 @@ fn serve(socket: TcpStream, service: &Service) -> io::Result<()> {
     };
     let result = match handle.call_reserved_joint(command, lease, expires) {
         Ok((reply, _lease)) => match reply {
-            Reply::Ok => send(&mut stream, id, OK, &[]),
+            Reply::Ok => send(&mut stream, kind, id, OK, &[]),
             Reply::Status { slot, context } => {
                 let mut b = slot.to_le_bytes().to_vec();
                 b.extend_from_slice(&context);
-                send(&mut stream, id, OK, &b)
+                send(&mut stream, kind, id, OK, &b)
             }
             Reply::JointSnapshot(s) => {
                 let mut b = s.slot.to_le_bytes().to_vec();
                 b.extend_from_slice(&s.context);
                 b.extend_from_slice(&s.parent);
-                send(&mut stream, id, OK, &b)
+                send(&mut stream, kind, id, OK, &b)
             }
-            Reply::NeedBlock(hash) => send(&mut stream, id, NEED_BLOCK, &hash),
-            Reply::JointCheckpoint(Some(c)) => send(&mut stream, id, RECORD, &c.encode()),
-            Reply::JointCheckpoint(None) => send(&mut stream, id, NONE, &[]),
+            Reply::NeedBlock(hash) => send(&mut stream, kind, id, NEED_BLOCK, &hash),
+            Reply::JointCheckpoint(Some(c)) => send(&mut stream, kind, id, RECORD, &c.encode()),
+            Reply::JointCheckpoint(None) => send(&mut stream, kind, id, NONE, &[]),
             Reply::Block(block) => {
                 let mut b = block.block.header().encode().to_vec();
                 b.extend_from_slice(&(block.block.body().len() as u32).to_le_bytes());
-                send(&mut stream, id, BLOCK, &b)?;
+                send(&mut stream, kind, id, BLOCK, &b)?;
                 write_frame(&mut stream, block.block.body(), MAX_BODY_BYTES)
             }
             _ => Err(invalid()),
         },
-        Err(e) => send(&mut stream, id, result_tag(&e), &[]),
+        Err(e) => send(&mut stream, kind, id, result_tag(&e), &[]),
     };
     result?;
     finish(&mut stream)
 }
 fn synchronize(
-    client: &super::JointFinalityClient,
-    binding: &JointBinding,
-    ingress: &JointEvidenceIngress,
+    client: &Client,
+    application: &Installed,
     handle: &Handle,
     bodies: &BodyGate,
     blobs: &BlobGate,
 ) -> io::Result<()> {
     let _control = handle.reserve_control()?;
-    let expires = super::JointFinalityClient::expires()?;
+    let expires = Client::expires()?;
     let local = snapshot(handle, expires)?;
     let remote = client.observed_slot_until(expires)?;
     if remote == 0 {
@@ -572,15 +556,7 @@ fn synchronize(
             bodies.acquire()?,
             expires,
         )?;
-        joint_prefetch::prefetch(
-            client,
-            binding,
-            ingress,
-            blobs,
-            &block.block,
-            local,
-            expires,
-        )?;
+        joint_prefetch::prefetch(client, application, blobs, &block.block, local, expires)?;
         handle.call_joint(Command::JointBlock(block, false, local), expires)?;
         let current = snapshot(handle, expires)?;
         match handle.call_joint(Command::JointCheckpoint(checkpoint, current), expires)? {
@@ -614,4 +590,87 @@ fn synchronize(
         }
     }
     Ok(())
+}
+
+pub struct JointFinalityServer {
+    inner: ProofServer,
+}
+pub struct RunningJointFinality {
+    inner: Running,
+}
+pub struct ProgressFinalityServer {
+    inner: ProofServer,
+}
+pub struct RunningProgressFinality {
+    inner: Running,
+}
+impl super::FinalityServer {
+    /// Trusted composition supplies the already-owned signer/depot and SAME gate.
+    pub fn bind_joint(
+        config: ListenerConfig,
+        owned: DurableJointFinality,
+        gate: crate::ProofGate,
+    ) -> io::Result<JointFinalityServer> {
+        validate_neighbors(&config.neighbors)?;
+        let binding = owned.binding().map_err(error)?;
+        let ingress = owned.evidence_ingress().map_err(error)?;
+        let application = Installed::Joint { binding, ingress };
+        ProofServer::bind(config, Owner::Joint(Box::new(owned)), application, gate)
+            .map(|inner| JointFinalityServer { inner })
+    }
+    /// Distinct installed Progress family; no old binding, result or QC cast.
+    pub fn bind_progress(
+        config: ListenerConfig,
+        owned: DurableFinality,
+        gate: crate::ProofGate,
+    ) -> io::Result<ProgressFinalityServer> {
+        validate_neighbors(&config.neighbors)?;
+        let binding = owned.binding().map_err(error)?;
+        let ingress = owned.evidence_ingress().map_err(error)?;
+        let application = Installed::Progress { binding, ingress };
+        ProofServer::bind(config, Owner::Progress(Box::new(owned)), application, gate)
+            .map(|inner| ProgressFinalityServer { inner })
+    }
+}
+impl JointFinalityServer {
+    pub fn endpoint(&self) -> &Endpoint {
+        self.inner.endpoint()
+    }
+    pub fn set_neighbors(&mut self, neighbors: Vec<Endpoint>) -> io::Result<()> {
+        self.inner.set_neighbors(neighbors)
+    }
+    pub fn spawn(self) -> io::Result<RunningJointFinality> {
+        self.inner
+            .spawn()
+            .map(|inner| RunningJointFinality { inner })
+    }
+}
+impl ProgressFinalityServer {
+    pub fn endpoint(&self) -> &Endpoint {
+        self.inner.endpoint()
+    }
+    pub fn set_neighbors(&mut self, neighbors: Vec<Endpoint>) -> io::Result<()> {
+        self.inner.set_neighbors(neighbors)
+    }
+    pub fn spawn(self) -> io::Result<RunningProgressFinality> {
+        self.inner
+            .spawn()
+            .map(|inner| RunningProgressFinality { inner })
+    }
+}
+impl RunningJointFinality {
+    pub fn endpoint(&self) -> &Endpoint {
+        self.inner.endpoint()
+    }
+    pub fn stop(&mut self) -> io::Result<()> {
+        self.inner.stop()
+    }
+}
+impl RunningProgressFinality {
+    pub fn endpoint(&self) -> &Endpoint {
+        self.inner.endpoint()
+    }
+    pub fn stop(&mut self) -> io::Result<()> {
+        self.inner.stop()
+    }
 }

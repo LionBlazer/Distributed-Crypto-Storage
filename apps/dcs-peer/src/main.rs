@@ -6,6 +6,7 @@ use std::{
 };
 mod joint_participant;
 mod participant;
+mod progress_participant;
 mod supervision;
 fn main() {
     if let Err(error) = run() {
@@ -16,6 +17,21 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let first = args.next();
+    if first.as_deref() == Some("--participant-progress-finality") {
+        let install = match args.next().as_deref() {
+            Some("new") => peer_runtime::participant::ParticipantInstall::New,
+            Some("existing") => peer_runtime::participant::ParticipantInstall::Existing,
+            _ => return Err("Expected participant-progress-finality new|existing".into()),
+        };
+        let directory = PathBuf::from(
+            args.next()
+                .ok_or("Missing Progress participant directory")?,
+        );
+        if args.next().is_some() {
+            return Err("Unexpected Progress participant argument".into());
+        }
+        return progress_participant::run(&directory, install);
+    }
     if first.as_deref() == Some("--participant-joint-finality") {
         let install = match args.next().as_deref() {
             Some("new") => peer_runtime::participant::ParticipantInstall::New,

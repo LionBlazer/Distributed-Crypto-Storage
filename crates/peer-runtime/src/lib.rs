@@ -13,6 +13,7 @@ mod pages;
 pub mod participant;
 mod participant_bootstrap;
 mod private_product;
+pub mod progress_participant;
 mod proof_gate;
 mod read_image;
 mod server;
@@ -48,6 +49,7 @@ pub use objects::{
     CheckedObject, OBJECT_PROFILE_ID, RawBundle, ReceivedVersionBytes, TargetVersion,
 };
 pub use participant_bootstrap::JointParticipantBootstrap;
+pub use participant_bootstrap::ProgressParticipantBootstrap;
 pub use participant_bootstrap::{PARTICIPANT_BOOTSTRAP_BYTES, ParticipantBootstrap};
 
 /// Reject incompatible participant state before a producer writes or launches.

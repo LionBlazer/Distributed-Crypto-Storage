@@ -84,7 +84,7 @@ system lane, current SQL freshness and a hidden-predicate lock grant remain open
 
 `FinalityServer::bind_joint` consumes a real `DurableJointFinality` and the host's
 same `ProofGate`. It returns `JointFinalityServer`; its supervisor and the old
-service use the same private closed `Owner::Original|Joint` actor loop. A host
+service use the same private closed `Owner::Original|Joint|Progress` actor loop. A host
 owns one signer, one timer, one participant ledger and one actual evidence depot.
 The old `DCSRFN01` bytes and 180-second request behavior remain separate from new
 `DCSJFN01`/`joint_profile_digest` and its explicit 1800-second operation budget.
@@ -152,3 +152,15 @@ OFFSET/LIMIT. On the bounded relay source, both four-process protocol regression
 and all 110 peer-runtime library tests passed again. A fresh-head barrier, owner
 Vault and delegated rights remain separate requirements. No ordinary SELECT lane,
 SQL grant, plaintext fallback or quorum-as-computation shortcut is introduced here.
+
+## Progress family
+
+The [Progress participant boundary](../../PROGRESS-PARTICIPANT.md) adds distinct
+typed clients, selectors, server and startup. A private paired Binding/ingress
+enum dispatches metadata and byte access; a third concrete durable Owner uses
+the same actor, floor handoff, signer WAL and ProofGate. Actual proof acceptance
+stays in the fixed Progress verifier. No RPC or decoded QC is an own-operation
+receipt. Legacy Original/Joint protocols and timeouts retain their byte meaning.
+The new owning four-process gate and existing Joint process regression passed;
+see the [native record](../../../../docs/progress-network-validation.md).
+The full Predicate/Result160 owner WAIT boundary remains separate.

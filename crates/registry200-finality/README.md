@@ -192,5 +192,7 @@ The owning native gate passed all 26 library cases and 21 compile-fail examples,
 including existing durability regressions. Strict consumer Clippy and six
 existing TLS actor tests passed too; see the
 [Progress validation record](../../docs/progress-finality-validation.md).
-New Result160 owner completion, actual Progress runtime/OS consensus and SQL
-execution remain separate gates.
+The separate [Progress transport gate](../../docs/progress-network-validation.md)
+now covers genuine Source/Bootstrap803/Control815 with four independent peer
+processes. Full Predicate finality, Result160 owner completion and SQL execution
+remain separate gates.

@@ -82,18 +82,15 @@ impl Workers {
             sockets,
         };
         Self::spawn_lanes(peers, lifecycle, move |index| {
-            let client = super::super::JointFinalityClient::new(
-                service.connector.clone(),
-                service.neighbors[index].clone(),
-                &service.binding,
-            )
-            .with_cancellation(service.cancellation.clone());
+            let client = service
+                .application
+                .client(service.connector.clone(), service.neighbors[index].clone())
+                .with_cancellation(service.cancellation.clone());
             // One SAME control reservation spans this active synchronization.
             // This closure is only transport work, never an accepting verifier.
             let _ = synchronize(
                 &client,
-                &service.binding,
-                &service.ingress,
+                &service.application,
                 &service.handle,
                 &service.bodies,
                 &service.blobs,

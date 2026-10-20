@@ -96,8 +96,10 @@ blocks, not Progress or full FHE. See the
 [validation record](../../../../docs/progress-finality-validation.md) for source
 receipts, timing, failure coverage and scope.
 
-A new-G full Predicate input16/output118 finality gate and actual multi-process
-Progress runtime gate remain required before claiming those boundaries.
+A separate [runtime gate](../../../../docs/progress-network-validation.md) passed
+with real Source/Bootstrap803/Control815 and four independent peer processes.
+A new-G full Predicate input16/output118 finality/runtime gate remains required
+before claiming that boundary.
 Owner State208/Result160 completion, durable Parked
 calls, WAIT/deadlock/rollback continuation, mutable EPQ, Session integration and
 permissionless roster activation are not implemented here.

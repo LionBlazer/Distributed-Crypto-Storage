@@ -1,28 +1,33 @@
-//! Closed dispatch over the two real durable application owners.
+//! Closed dispatch over the three real durable application owners.
 use super::*;
 use registry200_finality::{
     Checkpoint, Descriptor, RegistryFinality,
     joint::{DurableJointFinality, JointCandidate, JointCheckpoint},
+    progress::{Candidate as ProgressCandidate, Checkpoint as ProgressCheckpoint, DurableFinality},
 };
 use work_finality::consensus::{Action, Context, Timeout};
 
 pub(super) enum Owner {
     Original(Box<RegistryFinality>),
     Joint(Box<DurableJointFinality>),
+    Progress(Box<DurableFinality>),
 }
 #[derive(Clone)]
 pub(super) enum Pins {
     Original([u8; 32]),
     Joint([u8; 32]),
+    Progress([u8; 32]),
 }
 #[derive(Clone)]
 pub(super) enum Candidate {
     Original(Descriptor),
     Joint(JointCandidate),
+    Progress(ProgressCandidate),
 }
 pub(super) enum Certificate {
     Original(Checkpoint),
     Joint(JointCheckpoint),
+    Progress(ProgressCheckpoint),
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct Snapshot {
@@ -33,7 +38,7 @@ pub(super) struct Snapshot {
 impl Pins {
     pub fn id(&self) -> [u8; 32] {
         match self {
-            Self::Original(id) | Self::Joint(id) => *id,
+            Self::Original(id) | Self::Joint(id) | Self::Progress(id) => *id,
         }
     }
     pub fn candidate(&self, b: &[u8]) -> io::Result<Candidate> {
@@ -44,6 +49,9 @@ impl Pins {
             Self::Joint(_) => JointCandidate::decode(b)
                 .map(Candidate::Joint)
                 .map_err(error),
+            Self::Progress(_) => ProgressCandidate::decode(b)
+                .map(Candidate::Progress)
+                .map_err(error),
         }
     }
 }
@@ -52,12 +60,14 @@ impl Candidate {
         match self {
             Self::Original(d) => d.slot(),
             Self::Joint(d) => d.slot(),
+            Self::Progress(d) => d.slot(),
         }
     }
     pub fn header(&self) -> &version_journal::Header {
         match self {
             Self::Original(d) => d.header(),
             Self::Joint(d) => d.header(),
+            Self::Progress(d) => d.header(),
         }
     }
 }
@@ -66,6 +76,7 @@ impl Certificate {
         match self {
             Self::Original(c) => Candidate::Original(c.descriptor().clone()),
             Self::Joint(c) => Candidate::Joint(c.candidate().clone()),
+            Self::Progress(c) => Candidate::Progress(c.candidate().clone()),
         }
     }
 }
@@ -74,12 +85,14 @@ impl Owner {
         match self {
             Self::Original(o) => o.binding().map(|b| Pins::Original(b.id())).map_err(error),
             Self::Joint(o) => o.binding().map(|b| Pins::Joint(b.id())).map_err(error),
+            Self::Progress(o) => o.binding().map(|b| Pins::Progress(b.id())).map_err(error),
         }
     }
     pub fn context(&self) -> io::Result<&Context> {
         match self {
             Self::Original(o) => Ok(o.context()),
             Self::Joint(o) => o.context().map_err(error),
+            Self::Progress(o) => o.context().map_err(error),
         }
     }
     pub fn snapshot(&self) -> io::Result<Snapshot> {
@@ -87,6 +100,7 @@ impl Owner {
         let parent = match self {
             Self::Original(o) => o.finalized_head().map_err(error)?.map(|h| h.head().block),
             Self::Joint(o) => o.finalized_parent().map_err(error)?.map(|h| h.head().block),
+            Self::Progress(o) => o.finalized_parent().map_err(error)?.map(|h| h.head().block),
         }
         .unwrap_or(context.journal_genesis());
         Ok(Snapshot {
@@ -111,24 +125,34 @@ impl Owner {
                 )) => Ok(None),
                 Err(e) => Err(error(e)),
             },
+            Self::Progress(o) => match o.timeout() {
+                Ok(t) => Ok(Some(t)),
+                Err(registry200_finality::progress::Error::Consensus(
+                    work_finality::consensus::Error::Stale,
+                )) => Ok(None),
+                Err(e) => Err(error(e)),
+            },
         }
     }
     pub fn outbound(&self) -> io::Result<Vec<Action>> {
         match self {
             Self::Original(o) => o.outbound().map_err(error),
             Self::Joint(o) => o.outbound().map_err(error),
+            Self::Progress(o) => o.outbound().map_err(error),
         }
     }
     pub fn block(&self, id: [u8; 32]) -> io::Result<CandidateBlock> {
         match self {
             Self::Original(o) => o.candidate_block(id).map_err(error),
             Self::Joint(o) => o.candidate_block(id).map_err(error),
+            Self::Progress(o) => o.candidate_block(id).map_err(error),
         }
     }
     pub fn has(&self, id: [u8; 32]) -> io::Result<bool> {
         match self {
             Self::Original(o) => o.has_candidate(id).map_err(error),
             Self::Joint(o) => o.has_candidate(id).map_err(error),
+            Self::Progress(o) => o.has_candidate(id).map_err(error),
         }
     }
     pub fn checkpoint(&mut self, slot: u64) -> io::Result<Option<Certificate>> {
@@ -141,6 +165,10 @@ impl Owner {
                 .checkpoint_after(slot)
                 .map(|c| c.map(Certificate::Joint))
                 .map_err(error),
+            Self::Progress(o) => o
+                .checkpoint_after(slot)
+                .map(|c| c.map(Certificate::Progress))
+                .map_err(error),
         }
     }
     pub fn import(&mut self, b: &CandidateBlock) -> io::Result<Candidate> {
@@ -152,6 +180,10 @@ impl Owner {
             Self::Joint(o) => o
                 .import_candidate(b.header().clone(), b.body())
                 .map(Candidate::Joint)
+                .map_err(error),
+            Self::Progress(o) => o
+                .import_candidate(b.header().clone(), b.body())
+                .map(Candidate::Progress)
                 .map_err(error),
         }
     }
@@ -173,6 +205,14 @@ impl Owner {
                 )) => Ok(()),
                 Err(e) => Err(error(e)),
             },
+            (Self::Progress(o), Candidate::Progress(c)) => match o.propose(c) {
+                Ok(_)
+                | Err(registry200_finality::progress::Error::Consensus(
+                    work_finality::consensus::Error::WrongProposer
+                    | work_finality::consensus::Error::Stale,
+                )) => Ok(()),
+                Err(e) => Err(error(e)),
+            },
             _ => Err(invalid()),
         }
     }
@@ -180,6 +220,7 @@ impl Owner {
         match self {
             Self::Original(o) => o.receive(b).map(|_| ()).map_err(error),
             Self::Joint(o) => o.receive(b).map(|_| ()).map_err(error),
+            Self::Progress(o) => o.receive(b).map(|_| ()).map_err(error),
         }
     }
     pub fn commit(&mut self, c: &Certificate) -> io::Result<()> {
@@ -190,6 +231,9 @@ impl Owner {
             (Self::Joint(o), Certificate::Joint(c)) => {
                 o.receive_checkpoint(c).map(|_| ()).map_err(error)
             }
+            (Self::Progress(o), Certificate::Progress(c)) => {
+                o.receive_checkpoint(c).map(|_| ()).map_err(error)
+            }
             _ => Err(invalid()),
         }
     }
@@ -197,6 +241,50 @@ impl Owner {
         match self {
             Self::Original(o) => o.on_timeout(t).map(|_| ()).map_err(error),
             Self::Joint(o) => o.on_timeout(t).map(|_| ()).map_err(error),
+            Self::Progress(o) => o.on_timeout(t).map(|_| ()).map_err(error),
+        }
+    }
+}
+
+impl Candidate {
+    pub fn encode(&self) -> Vec<u8> {
+        match self {
+            Self::Original(c) => c.encode().to_vec(),
+            Self::Joint(c) => c.encode().to_vec(),
+            Self::Progress(c) => c.encode().to_vec(),
+        }
+    }
+}
+impl Certificate {
+    pub fn round(&self) -> u64 {
+        match self {
+            Self::Original(c) => c.round(),
+            Self::Joint(c) => c.round(),
+            Self::Progress(c) => c.round(),
+        }
+    }
+    pub fn certificate(&self) -> &[u8] {
+        match self {
+            Self::Original(c) => c.certificate(),
+            Self::Joint(c) => c.certificate(),
+            Self::Progress(c) => c.certificate(),
+        }
+    }
+    pub fn encode(&self) -> Vec<u8> {
+        match self {
+            Self::Original(c) => c.encode(),
+            Self::Joint(c) => c.encode(),
+            Self::Progress(c) => c.encode(),
+        }
+    }
+    pub fn decode(kind: super::proof_application::Kind, b: &[u8]) -> io::Result<Self> {
+        match kind {
+            super::proof_application::Kind::Joint => {
+                JointCheckpoint::decode(b).map(Self::Joint).map_err(error)
+            }
+            super::proof_application::Kind::Progress => ProgressCheckpoint::decode(b)
+                .map(Self::Progress)
+                .map_err(error),
         }
     }
 }

@@ -398,6 +398,61 @@ impl StorageProcess {
     }
 }
 
+// Progress is a distinct trusted-IPC installation. This supervisor owns only
+// process lifecycle and bounded frames; it never creates proofs or a roster.
+#[allow(dead_code)]
+pub(crate) struct ProgressProcess {
+    owned: ChildOwner,
+    ready: peer_runtime::progress_participant::ProgressParticipantReady,
+}
+#[allow(dead_code)]
+impl ProgressProcess {
+    pub(crate) fn start(
+        executable: &Path,
+        directory: &Path,
+        install: ParticipantInstall,
+        frames: &[&[u8]],
+    ) -> io::Result<Self> {
+        let mode = match install {
+            ParticipantInstall::New => "new",
+            ParticipantInstall::Existing => "existing",
+        };
+        if matches!(install, ParticipantInstall::New) && !(6..=7).contains(&frames.len())
+            || matches!(install, ParticipantInstall::Existing) && frames.len() != 5
+        {
+            return Err(io::Error::other(
+                "Invalid Progress test bootstrap frame count",
+            ));
+        }
+        let args = [
+            std::ffi::OsStr::new("--participant-progress-finality"),
+            std::ffi::OsStr::new(mode),
+            directory.as_os_str(),
+        ];
+        let (owned, line) = launch(executable, &args, frames)?;
+        let ready = serde_json::from_str(&line).map_err(io::Error::other)?;
+        let process = Self { owned, ready };
+        if process.ready.pid != process.owned.child.id() {
+            return Err(io::Error::other(
+                "Progress Ready PID differs from actual child",
+            ));
+        }
+        Ok(process)
+    }
+    pub(crate) fn ready(&self) -> &peer_runtime::progress_participant::ProgressParticipantReady {
+        &self.ready
+    }
+    pub(crate) fn endpoint(&self) -> &Endpoint {
+        &self.ready.endpoint
+    }
+    pub(crate) fn pid(&self) -> u32 {
+        self.owned.child.id()
+    }
+    pub(crate) fn finish(mut self) -> io::Result<()> {
+        self.owned.finish()
+    }
+}
+
 #[cfg(test)]
 mod owner_report_tests {
     use super::*;

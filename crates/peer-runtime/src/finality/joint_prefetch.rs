@@ -1,8 +1,8 @@
 //! Owner authorization and immutable byte prefetch, never computation admission.
 use super::{busy, error, invalid, owner::Snapshot};
+use super::{proof_application::Installed, proof_client::Client};
 use protocol_storage::BlobId;
-use registry200_finality::{CandidateBlock, joint::JointBinding};
-use registry200_joint::{Application, JointEvidenceIngress, Manifest, ManifestRole, Request};
+use registry200_finality::CandidateBlock;
 use sha2::{Digest, Sha256};
 use std::{
     io,
@@ -97,69 +97,24 @@ impl Drop for BlobLease {
     }
 }
 
-pub(super) fn manifest(
-    binding: &JointBinding,
-    block: &CandidateBlock,
-    parent: Option<[u8; 32]>,
-) -> io::Result<Manifest> {
-    let genesis = binding.journal_genesis();
-    let g = genesis.id().map_err(error)?;
-    let header = block.header();
-    if header.genesis != g
-        || header.body_hash != version_journal::hash(block.body())
-        || parent.is_some_and(|p| header.parent != p)
-    {
-        return Err(invalid());
-    }
-    let version_journal::Body::Transition(body) =
-        version_journal::Body::decode(block.body(), &genesis.profile).map_err(error)?
-    else {
-        return Err(invalid());
-    };
-    if body.parent != header.parent {
-        return Err(invalid());
-    }
-    body.check_authorization(&genesis.owner, g).map_err(error)?;
-    let app = Application::new(binding.application_descriptor().clone(), genesis).map_err(error)?;
-    let request = Request::decode(&body.request).map_err(error)?;
-    // Invoke the actual canonical constructor's original intent rule. No local
-    // copy of intent_query, private SQL compilation or proof policy exists here.
-    let checked = Request::new(&app, request.lane(), request.inner().clone()).map_err(error)?;
-    if checked.encode().map_err(error)? != body.request || checked.inner().parent != header.parent {
-        return Err(invalid());
-    }
-    let manifest = Manifest::decode(&body.proof).map_err(error)?;
-    if manifest.lane() != checked.lane() {
-        return Err(invalid());
-    }
-    Ok(manifest)
-}
 pub(super) fn authorized_reference(
-    binding: &JointBinding,
-    ingress: &JointEvidenceIngress,
+    application: &Installed,
     block: &CandidateBlock,
     parent: Option<[u8; 32]>,
     selector: ProofBlobSelector,
 ) -> io::Result<(BlobId, usize)> {
-    let manifest = manifest(binding, block, parent)?;
+    let references = application.references(block, parent)?;
     if selector.kind == 0 {
-        return manifest
-            .references()
-            .find(|r| r.ordinal() == usize::from(selector.ordinal))
-            .map(|r| (r.blob_id(), r.byte_cap()))
+        return references
+            .iter()
+            .find(|r| r.ordinal == usize::from(selector.ordinal))
+            .map(|r| (r.id, r.cap))
             .ok_or_else(invalid);
     }
-    let catalog = manifest
-        .references()
-        .find(|r| r.role() == ManifestRole::ProductCatalog)
-        .ok_or_else(invalid)?;
-    let id = bfv_product_evidence::CatalogId::from_blob(catalog.blob_id()).map_err(error)?;
-    let claim = ingress.catalog_claim(id).map_err(error)?;
-    if claim.setup_bytes() != binding.setup_claim().bytes()
-        || claim.setup_parts() != binding.setup_claim().parts()
-    {
-        return Err(invalid());
-    }
+    let catalog = references.iter().find(|r| r.catalog).ok_or_else(invalid)?;
+    let id = bfv_product_evidence::CatalogId::from_blob(catalog.id).map_err(error)?;
+    let claim = application.catalog(id)?;
+    application.require_setup(&claim)?;
     claim
         .references()
         .find(|r| r.role() == selector.role && r.ordinal() == selector.ordinal)
@@ -180,20 +135,9 @@ pub(super) fn require_blob(id: BlobId, cap: usize, bytes: &[u8]) -> io::Result<(
     }
     Ok(())
 }
-fn missing(e: &registry200_joint::Error) -> bool {
-    match e {
-        registry200_joint::Error::Storage(bfv_product_evidence::Error::Io(e)) => {
-            e.kind() == io::ErrorKind::NotFound
-        }
-        registry200_joint::Error::Storage(bfv_product_evidence::Error::Storage(
-            protocol_storage::Error::Io(e),
-        )) => e.kind() == io::ErrorKind::NotFound,
-        _ => false,
-    }
-}
 fn ensure(
-    client: Option<&super::JointFinalityClient>,
-    ingress: &JointEvidenceIngress,
+    client: Option<&Client>,
+    application: &Installed,
     gate: &BlobGate,
     id: BlobId,
     cap: usize,
@@ -206,103 +150,83 @@ fn ensure(
         ));
     }
     let _lease = gate.download()?;
-    match ingress.read_public_blob(id, cap) {
+    match application.read(id, cap) {
         Ok(bytes) => {
             require_blob(id, cap, &bytes)?;
             return Ok(());
         }
-        Err(e) if missing(&e) => (),
-        Err(e) => return Err(error(e)),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => (),
+        Err(e) => return Err(e),
     }
     let client = client
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Joint premise is not retained"))?;
     let bytes = client.fetch_blob(id, cap, expires)?;
     require_blob(id, cap, &bytes)?;
-    let retained = ingress.retain_public_blob(&bytes).map_err(error)?;
-    if retained != id {
+    if application.retain(&bytes)? != id {
         return Err(invalid());
     }
     Ok(())
 }
 pub(super) fn prefetch(
-    client: &super::JointFinalityClient,
-    binding: &JointBinding,
-    ingress: &JointEvidenceIngress,
+    client: &Client,
+    application: &Installed,
     gate: &BlobGate,
     block: &CandidateBlock,
     snapshot: Snapshot,
     expires: Instant,
 ) -> io::Result<()> {
-    prefetch_from(
-        Some(client),
-        binding,
-        ingress,
-        gate,
-        block,
-        snapshot,
-        expires,
-    )
+    prefetch_from(Some(client), application, gate, block, snapshot, expires)
 }
 pub(super) fn prefetch_local(
-    binding: &JointBinding,
-    ingress: &JointEvidenceIngress,
+    application: &Installed,
     gate: &BlobGate,
     block: &CandidateBlock,
     snapshot: Snapshot,
     expires: Instant,
 ) -> io::Result<()> {
-    prefetch_from(None, binding, ingress, gate, block, snapshot, expires)
+    prefetch_from(None, application, gate, block, snapshot, expires)
 }
 fn prefetch_from(
-    client: Option<&super::JointFinalityClient>,
-    binding: &JointBinding,
-    ingress: &JointEvidenceIngress,
+    client: Option<&Client>,
+    application: &Installed,
     gate: &BlobGate,
     block: &CandidateBlock,
     snapshot: Snapshot,
     expires: Instant,
 ) -> io::Result<()> {
-    let genesis = binding.journal_genesis();
+    let genesis = application.genesis();
     if block.header().genesis != genesis.id().map_err(error)?
         || block.header().body_hash != version_journal::hash(block.body())
         || block.header().parent != snapshot.parent
     {
         return Err(invalid());
     }
-    // Empty is a legitimate Journal operation, with no proof references. Its
-    // PoW/QC/context still go through the actual closed owner, never this test.
+    // Empty is authenticated by the actual Journal/Work/QC path. It cannot
+    // manufacture an own-operation receipt or skip that independent admission.
     if matches!(
         version_journal::Body::decode(block.body(), &genesis.profile).map_err(error)?,
         version_journal::Body::Empty
     ) {
         return Ok(());
     }
-    let manifest = manifest(binding, block, Some(snapshot.parent))?;
-    for reference in manifest.references() {
+    for reference in application.references(block, Some(snapshot.parent))? {
         ensure(
             client,
-            ingress,
+            application,
             gate,
-            reference.blob_id(),
-            reference.byte_cap(),
+            reference.id,
+            reference.cap,
             expires,
         )?;
-        if reference.role() == ManifestRole::ProductCatalog {
-            let claim = ingress
-                .catalog_claim(
-                    bfv_product_evidence::CatalogId::from_blob(reference.blob_id())
-                        .map_err(error)?,
-                )
-                .map_err(error)?;
-            if claim.setup_bytes() != binding.setup_claim().bytes()
-                || claim.setup_parts() != binding.setup_claim().parts()
-            {
-                return Err(invalid());
-            }
+        if reference.catalog {
+            let claim = application.catalog(
+                bfv_product_evidence::CatalogId::from_blob(reference.id).map_err(error)?,
+            )?;
+            application.require_setup(&claim)?;
             for part in claim.references() {
                 ensure(
                     client,
-                    ingress,
+                    application,
                     gate,
                     part.blob_id(),
                     part.byte_cap(),
