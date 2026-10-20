@@ -90,18 +90,22 @@ improvement is established by these unit cases; complete peer-process operations
 require their separate owning gates.
 
 PREVOTE certificates are first authenticated against the full Context and value.
-A noncurrent round then returns `Stale` before application replay. An exact
-current `(value, certificate)` already retained by this machine is a whole-apply
-no-op before `drive`: its first event completed `drive` before publication and
-the repeat introduces no new evidence. Different genuine QCs or values still
-run the actual application verifier. PRECOMMIT certificates never use this
+A noncurrent round then returns `Stale` before application replay. If this
+machine already retains a current POL for the exact full value bytes, another
+independently authenticated current PREVOTE QC is a whole-apply no-op before
+`drive`, including a different genuine signer subset. Its first event completed
+`drive` before publication. Alternative endorsements are not merged into vote
+maps and cannot replace the first retained QC; different value bytes still run
+the actual application verifier. This module does not collect slashing evidence
+from alternative QC endorsements. PRECOMMIT certificates never use this
 shortcut; a valid older-round commit of the same slot still runs the application
 check and can decide. Recovery and signer advance also retain actual application
 verification. This does not cache a proof grant or change any closed adapter's
-client/checkpoint revalidation. The two additional counted-real-work/QC/WAL tests
-passed as part of all 44 work-finality runtime tests; five compile-fail examples
-also passed. These unit checks establish no complete peer-process latency or
-liveness measurement.
+client/checkpoint revalidation. All 46 work-finality runtime tests and five
+compile-fail examples passed, including the revised genuine-subset assertions
+and new first-POL quota and post-fsync lost-ACK cases. Those cases retain actual
+application checks before the first durable admission and on recovery.
+No complete peer-process latency or liveness improvement is established here.
 
 ### Application and local-control boundary
 

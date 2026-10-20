@@ -104,3 +104,31 @@ cargo test --release --locked -p bfv-mul-relin-proof --lib -- --test-threads=1
 
 The [proof-library extraction validation](../../experiments/bfv-mul-relin-proof/LIBRARY-EXTRACTION-VALIDATION.md) records the current
 relocation, owning native tests and preserved proof policy.
+
+## Immutable profile identity
+
+`profile_digest()` returns the same complete public protocol identity through one
+process-local `OnceLock<[u8; 64]>`. Its writer uses only fixed domains, limits,
+public NTT tables, fixed arithmetic-profile labels and the two Relin roles. The
+first caller computes the original writer; concurrent callers wait for that
+identity and later calls copy its 64 bytes. No query, setup, secret, proof,
+verification outcome, Journal state or authorization is cached. All proof,
+binding, security and resource checks remain mandatory on their original paths.
+
+The concurrent identity case passed in its own cold process, together with the
+unchanged published-profile test and all eight owning runtime tests. Run the
+identity case alone to exercise cold concurrent initialization; in a whole suite
+another test may already have initialized the profile:
+
+```text
+cargo test --release --locked -p bfv-mul-relin-proof --lib profile::tests::concurrent_callers_retain_the_published_and_uncached_graph_identity -- --exact --test-threads=1
+cargo test --release --locked -p bfv-mul-relin-proof --lib profile::tests::observe_uncached_and_warm_cached_profile_hashing -- --ignored --exact --nocapture --test-threads=1
+```
+
+Both compare against the independently retained pre-extraction profile64; the
+concurrent case also runs the unchanged uncached writer. The observation reports
+16 uncached calls and 65,536 warm cached calls, including equality checks, with no
+timing assertion. The separate native observation measured 35.3611 ms for the
+16 uncached calls and 0.0470 ms for the 65,536 warm calls. It measures identity
+hashing only, not proof verification, SQL latency or whole-process idle CPU.
+Operational improvement needs a separate measurement of the actual consumer.

@@ -1447,6 +1447,216 @@ fn exact_authenticated_remote_proposal_retries_do_not_recheck_or_change_the_owne
 }
 
 #[test]
+fn first_prevote_quota_refusal_never_publishes_a_same_value_noop() {
+    let f = fixture();
+    let files = OwnedFiles::new();
+    let path = files.path("first-pol-quota");
+    let budget = ByteBudget::new(MAX_SHARED_BYTES).unwrap();
+    let (application, calls) = counted_ticket_application(&f);
+    let mut voter = DurableVoter::create_new(
+        &path,
+        f.context.clone(),
+        application.clone(),
+        f.key(3),
+        &budget,
+    )
+    .unwrap();
+    let original = f.qc(0, Step::Prevote, &f.a);
+    let expected = f
+        .context
+        .vote(0, Step::Prevote, Some(f.context.value_id(&f.a).unwrap()))
+        .unwrap();
+    let votes: Vec<_> = [0, 2, 3]
+        .into_iter()
+        .map(|n| f.vote(n, 0, Step::Prevote, Some(&f.a)))
+        .collect();
+    let alternate = QuorumCertificate::assemble(f.context.set(), &expected, &votes).unwrap();
+    alternate.verify(f.context.set(), &expected).unwrap();
+    assert_ne!(alternate, original);
+    let header_bytes = voter.file_bytes();
+    let header_used = budget.used().unwrap();
+    let full = budget.reserve(MAX_SHARED_BYTES - header_used).unwrap();
+
+    // Both genuine QCs reach the actual app check, then the REAL file quota
+    // refuses the first record. A prepared clone is never the retained POL.
+    for certificate in [original.clone(), alternate.clone()] {
+        assert!(matches!(
+            voter.handle(Input::Certificate {
+                value: f.a.clone(),
+                certificate,
+            }),
+            Err(Error::ResourceLimit)
+        ));
+        assert!(!voter.is_poisoned());
+        assert_eq!(voter.file_bytes(), header_bytes);
+        assert_eq!(fs::metadata(&path).unwrap().len(), header_bytes);
+        assert_eq!(budget.used().unwrap(), MAX_SHARED_BYTES);
+        assert_eq!(voter.step(), RoundStep::Propose);
+        assert_eq!(voter.locked(), None);
+        assert_eq!(voter.valid(), None);
+        assert!(voter.outbound().unwrap().is_empty());
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    drop(full);
+    assert_eq!(budget.used().unwrap(), header_used);
+
+    assert!(
+        voter
+            .handle(Input::Certificate {
+                value: f.a.clone(),
+                certificate: alternate.clone(),
+            })
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    assert!(voter.file_bytes() > header_bytes);
+    let admitted_bytes = voter.file_bytes();
+    let admitted_used = budget.used().unwrap();
+    assert!(
+        voter
+            .handle(Input::Certificate {
+                value: f.a.clone(),
+                certificate: original,
+            })
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    assert_eq!(voter.file_bytes(), admitted_bytes);
+    assert_eq!(budget.used().unwrap(), admitted_used);
+    let out = voter
+        .handle(Input::Proposal(f.proposal(0, &f.a, None)))
+        .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
+    assert!(out.iter().any(|a| matches!(a,
+        Action::Certificate { certificate, .. } if certificate == &alternate
+    )));
+    let locked = Some((0, f.context.value_id(&f.a).unwrap()));
+    assert_eq!(voter.locked(), locked);
+    let persisted = voter.outbound().unwrap();
+    drop(voter);
+    let exact_wal = fs::read(&path).unwrap();
+    let reopened =
+        DurableVoter::open_existing(&path, f.context.clone(), application, f.key(3), &budget)
+            .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 6);
+    assert_eq!(reopened.locked(), locked);
+    assert_eq!(reopened.outbound().unwrap(), persisted);
+    drop(reopened);
+    assert_eq!(fs::read(&path).unwrap(), exact_wal);
+}
+
+#[test]
+fn first_prevote_lost_sync_ack_requires_recovery_before_same_value_noop() {
+    let f = fixture();
+    let files = OwnedFiles::new();
+    let path = files.path("first-pol-lost-ack");
+    let budget = ByteBudget::new(MAX_SHARED_BYTES).unwrap();
+    let (application, calls) = counted_ticket_application(&f);
+    let mut voter = DurableVoter::create_new(
+        &path,
+        f.context.clone(),
+        application.clone(),
+        f.key(3),
+        &budget,
+    )
+    .unwrap();
+    let original = f.qc(0, Step::Prevote, &f.a);
+    let expected = f
+        .context
+        .vote(0, Step::Prevote, Some(f.context.value_id(&f.a).unwrap()))
+        .unwrap();
+    let votes: Vec<_> = [0, 2, 3]
+        .into_iter()
+        .map(|n| f.vote(n, 0, Step::Prevote, Some(&f.a)))
+        .collect();
+    let alternate = QuorumCertificate::assemble(f.context.set(), &expected, &votes).unwrap();
+    alternate.verify(f.context.set(), &expected).unwrap();
+    assert_ne!(alternate, original);
+    voter.inject(Fault::AfterSync);
+    assert!(matches!(
+        voter.handle(Input::Certificate {
+            value: f.a.clone(),
+            certificate: original.clone(),
+        }),
+        Err(Error::Io(_))
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(voter.is_poisoned());
+    assert!(matches!(voter.outbound(), Err(Error::Poisoned)));
+    assert!(fs::metadata(&path).unwrap().len() > voter.file_bytes());
+    let charged = budget.used().unwrap();
+    assert!(matches!(
+        voter.handle(Input::Certificate {
+            value: f.a.clone(),
+            certificate: alternate.clone(),
+        }),
+        Err(Error::Poisoned)
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(budget.used().unwrap(), charged);
+    drop(voter);
+    let lost_ack_record = fs::read(&path).unwrap();
+
+    // Reconstruct actual retained bytes with a fresh process budget. The first
+    // durable POL MUST call the real app verifier again during this recovery.
+    let recovered_budget = ByteBudget::new(MAX_SHARED_BYTES).unwrap();
+    let mut reopened = DurableVoter::open_existing(
+        &path,
+        f.context.clone(),
+        application.clone(),
+        f.key(3),
+        &recovered_budget,
+    )
+    .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    let length = reopened.file_bytes();
+    let used = recovered_budget.used().unwrap();
+    assert_eq!(length, lost_ack_record.len() as u64);
+    assert!(
+        reopened
+            .handle(Input::Certificate {
+                value: f.a.clone(),
+                certificate: alternate,
+            })
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(reopened.file_bytes(), length);
+    assert_eq!(recovered_budget.used().unwrap(), used);
+    assert!(reopened.outbound().unwrap().is_empty());
+    assert_eq!(reopened.locked(), None);
+    let out = reopened
+        .handle(Input::Proposal(f.proposal(0, &f.a, None)))
+        .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    assert!(out.iter().any(|a| matches!(a,
+        Action::Certificate { certificate, .. } if certificate == &original
+    )));
+    let persisted = reopened.outbound().unwrap();
+    let locked = Some((0, f.context.value_id(&f.a).unwrap()));
+    assert_eq!(reopened.locked(), locked);
+    drop(reopened);
+    let exact_wal = fs::read(&path).unwrap();
+    assert!(exact_wal.starts_with(&lost_ack_record));
+    let recovered = DurableVoter::open_existing(
+        &path,
+        f.context.clone(),
+        application,
+        f.key(3),
+        &recovered_budget,
+    )
+    .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 5);
+    assert_eq!(recovered.outbound().unwrap(), persisted);
+    assert_eq!(recovered.locked(), locked);
+    drop(recovered);
+    assert_eq!(fs::read(&path).unwrap(), exact_wal);
+}
+
+#[test]
 fn altered_proposals_and_invalid_authentication_never_use_the_exact_remote_noop() {
     let f = fixture();
     let files = OwnedFiles::new();
@@ -1709,7 +1919,8 @@ fn exact_current_prevote_qc_retries_do_not_replay_or_hide_new_evidence() {
     assert_eq!(voter.file_bytes(), length);
     assert_eq!(budget.used().unwrap(), used);
 
-    // Another genuine signer subset is NOT the exact tuple stored above.
+    // Another genuine signer subset adds no new protocol facts for these exact
+    // current value bytes. The original independently verified QC stays stored.
     let expected = f
         .context
         .vote(0, Step::Prevote, Some(f.context.value_id(&f.a).unwrap()))
@@ -1725,12 +1936,12 @@ fn exact_current_prevote_qc_retries_do_not_replay_or_hide_new_evidence() {
         voter
             .handle(Input::Certificate {
                 value: f.a.clone(),
-                certificate: alternate,
+                certificate: alternate.clone(),
             })
             .unwrap()
             .is_empty()
     );
-    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
     assert!(matches!(
         voter.handle(Input::Certificate {
             value: f.b.clone(),
@@ -1738,7 +1949,7 @@ fn exact_current_prevote_qc_retries_do_not_replay_or_hide_new_evidence() {
         }),
         Err(Error::Equivocation)
     ));
-    assert_eq!(calls.load(Ordering::SeqCst), 4);
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
     assert_eq!(voter.file_bytes(), length);
     assert_eq!(budget.used().unwrap(), used);
 
@@ -1747,7 +1958,7 @@ fn exact_current_prevote_qc_retries_do_not_replay_or_hide_new_evidence() {
     let out = voter
         .handle(Input::Proposal(f.proposal(0, &f.a, None)))
         .unwrap();
-    assert_eq!(calls.load(Ordering::SeqCst), 5);
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
     assert!(
         out.iter()
             .any(|a| matches!(a, Action::Vote(v) if v.context().step() == Step::Precommit))
@@ -1756,18 +1967,47 @@ fn exact_current_prevote_qc_retries_do_not_replay_or_hide_new_evidence() {
     assert_eq!(voter.locked(), locked);
     assert_eq!(voter.valid(), locked);
     assert_eq!(voter.step(), RoundStep::Precommit);
+    assert!(out.iter().any(|a| matches!(a,
+        Action::Certificate { certificate: retained, .. } if retained == &certificate
+    )));
     let persisted = voter.outbound().unwrap();
+    let locked_length = voter.file_bytes();
+    let locked_used = budget.used().unwrap();
+    assert!(
+        voter
+            .handle(Input::Certificate {
+                value: f.a.clone(),
+                certificate: alternate.clone(),
+            })
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
+    assert_eq!(voter.outbound().unwrap(), persisted);
+    assert_eq!(voter.locked(), locked);
+    assert_eq!(voter.valid(), locked);
+    assert_eq!(voter.file_bytes(), locked_length);
+    assert_eq!(budget.used().unwrap(), locked_used);
     drop(voter);
     let locked_records = fs::read(&path).unwrap();
     assert!(locked_records.starts_with(&first_pol_record));
     let mut reopened =
         DurableVoter::open_existing(&path, f.context.clone(), application, f.key(3), &budget)
             .unwrap();
-    assert_eq!(calls.load(Ordering::SeqCst), 7);
+    assert_eq!(calls.load(Ordering::SeqCst), 6);
     let used = budget.used().unwrap();
     let length = reopened.file_bytes();
     assert!(reopened.handle(input).unwrap().is_empty());
-    assert_eq!(calls.load(Ordering::SeqCst), 7);
+    assert!(
+        reopened
+            .handle(Input::Certificate {
+                value: f.a.clone(),
+                certificate: alternate,
+            })
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 6);
     assert_eq!(reopened.outbound().unwrap(), persisted);
     assert_eq!(reopened.locked(), locked);
     assert_eq!(reopened.valid(), locked);

@@ -200,10 +200,11 @@ impl Machine {
                     if self
                         .current_pol
                         .as_ref()
-                        .is_some_and(|(old_value, old)| old_value == value && old == certificate)
+                        .is_some_and(|(old_value, _)| old_value == value)
                     {
-                        // The first identical event already ran drive before
-                        // durable publication. No new evidence may trigger it.
+                        // The first event for these exact value bytes already
+                        // ran drive before durable publication. This QC adds no
+                        // map entries and cannot replace that retained POL.
                         return Ok(Vec::new());
                     }
                 }
