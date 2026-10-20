@@ -3,6 +3,7 @@ pub mod bootstrap;
 mod bootstrap_air;
 pub mod circuit;
 mod fields;
+pub mod result_opening;
 pub mod statement;
 pub mod transition;
 mod transition_air;

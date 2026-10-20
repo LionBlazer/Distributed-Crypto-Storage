@@ -195,5 +195,33 @@ examples and the old three-profile byte/geometry regression also passed. Strict
 all-target release Clippy passed. See the validation record for exact source/log
 pins, failed compile attempts, commands and resource observations. These gates
 establish only this mathematical relation; complete FHE-result/application
-composition, owner continuation, finality and real DCS admission remain separate
-required work.
+composition later passed its own [application gate](../../../../docs/progress-application-validation.md).
+Owner continuation, finality and real DCS admission remain separate required work.
+
+
+### Private predicate Result160 opening
+
+The typed opening assertions passed in all nine affected cryptographic cases;
+five privacy examples and strict all-target Clippy also passed. See the
+[opening validation](../../../../docs/result160-opening-validation.md) for the
+exact tested revision, commands and limits. The earlier native record above
+describes the preceding Core revision.
+
+`result_opening::ResultOpening::open` consumes 160 canonical `u64` words and
+requires the actual `transition::VerifiedStep`, the independently retained
+original `StatementOpening`, and the exact optional previous/parked progress
+openings. It checks every field's canonical range, the complete current proof
+context, old/next/original-statement roots, the full Result160 commitment, fixed
+padding, and typed cursor/status/flag/holder/call/progress associations. It
+rejects the distinct Control result grammar. Typed getters expose only private
+mathematical values; the backing 1,280-byte array is zeroized on drop and has no
+raw getter, serialization, `Clone`, or `Debug` implementation.
+
+`transition::Witness::result_opening_fields` returns the unverified private
+preimage from the same internal builder used to set its proof claim. It is for
+bounded encrypted owner custody; it performs no second predicate evaluation.
+An opening does not grant SQL success, rows, a current lock, QC acceptance, or
+bank installation. The actual owner must first bind its exact operation and
+fresh agreed parent/finality receipt; only its separate completion boundary may
+dispatch Done, Parked, or Error and install the next root-checked private bank.
+This addition changes no relation, profile, wire format, proof cap, or old API.

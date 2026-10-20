@@ -250,7 +250,7 @@ impl Witness {
         out.finish()?;
         Ok(out)
     }
-    fn finish(&mut self) -> Result<(), Error> {
+    fn result_fields(&self) -> Result<Vec<Val>, Error> {
         let e = &self.statement.expected;
         let actor = self
             .old
@@ -308,8 +308,46 @@ impl Witness {
             assert_eq!(out.len(), 160);
             out
         };
+        Ok(values)
+    }
+    fn finish(&mut self) -> Result<(), Error> {
+        let mut values = self.result_fields()?;
         self.statement.result = super::fields::digest(&values);
+        values.fill(Val::ZERO);
         Ok(())
+    }
+    /// Caller-owned PRIVATE canonical Result160 preimage for encrypted custody.
+    /// This uses the exact same builder as the claimed proof result. It is not a
+    /// verified opening and grants no SQL, finality, or installed-state authority.
+    pub fn result_opening_fields(&self) -> Result<Zeroizing<[u64; 160]>, Error> {
+        let mut values = self.result_fields()?;
+        let out = Zeroizing::new(core::array::from_fn(|i| values[i].as_canonical_u64()));
+        values.fill(Val::ZERO);
+        Ok(out)
+    }
+    #[cfg(test)]
+    pub(super) fn result_opening_inputs_for_test(&self) -> Option<ResultOpeningInputsForTest<'_>> {
+        let original = self.hidden.as_deref()?;
+        let previous = self
+            .old
+            .registry
+            .transactions
+            .iter()
+            .position(|t| t.id == original.transaction)
+            .and_then(|t| self.old.progress[t].as_ref());
+        let parked = self
+            .next
+            .registry
+            .transactions
+            .iter()
+            .position(|t| t.id == original.transaction)
+            .and_then(|t| self.next.progress[t].as_ref());
+        Some(ResultOpeningInputsForTest {
+            original,
+            previous,
+            parked,
+            step: self.step.as_deref()?,
+        })
     }
     pub fn statement(&self) -> &Statement {
         &self.statement
@@ -606,4 +644,12 @@ impl Drop for GuardedBaseStep {
     fn drop(&mut self) {
         self.0.next.zeroize();
     }
+}
+
+#[cfg(test)]
+pub(super) struct ResultOpeningInputsForTest<'a> {
+    pub(super) original: &'a StatementOpening,
+    pub(super) previous: Option<&'a super::circuit::ProgressOpening>,
+    pub(super) parked: Option<&'a super::circuit::ProgressOpening>,
+    pub(super) step: &'a Step,
 }

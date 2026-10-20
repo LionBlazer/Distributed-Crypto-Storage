@@ -173,11 +173,40 @@ fn control(
     };
     let evidence = prove(&e, &w, &p).unwrap();
     let (s, bytes) = evidence.into_parts();
+    let verified = verify(&e, &s, &p, &bytes).unwrap();
+    assert_eq!(verified.statement().values(), s.values());
+    // An actual verified Control proof and its genuine Result160 preimage cannot
+    // enter the predicate-only API. The unrelated placeholder opens no claim.
+    let unrelated = StatementOpening {
+        scope: e.statement_scope(),
+        enrollment: e.base.enrollment.map(|v| v.as_canonical_u64()),
+        client: [1; 32],
+        call: 1,
+        transaction: 1,
+        principal: 1,
+        controller: CONTROLLERS[0],
+        invocation: [1; 32],
+        sql_identity: [1; 32],
+        snapshot: [1; 32],
+        mask: [0; 32],
+        mode: 4,
+        wait: 0,
+        offset: 0,
+        limit: 4,
+        projection: 1,
+        salt: [73; 4],
+    };
+    assert!(matches!(
+        progress::result_opening::ResultOpening::open(
+            &verified,
+            w.result_opening_fields().unwrap(),
+            &unrelated,
+            None,
+            None,
+        ),
+        Err(Error::Shape)
+    ));
     drop(w);
-    assert_eq!(
-        verify(&e, &s, &p, &bytes).unwrap().statement().values(),
-        s.values()
-    );
     assert_eq!(
         s.next,
         next.root(e.registry_context(), &f.plain, &CONTROLLERS, [new_salt; 4])
@@ -315,17 +344,232 @@ fn predicate_witness(
     .unwrap()
 }
 fn accept(e: &Expected, w: &Witness, source: &[u8], query: &[u8]) -> Statement {
+    accept_with_result_checks(e, w, source, query, false)
+}
+fn accept_with_result_checks(
+    e: &Expected,
+    w: &Witness,
+    source: &[u8],
+    query: &[u8],
+    corruptions: bool,
+) -> Statement {
     let p = Prerequisites {
         source,
         query: Some(query),
     };
     let evidence = prove(e, w, &p).unwrap();
     let (s, bytes) = evidence.into_parts();
-    assert_eq!(
-        verify(e, &s, &p, &bytes).unwrap().statement().values(),
-        s.values()
-    );
+    let verified = verify(e, &s, &p, &bytes).unwrap();
+    assert_eq!(verified.statement().values(), s.values());
+    assert_private_result_opening(&verified, w, corruptions);
     s
+}
+// Reuse the SAME actual verified proof and captured private witness. These
+// checks add no proving, fixture setup, product simulation, or SQL acceptance.
+fn assert_private_result_opening(verified: &VerifiedStep, w: &Witness, corruptions: bool) {
+    use progress::result_opening::ResultOpening;
+    let inputs = w.result_opening_inputs_for_test().unwrap();
+    let raw = w.result_opening_fields().unwrap();
+    let opened = ResultOpening::open(
+        verified,
+        Zeroizing::new(*raw),
+        inputs.original,
+        inputs.previous,
+        inputs.parked,
+    )
+    .unwrap();
+    let step = inputs.step;
+    assert!(opened.status() == step.status);
+    assert_eq!(opened.resumed(), step.resumed);
+    assert_eq!(opened.transaction(), inputs.original.transaction);
+    assert_eq!(opened.call(), inputs.original.call);
+    assert_eq!(opened.microstep(), step.microstep);
+    assert_eq!(opened.old_cursor(), step.old_cursor);
+    assert_eq!(opened.cursor(), step.cursor);
+    assert_eq!(opened.visited(), step.visited);
+    assert_eq!(opened.selected(), step.selected);
+    assert_eq!(
+        opened.old_registry_root(),
+        source::statement::encode_digest(verified.statement().expected.old)
+    );
+    assert_eq!(opened.next_registry_root(), verified.statement().next());
+    assert_eq!(
+        opened.statement_root(),
+        source::statement::encode_digest(inputs.original.root().unwrap())
+    );
+    assert_eq!(
+        opened.previous_progress_root(),
+        inputs
+            .previous
+            .map(|p| source::statement::encode_digest(p.root().unwrap()))
+    );
+    assert_eq!(
+        opened.parked_progress_root(),
+        inputs
+            .parked
+            .map(|p| source::statement::encode_digest(p.root().unwrap()))
+    );
+    match opened.blocked() {
+        Some(blocked) => {
+            assert_eq!(blocked.ordinal(), step.cursor);
+            assert_eq!(blocked.transaction(), step.holder);
+            assert_eq!(blocked.mode(), step.holder_mode);
+        }
+        None => assert_eq!(step.block, [false; 4]),
+    }
+    if let Some(previous) = inputs.previous {
+        assert!(
+            ResultOpening::open(
+                verified,
+                Zeroizing::new(*raw),
+                inputs.original,
+                None,
+                inputs.parked
+            )
+            .is_err()
+        );
+        let mut changed = previous.clone();
+        changed.salt[0] ^= 1;
+        assert!(
+            ResultOpening::open(
+                verified,
+                Zeroizing::new(*raw),
+                inputs.original,
+                Some(&changed),
+                inputs.parked
+            )
+            .is_err()
+        );
+    }
+    if let Some(parked) = inputs.parked {
+        assert!(
+            ResultOpening::open(
+                verified,
+                Zeroizing::new(*raw),
+                inputs.original,
+                inputs.previous,
+                None
+            )
+            .is_err()
+        );
+        let mut changed = parked.clone();
+        changed.salt[0] ^= 1;
+        assert!(
+            ResultOpening::open(
+                verified,
+                Zeroizing::new(*raw),
+                inputs.original,
+                inputs.previous,
+                Some(&changed)
+            )
+            .is_err()
+        );
+    }
+    if !corruptions {
+        return;
+    }
+    // Every canonical word, including all context/root/salt/padding words, is
+    // commitment-bound. Modular aliases must fail before field conversion.
+    for at in 0..160 {
+        let mut changed = Zeroizing::new(*raw);
+        changed[at] = u64::from(changed[at] == 0);
+        assert!(
+            ResultOpening::open(
+                verified,
+                changed,
+                inputs.original,
+                inputs.previous,
+                inputs.parked
+            )
+            .is_err(),
+            "unbound Result160 word {at}"
+        );
+        let mut alias = Zeroizing::new(*raw);
+        alias[at] = Val::ORDER_U64;
+        assert!(
+            matches!(
+                ResultOpening::open(
+                    verified,
+                    alias,
+                    inputs.original,
+                    inputs.previous,
+                    inputs.parked
+                ),
+                Err(Error::Encoding)
+            ),
+            "field alias {at}"
+        );
+    }
+    for at in [119, 120, 143, 144, 146, 147, 148, 149] {
+        let mut changed = Zeroizing::new(*raw);
+        changed[at] = 1u64 << 32;
+        assert!(
+            matches!(
+                ResultOpening::open(
+                    verified,
+                    changed,
+                    inputs.original,
+                    inputs.previous,
+                    inputs.parked
+                ),
+                Err(Error::Shape)
+            ),
+            "wide integer limb {at}"
+        );
+    }
+    for at in [123, 127, 131] {
+        let mut changed = Zeroizing::new(*raw);
+        changed[at] = 2;
+        assert!(
+            matches!(
+                ResultOpening::open(
+                    verified,
+                    changed,
+                    inputs.original,
+                    inputs.previous,
+                    inputs.parked
+                ),
+                Err(Error::Shape)
+            ),
+            "nonboolean flag {at}"
+        );
+    }
+    let mut changed = inputs.original.clone();
+    changed.invocation[0] ^= 1;
+    assert!(
+        ResultOpening::open(
+            verified,
+            Zeroizing::new(*raw),
+            &changed,
+            inputs.previous,
+            inputs.parked
+        )
+        .is_err()
+    );
+    let mut changed = inputs.original.clone();
+    changed.scope[0] ^= 1;
+    assert!(
+        ResultOpening::open(
+            verified,
+            Zeroizing::new(*raw),
+            &changed,
+            inputs.previous,
+            inputs.parked
+        )
+        .is_err()
+    );
+    let mut bad_salt = Zeroizing::new(*raw);
+    bad_salt[150] ^= 1;
+    assert!(matches!(
+        ResultOpening::open(
+            verified,
+            bad_salt,
+            inputs.original,
+            inputs.previous,
+            inputs.parked
+        ),
+        Err(Error::Verification)
+    ));
 }
 
 #[test]
@@ -380,7 +624,7 @@ fn genuine_source_encoding_wait_prefix_end_compaction_and_fresh_blind_resume() {
     let sa = hidden(&draft, &b, 1, mask_a, 2, 0, 1);
     let ea = predicate_expected(f, &qa, &b, &sa, 0xc3, 8);
     let wa = predicate_witness(f, &ea, &b, sa.clone(), 8, 9, 2, 30);
-    let proof_a = accept(&ea, &wa, &f.source_bytes, &qa_bytes);
+    let proof_a = accept_with_result_checks(&ea, &wa, &f.source_bytes, &qa_bytes, true);
     let after_a = b.predicate(&sa, [0, 1, 128, 255], [74; 4]).unwrap().next;
     assert_eq!(after_a.registry.transactions[0].held, [0, 0, 0, 4]);
     let mut mask_b = mask_a;
