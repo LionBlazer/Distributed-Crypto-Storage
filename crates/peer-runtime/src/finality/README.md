@@ -164,3 +164,56 @@ receipt. Legacy Original/Joint protocols and timeouts retain their byte meaning.
 The new owning four-process gate and existing Joint process regression passed;
 see the [native record](../../../../docs/progress-network-validation.md).
 The full Predicate/Result160 owner WAIT boundary remains separate.
+
+## Optional public validator timings
+
+Set DCS_PUBLIC_TIMINGS=1 before first use to collect bounded Progress observations.
+The default path uses no timing clock, thread-local accumulator or diagnostic IO.
+No wire, application/profile/G/Rules digest, deadline, proof, quota or agreement
+rule changes. These records grant no SQL acceptance or current-head authority.
+
+The actor records import/receive/checkpoint queue wait from immediately before
+try_send to handler entry. It also records automatic propose and timeout handlers.
+Metadata polling is excluded. At most three records are held per loop; at most
+4096 actor lines emit per process. Handler time ends when that operation returns
+or unwinds, before the actual reply send; queue wait excludes transport/prefetch.
+Actor slot is the command snapshot slot (untrusted until normal validation);
+automatic proposer/timeout slots come from their actual local timeout token.
+The owner remains exclusively owned and every synchronous native call is joined.
+
+The dependency's private public_timings module owns a fixed per-thread numerical
+accumulator and exposes only registry200_finality::flush_public_timings(), an
+observational no-argument/no-result function. Import and consensus scopes collect
+actual application callback/verify_candidate call counts and elapsed time, plus
+handle/WAL, State-lock, preflight, floor append, install, voter advance, synchronize
+and import prepare/charge/commit intervals. A nested checkpoint/drive shares its
+outer scope. Each callback still unconditionally invokes the genuine installed
+verifier; no mathematical success or evidence is retained by diagnostics.
+
+The actor's private RAII loop owner drains only after the inner proof permits and
+State/queue guards have dropped, on normal, error and early-return paths. No
+diagnostic output occurs inside a library State guard. The inert flush takes no
+owner/verifier/candidate and supplies no result; it never verifies or changes
+consensus. Standalone library users may call it after releasing their own guards.
+
+Library buffering is bounded to 16 completed records per thread and 4096 emitted
+lines per process. Excess diagnostics may be dropped; counts are not an exhaustive
+profile if a buffer or output cap is reached. All fields use fixed public tags,
+the actual process PID and numeric ordinals/slots/counts/durations. No SQL, private digest/opening, row,
+ciphertext/proof payload, key, identity secret or arbitrary error is formatted.
+Diagnostic output errors are ignored without changing the original result.
+
+Intervals overlap: handle/WAL includes application verification and consensus/
+encoding/accounting/write/sync work; floor append includes its actual sync;
+synchronize can include preflight/install/advance. Application elapsed time covers
+Source/product/Core and their included checks, not pure native math or FHE CPU.
+Do not subtract these measurements and label the remainder as pure fsync time.
+Timing output itself has cost; no performance claim is established by this source
+instrumentation. Existing cold/recovery paths and all proof checks remain real.
+
+Validation on 2026-10-20: strict all-target Clippy passed for both owning packages,
+along with four formatter/cap/output-error/scope tests and three existing actor
+queue contracts. These checks establish the observation boundary, not a measured
+speedup or cryptographic/network success. A subsequent real four-validator public
+capture replay can observe cold calls without another FHE producer; that gate
+remains pending and retains its independent proof/QC/cleanup assertions.

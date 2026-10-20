@@ -55,6 +55,7 @@ fn joint_metadata_calls_preserve_the_exact_expiry_and_release_their_leases() {
             reply,
             bytes,
             expires: received,
+            queued_at: _,
         } = receiver.recv_timeout(WAIT).unwrap();
         assert_eq!(received, Some(expires));
         assert_eq!(used(&handle), 256);
@@ -107,6 +108,7 @@ fn joint_queue_rejections_release_control_and_body_leases() {
                 reply,
                 bytes: handle.bytes.acquire(256).unwrap(),
                 expires: Some(Instant::now() + WAIT),
+                queued_at: None,
             })
             .is_ok()
     );
@@ -149,6 +151,7 @@ fn queued_joint_caller_joins_the_actual_reply_even_after_its_expiry() {
         reply,
         bytes,
         expires,
+        queued_at: _,
     } = receiver.recv_timeout(WAIT).unwrap();
     assert!(matches!(command, Command::Outbound(0)));
     let expires = expires.unwrap();

@@ -17,11 +17,13 @@ mod wire;
 mod closed;
 pub mod joint;
 pub mod progress;
+mod public_timings;
 
 pub use adapter::{FinalizedHead, RegistryFinality};
 pub use binding::{Binding, DESCRIPTOR_BYTES, Descriptor, profile_digest};
 pub use follower::{Follower, VerifiedCheckpoint};
 pub use participant::participant_storage_profile_digest;
+pub use public_timings::flush_public_timings;
 pub use wire::{
     CandidateBlock, Checkpoint, MAX_BLOCK_BYTES, MAX_CHECKPOINT_BYTES, export_profile_digest,
 };

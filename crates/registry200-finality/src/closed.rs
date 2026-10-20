@@ -1,6 +1,7 @@
 //! One private durable engine for the two closed FHE applications.
 //! All State/Arc and floor capabilities stay private to this synchronous owner.
 use crate::joint::{Error, Hash, Result};
+use crate::public_timings::{Kind, Scope, Section, Stage};
 use crate::{
     CandidateBlock,
     participant::{self, Paths},
@@ -221,6 +222,18 @@ impl PreparedFinalization<'_, '_> {
         Ok(())
     }
 }
+// Fixed observational wrapper: exactly one unchanged genuine delegate. It is
+// private and receives only this closed engine's already-installed application.
+struct TimedImport<'a>(&'a InstalledApplication);
+impl version_journal::TransitionVerifier for TimedImport<'_> {
+    fn verify(
+        &self,
+        statement: version_journal::TransitionStatement<'_>,
+    ) -> version_journal::Result<()> {
+        let _timing = Section::new(Stage::Application);
+        version_journal::TransitionVerifier::verify(self.0, statement)
+    }
+}
 impl State {
     fn new(application: InstalledApplication, journal: DurableJournal, charge: FileCharge) -> Self {
         let current = application.binding().initial_context().clone();
@@ -267,13 +280,16 @@ impl State {
             .journal()
             .body(d.header.id())
             .ok_or(crate::Error::MissingCandidate)?;
-        let control = self.application.verify_candidate(
-            self.journal.journal(),
-            context,
-            h.parent,
-            &d,
-            body,
-        )?;
+        let control = {
+            let _timing = Section::new(Stage::Application);
+            self.application.verify_candidate(
+                self.journal.journal(),
+                context,
+                h.parent,
+                &d,
+                body,
+            )?
+        };
         let head = HeadRef {
             genesis: d.header.genesis,
             database: self.application.binding().journal_genesis().database,
@@ -410,8 +426,15 @@ fn install_current_decision(
 ) -> Result<()> {
     // Keep the complete actual application/QC/cap preflight and the same
     // exclusive State borrow through the floor's successful fsync and install.
-    let prepared = state.preflight(decision)?;
-    floor.append(decision)?;
+    let prepared = {
+        let _timing = Section::new(Stage::Preflight);
+        state.preflight(decision)?
+    };
+    {
+        let _timing = Section::new(Stage::FloorAppend);
+        floor.append(decision)?;
+    }
+    let _timing = Section::new(Stage::Install);
     prepared.install()
 }
 
@@ -429,7 +452,10 @@ impl ApplicationVerifier for ClosedApplication {
 }
 impl ClosedApplication {
     fn check(&self, context: &Context, value: &[u8]) -> Result<()> {
-        let state = self.0.lock().map_err(|_| Error::Poisoned)?;
+        let state = {
+            let _timing = Section::new(Stage::StateWait);
+            self.0.lock().map_err(|_| Error::Poisoned)?
+        };
         // Never look up a prior result. The fixed verifier runs in full before
         // depositing metadata for this drive's possible floor finalization.
         let (head, control) = state.verify(context, value)?;
@@ -632,6 +658,11 @@ impl DurableEngine {
         body: &[u8],
     ) -> Result<[u8; crate::DESCRIPTOR_BYTES]> {
         self.live()?;
+        let _timing = Scope::new(
+            matches!(&self.ingress, Ingress::Progress(_)),
+            Kind::Import,
+            self.voter.context().slot(),
+        );
         let terminal = {
             let state = self.state.lock().map_err(|_| Error::Poisoned)?;
             state.current.slot()
@@ -674,15 +705,28 @@ impl DurableEngine {
             // Fresh even for a known candidate. The SAME State MutexGuard and
             // exclusive Journal borrow span proof checking, semantics, charge
             // and the argument-free commit; no second verifier call is needed.
-            let pending =
-                journal.prepare_append(header, body, crate::adapter::now()?, &*application)?;
+            let pending = {
+                let _timing = Section::new(Stage::ImportPrepare);
+                journal.prepare_append(
+                    header,
+                    body,
+                    crate::adapter::now()?,
+                    &TimedImport(&*application),
+                )?
+            };
             binding.candidate_control(old, body)?;
             let next = pending.next_disk_bytes();
             if next > before_disk {
-                charge.grow(next).map_err(crate::Error::from)?;
+                {
+                    let _timing = Section::new(Stage::ImportCharge);
+                    charge.grow(next).map_err(crate::Error::from)?;
+                }
                 uncertain = true;
             }
-            pending.commit()?;
+            {
+                let _timing = Section::new(Stage::ImportCommit);
+                pending.commit()?;
+            }
             Ok(d.encode())
         })();
         if result.is_err() && uncertain {
@@ -715,6 +759,11 @@ impl DurableEngine {
             .application
             .binding()
             .decode(value)?;
+        let _timing = Scope::new(
+            matches!(&self.ingress, Ingress::Progress(_)),
+            Kind::Checkpoint,
+            candidate.slot,
+        );
         if candidate.slot != self.voter.context().slot() {
             // Only the last semantic decision is an idempotent retry. Reverify
             // actual proofs and the alternate QC even though nothing is appended.
@@ -791,6 +840,18 @@ impl DurableEngine {
     }
     fn drive(&mut self, input: Input) -> Result<Vec<Action>> {
         self.live()?;
+        let kind = match &input {
+            Input::Propose(_) => Kind::Propose,
+            Input::Proposal(_) => Kind::Proposal,
+            Input::Vote(_) => Kind::Vote,
+            Input::Certificate { .. } => Kind::Certificate,
+            Input::Timeout(_) => Kind::Timeout,
+        };
+        let _timing = Scope::new(
+            matches!(&self.ingress, Ingress::Progress(_)),
+            kind,
+            self.voter.context().slot(),
+        );
         // &mut self excludes every other owner mutation. State and its Arc are
         // private; ingress can only add immutable depot blobs. Do not hold the
         // State mutex here: the actual application verifier locks it itself.
@@ -801,7 +862,11 @@ impl DurableEngine {
             .handoff
             .clone();
         let capture = handoff.begin(self.voter.context().id())?;
-        let finished = match self.voter.handle_for_finalization(input) {
+        let handled = {
+            let _timing = Section::new(Stage::HandleWal);
+            self.voter.handle_for_finalization(input)
+        };
+        let finished = match handled {
             Ok((actions, Some(fresh))) => {
                 match Self::synchronize_fresh(
                     &self.state,
@@ -831,7 +896,11 @@ impl DurableEngine {
             }
         };
         drop(capture);
-        if let Err(e) = self.synchronize() {
+        let synchronized = {
+            let _timing = Section::new(Stage::Synchronize);
+            self.synchronize()
+        };
+        if let Err(e) = synchronized {
             self.poisoned = true;
             return Err(e);
         }
@@ -844,22 +913,37 @@ impl DurableEngine {
         capture: &DriveCapture<'_>,
         #[cfg(test)] poison_before_advance: &mut bool,
     ) -> Result<()> {
-        let mut guard = state.lock().map_err(|_| Error::Poisoned)?;
+        let mut guard = {
+            let _timing = Section::new(Stage::StateWait);
+            state.lock().map_err(|_| Error::Poisoned)?
+        };
         if guard.current.id() != fresh.context().id() {
             return Err(crate::Error::CorruptFloor.into());
         }
         // The capability came only from THIS owner's private voter and its
         // captured ClosedApplication. It is not accepted as an argument
         // from a client, checkpoint DTO, different owner or recovery path.
-        let prepared = guard.preflight_checked(fresh.decision(), capture.take()?)?;
-        floor.append(fresh.decision())?;
-        prepared.install()?;
+        let prepared = {
+            let _timing = Section::new(Stage::Preflight);
+            guard.preflight_checked(fresh.decision(), capture.take()?)?
+        };
+        {
+            let _timing = Section::new(Stage::FloorAppend);
+            floor.append(fresh.decision())?;
+        }
+        {
+            let _timing = Section::new(Stage::Install);
+            prepared.install()?;
+        }
         drop(guard);
         #[cfg(test)]
         Self::inject_advance_refusal(state, poison_before_advance)?;
         // The floor was actually fsynced and installed above. Only this same
         // command's redundant signer application traversal is omitted.
-        fresh.advance()?;
+        {
+            let _timing = Section::new(Stage::Advance);
+            fresh.advance()?;
+        }
         Ok(())
     }
     #[cfg(test)]
@@ -891,7 +975,10 @@ impl DurableEngine {
             drop(state); // advance invokes the SAME actual app, which locks State.
             #[cfg(test)]
             Self::inject_advance_refusal(&self.state, &mut self.poison_before_advance)?;
-            self.voter.advance()?;
+            {
+                let _timing = Section::new(Stage::Advance);
+                self.voter.advance()?;
+            }
         }
         if self.state.lock().map_err(|_| Error::Poisoned)?.current.id() != self.voter.context().id()
         {

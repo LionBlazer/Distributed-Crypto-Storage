@@ -1,6 +1,7 @@
 use super::owner::{Candidate, Certificate, Owner, Snapshot};
 use super::*;
 use registry200_finality::{Checkpoint, Descriptor, RegistryFinality};
+use std::io::Write as _;
 use std::{
     sync::mpsc::{self, Receiver, SyncSender, TrySendError},
     thread::JoinHandle,
@@ -37,6 +38,7 @@ struct Envelope {
     reply: SyncSender<io::Result<(Reply, CommandLease)>>,
     bytes: CommandLease,
     expires: Option<Instant>,
+    queued_at: Option<Instant>,
 }
 #[derive(Clone)]
 pub(super) struct Handle {
@@ -82,6 +84,7 @@ impl Handle {
             reply: tx,
             bytes: lease,
             expires: None,
+            queued_at: None,
         }) {
             Ok(()) => (),
             Err(TrySendError::Full(_)) => return Err(busy()),
@@ -123,6 +126,7 @@ impl Handle {
             reply: tx,
             bytes: lease,
             expires: Some(expires),
+            queued_at: public_timings_enabled().then(Instant::now),
         }) {
             Ok(()) => (),
             Err(TrySendError::Full(_)) => return Err(busy()),
@@ -185,18 +189,23 @@ fn run(
     let mut due = deadline(timer)?;
     let mut pending = None;
     let mut proposed = None;
+    let progress_timings = matches!(&*owned, Owner::Progress(_)) && public_timings_enabled();
     while !stop.load(Ordering::Acquire) {
+        let mut timings = ActorTimings::new(progress_timings);
         let wait = due.map_or(Duration::from_millis(100), |d| {
             d.saturating_duration_since(Instant::now())
                 .min(Duration::from_millis(100))
         });
         match rx.recv_timeout(wait) {
             Ok(envelope) => {
-                let answer = envelope
-                    .expires
-                    .map_or(Ok(()), require_time)
-                    .and_then(|()| process(owned, &gate, &mut pending, envelope.command))
-                    .map(|reply| (reply, envelope.bytes));
+                let answer = {
+                    let _timing = timings.span(command_kind(&envelope.command), envelope.queued_at);
+                    envelope
+                        .expires
+                        .map_or(Ok(()), require_time)
+                        .and_then(|()| process(owned, &gate, &mut pending, envelope.command))
+                        .map(|reply| (reply, envelope.bytes))
+                };
                 let _ = envelope.reply.send(answer);
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -222,7 +231,10 @@ fn run(
                 // A client may submit to every validator. Only the actual
                 // elected proposer signs; other owners retain the same bounded
                 // candidate for a later round. No caller selects our key/round.
-                owned.propose(candidate)?;
+                {
+                    let _timing = timings.span(Some(("propose", current.slot())), None);
+                    owned.propose(candidate)?;
+                }
                 proposed = Some((current.slot(), current.round()));
                 let active = active_timer(owned)?;
                 if active != timer {
@@ -236,7 +248,10 @@ fn run(
         {
             match gate.try_acquire() {
                 Ok(_permit) => {
-                    owned.timeout(current)?;
+                    {
+                        let _timing = timings.span(Some(("timeout", current.slot())), None);
+                        owned.timeout(current)?;
+                    }
                     timer = active_timer(owned)?;
                     due = deadline(timer)?;
                 }
@@ -250,6 +265,140 @@ fn run(
     // Drop owned signer only after an in-flight native check returned. No worker
     // owns the signer/key or any actor lock, and cancellation never unlocks it.
     Ok(())
+}
+// Timing records are observations only. Collection never writes while process()
+// owns its proof permit or any private owner guard. Drop runs after those scopes,
+// including on every early return. No command, error or payload is formatted.
+fn public_timings_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var_os("DCS_PUBLIC_TIMINGS").as_deref() == Some(std::ffi::OsStr::new("1"))
+    })
+}
+fn command_kind(command: &Command) -> Option<(&'static str, u64)> {
+    match command {
+        Command::JointBlock(_, _, snapshot) => Some(("import", snapshot.slot)),
+        Command::JointInput(_, snapshot) => Some(("receive", snapshot.slot)),
+        Command::JointCheckpoint(_, snapshot) => Some(("checkpoint", snapshot.slot)),
+        // Metadata polling remains unlogged so it cannot consume the fixed
+        // record budget before the proof-bearing handler being investigated.
+        _ => None,
+    }
+}
+const ACTOR_TIMING_LINES: usize = 4096;
+static ACTOR_LINES: AtomicUsize = AtomicUsize::new(0);
+static ACTOR_ORDINAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[derive(Clone, Copy)]
+struct ActorRecord {
+    ordinal: u64,
+    kind: &'static str,
+    slot: u64,
+    queue_us: u64,
+    handler_us: u64,
+}
+struct ActorTimings {
+    enabled: bool,
+    records: [Option<ActorRecord>; 3],
+    len: usize,
+}
+impl ActorTimings {
+    fn new(enabled: bool) -> Self {
+        Self {
+            enabled,
+            records: [None; 3],
+            len: 0,
+        }
+    }
+    fn span(
+        &mut self,
+        kind: Option<(&'static str, u64)>,
+        queued_at: Option<Instant>,
+    ) -> ActorSpan<'_> {
+        let start = (self.enabled && kind.is_some()).then(Instant::now);
+        let queue_us = match (start, queued_at) {
+            (Some(start), Some(queued)) => {
+                u64::try_from(start.saturating_duration_since(queued).as_micros())
+                    .unwrap_or(u64::MAX)
+            }
+            _ => 0,
+        };
+        ActorSpan {
+            owner: self,
+            start,
+            kind,
+            queue_us,
+        }
+    }
+}
+struct ActorSpan<'a> {
+    owner: &'a mut ActorTimings,
+    start: Option<Instant>,
+    kind: Option<(&'static str, u64)>,
+    queue_us: u64,
+}
+impl Drop for ActorSpan<'_> {
+    fn drop(&mut self) {
+        let (Some(start), Some((kind, slot))) = (self.start, self.kind) else {
+            return;
+        };
+        if self.owner.len == self.owner.records.len() {
+            return;
+        }
+        let Ok(ordinal) = ACTOR_ORDINAL.try_update(Ordering::Relaxed, Ordering::Relaxed, |old| {
+            old.checked_add(1)
+        }) else {
+            return;
+        };
+        let record = ActorRecord {
+            ordinal: ordinal.saturating_add(1),
+            kind,
+            slot,
+            queue_us: self.queue_us,
+            handler_us: u64::try_from(start.elapsed().as_micros()).unwrap_or(u64::MAX),
+        };
+        self.owner.records[self.owner.len] = Some(record);
+        self.owner.len += 1;
+    }
+}
+impl Drop for ActorTimings {
+    fn drop(&mut self) {
+        if !self.enabled {
+            return;
+        }
+        // Every inner native permit/State guard has already dropped. The inert
+        // library drain receives no command or owner, and returns no authority.
+        registry200_finality::flush_public_timings();
+        if self.len == 0 || ACTOR_LINES.load(Ordering::Relaxed) >= ACTOR_TIMING_LINES {
+            return;
+        }
+        let mut writer = std::io::stderr().lock();
+        for record in self.records.iter().flatten() {
+            if ACTOR_LINES
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |old| {
+                    if old < ACTOR_TIMING_LINES {
+                        Some(old + 1)
+                    } else {
+                        None
+                    }
+                })
+                .is_err()
+            {
+                break;
+            }
+            let line = format!(
+                "dcs_public_timing component=progress_actor pid={} ordinal={} kind={} slot={} queue_us={} handler_us={}\n",
+                std::process::id(),
+                record.ordinal,
+                record.kind,
+                record.slot,
+                record.queue_us,
+                record.handler_us
+            );
+            if line.len() < 256 {
+                let _ = writer.write_all(line.as_bytes());
+            }
+        }
+    }
 }
 fn active_timer(owned: &Owner) -> io::Result<Option<Timeout>> {
     // The closed owner's Original arm preserves the exact Stale=>wait rule.
