@@ -21,6 +21,8 @@ pub(crate) const HEADER: usize = 256;
 pub struct ProverTimings {
     pub arithmetic_and_certificate_ms: f64,
     pub public_setup_ms: f64,
+    /// Certificate-to-trace conversion, included in trace_proving_encoding_ms.
+    pub witness_build_ms: f64,
     pub trace_proving_encoding_ms: f64,
     pub total_ms: f64,
 }
@@ -226,6 +228,7 @@ pub fn prove(input: &Request) -> Result<Generated, Error> {
         .machine
         .witness(&evaluation.aux)
         .map_err(|_| Error::Statement)?;
+    let witness_build_ms = start.elapsed().as_secs_f64() * 1000.;
     let instances = ProverInstances::new(
         backend
             .machine
@@ -255,6 +258,7 @@ pub fn prove(input: &Request) -> Result<Generated, Error> {
         timings: ProverTimings {
             arithmetic_and_certificate_ms,
             public_setup_ms,
+            witness_build_ms,
             trace_proving_encoding_ms: start.elapsed().as_secs_f64() * 1000.,
             total_ms: total.elapsed().as_secs_f64() * 1000.,
         },

@@ -12,6 +12,9 @@ provenance nor complete MulRelin, SQL completeness, authorization or freshness.
 
 - `prove(&Request)` evaluates the sealed circuit certificate and creates the
   complete multi-AIR proof. `Generated` owns the output, encoded proof and timings.
+  `ProverTimings::witness_build_ms` measures certificate-to-trace conversion;
+  it is included in the existing `trace_proving_encoding_ms` aggregate. Timing
+  metadata is separate from the encoded proof and supplies no verification.
 - `verify(&Request, &Output, frame)` performs bounded canonical decoding,
   reconstructs all public routing/range/IO tables and its own VK, then verifies
   the actual proof. It accepts no prover-selected setup or auxiliary certificate

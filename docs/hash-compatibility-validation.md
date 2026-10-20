@@ -110,3 +110,44 @@ gates when those boundaries change. The separately
 [validated seven-process improvement](joint-query-fast-path-validation.md) and
 new [FHE application](progress-application-validation.md) have different scopes;
 this change claims no further end-to-end DCS speedup.
+
+## Witness conversion timing
+
+The next diagnostic change adds `ProverTimings::witness_build_ms` in
+`bfv-ntt-witness-proof`. It measures the existing certificate binding check,
+allocation and conversion to Stage, IO and range tables. It is nested within
+the unchanged `trace_proving_encoding_ms` aggregate; adding these two values
+would double-count conversion. Subsequent transposition, proving and encoding
+remain in the aggregate. The new field is timing metadata outside the proof.
+No arithmetic, trace layout, transcript, verifier, profile or thread policy changed.
+
+Three fresh executions of the same explicit genuine forward N8192/basis0 gate
+passed full proof verification, the independent all8192 native oracle, semantic
+proof corruption rejection and complete comparison of all seven baseline files.
+The exact encoded proof, preprocessing roots, verifier transcript and assessed
+security report stayed byte-for-byte identical to the earlier baseline.
+
+| Sample | Witness conversion | Complete prove |
+| --- | ---: | ---: |
+| 1 | 7.275 ms | 2833.007 ms |
+| 2 | 6.453 ms | 2665.838 ms |
+| 3 | 5.886 ms | 2666.978 ms |
+
+Median conversion was 6.453 ms and median complete proving was 2666.978 ms.
+Conversion accounted for at most 0.257% of proving time in these samples.
+Even eliminating that entire measured component would therefore save less than
+0.26% of this measured proving time. Parallel trace filling is not implemented
+on this evidence. These observations concern one representative public NTT;
+they are not a timing profile of every product record or a DCS query speedup.
+
+Strict all-target Clippy for `bfv-ntt-witness-proof` and its
+`bfv-mul-relin-proof` consumer passed in 1.375 seconds. The three complete Cargo
+test invocations took 42.288, 3.970 and 3.890 seconds; the first included a
+38.38-second rebuild. The source inventory of 1685 files remained unchanged
+through these checks. Source receipt:
+`D270A54084AD4FE3104D895A87AE1F0E2679ECCA07E00C9D31895BA21136A989`;
+after receipt:
+`209312AE356B81C367CB762280A052C2F7943D50FEEA3756E0D5AC18B1A76989`.
+The ignored local profile is `.local/ntt-witness-timing-r1/profile.json`, SHA256
+`9A639C8F5787342BCB3B5244F7706685ED5B57A3A6BE2597917F4087C9869F3A`.
+Only this execution record was added after the checks.
