@@ -509,6 +509,7 @@ fn valid_aead_with_foreign_bank_and_unsaved_genuine_successor_fail_without_old_s
     let (rig, opening) = Rig::new();
     let mut vault = rig.create(opening);
     let saved = Snapshot {
+        managed: None,
         acquire: None,
         phase: OwnerVaultPhase::Idle,
         generation: 0,

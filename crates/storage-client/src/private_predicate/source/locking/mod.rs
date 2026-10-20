@@ -15,9 +15,10 @@ pub use joint::{
     CompletedJointAcquire, CompletedJointRow, EncryptedJointRecovery, JOINT_RECOVERY_BYTES,
     JOINT_RECOVERY_HEADER_BYTES, JointLockingCandidates, JointLockingParent,
     JointLockingPreparation, JointRecovery, JointRecoveryIdentity, JointRecoveryInputs,
-    JointRecoveryKey, NonAdmittedJointLocking, PreparedJointLockingInputs,
-    RecoverableJointLockingInputs, RecoverableJointLockingPreparation,
-    RecoveredJointComputePrepared,
+    JointRecoveryKey, JointSqlCall, JointSqlClient, JointSqlClientBinding, JointSqlHost,
+    JointSqlHostPins, JointSqlPreparation, JointSqlReply, NonAdmittedJointLocking,
+    PreparedJointLockingInputs, RecoverableJointLockingInputs, RecoverableJointLockingPreparation,
+    RecoveredJointComputePrepared, joint_sql_host_profile_digest,
 };
 pub use joint::{CompletedJointBootstrap, JointBootstrapCandidate, PreparedJointBootstrap};
 pub use joint::{

@@ -17,9 +17,15 @@ use registry200_joint::{JointDepot, JointEvidenceIngress, Manifest};
 use sha2::{Digest, Sha256};
 #[path = "durable_acquire.rs"]
 pub(super) mod acquire;
+#[path = "host/mod.rs"]
+pub(super) mod host;
 pub use acquire::{
     OwnerVaultAcquireCompletion, OwnerVaultAcquireMaterial, OwnerVaultAcquirePreparation,
     OwnerVaultAcquireWork,
+};
+pub use host::{
+    JointSqlCall, JointSqlClient, JointSqlClientBinding, JointSqlHost, JointSqlHostPins,
+    JointSqlPreparation, JointSqlReply, joint_sql_host_profile_digest,
 };
 
 pub const OWNER_VAULT_MAX_BODY_BYTES: usize = 64 * 1024;
@@ -111,18 +117,42 @@ impl OwnerVaultIdentity {
 pub struct OwnerVaultPins {
     pub(super) binding: JointBinding,
     pub(super) identity: OwnerVaultIdentity,
+    pub(super) managed: Option<host::state::Bindings>,
 }
 impl OwnerVaultPins {
     pub fn new(binding: JointBinding, identity: OwnerVaultIdentity) -> Self {
-        Self { binding, identity }
+        Self {
+            binding,
+            identity,
+            managed: None,
+        }
     }
     fn file_id(&self) -> [u8; 32] {
+        if let Some(bindings) = &self.managed {
+            return hash(&[
+                b"DCS/owner-Joint-Host/file/v3",
+                &joint_sql_host_profile_digest(),
+                &self.binding.id(),
+                &self.identity.0,
+                &bindings.identity(),
+            ]);
+        }
         hash(&[
             b"DCS/owner-Joint-Vault/file/v2",
             &owner_vault_profile_digest(),
             &self.binding.id(),
             &self.identity.0,
         ])
+    }
+    pub(super) fn file_profile(&self) -> [u8; 32] {
+        match &self.managed {
+            None => owner_vault_profile_digest(),
+            Some(bindings) => hash(&[
+                b"DCS/owner-Joint-Host/installation/v3",
+                &joint_sql_host_profile_digest(),
+                &bindings.identity(),
+            ]),
+        }
     }
 }
 /// Untrusted bounded replay inputs. Every entry is actually verified by the
@@ -231,6 +261,9 @@ pub struct OwnerVault {
     recovery_required: bool,
     acquire_recovered: bool,
     acquire_result: Option<OwnerVaultAcquireCompletion>,
+    managed_draft: Option<host::DraftCall>,
+    replayed_clients: [Option<JointSqlReply>; 2],
+    replay_sequence: u64,
 }
 impl OwnerVault {
     /// New file ONLY. The supplied quota is the one actual ledger used to open
@@ -257,13 +290,14 @@ impl OwnerVault {
         let idle = state::encode_idle(&opening)?;
         drop(opening);
         // Authenticated caller data is still not a commitment-opening check.
-        drop(state::restore_idle(
-            idle.as_ref(),
-            source,
-            fetched,
-            &parent,
-        )?);
+        let audited = state::restore_idle(idle.as_ref(), source, fetched, &parent)?;
+        if let Some(bindings) = &pins.managed {
+            state::require_host_initial(&audited)?;
+            state::require_host_bank(&audited, host::state::Managed::empty(bindings).rows())?;
+        }
+        drop(audited);
         let saved = Snapshot {
+            managed: pins.managed.as_ref().map(host::state::Managed::empty),
             phase: OwnerVaultPhase::Idle,
             generation: 0,
             pending: [0; 32],
@@ -296,6 +330,9 @@ impl OwnerVault {
             recovery_required: false,
             acquire_recovered: false,
             acquire_result: None,
+            managed_draft: None,
+            replayed_clients: [None, None],
+            replay_sequence: 1,
         })
     }
     /// Existing file ONLY, strict complete replay with actual Source and all
@@ -388,11 +425,35 @@ impl OwnerVault {
             recovery_required: false,
             acquire_recovered: true,
             acquire_result: None,
+            managed_draft: None,
+            replayed_clients: [None, None],
+            replay_sequence: 1,
         };
+        vault.check_managed_initial(source, again(&fetched), &initial_parent)?;
         for record in records {
             vault.replay_record(record, source, again(&fetched), replay, &mut at, material)?;
         }
-        if vault.saved.acquire.is_some() && vault.saved.phase != OwnerVaultPhase::Completed {
+        if vault.saved.managed.is_some() && vault.saved.phase != OwnerVaultPhase::Idle {
+            let records = if vault.saved.phase == OwnerVaultPhase::Completed {
+                1
+            } else if vault.saved.acquire.is_some() {
+                vault
+                    .acquire_records_remaining()?
+                    .checked_add(1)
+                    .ok_or(OwnerVaultError::ResourceLimit)?
+            } else {
+                2
+            };
+            vault
+                .wal
+                .require_capacity(records, records * OWNER_VAULT_MAX_RECORD_BYTES as u64)?;
+            vault.terminal = Some(
+                vault
+                    .wal
+                    .budget
+                    .reserve(records * OWNER_VAULT_MAX_RECORD_BYTES as u64)?,
+            );
+        } else if vault.saved.acquire.is_some() && vault.saved.phase != OwnerVaultPhase::Completed {
             let records = vault.acquire_records_remaining()?;
             vault
                 .wal
@@ -539,7 +600,12 @@ impl OwnerVault {
         )
         .map_err(|e| OwnerVaultError::Owner(cryptography(e)))?;
         let mut pending = [0; 32];
-        getrandom::getrandom(&mut pending).map_err(|e| OwnerVaultError::Owner(cryptography(e)))?;
+        if let Some(call) = &self.managed_draft {
+            pending = call.invocation;
+        } else {
+            getrandom::getrandom(&mut pending)
+                .map_err(|e| OwnerVaultError::Owner(cryptography(e)))?;
+        }
         if pending == [0; 32] {
             return Err(OwnerVaultError::Pins);
         }
@@ -582,6 +648,7 @@ impl OwnerVault {
         self.history.check_control_candidate(&block, &expected)?;
         let before = parent(&self.history, &self.pins.binding)?;
         let saved = Snapshot {
+            managed: self.managed_next(OwnerVaultPhase::BodyPrepared, None)?,
             phase: OwnerVaultPhase::BodyPrepared,
             generation: self.saved.generation,
             pending: draft.public.pending,
@@ -593,17 +660,23 @@ impl OwnerVault {
             outcome: None,
             acquire: None,
         };
-        let record_bytes = Wal::record_bytes(&saved)?;
-        self.wal.require_terminal_capacity(record_bytes)?;
-        let bytes = record_bytes
-            .checked_add(OWNER_VAULT_MAX_RECORD_BYTES as u64)
-            .ok_or(OwnerVaultError::ResourceLimit)?;
-        let lease = self.wal.budget.reserve(bytes)?;
-        let remaining = self.wal.append(&saved, lease)?;
-        self.terminal = Some(remaining);
+        self.require_managed_control(&saved, &draft.candidate)?;
+        if saved.managed.is_some() {
+            self.append_managed(&saved)?;
+        } else {
+            let record_bytes = Wal::record_bytes(&saved)?;
+            self.wal.require_terminal_capacity(record_bytes)?;
+            let bytes = record_bytes
+                .checked_add(OWNER_VAULT_MAX_RECORD_BYTES as u64)
+                .ok_or(OwnerVaultError::ResourceLimit)?;
+            let lease = self.wal.budget.reserve(bytes)?;
+            let remaining = self.wal.append(&saved, lease)?;
+            self.terminal = Some(remaining);
+        }
         self.pending_parent = Some(before);
         self.saved = saved;
         self.draft = None;
+        self.managed_draft = None;
         self.cursor()
     }
     /// Return the ORIGINAL synced signed candidate. Reopening BodyPrepared is
@@ -636,8 +709,14 @@ impl OwnerVault {
             .pending_parent
             .as_ref()
             .ok_or(OwnerVaultError::Encoding)?;
-        let (candidate, expected) =
-            restore_candidate(&self.saved, before, &self.pins.binding, source, fetched)?;
+        let (candidate, expected) = restore_candidate(
+            &self.saved,
+            before,
+            &self.pins.binding,
+            source,
+            again(&fetched),
+        )?;
+        self.require_managed_control(&self.saved, &candidate)?;
         let block = self.saved.block.as_ref().ok_or(OwnerVaultError::Encoding)?;
         let old_context = self.history.context()?.id();
         let operation = match self.history.apply_control(checkpoint, block, &expected) {
@@ -660,6 +739,7 @@ impl OwnerVault {
             state::require_idle_parent(&opening, &after)?;
             let idle = state::encode_idle(&opening)?;
             let snapshot = Snapshot {
+                managed: self.managed_next(OwnerVaultPhase::Completed, Some(outcome))?,
                 phase: OwnerVaultPhase::Completed,
                 generation: self
                     .saved
@@ -687,18 +767,31 @@ impl OwnerVault {
                 return Err(error);
             }
         };
-        let lease = match self.terminal.take() {
-            Some(lease) => lease,
-            None => {
-                self.poison_after_advance();
-                return Err(OwnerVaultError::Poisoned);
-            }
-        };
-        match self.wal.append(&saved, lease) {
-            Ok(remaining) => drop(remaining),
-            Err(error) => {
+        if saved.managed.is_some() {
+            if let Err(error) = self.require_managed_bank(
+                &saved,
+                source,
+                fetched,
+                &parent(&self.history, &self.pins.binding)?,
+            ) {
                 self.poison_after_advance();
                 return Err(error);
+            }
+            self.append_managed(&saved)?;
+        } else {
+            let lease = match self.terminal.take() {
+                Some(lease) => lease,
+                None => {
+                    self.poison_after_advance();
+                    return Err(OwnerVaultError::Poisoned);
+                }
+            };
+            match self.wal.append(&saved, lease) {
+                Ok(remaining) => drop(remaining),
+                Err(error) => {
+                    self.poison_after_advance();
+                    return Err(error);
+                }
             }
         }
         self.saved = saved;
@@ -724,6 +817,7 @@ impl OwnerVault {
             return Err(OwnerVaultError::Phase);
         }
         let saved = Snapshot {
+            managed: self.managed_next(OwnerVaultPhase::Idle, None)?,
             phase: OwnerVaultPhase::Idle,
             generation: self.saved.generation,
             pending: [0; 32],
@@ -735,8 +829,13 @@ impl OwnerVault {
             outcome: None,
             acquire: None,
         };
-        let lease = self.wal.budget.reserve(Wal::record_bytes(&saved)?)?;
-        drop(self.wal.append(&saved, lease)?);
+        if saved.managed.is_some() {
+            self.append_managed(&saved)?;
+            self.terminal = None;
+        } else {
+            let lease = self.wal.budget.reserve(Wal::record_bytes(&saved)?)?;
+            drop(self.wal.append(&saved, lease)?);
+        }
         self.saved = saved;
         self.acquire_result = None;
         self.cursor()
@@ -773,8 +872,9 @@ impl OwnerVault {
                 if current_stamp(&self.history, &self.pins.binding)? != next.stamp {
                     return Err(OwnerVaultError::Pins);
                 }
-                let (_candidate, expected) =
-                    restore_candidate(&next, &before, &self.pins.binding, source, fetched)?;
+                let (candidate, expected) =
+                    restore_candidate(&next, &before, &self.pins.binding, source, again(&fetched))?;
+                self.require_managed_control(&next, &candidate)?;
                 self.history.check_control_candidate(
                     next.block.as_ref().ok_or(OwnerVaultError::Encoding)?,
                     &expected,
@@ -804,6 +904,7 @@ impl OwnerVault {
                     source,
                     again(&fetched),
                 )?;
+                self.require_managed_control(&self.saved, &candidate)?;
                 let block = next.block.as_ref().ok_or(OwnerVaultError::Encoding)?;
                 if !same_block(
                     block,
@@ -831,7 +932,7 @@ impl OwnerVault {
                 drop(state::restore_idle(
                     next.idle.as_ref(),
                     source,
-                    fetched,
+                    again(&fetched),
                     &after,
                 )?);
                 self.pending_parent = None;
@@ -853,6 +954,7 @@ impl OwnerVault {
             }
             OwnerVaultPhase::AcquireComputePrepared => return Err(OwnerVaultError::Encoding),
         }
+        self.check_managed_record(&next, source, fetched)?;
         self.saved = next;
         Ok(())
     }

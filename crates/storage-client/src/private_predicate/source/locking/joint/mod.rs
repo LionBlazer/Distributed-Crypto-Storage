@@ -21,8 +21,10 @@ use registry200_joint::{
 use registry200_journal::ApplicationDescriptor;
 pub use vault::{
     EncryptedJointRecovery, JOINT_RECOVERY_BYTES, JOINT_RECOVERY_HEADER_BYTES, JointRecovery,
-    JointRecoveryIdentity, JointRecoveryInputs, JointRecoveryKey, RecoverableJointLockingInputs,
-    RecoverableJointLockingPreparation, RecoveredJointComputePrepared,
+    JointRecoveryIdentity, JointRecoveryInputs, JointRecoveryKey, JointSqlCall, JointSqlClient,
+    JointSqlClientBinding, JointSqlHost, JointSqlHostPins, JointSqlPreparation, JointSqlReply,
+    RecoverableJointLockingInputs, RecoverableJointLockingPreparation,
+    RecoveredJointComputePrepared, joint_sql_host_profile_digest,
 };
 
 /// Historical actual Joint proof+QC lineage matched to independent local pins.

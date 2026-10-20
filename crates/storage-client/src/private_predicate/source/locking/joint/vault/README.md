@@ -115,3 +115,19 @@ The earlier v1 [Control Vault validation](../../../../../../../../docs/joint-own
 also reran both capsule cases and the private grammar after their shared Registry
 codec extraction. The later v2 record above covers its own new tests and Control
 regressions without extending those earlier capsule measurements.
+
+## Bounded managed owner candidate
+
+The new [JointSqlHost v3](host/README.md) passed its owning native release gates
+over this SAME concrete WAL/quota/History/shared depot. The
+[validation record](../../../../../../../../docs/joint-sql-host-validation.md)
+also records the old v2 Control process regression on the same source. Its
+distinct local profile/header/file identity authenticates two independently
+configured logical client bindings, a complete root-opened Registry bijection,
+stable transaction ids and bounded original-response retry metadata. Completed
+fsync includes both private successor bank and client-map delta; prepaid three
+Control/five Acquire records include ACK. Existing v2 APIs/bytes/meaning remain
+unchanged, with no automatic migration or fallback. The frontend is deliberately
+incomplete and leaves all existing Session/Database/script SQL guards closed.
+Full Host v3 output118/four-validator/owner-process completion remains a separate
+pending gate; existing v2 results above are not v3 validation evidence.

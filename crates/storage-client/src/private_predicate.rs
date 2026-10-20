@@ -8,13 +8,15 @@ pub use source::{
     CompiledLockingSelect, CompletedJointAcquire, CompletedJointRow, EncryptedJointRecovery,
     EncryptedSourceState, FetchedSource, JOINT_RECOVERY_BYTES, JOINT_RECOVERY_HEADER_BYTES,
     JointLockingCandidates, JointLockingParent, JointLockingPreparation, JointRecovery,
-    JointRecoveryIdentity, JointRecoveryInputs, JointRecoveryKey, LockingActor, LockingCompletion,
-    LockingConflict, LockingControl, LockingParent, LockingPreparation, NonAdmittedJointLocking,
-    NonAdmittedLocking, OwnerVaultAcquireCompletion, OwnerVaultAcquireMaterial,
-    OwnerVaultAcquirePreparation, OwnerVaultAcquireWork, PreparedJointLockingInputs,
-    PreparedLockingInputs, RecoverableJointLockingInputs, RecoverableJointLockingPreparation,
-    RecoveredJointComputePrepared, SOURCE_STATE_BYTES, SOURCE_STATE_HEADER_BYTES, SourceOwner,
-    SourceStateAuthority, SourceStateIdentity, StagedLockingTransition,
+    JointRecoveryIdentity, JointRecoveryInputs, JointRecoveryKey, JointSqlCall, JointSqlClient,
+    JointSqlClientBinding, JointSqlHost, JointSqlHostPins, JointSqlPreparation, JointSqlReply,
+    LockingActor, LockingCompletion, LockingConflict, LockingControl, LockingParent,
+    LockingPreparation, NonAdmittedJointLocking, NonAdmittedLocking, OwnerVaultAcquireCompletion,
+    OwnerVaultAcquireMaterial, OwnerVaultAcquirePreparation, OwnerVaultAcquireWork,
+    PreparedJointLockingInputs, PreparedLockingInputs, RecoverableJointLockingInputs,
+    RecoverableJointLockingPreparation, RecoveredJointComputePrepared, SOURCE_STATE_BYTES,
+    SOURCE_STATE_HEADER_BYTES, SourceOwner, SourceStateAuthority, SourceStateIdentity,
+    StagedLockingTransition, joint_sql_host_profile_digest,
 };
 pub use source::{CompletedJointBootstrap, JointBootstrapCandidate, PreparedJointBootstrap};
 pub use source::{

@@ -4,10 +4,11 @@ use super::super::control::{
     state::{CONTROL_BYTES, IDLE_BYTES},
 };
 use super::durable::acquire::{AcquireState, MAX_ACQUIRE_STATE};
+use super::durable::host::state::{Bindings, Managed};
 use super::durable::{
     BLOCK_CAP, MAX_RECORDS, OWNER_VAULT_MAX_BODY_BYTES, OWNER_VAULT_MAX_FILE_BYTES,
     OWNER_VAULT_MAX_RECORD_BYTES, OwnerVaultAuthority, OwnerVaultError, OwnerVaultPhase,
-    OwnerVaultPins, VaultResult, hash, owner_vault_profile_digest,
+    OwnerVaultPins, VaultResult, hash,
 };
 use crate::private_predicate::cryptography;
 use chacha20poly1305::{
@@ -32,6 +33,7 @@ const TAG_BYTES: usize = 16;
 const MAGIC: &[u8; 8] = b"DCSOVL02";
 
 pub(super) struct Snapshot {
+    pub managed: Option<Managed>,
     pub phase: OwnerVaultPhase,
     pub generation: u64,
     pub pending: [u8; 32],
@@ -61,7 +63,11 @@ impl Snapshot {
         let mut bytes = Zeroizing::new(Vec::with_capacity(
             8 + 16 + 64 + IDLE_BYTES + CONTROL_BYTES + 8 + block.len() + checkpoint.len(),
         ));
-        bytes.extend_from_slice(b"DCSOVP02");
+        bytes.extend_from_slice(if self.managed.is_some() {
+            b"DCSOVP03"
+        } else {
+            b"DCSOVP02"
+        });
         bytes.push(match self.phase {
             OwnerVaultPhase::Idle => 0,
             OwnerVaultPhase::BodyPrepared | OwnerVaultPhase::SubmittedUnknown => 1,
@@ -95,16 +101,29 @@ impl Snapshot {
             bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
             bytes.extend_from_slice(value);
         }
+        if let Some(managed) = &self.managed {
+            bytes.extend_from_slice(managed.encode().as_ref());
+        }
         if bytes.len() + RECORD_HEADER + TAG_BYTES > OWNER_VAULT_MAX_RECORD_BYTES {
             return Err(OwnerVaultError::ResourceLimit);
         }
         // Use the decoder as the canonical shape audit before any write.
-        let _ = Self::decode(&bytes)?;
+        let bindings = self
+            .managed
+            .as_ref()
+            .map(|m| Bindings(m.clients.map(|c| c.binding)));
+        let _ = Self::decode(&bytes, bindings.as_ref())?;
         Ok(bytes)
     }
-    fn decode(bytes: &[u8]) -> VaultResult<Self> {
+    fn decode(bytes: &[u8], bindings: Option<&Bindings>) -> VaultResult<Self> {
         let mut r = Reader::new(bytes);
-        if r.take(8)? != b"DCSOVP02" {
+        if r.take(8)?
+            != if bindings.is_some() {
+                b"DCSOVP03"
+            } else {
+                b"DCSOVP02"
+            }
+        {
             return Err(OwnerVaultError::Encoding);
         }
         let phase = r.take(1)?[0];
@@ -141,6 +160,9 @@ impl Snapshot {
         } else {
             Some(JointCheckpoint::decode(qc).map_err(OwnerVaultError::Joint)?)
         };
+        let managed = bindings
+            .map(|b| Managed::decode(r.take(256)?, b))
+            .transpose()?;
         r.end()?;
         let (phase, candidate, outcome) = match (phase, outcome) {
             (0, 0)
@@ -203,7 +225,14 @@ impl Snapshot {
             }
             _ => return Err(OwnerVaultError::Encoding),
         };
+        if managed
+            .as_ref()
+            .is_some_and(|m| (phase == OwnerVaultPhase::Idle) != m.call.is_none())
+        {
+            return Err(OwnerVaultError::Encoding);
+        }
         Ok(Self {
+            managed,
             phase,
             generation,
             pending,
@@ -219,6 +248,7 @@ impl Snapshot {
 }
 
 pub(super) struct Wal {
+    managed: Option<Bindings>,
     file: File,
     charge: FileCharge,
     pub budget: ByteBudget,
@@ -264,6 +294,7 @@ impl Wal {
             return Err(error.into());
         }
         Ok(Self {
+            managed: pins.managed.clone(),
             file,
             charge,
             budget,
@@ -306,6 +337,7 @@ impl Wal {
             return Err(OwnerVaultError::Pins);
         }
         let mut wal = Self {
+            managed: pins.managed.clone(),
             file,
             charge,
             budget,
@@ -340,7 +372,7 @@ impl Wal {
             wal.read(&mut bytes)?;
             let mut tag = [0; TAG_BYTES];
             wal.read(&mut tag)?;
-            let digest = hash(&[b"DCS/owner-vault/record/v2", &prefix, &bytes, &tag]);
+            let digest = hash(&[wal.record_domain(), &prefix, &bytes, &tag]);
             let cipher = XChaCha20Poly1305::new_from_slice(wal.authority.0.as_ref())
                 .map_err(|_| OwnerVaultError::Authentication)?;
             let mut aad = wal.header.to_vec();
@@ -353,7 +385,7 @@ impl Wal {
                     Tag::<XChaCha20Poly1305>::from_slice(&tag),
                 )
                 .map_err(|_| OwnerVaultError::Authentication)?;
-            snapshots.push(Snapshot::decode(&bytes)?);
+            snapshots.push(Snapshot::decode(&bytes, wal.managed.as_ref())?);
             wal.sequence += 1;
             wal.digest = digest;
             position += n as u64;
@@ -378,6 +410,19 @@ impl Wal {
     }
     pub fn record_bytes(snapshot: &Snapshot) -> VaultResult<u64> {
         Ok((snapshot.encode()?.len() + RECORD_HEADER + TAG_BYTES) as u64)
+    }
+    pub fn next_sequence(&self) -> VaultResult<u64> {
+        self.sequence
+            .checked_add(1)
+            .filter(|n| *n <= MAX_RECORDS as u64)
+            .ok_or(OwnerVaultError::ResourceLimit)
+    }
+    fn record_domain(&self) -> &'static [u8] {
+        if self.managed.is_some() {
+            b"DCS/owner-vault/record/v3"
+        } else {
+            b"DCS/owner-vault/record/v2"
+        }
     }
     pub fn require_terminal_capacity(&self, additional: u64) -> VaultResult<()> {
         let slots = if additional == 0 { 1 } else { 2 };
@@ -433,6 +478,14 @@ impl Wal {
         reserved: &mut Reservation,
     ) -> VaultResult<()> {
         self.live()?;
+        if snapshot
+            .managed
+            .as_ref()
+            .map(|m| Bindings(m.clients.map(|c| c.binding)))
+            != self.managed
+        {
+            return Err(OwnerVaultError::Pins);
+        }
         if self.sequence as usize >= MAX_RECORDS {
             return Err(OwnerVaultError::ResourceLimit);
         }
@@ -498,7 +551,7 @@ impl Wal {
         }
         self.length = next;
         self.sequence = sequence;
-        self.digest = hash(&[b"DCS/owner-vault/record/v2", &prefix, &bytes, &tag]);
+        self.digest = hash(&[self.record_domain(), &prefix, &bytes, &tag]);
         Ok(())
     }
     pub fn live(&self) -> VaultResult<()> {
@@ -523,8 +576,12 @@ impl Wal {
 }
 fn file_header(pins: &OwnerVaultPins) -> [u8; FILE_HEADER] {
     let mut out = [0; FILE_HEADER];
-    out[..8].copy_from_slice(MAGIC);
-    out[8..40].copy_from_slice(&owner_vault_profile_digest());
+    out[..8].copy_from_slice(if pins.managed.is_some() {
+        b"DCSOVL03"
+    } else {
+        MAGIC
+    });
+    out[8..40].copy_from_slice(&pins.file_profile());
     out[40..72].copy_from_slice(&pins.binding.id());
     out[72..104].copy_from_slice(&pins.identity.0);
     out

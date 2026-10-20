@@ -1,6 +1,8 @@
 //! PUBLIC NONSECRET backups, genuine input16/Source/Life/Link and real files.
 //! Local QCs in this module are mathematical fixtures, not four-OS agreement.
 use super::*;
+#[path = "host/tests.rs"]
+mod host_tests;
 use crate::private_predicate::{EncryptedSourceState, SourceStateAuthority, SourceStateIdentity};
 use bfv_query_core::{
     BfvKeyAnchor, EncryptedOwnerState, OwnerKeyAnchor, OwnerProofEpoch, OwnerStateAuthority,

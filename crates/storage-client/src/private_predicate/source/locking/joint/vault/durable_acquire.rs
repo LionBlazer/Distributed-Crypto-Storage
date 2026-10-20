@@ -434,7 +434,7 @@ impl OwnerVault {
     pub(super) fn replay_acquire_record(
         &mut self,
         next: Snapshot,
-        _source: &SourceOwner,
+        source: &SourceOwner,
         fetched: FetchedSource<'_>,
         external: &[OwnerVaultReplay<'_>],
         at: &mut usize,
@@ -452,6 +452,7 @@ impl OwnerVault {
                 return Err(OwnerVaultError::Encoding);
             }
             self.acquire_result = None;
+            self.check_managed_record(&next, source, fetched)?;
             self.saved = next;
             return Ok(());
         }
@@ -469,16 +470,19 @@ impl OwnerVault {
             }
             let before = parent(&self.history, &self.pins.binding)?;
             let public = incoming.load(&self.ingress, &self.pins.binding, material)?;
-            drop(restore(
+            let restored = restore(
                 incoming,
                 &self.pins.binding,
                 &before,
-                fetched,
+                again(&fetched),
                 material,
                 &public,
-            )?);
+            )?;
+            self.require_managed_acquire(&next, &restored.2)?;
+            drop(restored);
             drop(public);
             self.pending_parent = Some(before);
+            self.check_managed_record(&next, source, fetched)?;
             self.saved = next;
             return Ok(());
         }
@@ -503,6 +507,7 @@ impl OwnerVault {
             material,
             &public,
         )?;
+        self.require_managed_acquire(&self.saved, &candidates)?;
         if self.saved.phase == OwnerVaultPhase::AcquireComputePrepared {
             drop((owner, pending, candidates));
             if next.generation != self.saved.generation
@@ -550,6 +555,7 @@ impl OwnerVault {
                 }
                 _ => return Err(OwnerVaultError::Encoding),
             }
+            self.check_managed_record(&next, source, fetched)?;
             self.saved = next;
             return Ok(());
         }
@@ -605,7 +611,7 @@ impl OwnerVault {
         drop(state::restore_idle(
             next.idle.as_ref(),
             &source,
-            fetched,
+            again(&fetched),
             &after,
         )?);
         self.pending_parent = None;
@@ -616,6 +622,7 @@ impl OwnerVault {
             self.history.apply(entry.checkpoint, entry.block)?;
             *at += 1;
         }
+        self.check_managed_record(&next, &source, fetched)?;
         self.saved = next;
         Ok(())
     }
@@ -640,10 +647,13 @@ impl OwnerVault {
         // or any original request escapes. Failure here publishes nothing.
         self.wal
             .require_capacity(4, 4 * OWNER_VAULT_MAX_RECORD_BYTES as u64)?;
-        let lease = self
-            .wal
-            .budget
-            .reserve(4 * OWNER_VAULT_MAX_RECORD_BYTES as u64)?;
+        let lease = if self.saved.managed.is_some() {
+            self.terminal.take().ok_or(OwnerVaultError::Poisoned)?
+        } else {
+            self.wal
+                .budget
+                .reserve(4 * OWNER_VAULT_MAX_RECORD_BYTES as u64)?
+        };
         let fingerprint = material.fingerprint(&self.pins.binding)?;
         let before = parent(&self.history, &self.pins.binding)?;
         if current_stamp(&self.history, &self.pins.binding)? != self.saved.stamp {
@@ -653,10 +663,15 @@ impl OwnerVault {
         let mut nonce = [0; 32];
         let mut query_id = [0; 16];
         let mut invocation = [0; 32];
+        if let Some(call) = &self.managed_draft {
+            invocation = call.invocation;
+        }
         getrandom::getrandom(blind.as_mut()).map_err(owner_error)?;
         getrandom::getrandom(&mut nonce).map_err(owner_error)?;
         getrandom::getrandom(&mut query_id).map_err(owner_error)?;
-        getrandom::getrandom(&mut invocation).map_err(owner_error)?;
+        if self.managed_draft.is_none() {
+            getrandom::getrandom(&mut invocation).map_err(owner_error)?;
+        }
         if invocation == [0; 32] {
             return Err(OwnerVaultError::Pins);
         }
@@ -723,6 +738,7 @@ impl OwnerVault {
             registry200_proof::source::statement::encode_digest(life.statement().result),
         ];
         let saved = Snapshot {
+            managed: self.managed_next(OwnerVaultPhase::AcquireComputePrepared, None)?,
             phase: OwnerVaultPhase::AcquireComputePrepared,
             generation: self.saved.generation,
             pending: invocation,
@@ -743,6 +759,7 @@ impl OwnerVault {
                 catalog: None,
             }),
         };
+        self.require_managed_acquire(&saved, &candidates)?;
         // Drop both original private completion banks and original BFV pending.
         // Subsequent attempts use ONLY the exact authenticated restore path.
         drop(candidates);
@@ -754,6 +771,7 @@ impl OwnerVault {
         self.terminal = Some(remaining);
         self.pending_parent = Some(before);
         self.saved = saved;
+        self.managed_draft = None;
         self.acquire_recovered = false;
         let public = self.saved.acquire.as_ref().unwrap().load(
             &self.ingress,
@@ -946,10 +964,11 @@ impl OwnerVault {
             saved,
             &self.pins.binding,
             before,
-            fetched,
+            again(&fetched),
             material,
             &public,
         )?;
+        self.require_managed_acquire(&self.saved, &candidates)?;
         let expected = saved.expectation(&public, &self.pins.binding, before)?;
         drop(public);
         let block = self.saved.block.as_ref().ok_or(OwnerVaultError::Encoding)?;
@@ -983,6 +1002,7 @@ impl OwnerVault {
             let idle = state::encode_idle(&opening)?;
             Ok((
                 Snapshot {
+                    managed: self.managed_next(OwnerVaultPhase::Completed, None)?,
                     phase: OwnerVaultPhase::Completed,
                     generation: self
                         .saved
@@ -1011,6 +1031,17 @@ impl OwnerVault {
                 return Err(e);
             }
         };
+        if next.managed.is_some() {
+            let checked_bank = (|| -> VaultResult<()> {
+                let source = material.source(again(&fetched))?;
+                let after = parent(&self.history, &self.pins.binding)?;
+                self.require_managed_bank(&next, &source, fetched, &after)
+            })();
+            if let Err(error) = checked_bank {
+                self.poison_after_advance();
+                return Err(error);
+            }
+        }
         if let Err(e) = self.append_acquire(next) {
             self.poison_after_advance();
             return Err(e);
@@ -1036,6 +1067,7 @@ impl OwnerVault {
     }
     fn compute_snapshot(&self) -> VaultResult<Snapshot> {
         Ok(Snapshot {
+            managed: self.managed_next(OwnerVaultPhase::AcquireComputePrepared, None)?,
             phase: OwnerVaultPhase::AcquireComputePrepared,
             generation: self.saved.generation,
             pending: self.saved.pending,
@@ -1060,7 +1092,7 @@ impl OwnerVault {
         // phase write cannot silently lose the already promised terminal budget.
         match self.wal.append_reserved(&next, lease) {
             Ok(()) => {
-                if next.phase == OwnerVaultPhase::Completed {
+                if next.phase == OwnerVaultPhase::Completed && next.managed.is_none() {
                     self.terminal = None;
                 }
                 self.saved = next;

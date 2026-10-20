@@ -36,6 +36,73 @@ fn canonical_bank(
     Ok(())
 }
 
+// Host bookkeeping is checked against the genuinely root-opened bank. This
+// helper is private owner mathematics, never a Registry getter or proof receipt.
+pub(in crate::private_predicate::source::locking::joint) fn require_host_bank(
+    opening: &JointRegistryOpening,
+    clients: [(u64, u8); 2],
+) -> crate::Result<()> {
+    opening.registry.require_canonical().map_err(cryptography)?;
+    if clients[0].0 != 0 && clients[0].0 == clients[1].0
+        || opening.registry.transactions.len() != clients.iter().filter(|c| c.0 != 0).count()
+        || clients.iter().any(|(id, principal)| {
+            !(1..=2).contains(principal)
+                || (*id != 0
+                    && !opening
+                        .registry
+                        .transactions
+                        .iter()
+                        .any(|tx| tx.id == *id && tx.principal == *principal))
+        })
+    {
+        return Err(invalid(
+            "Managed client map differs from the complete opened Registry",
+        ));
+    }
+    Ok(())
+}
+pub(in crate::private_predicate::source::locking::joint) fn host_begin_id(
+    opening: &JointRegistryOpening,
+    clients: [(u64, u8); 2],
+) -> crate::Result<u64> {
+    require_host_bank(opening, clients)?;
+    opening
+        .registry
+        .allocator
+        .checked_add(1)
+        .ok_or_else(|| invalid("Registry allocator exhausted"))
+}
+pub(in crate::private_predicate::source::locking::joint) fn require_host_initial(
+    opening: &JointRegistryOpening,
+) -> crate::Result<()> {
+    if *opening.registry != Registry::default() {
+        return Err(invalid(
+            "Managed Host creation requires the genuine empty Bootstrap bank",
+        ));
+    }
+    Ok(())
+}
+pub(in crate::private_predicate::source::locking::joint) fn require_host_control(
+    candidate: &JointControlCandidate,
+    transaction: u64,
+    principal: u8,
+    verb: u8,
+) -> crate::Result<()> {
+    let c = &candidate.command;
+    let correct = match verb {
+        1 => c.operation == Operation::Begin && !c.abort,
+        2 => c.operation == Operation::End && !c.abort,
+        3 => c.operation == Operation::End && c.abort,
+        _ => false,
+    };
+    if !correct || c.transaction != transaction || c.principal != principal {
+        return Err(invalid(
+            "Managed call differs from the actual Control opening",
+        ));
+    }
+    Ok(())
+}
+
 /// Canonical grammar only. The caller must bind the full independent stamp in
 /// its authenticated record and actually audit the bank before phase promotion.
 pub(in crate::private_predicate::source::locking::joint) fn encode_idle(
