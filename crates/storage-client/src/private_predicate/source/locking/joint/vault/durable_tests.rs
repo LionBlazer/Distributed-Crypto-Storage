@@ -16,6 +16,7 @@ struct Entry {
     block: CandidateBlock,
 }
 struct Rig {
+    backups: Option<acquire_tests::Backups>,
     owner: SourceOwner,
     bundle: RawBundle,
     heads: ReadHeads,
@@ -27,6 +28,9 @@ struct Rig {
 }
 impl Rig {
     fn new() -> (Self, control::JointRegistryOpening) {
+        Self::new_inner(false)
+    }
+    fn new_inner(capture: bool) -> (Self, control::JointRegistryOpening) {
         let owner = SourceOwner::new([0x21; 16], [0x42; 16], Zeroizing::new([0x63; 32])).unwrap();
         let table = owner
             .seal_partition(
@@ -107,6 +111,26 @@ impl Rig {
             [fixture::ENROLL_SALT, state.salt],
         )
         .unwrap();
+        let backups = capture.then(|| {
+            acquire_tests::Backups::capture(
+                (
+                    &owner,
+                    FetchedSource {
+                        object,
+                        bundle: &bundle,
+                        heads: &heads,
+                    },
+                    registry200_proof::source::statement::encode_digest(
+                        loaded.draft.key_commitment,
+                    ),
+                ),
+                &bfv,
+                &setup,
+                &handle,
+                &epoch,
+                key.statement(),
+            )
+        });
         drop(history);
         drop(ingress);
         drop(loaded);
@@ -115,6 +139,7 @@ impl Rig {
         drop(bfv);
         (
             Self {
+                backups,
                 directory,
                 owner,
                 bundle,
@@ -183,6 +208,9 @@ impl Rig {
         );
     }
 }
+
+#[path = "durable_acquire_tests.rs"]
+mod acquire_tests;
 fn authority() -> OwnerVaultAuthority {
     OwnerVaultAuthority::new(Zeroizing::new(WRAP))
 }
@@ -481,6 +509,7 @@ fn valid_aead_with_foreign_bank_and_unsaved_genuine_successor_fail_without_old_s
     let (rig, opening) = Rig::new();
     let mut vault = rig.create(opening);
     let saved = Snapshot {
+        acquire: None,
         phase: OwnerVaultPhase::Idle,
         generation: 0,
         pending: [0; 32],

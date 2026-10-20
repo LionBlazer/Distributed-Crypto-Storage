@@ -6,6 +6,11 @@ actual validators and two sequential owner processes. The complete command took
 the [executed record](../../../../../../../../docs/shared-evidence-owner-restart.md)
 for source/image identities and bounded resource observations.
 
+The unchanged Control scenario also passed against OwnerVault v2 in 88.608
+seconds including Cargo startup (88.10 seconds in the test), with a separately
+pinned peer image. The [v2 record](../../../../../../../../docs/joint-owner-acquire-vault.md)
+keeps that rerun separate from the original v1 measurements above.
+
 `process_tests.rs` owns the bounded supervisor protocol, independently retained
 public inventory and actual four `dcs-peer` startup. `process_worker.rs` owns the
 two owner-only roles. The test-local [`OwnerProcess`](../../../../../../../../apps/dcs-peer/tests/support/joint_process.rs)

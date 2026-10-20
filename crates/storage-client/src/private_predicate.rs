@@ -10,8 +10,9 @@ pub use source::{
     JointLockingCandidates, JointLockingParent, JointLockingPreparation, JointRecovery,
     JointRecoveryIdentity, JointRecoveryInputs, JointRecoveryKey, LockingActor, LockingCompletion,
     LockingConflict, LockingControl, LockingParent, LockingPreparation, NonAdmittedJointLocking,
-    NonAdmittedLocking, PreparedJointLockingInputs, PreparedLockingInputs,
-    RecoverableJointLockingInputs, RecoverableJointLockingPreparation,
+    NonAdmittedLocking, OwnerVaultAcquireCompletion, OwnerVaultAcquireMaterial,
+    OwnerVaultAcquirePreparation, OwnerVaultAcquireWork, PreparedJointLockingInputs,
+    PreparedLockingInputs, RecoverableJointLockingInputs, RecoverableJointLockingPreparation,
     RecoveredJointComputePrepared, SOURCE_STATE_BYTES, SOURCE_STATE_HEADER_BYTES, SourceOwner,
     SourceStateAuthority, SourceStateIdentity, StagedLockingTransition,
 };

@@ -3,6 +3,7 @@ use super::super::control::{
     JointControlOutcome,
     state::{CONTROL_BYTES, IDLE_BYTES},
 };
+use super::durable::acquire::{AcquireState, MAX_ACQUIRE_STATE};
 use super::durable::{
     BLOCK_CAP, MAX_RECORDS, OWNER_VAULT_MAX_BODY_BYTES, OWNER_VAULT_MAX_FILE_BYTES,
     OWNER_VAULT_MAX_RECORD_BYTES, OwnerVaultAuthority, OwnerVaultError, OwnerVaultPhase,
@@ -28,7 +29,7 @@ use zeroize::Zeroizing;
 const FILE_HEADER: usize = 104;
 const RECORD_HEADER: usize = 72;
 const TAG_BYTES: usize = 16;
-const MAGIC: &[u8; 8] = b"DCSOVL01";
+const MAGIC: &[u8; 8] = b"DCSOVL02";
 
 pub(super) struct Snapshot {
     pub phase: OwnerVaultPhase,
@@ -40,6 +41,7 @@ pub(super) struct Snapshot {
     pub block: Option<CandidateBlock>,
     pub checkpoint: Option<JointCheckpoint>,
     pub outcome: Option<JointControlOutcome>,
+    pub acquire: Option<AcquireState>,
 }
 impl Snapshot {
     fn encode(&self) -> VaultResult<Zeroizing<Vec<u8>>> {
@@ -59,11 +61,12 @@ impl Snapshot {
         let mut bytes = Zeroizing::new(Vec::with_capacity(
             8 + 16 + 64 + IDLE_BYTES + CONTROL_BYTES + 8 + block.len() + checkpoint.len(),
         ));
-        bytes.extend_from_slice(b"DCSOVP01");
+        bytes.extend_from_slice(b"DCSOVP02");
         bytes.push(match self.phase {
             OwnerVaultPhase::Idle => 0,
             OwnerVaultPhase::BodyPrepared | OwnerVaultPhase::SubmittedUnknown => 1,
             OwnerVaultPhase::Completed => 2,
+            OwnerVaultPhase::AcquireComputePrepared => 3,
         });
         bytes.push(match self.outcome {
             None => 0,
@@ -80,6 +83,14 @@ impl Snapshot {
             Some(value) => bytes.extend_from_slice(value.as_ref()),
             None => bytes.extend_from_slice(&[0; CONTROL_BYTES]),
         }
+        let acquire = self
+            .acquire
+            .as_ref()
+            .map(AcquireState::encode)
+            .transpose()?;
+        let acquire = acquire.as_deref().map(Vec::as_slice).unwrap_or_default();
+        bytes.extend_from_slice(&(acquire.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(acquire);
         for value in [&block, &checkpoint] {
             bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
             bytes.extend_from_slice(value);
@@ -93,7 +104,7 @@ impl Snapshot {
     }
     fn decode(bytes: &[u8]) -> VaultResult<Self> {
         let mut r = Reader::new(bytes);
-        if r.take(8)? != b"DCSOVP01" {
+        if r.take(8)? != b"DCSOVP02" {
             return Err(OwnerVaultError::Encoding);
         }
         let phase = r.take(1)?[0];
@@ -106,6 +117,12 @@ impl Snapshot {
         let stamp = r.array()?;
         let idle = Zeroizing::new(r.array()?);
         let candidate = Zeroizing::new(r.array::<CONTROL_BYTES>()?);
+        let acquire_bytes = r.blob(MAX_ACQUIRE_STATE)?;
+        let acquire = if acquire_bytes.is_empty() {
+            None
+        } else {
+            Some(AcquireState::decode(acquire_bytes)?)
+        };
         let block_bytes = r.blob(BLOCK_CAP)?;
         let block = if block_bytes.is_empty() {
             None
@@ -128,6 +145,7 @@ impl Snapshot {
         let (phase, candidate, outcome) = match (phase, outcome) {
             (0, 0)
                 if pending == [0; 32]
+                    && acquire.is_none()
                     && candidate.iter().all(|b| *b == 0)
                     && block.is_none()
                     && checkpoint.is_none() =>
@@ -135,10 +153,22 @@ impl Snapshot {
                 (OwnerVaultPhase::Idle, None, None)
             }
             (1, 0) if pending != [0; 32] && block.is_some() && checkpoint.is_none() => {
-                (OwnerVaultPhase::SubmittedUnknown, Some(candidate), None)
+                if acquire.is_some() && candidate.iter().any(|b| *b != 0) {
+                    return Err(OwnerVaultError::Encoding);
+                }
+                (
+                    OwnerVaultPhase::SubmittedUnknown,
+                    if acquire.is_none() {
+                        Some(candidate)
+                    } else {
+                        None
+                    },
+                    None,
+                )
             }
             (2, 1..=3)
                 if pending != [0; 32]
+                    && acquire.is_none()
                     && candidate.iter().all(|b| *b == 0)
                     && block.is_some()
                     && checkpoint.is_some() =>
@@ -153,6 +183,24 @@ impl Snapshot {
                     }),
                 )
             }
+            (2, 0)
+                if pending != [0; 32]
+                    && acquire.is_some()
+                    && candidate.iter().all(|b| *b == 0)
+                    && block.is_some()
+                    && checkpoint.is_some() =>
+            {
+                (OwnerVaultPhase::Completed, None, None)
+            }
+            (3, 0)
+                if pending != [0; 32]
+                    && acquire.is_some()
+                    && candidate.iter().all(|b| *b == 0)
+                    && block.is_none()
+                    && checkpoint.is_none() =>
+            {
+                (OwnerVaultPhase::AcquireComputePrepared, None, None)
+            }
             _ => return Err(OwnerVaultError::Encoding),
         };
         Ok(Self {
@@ -165,6 +213,7 @@ impl Snapshot {
             block,
             checkpoint,
             outcome,
+            acquire,
         })
     }
 }
@@ -291,7 +340,7 @@ impl Wal {
             wal.read(&mut bytes)?;
             let mut tag = [0; TAG_BYTES];
             wal.read(&mut tag)?;
-            let digest = hash(&[b"DCS/owner-vault/record/v1", &prefix, &bytes, &tag]);
+            let digest = hash(&[b"DCS/owner-vault/record/v2", &prefix, &bytes, &tag]);
             let cipher = XChaCha20Poly1305::new_from_slice(wal.authority.0.as_ref())
                 .map_err(|_| OwnerVaultError::Authentication)?;
             let mut aad = wal.header.to_vec();
@@ -346,11 +395,43 @@ impl Wal {
         }
         Ok(())
     }
+    pub fn require_capacity(&self, records: u64, bytes: u64) -> VaultResult<()> {
+        self.live()?;
+        if self
+            .sequence
+            .checked_add(records)
+            .is_none_or(|n| n > MAX_RECORDS as u64)
+            || self
+                .length
+                .checked_add(bytes)
+                .is_none_or(|n| n > OWNER_VAULT_MAX_FILE_BYTES)
+        {
+            return Err(OwnerVaultError::ResourceLimit);
+        }
+        Ok(())
+    }
     pub fn append(
         &mut self,
         snapshot: &Snapshot,
         mut reserved: Reservation,
     ) -> VaultResult<Reservation> {
+        match self.append_reserved(snapshot, &mut reserved) {
+            Ok(()) => Ok(reserved),
+            Err(error) => {
+                if self.poisoned {
+                    reserved.retain_conservatively();
+                }
+                Err(error)
+            }
+        }
+    }
+    // SAME writer, borrowed lease. An Acquire keeps its prepromised terminal
+    // bytes even when an error occurs before the actual append begins.
+    pub fn append_reserved(
+        &mut self,
+        snapshot: &Snapshot,
+        reserved: &mut Reservation,
+    ) -> VaultResult<()> {
         self.live()?;
         if self.sequence as usize >= MAX_RECORDS {
             return Err(OwnerVaultError::ResourceLimit);
@@ -380,7 +461,7 @@ impl Wal {
         let tag = cipher
             .encrypt_in_place_detached(XNonce::from_slice(&prefix[44..68]), &aad, bytes.as_mut())
             .map_err(|_| OwnerVaultError::Authentication)?;
-        self.charge.grow_reserved(next, &mut reserved)?;
+        self.charge.grow_reserved(next, reserved)?;
         let write = (|| -> std::io::Result<()> {
             // Check AFTER precharge, before any append, just like the signer WAL.
             if self.file.metadata()?.len() != self.length
@@ -413,13 +494,12 @@ impl Wal {
         if let Err(error) = write {
             self.poisoned = true;
             self.charge.mark_io_failed();
-            reserved.retain_conservatively();
             return Err(error.into());
         }
         self.length = next;
         self.sequence = sequence;
-        self.digest = hash(&[b"DCS/owner-vault/record/v1", &prefix, &bytes, &tag]);
-        Ok(reserved)
+        self.digest = hash(&[b"DCS/owner-vault/record/v2", &prefix, &bytes, &tag]);
+        Ok(())
     }
     pub fn live(&self) -> VaultResult<()> {
         if self.poisoned {
@@ -470,15 +550,15 @@ fn sync_parent(path: &Path) -> std::io::Result<()> {
     let _ = path;
     Ok(())
 }
-struct Reader<'a> {
+pub(super) struct Reader<'a> {
     bytes: &'a [u8],
     at: usize,
 }
 impl<'a> Reader<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
+    pub(super) fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, at: 0 }
     }
-    fn take(&mut self, n: usize) -> VaultResult<&'a [u8]> {
+    pub(super) fn take(&mut self, n: usize) -> VaultResult<&'a [u8]> {
         let end = self
             .at
             .checked_add(n)
@@ -490,20 +570,20 @@ impl<'a> Reader<'a> {
         self.at = end;
         Ok(value)
     }
-    fn array<const N: usize>(&mut self) -> VaultResult<[u8; N]> {
+    pub(super) fn array<const N: usize>(&mut self) -> VaultResult<[u8; N]> {
         Ok(self.take(N)?.try_into().unwrap())
     }
-    fn u64(&mut self) -> VaultResult<u64> {
+    pub(super) fn u64(&mut self) -> VaultResult<u64> {
         Ok(u64::from_le_bytes(self.array()?))
     }
-    fn blob(&mut self, cap: usize) -> VaultResult<&'a [u8]> {
+    pub(super) fn blob(&mut self, cap: usize) -> VaultResult<&'a [u8]> {
         let n = u32::from_le_bytes(self.array()?) as usize;
         if n > cap {
             return Err(OwnerVaultError::ResourceLimit);
         }
         self.take(n)
     }
-    fn end(self) -> VaultResult<()> {
+    pub(super) fn end(self) -> VaultResult<()> {
         if self.at == self.bytes.len() {
             Ok(())
         } else {

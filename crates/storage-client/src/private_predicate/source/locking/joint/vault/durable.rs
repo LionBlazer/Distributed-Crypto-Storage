@@ -1,4 +1,4 @@
-//! Historical owner Control WAL; validation is recorded in the module contract.
+//! Historical Joint owner WAL with Control and Acquire continuations.
 use super::super::{
     control::{
         self,
@@ -15,6 +15,12 @@ use registry200_finality::{
 };
 use registry200_joint::{JointDepot, JointEvidenceIngress, Manifest};
 use sha2::{Digest, Sha256};
+#[path = "durable_acquire.rs"]
+pub(super) mod acquire;
+pub use acquire::{
+    OwnerVaultAcquireCompletion, OwnerVaultAcquireMaterial, OwnerVaultAcquirePreparation,
+    OwnerVaultAcquireWork,
+};
 
 pub const OWNER_VAULT_MAX_BODY_BYTES: usize = 64 * 1024;
 pub const OWNER_VAULT_MAX_RECORD_BYTES: usize = 1024 * 1024;
@@ -28,7 +34,7 @@ pub type VaultResult<T> = core::result::Result<T, OwnerVaultError>;
 /// This distinct local format does not change participant, Journal, proof or
 /// consensus profiles. It is not a power-loss or anti-rollback theorem.
 pub fn owner_vault_profile_digest() -> [u8; 32] {
-    hash(&[b"DCS/owner-Control-Vault/v1", b"DCSOVL01/DCSOVP01/XChaCha20Poly1305/phase-chain/strict-no-repair", b"Idle->BodyPrepared->SubmittedUnknown-on-reopen->Completed->Idle;CAS-generation-pendingID-digest;actual-Source-Life-Kind-QC-replay;historical-only", &protocol_storage::participant_profile_digest(), &(OWNER_VAULT_MAX_BODY_BYTES as u64).to_le_bytes(), &(OWNER_VAULT_MAX_RECORD_BYTES as u64).to_le_bytes(), &OWNER_VAULT_MAX_FILE_BYTES.to_le_bytes(), &(MAX_RECORDS as u64).to_le_bytes(), &(MAX_REPLAY_BYTES as u64).to_le_bytes(), &(IDLE_BYTES as u64).to_le_bytes(), &(CONTROL_BYTES as u64).to_le_bytes()])
+    hash(&[b"DCS/owner-Joint-Vault/v2", b"DCSOVL02/DCSOVP02/DCSOVA02/XChaCha20Poly1305/phase-chain/strict-no-repair/no-v1-migration", b"Control:Idle->BodyPrepared->SubmittedUnknown->Completed->Idle;Acquire:Idle->ComputePrepared->Catalog->BodyPrepared->SubmittedUnknown->Completed->Idle;CAS-generation-invocationID-digest;original-backups-fixed20refs-input16-output118-Life-Link-QC;historical-only", &protocol_storage::participant_profile_digest(), &bfv_product_evidence::profile_digest(), &(OWNER_VAULT_MAX_BODY_BYTES as u64).to_le_bytes(), &(OWNER_VAULT_MAX_RECORD_BYTES as u64).to_le_bytes(), &OWNER_VAULT_MAX_FILE_BYTES.to_le_bytes(), &(MAX_RECORDS as u64).to_le_bytes(), &(MAX_REPLAY_BYTES as u64).to_le_bytes(), &(IDLE_BYTES as u64).to_le_bytes(), &(CONTROL_BYTES as u64).to_le_bytes(), &(acquire::MAX_ACQUIRE_STATE as u64).to_le_bytes()])
 }
 pub(super) fn hash(fields: &[&[u8]]) -> [u8; 32] {
     let mut hash = Sha256::new();
@@ -112,7 +118,7 @@ impl OwnerVaultPins {
     }
     fn file_id(&self) -> [u8; 32] {
         hash(&[
-            b"DCS/owner-Control-Vault/file/v1",
+            b"DCS/owner-Joint-Vault/file/v2",
             &owner_vault_profile_digest(),
             &self.binding.id(),
             &self.identity.0,
@@ -128,6 +134,7 @@ pub struct OwnerVaultReplay<'a> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OwnerVaultPhase {
     Idle,
+    AcquireComputePrepared,
     BodyPrepared,
     SubmittedUnknown,
     Completed,
@@ -222,6 +229,8 @@ pub struct OwnerVault {
     terminal: Option<Reservation>,
     draft: Option<Draft>,
     recovery_required: bool,
+    acquire_recovered: bool,
+    acquire_result: Option<OwnerVaultAcquireCompletion>,
 }
 impl OwnerVault {
     /// New file ONLY. The supplied quota is the one actual ledger used to open
@@ -264,6 +273,7 @@ impl OwnerVault {
             block: None,
             checkpoint: None,
             outcome: None,
+            acquire: None,
         };
         let budget = quota.control_budget();
         let mut wal = Wal::create_new(
@@ -284,6 +294,8 @@ impl OwnerVault {
             terminal: None,
             draft: None,
             recovery_required: false,
+            acquire_recovered: false,
+            acquire_result: None,
         })
     }
     /// Existing file ONLY, strict complete replay with actual Source and all
@@ -295,6 +307,39 @@ impl OwnerVault {
         source: &SourceOwner,
         fetched: FetchedSource<'_>,
         replay: &[OwnerVaultReplay<'_>],
+    ) -> VaultResult<Self> {
+        Self::open_engine(quota, pins, authority, source, fetched, replay, None)
+    }
+    /// Existing v2 ONLY. Every Acquire in the log is fully restored using the
+    /// independently supplied ORIGINAL backup material before an owner escapes.
+    /// The Control-only entry refuses such logs with RecoveryRequired.
+    pub fn open_existing_acquire(
+        quota: &ParticipantQuota,
+        pins: OwnerVaultPins,
+        authority: OwnerVaultAuthority,
+        source: &SourceOwner,
+        fetched: FetchedSource<'_>,
+        replay: &[OwnerVaultReplay<'_>],
+        material: &OwnerVaultAcquireMaterial<'_>,
+    ) -> VaultResult<Self> {
+        Self::open_engine(
+            quota,
+            pins,
+            authority,
+            source,
+            fetched,
+            replay,
+            Some(material),
+        )
+    }
+    fn open_engine(
+        quota: &ParticipantQuota,
+        pins: OwnerVaultPins,
+        authority: OwnerVaultAuthority,
+        source: &SourceOwner,
+        fetched: FetchedSource<'_>,
+        replay: &[OwnerVaultReplay<'_>],
+        material: Option<&OwnerVaultAcquireMaterial<'_>>,
     ) -> VaultResult<Self> {
         validate_replay(replay)?;
         // Lock the actual WAL before opening the shared depot or allocating a
@@ -341,11 +386,24 @@ impl OwnerVault {
             terminal: None,
             draft: None,
             recovery_required: false,
+            acquire_recovered: true,
+            acquire_result: None,
         };
         for record in records {
-            vault.replay_record(record, source, again(&fetched), replay, &mut at)?;
+            vault.replay_record(record, source, again(&fetched), replay, &mut at, material)?;
         }
-        if vault.is_pending() {
+        if vault.saved.acquire.is_some() && vault.saved.phase != OwnerVaultPhase::Completed {
+            let records = vault.acquire_records_remaining()?;
+            vault
+                .wal
+                .require_capacity(records, records * OWNER_VAULT_MAX_RECORD_BYTES as u64)?;
+            vault.terminal = Some(
+                vault
+                    .wal
+                    .budget
+                    .reserve(records * OWNER_VAULT_MAX_RECORD_BYTES as u64)?,
+            );
+        } else if vault.is_pending() {
             // Reservations are not durable. Recreate the COMPLETE terminal
             // allowance from the current shared ledger BEFORE any API escapes.
             vault.wal.require_terminal_capacity(0)?;
@@ -364,6 +422,15 @@ impl OwnerVault {
                     .as_ref()
                     .is_some_and(|saved| same_block(saved, entry.block));
             if exact_target {
+                if vault.saved.acquire.is_some() {
+                    vault.replay_pending_acquire(
+                        entry,
+                        again(&fetched),
+                        material.ok_or(OwnerVaultError::RecoveryRequired)?,
+                    )?;
+                    at += 1;
+                    continue;
+                }
                 let before = vault
                     .pending_parent
                     .as_ref()
@@ -524,6 +591,7 @@ impl OwnerVault {
             block: Some(block),
             checkpoint: None,
             outcome: None,
+            acquire: None,
         };
         let record_bytes = Wal::record_bytes(&saved)?;
         self.wal.require_terminal_capacity(record_bytes)?;
@@ -561,7 +629,7 @@ impl OwnerVault {
         checkpoint: &JointCheckpoint,
     ) -> VaultResult<OwnerVaultCompletion> {
         self.require_cas(cas)?;
-        if !self.is_pending() {
+        if !self.is_pending() || self.saved.acquire.is_some() {
             return Err(OwnerVaultError::Phase);
         }
         let before = self
@@ -608,6 +676,7 @@ impl OwnerVault {
                 ),
                 checkpoint: Some(JointCheckpoint::decode(&checkpoint.encode())?),
                 outcome: Some(outcome),
+                acquire: None,
             };
             Ok((snapshot, outcome))
         })();
@@ -664,10 +733,12 @@ impl OwnerVault {
             block: None,
             checkpoint: None,
             outcome: None,
+            acquire: None,
         };
         let lease = self.wal.budget.reserve(Wal::record_bytes(&saved)?)?;
         drop(self.wal.append(&saved, lease)?);
         self.saved = saved;
+        self.acquire_result = None;
         self.cursor()
     }
     fn replay_record(
@@ -677,7 +748,18 @@ impl OwnerVault {
         fetched: FetchedSource<'_>,
         external: &[OwnerVaultReplay<'_>],
         at: &mut usize,
+        material: Option<&OwnerVaultAcquireMaterial<'_>>,
     ) -> VaultResult<()> {
+        if self.saved.acquire.is_some() || next.acquire.is_some() {
+            return self.replay_acquire_record(
+                next,
+                source,
+                fetched,
+                external,
+                at,
+                material.ok_or(OwnerVaultError::RecoveryRequired)?,
+            );
+        }
         match self.saved.phase {
             OwnerVaultPhase::Idle => {
                 if next.phase != OwnerVaultPhase::SubmittedUnknown
@@ -769,6 +851,7 @@ impl OwnerVault {
                     return Err(OwnerVaultError::Encoding);
                 }
             }
+            OwnerVaultPhase::AcquireComputePrepared => return Err(OwnerVaultError::Encoding),
         }
         self.saved = next;
         Ok(())

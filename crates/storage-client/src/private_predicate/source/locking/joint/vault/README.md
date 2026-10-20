@@ -1,17 +1,21 @@
-# Owner recovery and historical Control WAL
+# Owner recovery and historical Joint WAL
 
 The ComputePrepared capsule API captures and restores one historical Acquire
-without filesystem I/O. The separate [Control WAL](DURABLE.md) now owns bounded
-owner-private BEGIN/End phase records and exact-byte retries. Its five genuine
-local proof/file tests passed the native release build. Neither API supplies a
-current-lock check, rollback protection or SQL admission. The Control WAL does
-not persist Source/BFV keys or the Acquire pending/capsule collection.
+without filesystem I/O. The [Control path](DURABLE.md) and new
+[Acquire continuation](DURABLE-ACQUIRE.md) share ONE bounded owner-private WAL,
+phase CAS and exact-byte retry engine. The v2 owning tests, genuine OS-FHE/local-QC
+recovery case and six-process Control regression passed; see the
+[native record](../../../../../../../../docs/joint-owner-acquire-vault.md). No API
+supplies a current-lock check, rollback protection or SQL admission. Private
+Source/BFV/Ready backups remain independently pinned bounded external inputs;
+the new phase record stores the original capsule and twenty public references.
 
-The [Control process restart gate](PROCESS-RESTART.md) also passed with four
-actual validators and sequential owner A/B processes. It restores the original
-Source and BFV Owner/Anchor/Ready records before completing the exact saved
-Begin and typed End. The [executed record](../../../../../../../../docs/shared-evidence-owner-restart.md)
-distinguishes this historical Control recovery from durable Acquire and SQL.
+The earlier v1 [Control process restart gate](PROCESS-RESTART.md) passed with
+four actual validators and sequential owner A/B processes, restoring the
+original Source and BFV Owner/Anchor/Ready before exact Begin/End completion.
+Its [executed record](../../../../../../../../docs/shared-evidence-owner-restart.md)
+remains historical evidence. The same Control case also passed on v2. Combined
+durable Acquire with four validators and owner-process recovery remains pending.
 
 | Direct dependency | Responsibility |
 | --- | --- |
@@ -21,6 +25,7 @@ distinguishes this historical Control recovery from durable Acquire and SQL.
 | [Lifecycle field owner](../../../../../../../registry200-proof/src/lifecycle/circuit/commitment.rs) | Exact original Enrollment64/Registry200 preimages without unrelated Source DATA |
 | [Core pending owner](../../../../../../../bfv-query-core/src/coefficient_predicate.rs) | Rebuild the exact original encrypted request/pending binding without encryption or FHE |
 | [Control WAL](durable.rs), [file/AEAD engine](durable_wal.rs), [tests](durable_tests.rs) | Historical private bank, phase CAS, exact signed candidate, conservative quota and strict replay |
+| [Acquire continuation](durable_acquire.rs), [fixed public inventory](acquire_inventory.rs), [owning tests](durable_acquire_tests.rs) | Original-material authentication, real input/output replay, exact pending continuation and historical original-invocation completion |
 | [Participant storage](../../../../../../../protocol-storage/src/lib.rs) | One actual ledger and exclusive namespace; existing CONTROL class ceiling |
 
 `JointRecoveryKey::new(Zeroizing<[u8;32]>)` accepts an independently custodied,
@@ -88,11 +93,11 @@ composed security level, process RAM bound or performance result.
 Private payloads and explicit copies use `Zeroizing`/guarded Drop, including error
 branches. This excludes caller copies, native Gold/SDK traces, registers, allocator
 history and temporary cryptographic scratch. Ciphertext can be copied and restored
-twice; move-only Rust handles enforce one use per instance only. Whole-vault
-rollback, owner signing-key custody, fresh-head reconciliation, durable Acquire
-continuation and history compaction remain separate requirements. The new Control
-WAL implements only its own local phase CAS/fsync/lost-ACK path, under the explicit
-scope and filesystem qualifications in [its contract](DURABLE.md).
+twice; move-only Rust handles enforce one use per instance only. The capsule alone
+supplies no durable continuation. Control and Acquire add their local phase
+CAS/fsync/lost-ACK paths in the shared WAL under their linked contracts.
+Whole-vault rollback, owner signing-key custody, fresh-head reconciliation and
+history compaction remain separate requirements.
 
 Owning source tests include real Bootstrap/Begin/Kind/QCs, actual input16 and Link,
 lexical Owner→Anchor→Ready restoration after originals drop, exact pending/roots,
@@ -106,7 +111,7 @@ pins source and results. These tests establish no new full output118 completion,
 OS restart, current lease or durable anti-rollback claim. The prior real process
 Acquire/contention gates remain separately recorded evidence.
 
-The [Control Vault validation](../../../../../../../../docs/joint-owner-control-vault.md)
+The earlier v1 [Control Vault validation](../../../../../../../../docs/joint-owner-control-vault.md)
 also reran both capsule cases and the private grammar after their shared Registry
-codec extraction. This batch does not add an OS owner restart or new FHE network
-pass.
+codec extraction. The later v2 record above covers its own new tests and Control
+regressions without extending those earlier capsule measurements.

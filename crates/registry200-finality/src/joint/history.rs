@@ -9,6 +9,8 @@ use registry200_journal::Control;
 use version_journal::{Body, HeadPair, HeadRef, Journal};
 use work_finality::consensus::Context;
 
+#[path = "acquire_candidate.rs"]
+mod acquire_candidate;
 #[path = "control_candidate.rs"]
 mod control_candidate;
 

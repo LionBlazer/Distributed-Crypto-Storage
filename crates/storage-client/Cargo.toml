@@ -17,6 +17,7 @@ private-input-proofs = [
     "dep:bfv-basis-convolution",
     "dep:bfv-ciphertext-formation",
     "dep:bfv-mul-relin-proof",
+    "dep:bfv-product-evidence",
     "dep:p3-field",
     "dep:sha2",
     "dep:chacha20poly1305",
@@ -33,6 +34,7 @@ bfv-key-transform = { path = "../bfv-key-transform", optional = true }
 bfv-basis-convolution = { path = "../bfv-basis-convolution", optional = true }
 bfv-ciphertext-formation = { path = "../bfv-ciphertext-formation", optional = true }
 bfv-mul-relin-proof = { path = "../bfv-mul-relin-proof", optional = true }
+bfv-product-evidence = { path = "../bfv-product-evidence", optional = true }
 p3-field = { version = "=0.8.0", optional = true }
 sha2 = { version = "=0.10.9", optional = true }
 chacha20poly1305 = { version = "=0.10.1", optional = true }

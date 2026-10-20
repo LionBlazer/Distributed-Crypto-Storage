@@ -57,6 +57,16 @@ impl JointControlParent {
     pub fn head(&self) -> HeadRef {
         self.verified.head()
     }
+    // Closed owner siblings need the actual sealed parent/current context, never
+    // a reconstruction from serialized Vault labels. No private bank is exposed.
+    pub(in crate::private_predicate::source::locking::joint) fn verified_parent(
+        &self,
+    ) -> &VerifiedJointParent {
+        &self.verified
+    }
+    pub(in crate::private_predicate::source::locking::joint) fn current_context(&self) -> &Context {
+        &self.context
+    }
     fn require_stamp(
         &self,
         binding: &JointBinding,

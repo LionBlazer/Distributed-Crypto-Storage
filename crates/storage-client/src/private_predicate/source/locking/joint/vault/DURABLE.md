@@ -1,12 +1,17 @@
-# Historical owner Control Vault
+# Historical owner Control path in Vault v2
 
-`OwnerVault` is a bounded owner-private BEGIN/End phase log. Its five genuine
-proof/QC/file runtime tests and two new ownership examples passed on the native
-release build; the [validation record](../../../../../../../../docs/joint-owner-control-vault.md)
-pins the source, full commands and failure scope. It does
-not enable SQL, install a current lease, commit encrypted data, or establish
+`OwnerVault` retains the bounded owner-private BEGIN/End phase path. The new
+[Acquire continuation](DURABLE-ACQUIRE.md) explicitly changes only the local
+storage grammar to v2; old v1 files are not migrated or interpreted as v2.
+The five Control owning tests and six-process Control restart have passed on v2;
+see the [v2 native record](../../../../../../../../docs/joint-owner-acquire-vault.md).
+This owner does not enable SQL, install a current lease, commit encrypted data, or establish
 anti-rollback/power-loss protection. The already validated in-memory Acquire
-capsule remains a separate API and format.
+capsule retains its separate unchanged 1242-byte API and format.
+
+Earlier v1 Control proof/file validation is recorded in the
+[native record](../../../../../../../../docs/joint-owner-control-vault.md). Its
+results retain their original source scope; the v2 reruns are recorded separately.
 
 The application supplies an independent `JointBinding`, `OwnerVaultIdentity`,
 external `OwnerVaultAuthority(Zeroizing<[u8;32]>)`, real `SourceOwner` and fetched
@@ -108,8 +113,8 @@ and partial-write faults, quota refusal on terminal-lease recreation, and a real
 unsaved successor. They are not OS-network tests or evidence of current-lock/SQL
 admission.
 
-The executed owning validation command is:
+The Root-owned Control regression command passed:
 
 ```powershell
-cargo test --release --offline --locked -p storage-client --features private-input-proofs --lib private_predicate::source::locking::joint::vault::durable::tests:: -- --nocapture --test-threads=1
+cargo test --release --offline --locked -p storage-client --features private-input-proofs --lib private_predicate::source::locking::joint::vault::durable::tests:: -- --skip acquire_tests:: --nocapture --test-threads=1
 ```

@@ -325,3 +325,12 @@ verification and before publication, so a missing or unexpected Acquire payload
 cannot become a fallible result extraction after commit. The public sealed
 receipt is minted only after commit and ancestry restriction. Latest retries
 remain fresh read-only checks under their real preceding Context and parent.
+
+The new [own-Acquire candidate preflight](acquire_candidate.rs) is a read-only
+owner-Vault boundary, analogous to the existing Control candidate check. It
+checks exact current expectation/Header/Body and the actual fixed verifier,
+returns only `()`, and neither imports nor mints a reusable checked receipt.
+`apply_acquire` still performs its independent genuine QC/full-proof path.
+The owner Vault v2 owning and OS-FHE/local-QC recovery cases exercised this
+boundary; see the [native record](../../../../docs/joint-owner-acquire-vault.md).
+That record keeps local-QC recovery separate from actual four-validator agreement.

@@ -18,8 +18,10 @@ pub use locking::{
     JointLockingPreparation, JointRecovery, JointRecoveryIdentity, JointRecoveryInputs,
     JointRecoveryKey, LockingActor, LockingCompletion, LockingConflict, LockingControl,
     LockingParent, LockingPreparation, NonAdmittedJointLocking, NonAdmittedLocking,
-    PreparedJointLockingInputs, PreparedLockingInputs, RecoverableJointLockingInputs,
-    RecoverableJointLockingPreparation, RecoveredJointComputePrepared, StagedLockingTransition,
+    OwnerVaultAcquireCompletion, OwnerVaultAcquireMaterial, OwnerVaultAcquirePreparation,
+    OwnerVaultAcquireWork, PreparedJointLockingInputs, PreparedLockingInputs,
+    RecoverableJointLockingInputs, RecoverableJointLockingPreparation,
+    RecoveredJointComputePrepared, StagedLockingTransition,
 };
 pub use locking::{CompletedJointBootstrap, JointBootstrapCandidate, PreparedJointBootstrap};
 pub use locking::{
