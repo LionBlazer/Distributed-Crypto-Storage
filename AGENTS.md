@@ -49,7 +49,7 @@ continuing dependent implementation; do not overwrite conflicting intent blindly
 The `requirements_sync` test rejects a mismatch:
 
 ```sh
-cargo test --release --locked -p fhe-playground --test requirements_sync
+cargo test --release --locked -p repository-contracts --test requirements_sync
 ```
 
 <!-- requirements:begin -->
@@ -195,6 +195,9 @@ when isolation and failure coverage are preserved. Never shorten tests by weaken
 proofs, freshness, authorization, failure/resource guarantees or meaningful
 assertions, substituting simulated computation, or relaxing production timeouts.
 Measure improvements on comparable complete operations and report remaining costs.
+
+Keep repository contract guards dependency-free to avoid GUI and cryptographic
+builds.
 
 Report the change, relevant verification, final branch and commit, and whether push
 and master synchronization succeeded. State concrete blockers accurately.

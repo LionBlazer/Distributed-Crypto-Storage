@@ -48,6 +48,7 @@ members = [
     "apps/dcs-peer",
     "apps/proof-kernel",
     "tools/launcher",
+    "tools/repository-contracts",
     "playground",
     "experiments/fhe-prototype",
     "experiments/core-workloads",

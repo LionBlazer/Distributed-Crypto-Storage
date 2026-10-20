@@ -1,0 +1,11 @@
+[package]
+name = "repository-contracts"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+autotests = false
+
+[[test]]
+name = "requirements_sync"
+path = "tests/requirements_sync.rs"
