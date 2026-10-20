@@ -27,8 +27,19 @@ impl Evidence {
         expected: &Expected,
         bytes: Vec<u8>,
     ) -> Result<Self, Error> {
-        verify(full_setup_id, expected, &bytes)?;
-        Ok(Self { bytes })
+        let (evidence, _) = Self::verify_owned_with_transform(full_setup_id, expected, bytes)?;
+        Ok(evidence)
+    }
+    /// Freshly verify these exact owned bytes and return the existing checked
+    /// transform from that same invocation. No prior result or cached flag is
+    /// accepted. Independent setup/anchor pins still come from the caller.
+    pub fn verify_owned_with_transform(
+        full_setup_id: [u8; 32],
+        expected: &Expected,
+        bytes: Vec<u8>,
+    ) -> Result<(Self, VerifiedTransform), Error> {
+        let checked = verify(full_setup_id, expected, &bytes)?;
+        Ok((Self { bytes }, checked))
     }
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes

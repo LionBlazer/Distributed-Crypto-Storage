@@ -42,6 +42,20 @@ it does not authenticate a record. `as_bytes` returns ciphertext only.
    A public Key frame alone cannot reconstruct either private opening. Active
    jobs exclusively borrow the epoch; they cannot overlap a backup call.
 
+Ready restore uses `Evidence::verify_owned_with_transform` to retain the existing
+checked Key result from the SAME fresh verification that adopts the original
+frame. The original complete-setup/parameter/anchor checks precede this call;
+the recomputed private commitments and returned full Key33 must both match the
+independent expected statement before Ready is constructed. There is one native
+Key verification inside that restore, with no cross-call cache or caller-supplied
+verification receipt. Other public verification entry points remain fresh. This
+source change has no measured speedup or whole-query resource claim. Native
+release validation passed the focused API and genuine same-anchor/different-output
+rejection cases, the existing post-destruction Basis5/Formation case and standalone
+Key-verifier regressions. The
+[validation record](../../../../docs/ready-restore-validation.md) gives exact
+source, commands and memory observations.
+
 Old generation/proving entry points remain. Recreating an anchor or epoch with
 the old factory still chooses fresh salts. Backup never exposes plaintext SK,
 salts or Shat, and no self-referential owner aggregate is constructed.

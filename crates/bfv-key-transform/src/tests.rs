@@ -161,3 +161,59 @@ fn owned_evidence_requires_genuine_verification_and_preserves_exact_original_byt
         Err(Error::Verification)
     ));
 }
+
+#[test]
+fn fresh_owned_verification_returns_exact_bytes_and_the_same_checked_transform() {
+    // Arrange explicit PUBLIC NONSECRET coefficients and a genuine bounded proof.
+    let witness = ProverWitness::new(Zeroizing::new(vec![0; N]), [17; 4], [19; 4]).unwrap();
+    let statement = witness.statement(descriptor());
+    let setup = [113; 32];
+    let frame = prove_statement(setup, &statement.expected, &statement, &witness)
+        .unwrap()
+        .into_bytes();
+
+    // Act: retain the original bytes and the existing result of this fresh check.
+    let (evidence, checked) =
+        Evidence::verify_owned_with_transform(setup, &statement.expected, frame.clone()).unwrap();
+
+    // Assert the complete public result, not a supplied success marker.
+    assert_eq!(evidence.as_bytes(), frame);
+    assert_eq!(checked.full_setup_id(), setup);
+    assert_eq!(
+        checked.statement().public_values(),
+        statement.public_values()
+    );
+    for changed in 0..2 {
+        let mut wrong = statement.expected.clone();
+        if changed == 0 {
+            wrong.descriptor.database[15] ^= 1;
+        } else {
+            wrong.coefficients[3] += Val::ONE;
+        }
+        assert!(Evidence::verify_owned_with_transform(setup, &wrong, frame.clone()).is_err());
+    }
+    assert!(
+        Evidence::verify_owned_with_transform([127; 32], &statement.expected, frame.clone())
+            .is_err()
+    );
+    for bytes in [
+        Vec::new(),
+        frame[..HEADER_BYTES - 1].to_vec(),
+        frame[..frame.len() - 1].to_vec(),
+        vec![0; HEADER_BYTES + MAX_PROOF_BYTES + 1],
+    ] {
+        assert!(Evidence::verify_owned_with_transform(setup, &statement.expected, bytes).is_err());
+    }
+    let mut trailing = frame.clone();
+    trailing.push(0);
+    assert!(Evidence::verify_owned_with_transform(setup, &statement.expected, trailing).is_err());
+
+    // A canonical different output claim reaches actual proof verification.
+    let mut wrong_output = frame;
+    let word = u64::from_le_bytes(wrong_output[172..180].try_into().unwrap());
+    wrong_output[172..180].copy_from_slice(&((word + 1) % Val::ORDER_U64).to_le_bytes());
+    assert!(matches!(
+        Evidence::verify_owned_with_transform(setup, &statement.expected, wrong_output),
+        Err(Error::Verification)
+    ));
+}

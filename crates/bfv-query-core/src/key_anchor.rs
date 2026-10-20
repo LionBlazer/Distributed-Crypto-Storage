@@ -146,14 +146,18 @@ impl PublicSetup {
         expected: &BfvKeyAnchor,
         evidence: &[u8],
     ) -> Result<bfv_key_transform::VerifiedTransform> {
+        self.require_key_transform_anchor(expected)?;
+        bfv_key_transform::verify(expected.full_setup_id, &expected.expected(), evidence)
+            .map_err(backend)
+    }
+    fn require_key_transform_anchor(&self, expected: &BfvKeyAnchor) -> Result<()> {
         self.checked_parameters()?;
         if keyset_id(self)? != expected.full_setup_id
             || <[u8; 32]>::from(Sha256::digest(&self.parameters)) != expected.parameter_digest
         {
             return Err(Error::BindingMismatch);
         }
-        bfv_key_transform::verify(expected.full_setup_id, &expected.expected(), evidence)
-            .map_err(backend)
+        Ok(())
     }
 }
 mod claim;

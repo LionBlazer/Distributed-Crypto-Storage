@@ -465,3 +465,77 @@ fn restored_ready_epoch_preserves_full_key_and_proves_new_basis_formation_after_
         )
         .unwrap();
 }
+
+#[cfg(feature = "formation-proofs")]
+#[test]
+fn restored_ready_epoch_rejects_a_genuine_same_anchor_proof_with_a_different_output_root() {
+    let id = identity();
+    let a = authority();
+    let (owner, setup) = Owner::generate(Geometry::Rows16).unwrap();
+    let anchor = owner.key_anchor(&setup, id.scope.clone()).unwrap();
+    let public = anchor.public_anchor();
+    let mut epoch = anchor.proof_epoch(&setup).unwrap();
+    let original = epoch.prove_key().unwrap().as_bytes().to_vec();
+    let key = setup
+        .verify_key_transform(public, &original)
+        .unwrap()
+        .statement()
+        .clone();
+    let record = epoch.backup_ready_state(&setup, &id, &a).unwrap();
+    drop(epoch);
+
+    // This separately genuine proof has the SAME independent input anchor but
+    // a fresh output salt. Its full Key33 must not replace the saved private root.
+    let foreign = anchor.prove().unwrap();
+    let checked = setup
+        .verify_key_transform(public, foreign.as_bytes())
+        .unwrap();
+    assert_eq!(checked.statement().expected, key.expected);
+    assert_ne!(checked.statement().transformed, key.transformed);
+    let mut plain = open(
+        Pins {
+            role: Role::Epoch,
+            setup: &setup,
+            identity: &id,
+            anchor: Some(public),
+            key: Some(&key),
+        },
+        &a,
+        &record,
+    )
+    .unwrap();
+    plain.truncate(48);
+    plain[40..44].copy_from_slice(&(foreign.as_bytes().len() as u32).to_le_bytes());
+    plain.extend_from_slice(foreign.as_bytes());
+    let substituted = seal(
+        Pins {
+            role: Role::Epoch,
+            setup: &setup,
+            identity: &id,
+            anchor: Some(public),
+            key: Some(&key),
+        },
+        &a,
+        &plain,
+    )
+    .unwrap();
+
+    // The authenticated original salt still reopens the original full Key33.
+    // Actual verification accepts the foreign proof above, but Ready rejects
+    // its different transformed root instead of adopting a same-anchor receipt.
+    assert!(matches!(
+        anchor.restore_ready_epoch(&setup, &key, &id, &a, &substituted),
+        Err(Error::BindingMismatch)
+    ));
+    let mut changed_setup = setup.clone();
+    changed_setup.rotation_keys.push(0);
+    assert!(matches!(
+        anchor.restore_ready_epoch(&changed_setup, &key, &id, &a, &record),
+        Err(Error::BindingMismatch)
+    ));
+    let restored = anchor
+        .restore_ready_epoch(&setup, &key, &id, &a, &record)
+        .unwrap();
+    assert_eq!(restored.stage(), crate::ProofEpochStage::Ready);
+    assert_eq!(restored.key_evidence().unwrap().as_bytes(), original);
+}

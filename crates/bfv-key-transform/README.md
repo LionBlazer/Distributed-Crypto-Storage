@@ -78,3 +78,18 @@ All old proof arithmetic, profiles and frame limits remain unchanged. All six
 owning primitive tests passed, including genuine owned evidence and a repaired
 frame with a damaged trace commitment; the [validation](../../docs/owner-key-recovery.md)
 also covers the Core restoration consumer.
+
+`Evidence::verify_owned_with_transform(full_setup_id, expected, bytes)` returns
+the exact owned frame together with the existing `VerifiedTransform` produced by
+that same fresh bounded verification. `verify_owned` retains its original
+signature and delegates to this path, discarding only the returned transform.
+Neither entry accepts a previous result, cached success flag or unchecked
+adoption request. Independent setup/anchor authority still belongs to the caller.
+The Core Ready restore can compare all Key33 from this result without invoking
+the native Key verifier a second time on the same bytes. This is a source-level
+single-invocation property, not a measured latency or whole-query speedup claim.
+The seven owning primitive tests, six Core restoration cases, three standalone
+Key-verifier regressions and 35 ownership documentation contracts passed native
+release validation on 2026-10-20. The
+[validation record](../../docs/ready-restore-validation.md) pins source, commands
+and observations; no whole-query speedup was measured.

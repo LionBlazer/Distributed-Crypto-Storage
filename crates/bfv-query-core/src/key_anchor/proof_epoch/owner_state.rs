@@ -86,13 +86,13 @@ impl<'owner> OwnerKeyAnchor<'owner> {
         if material.statement.public_values() != expected.public_values() {
             return Err(Error::BindingMismatch);
         }
-        let evidence = bfv_key_transform::Evidence::verify_owned(
+        setup.require_key_transform_anchor(&self.public)?;
+        let (evidence, checked) = bfv_key_transform::Evidence::verify_owned_with_transform(
             self.public.full_setup_id,
             &self.public.expected(),
             plain[48..].to_vec(),
         )
         .map_err(backend)?;
-        let checked = setup.verify_key_transform(&self.public, evidence.as_bytes())?;
         if checked.statement().public_values() != expected.public_values() {
             return Err(Error::BindingMismatch);
         }
