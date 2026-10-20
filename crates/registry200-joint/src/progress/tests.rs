@@ -714,6 +714,7 @@ fn genuine_new_genesis_bootstrap_and_control_require_actual_proofs_and_own_inten
     assert_eq!(checked.next_root(), manifest.next_root());
     assert!(checked.product().is_none());
     pending.commit();
+    assert!(checked.transition_step().is_none());
     let boot_root = checked.next_root();
     drop(checked);
     let (begin, expected, manifest) =
@@ -723,6 +724,18 @@ fn genuine_new_genesis_bootstrap_and_control_require_actual_proofs_and_own_inten
     let (pending, checked) = v
         .prepare_import(&mut journal, h, &wire, 2000, expected)
         .unwrap();
+    assert!(
+        !checked
+            .transition_step()
+            .unwrap()
+            .statement()
+            .expected()
+            .is_predicate()
+    );
+    assert_eq!(
+        checked.transition_step().unwrap().statement().values(),
+        checked.transition_statement().unwrap().values()
+    );
     assert_eq!(checked.result_root(), manifest.result_root());
     assert_ne!(checked.next_root(), boot_root);
     assert!(checked.product().is_none());

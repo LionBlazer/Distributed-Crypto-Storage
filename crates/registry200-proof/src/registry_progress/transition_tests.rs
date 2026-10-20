@@ -149,6 +149,7 @@ fn control(
     new_salt: u64,
     source_salt: u64,
 ) -> (State, Statement) {
+    let independent_command = c.clone();
     let e = control_expected(f, source, state, &c, parent, old_salt, 41);
     let next = state.control(&c, [parent; 32]).unwrap();
     let w = Witness::control(
@@ -175,6 +176,181 @@ fn control(
     let (s, bytes) = evidence.into_parts();
     let verified = verify(&e, &s, &p, &bytes).unwrap();
     assert_eq!(verified.statement().values(), s.values());
+    let previous = state
+        .registry
+        .transactions
+        .iter()
+        .position(|tx| tx.id == independent_command.transaction)
+        .and_then(|actor| state.progress[actor].as_ref());
+    let context = progress::control_result_opening::ControlOpeningContext::new(
+        &e,
+        &independent_command,
+        state.registry.revision,
+        &CONTROLLERS,
+        &[41; 4],
+        previous,
+    )
+    .unwrap();
+    let opened = progress::control_result_opening::ControlResultOpening::open(
+        &verified,
+        w.result_opening_fields().unwrap(),
+        &context,
+    )
+    .unwrap();
+    assert_eq!(opened.operation(), independent_command.operation);
+    assert_eq!(opened.transaction(), independent_command.transaction);
+    assert_eq!(
+        opened.old_registry_root(),
+        source::statement::encode_digest(e.old)
+    );
+    assert_eq!(opened.next_registry_root(), s.next());
+    assert_eq!(
+        opened.previous_progress_root(),
+        previous.map_or([0; 32], |p| source::statement::encode_digest(
+            p.root().unwrap()
+        ))
+    );
+    assert_eq!(opened.next_progress_root(), [0; 32]);
+    let aborted = independent_command.operation == Operation::End
+        && (independent_command.abort
+            || state
+                .registry
+                .transactions
+                .iter()
+                .any(|tx| tx.id == independent_command.transaction && tx.failed));
+    assert_eq!(
+        opened.status(),
+        if aborted {
+            progress::control_result_opening::ControlStatus::Aborted
+        } else {
+            progress::control_result_opening::ControlStatus::Applied
+        }
+    );
+    if independent_command.operation == Operation::Begin && independent_command.transaction == 1 {
+        assert_control_result_corruptions(&verified, &w, &context);
+        for kind in 0..4 {
+            let mut wrong = independent_command.clone();
+            match kind {
+                0 => wrong.transaction += 1,
+                1 => wrong.principal = 3 - wrong.principal,
+                2 => wrong.sequence += 1,
+                _ => wrong.abort = true,
+            }
+            assert!(
+                progress::control_result_opening::ControlOpeningContext::new(
+                    &e,
+                    &wrong,
+                    state.registry.revision,
+                    &CONTROLLERS,
+                    &[41; 4],
+                    None,
+                )
+                .is_err()
+            );
+        }
+        assert!(
+            progress::control_result_opening::ControlOpeningContext::new(
+                &e,
+                &independent_command,
+                state.registry.revision + 1,
+                &CONTROLLERS,
+                &[41; 4],
+                None,
+            )
+            .is_err()
+        );
+        assert!(
+            progress::control_result_opening::ControlOpeningContext::new(
+                &e,
+                &independent_command,
+                state.registry.revision,
+                &CONTROLLERS,
+                &[40; 4],
+                None,
+            )
+            .is_err()
+        );
+        let mut foreign_controllers = CONTROLLERS;
+        foreign_controllers[usize::from(independent_command.principal - 1)][0] ^= 1;
+        assert!(
+            progress::control_result_opening::ControlOpeningContext::new(
+                &e,
+                &independent_command,
+                state.registry.revision,
+                &foreign_controllers,
+                &[41; 4],
+                None,
+            )
+            .is_err()
+        );
+        let mut foreign = e.clone();
+        foreign.base.parent[0] ^= 1;
+        foreign.command = super::super::fields::digest(
+            &super::super::transition_trace::command_fields(
+                &foreign,
+                &independent_command,
+                state.registry.revision,
+                &CONTROLLERS,
+                [Val::from_u8(41); 4],
+            )
+            .unwrap(),
+        );
+        let foreign_context = progress::control_result_opening::ControlOpeningContext::new(
+            &foreign,
+            &independent_command,
+            state.registry.revision,
+            &CONTROLLERS,
+            &[41; 4],
+            None,
+        )
+        .unwrap();
+        assert!(
+            progress::control_result_opening::ControlResultOpening::open(
+                &verified,
+                w.result_opening_fields().unwrap(),
+                &foreign_context,
+            )
+            .is_err()
+        );
+    }
+    if let Some(previous) = previous {
+        let mut foreign = previous.clone();
+        foreign.statement.invocation[0] ^= 1;
+        let foreign_context = progress::control_result_opening::ControlOpeningContext::new(
+            &e,
+            &independent_command,
+            state.registry.revision,
+            &CONTROLLERS,
+            &[41; 4],
+            Some(&foreign),
+        )
+        .unwrap();
+        assert!(
+            progress::control_result_opening::ControlResultOpening::open(
+                &verified,
+                w.result_opening_fields().unwrap(),
+                &foreign_context,
+            )
+            .is_err()
+        );
+        let absent = progress::control_result_opening::ControlOpeningContext::new(
+            &e,
+            &independent_command,
+            state.registry.revision,
+            &CONTROLLERS,
+            &[41; 4],
+            None,
+        )
+        .unwrap();
+        assert!(
+            progress::control_result_opening::ControlResultOpening::open(
+                &verified,
+                w.result_opening_fields().unwrap(),
+                &absent,
+            )
+            .is_err()
+        );
+    }
     // An actual verified Control proof and its genuine Result160 preimage cannot
     // enter the predicate-only API. The unrelated placeholder opens no claim.
     let unrelated = StatementOpening {
@@ -364,9 +540,81 @@ fn accept_with_result_checks(
     assert_private_result_opening(&verified, w, corruptions);
     s
 }
+// All corruptions reuse one actual Control proof and its exact producer builder.
+fn assert_control_result_corruptions(
+    verified: &VerifiedStep,
+    witness: &Witness,
+    context: &progress::control_result_opening::ControlOpeningContext<'_>,
+) {
+    let fields = witness.result_opening_fields().unwrap();
+    for at in 0..progress::RESULT_FIELDS {
+        let mut changed = Zeroizing::new(*fields);
+        changed[at] = (changed[at] + 1) % Val::ORDER_U64;
+        assert!(
+            progress::control_result_opening::ControlResultOpening::open(
+                verified, changed, context,
+            )
+            .is_err(),
+            "modified Control field {at}"
+        );
+        let mut alias = Zeroizing::new(*fields);
+        alias[at] = Val::ORDER_U64;
+        assert!(
+            matches!(
+                progress::control_result_opening::ControlResultOpening::open(
+                    verified, alias, context,
+                ),
+                Err(Error::Encoding)
+            ),
+            "noncanonical Control field {at}"
+        );
+    }
+}
+fn assert_predicate_rejects_control_opening(verified: &VerifiedStep, witness: &Witness) {
+    let current = verified.statement().expected();
+    let source = CanonicalSource::checked_claim(current.source()).unwrap();
+    let mut expected = Expected::control(
+        &source,
+        current.base.genesis,
+        current.base.parent,
+        source::statement::encode_digest(current.base.enrollment),
+        source::statement::encode_digest(current.old),
+        [0; 32],
+    )
+    .unwrap();
+    let command = Command::control(Operation::Begin, 1, 1, 0);
+    expected.command = super::super::fields::digest(
+        &super::super::transition_trace::command_fields(
+            &expected,
+            &command,
+            0,
+            &CONTROLLERS,
+            [Val::from_u8(41); 4],
+        )
+        .unwrap(),
+    );
+    let context = progress::control_result_opening::ControlOpeningContext::new(
+        &expected,
+        &command,
+        0,
+        &CONTROLLERS,
+        &[41; 4],
+        None,
+    )
+    .unwrap();
+    assert!(matches!(
+        progress::control_result_opening::ControlResultOpening::open(
+            verified,
+            witness.result_opening_fields().unwrap(),
+            &context,
+        ),
+        Err(Error::Shape)
+    ));
+}
 // Reuse the SAME actual verified proof and captured private witness. These
 // checks add no proving, fixture setup, product simulation, or SQL acceptance.
 fn assert_private_result_opening(verified: &VerifiedStep, w: &Witness, corruptions: bool) {
+    assert_predicate_rejects_control_opening(verified, w);
     use progress::result_opening::ResultOpening;
     let inputs = w.result_opening_inputs_for_test().unwrap();
     let raw = w.result_opening_fields().unwrap();
@@ -650,6 +898,29 @@ fn genuine_source_encoding_wait_prefix_end_compaction_and_fresh_blind_resume() {
     assert_eq!(parked.selected, [false; 4]);
     assert_eq!(parked.cursor, 3);
     let progress_root = parked.next.progress[1].as_ref().unwrap().root().unwrap();
+    // One additional genuine Control proof, reusing the SAME existing Source.
+    // The supported parked actor EndAbort proves status3 and its old Progress.
+    // This branch does not replace the unchanged normal End/resume chain below.
+    let mut abort_parked = Command::control(
+        Operation::End,
+        2,
+        2,
+        parked.next.registry.transactions[1].sequence,
+    );
+    abort_parked.abort = true;
+    let (aborted, _) = control(
+        f,
+        &f.source,
+        &f.source_bytes,
+        &parked.next,
+        abort_parked,
+        0xca,
+        10,
+        11,
+        2,
+    );
+    assert_eq!(aborted.registry.transactions.len(), 1);
+    assert!(aborted.progress.iter().all(Option::is_none));
     let ended_id = parked.next.registry.transactions[0].id;
     let ended_seq = parked.next.registry.transactions[0].sequence;
     let (carried, end_proof) = control(

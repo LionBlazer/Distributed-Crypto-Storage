@@ -176,10 +176,33 @@ same retained Key33 and complete mask/options. Only Start anchors original blind
 SQL identity to its first Encoding; original invocation/SQL still are owner custody,
 not caller authentication from q. End compaction carries waiters by stable ID.
 
-New closed Work/Rules/finality/current-parent types, fresh grant, durable parked
-WAL/owner epoch custody, cancellation/rollback/deadlock policy, mutable-tuple EPQ
-and network owner orchestration remain absent. No rows for Parked/Error or End
+The separate [Progress finality library](../../../registry200-finality/src/progress/README.md)
+now provides typed Work/Rules binding, actual QC and historical parent/operation
+verification with strict durable replay. A fresh grant, durable parked WAL/owner
+epoch custody, cancellation/rollback/deadlock policy, mutable-tuple EPQ and network
+owner orchestration remain absent. No rows for Parked/Error or End
 permission without a real quorum follow. No SQL enable switch, ordinary read lane
 or old-binding compatibility path exists. History compaction and repeated replay
 cost remain unresolved within participant quota; no QC/snapshot proof shortcut
 is claimed.
+
+
+### Mathematical transition-step access
+
+`VerifiedOperation::transition_step()` borrows the actual sealed Core
+`VerifiedStep` for Control or Predicate, and returns None for Bootstrap. It adds
+no verifier choice, dependency, cached success bit, QC, current-head/lock, SQL
+status/rows or bank-installation authority. The typed Core predicate and Control
+openers still reject the other lane and require independently retained private
+openings. The finality owner's separate exact operation/QC association remains
+mandatory before private completion.
+
+Four ordinary application cases and two privacy compile-fail examples passed;
+the genuine Bootstrap/Control case checks accessor absence/presence. The
+explicitly ignored full input16/output118 Predicate896 case now uses the existing
+typed Result160 opener through this accessor. Its new assertions were compiled
+but not executed in this gate: full product preparation/replay is unchanged,
+the getter only borrows the existing sealed Step, and the Core Predicate opener
+already has genuine owning coverage. The earlier full application gate retains
+its original executed scope. See the
+[Control opening validation](../../../../docs/control-result160-validation.md).

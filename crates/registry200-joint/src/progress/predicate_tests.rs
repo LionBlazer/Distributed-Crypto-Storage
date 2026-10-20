@@ -521,6 +521,24 @@ fn new_genesis_predicate_records_real_fhe_and_imports_the_exact_original_operati
         source::statement::encode_digest(lifecycle::statement::digest(&fields)),
         checked.result_root()
     );
+    let opened = core::result_opening::ResultOpening::open(
+        checked.transition_step().unwrap(),
+        Zeroizing::new(std::array::from_fn(|i| fields[i].as_canonical_u64())),
+        &hidden,
+        None,
+        None,
+    )
+    .unwrap();
+    assert!(opened.status() == core::circuit::Status::Done);
+    assert_eq!(opened.selected(), step.selected);
+    assert!(
+        checked
+            .transition_step()
+            .unwrap()
+            .statement()
+            .expected()
+            .is_predicate()
+    );
     assert!(step.status == core::circuit::Status::Done);
     assert_eq!(step.selected, [false, false, true, false]);
     assert_eq!(

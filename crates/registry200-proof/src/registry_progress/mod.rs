@@ -2,6 +2,7 @@
 pub mod bootstrap;
 mod bootstrap_air;
 pub mod circuit;
+pub mod control_result_opening;
 mod fields;
 pub mod result_opening;
 pub mod statement;

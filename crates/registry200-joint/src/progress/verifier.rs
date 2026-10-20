@@ -329,6 +329,16 @@ impl VerifiedOperation {
             _ => None,
         }
     }
+    /// Fresh verified transition mathematics only: Control or Predicate. This
+    /// grants no QC, current-head, SQL, status or installed-bank authority.
+    pub fn transition_step(&self) -> Option<&core::transition::VerifiedStep> {
+        match &self.proof {
+            OperationProof::Control(step) | OperationProof::Predicate { checked: step, .. } => {
+                Some(step)
+            }
+            OperationProof::Bootstrap(_) => None,
+        }
+    }
     pub fn bootstrap_statement(&self) -> Option<&core::BootstrapStatement> {
         match &self.proof {
             OperationProof::Bootstrap(s) => Some(s.statement()),

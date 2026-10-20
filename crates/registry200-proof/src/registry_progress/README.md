@@ -225,3 +225,40 @@ bank installation. The actual owner must first bind its exact operation and
 fresh agreed parent/finality receipt; only its separate completion boundary may
 dispatch Done, Parked, or Error and install the next root-checked private bank.
 This addition changes no relation, profile, wire format, proof cap, or old API.
+
+
+### Private Control Result160 opening
+
+`control_result_opening::ControlOpeningContext::new` accepts six independently
+retained current inputs: `Expected`, exact `Command`, old revision, controllers,
+command salt, and optional actor progress. It checks the real Cmd160 builder and
+canonical rules. This borrowed context is unverified metadata.
+`ControlResultOpening::open` additionally requires the actual sealed
+`transition::VerifiedStep` and consumes its canonical private Result160 preimage.
+It binds the complete current Source/Expected/context, old/next/Result roots,
+operation/transaction, exact actor progress, all fixed zero fields and padding.
+The distinct Control grammar permits Applied (1) and End-only Aborted (3);
+Predicate, Acquire, FailCurrent and parked non-abort control reject. The full
+1,280-byte backing array is zeroized and has no raw getter, serde, unchecked
+constructor, Clone or Debug. Typed status/getters are private mathematical data.
+
+Control has no separate invocation/call field: those result cells are fixed
+zero. The current operation is associated through independent complete Expected
+and Cmd160; a parked original invocation remains inside the exact old Progress
+commitment. The owner must separately authenticate its original signed Body,
+request/manifest and weighted QC before using an opening or installing a bank.
+Other-actor progress carried through compaction is bound by the complete next
+State208 root, not by this actor-only result. Parked RollbackTo/cancellation,
+deadlock handling and EPQ remain outside the implemented relation.
+
+The owning native gate passed nine genuine cryptographic cases and seven
+compile-fail examples; see the
+[Control opening validation](../../../../docs/control-result160-validation.md).
+The existing genuine Control helper opens its real status1
+proofs; one explicitly added Control proof uses the SAME existing Source fixture
+to cover supported parked EndAbort/status3 and its previous Progress. It keeps
+the original normal End/resume chain. Every field mutation and noncanonical
+alias reuses a genuine proof, without another Source/Encoding/FHE proof. Existing
+genuine predicate proofs also exercise role rejection. Two new compile-fail
+examples protect private construction/ownership. Neither opener changes proof
+relations, profiles, result builders, wire bytes or security/resource policy.
