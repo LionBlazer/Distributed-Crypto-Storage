@@ -182,6 +182,20 @@ For distributed or cryptographic changes, cover the affected failure model,
 authorization, version freshness, proof rejection, or resource limit as relevant.
 Performance claims require reproducible measurements of the full operation.
 
+Keep test feedback fast. Choose the smallest meaningful checks at the owning
+boundary and optimize expensive setup, repeated verification and unnecessary
+serialization. Profile slow scenarios by preparation, proving, verification,
+transport/consensus waiting and recovery; do not assume their whole duration is
+unavoidable cryptographic cost. Where the protocol permits, proceed after one
+independently valid quorum certificate instead of waiting for every peer.
+Run expensive multi-process and recovery gates when the affected boundary changes
+or an unresolved failure requires them; repeat or broaden passed checks only for
+new changes, failures or concrete concerns. Reuse bounded public test setup only
+when isolation and failure coverage are preserved. Never shorten tests by weakening
+proofs, freshness, authorization, failure/resource guarantees or meaningful
+assertions, substituting simulated computation, or relaxing production timeouts.
+Measure improvements on comparable complete operations and report remaining costs.
+
 Report the change, relevant verification, final branch and commit, and whether push
 and master synchronization succeeded. State concrete blockers accurately.
 
