@@ -1,9 +1,12 @@
 //! Syntax only, following PG18 TransactionStmt/TransactionStmtLegacy and its
 //! ordered transaction_mode_list. The tokenizer and query parser are shared.
-use super::Parser;
+use super::{
+    Parser,
+    lexer::{self, Token},
+};
 use crate::{
-    Deferrability, Error, IsolationLevel, StatementPlan, TransactionAccess, TransactionChain,
-    TransactionMode,
+    Deferrability, Error, IsolationLevel, SavepointName, StatementPlan, TransactionAccess,
+    TransactionChain, TransactionMode,
 };
 
 impl Parser {
@@ -23,14 +26,61 @@ impl Parser {
             Ok(StatementPlan::Commit {
                 chain: self.transaction_chain()?,
             })
-        } else if self.take("ROLLBACK") || self.take("ABORT") {
+        } else if self.take("ROLLBACK") {
+            self.transaction_keyword();
+            if self.take("TO") {
+                self.optional_savepoint_keyword();
+                Ok(StatementPlan::RollbackTo {
+                    name: self.savepoint_name()?,
+                })
+            } else {
+                Ok(StatementPlan::Rollback {
+                    chain: self.transaction_chain()?,
+                })
+            }
+        } else if self.take("ABORT") {
             self.transaction_keyword();
             Ok(StatementPlan::Rollback {
                 chain: self.transaction_chain()?,
             })
+        } else if self.take("SAVEPOINT") {
+            Ok(StatementPlan::Savepoint {
+                name: self.savepoint_name()?,
+            })
+        } else if self.take("RELEASE") {
+            self.optional_savepoint_keyword();
+            Ok(StatementPlan::Release {
+                name: self.savepoint_name()?,
+            })
         } else {
             self.query().map(StatementPlan::Query)
         }
+    }
+
+    // PG18 has separate RELEASE SAVEPOINT ColId / RELEASE ColId (and TO
+    // variants), not an opt_savepoint production. SAVEPOINT is unreserved:
+    // at EOF or ';' it is itself the name; before another token it is the marker.
+    fn optional_savepoint_keyword(&mut self) {
+        if self.tokens.get(self.index).and_then(Token::syntax) == Some("SAVEPOINT")
+            && self
+                .tokens
+                .get(self.index + 1)
+                .is_some_and(|token| token.syntax() != Some(";"))
+        {
+            self.index += 1;
+        }
+    }
+
+    fn savepoint_name(&mut self) -> Result<SavepointName, Error> {
+        let name = match self.tokens.get(self.index) {
+            Some(Token::Word(word)) if lexer::col_id(word) => {
+                SavepointName::from_identifier(word, false)
+            }
+            Some(Token::QuotedIdentifier(value)) => SavepointName::from_identifier(value, true),
+            _ => return Err(transaction_error("expected a PG18 savepoint identifier")),
+        };
+        self.index += 1;
+        Ok(name)
     }
 
     fn transaction_keyword(&mut self) {
@@ -59,7 +109,7 @@ impl Parser {
 
     fn starts_transaction_mode(&self) -> bool {
         matches!(
-            self.tokens.get(self.index).map(String::as_str),
+            self.tokens.get(self.index).and_then(Token::syntax),
             Some("ISOLATION" | "READ" | "DEFERRABLE" | "NOT")
         )
     }

@@ -100,10 +100,10 @@ omission from both explicit options. Equivalent command aliases and the optional
 `WORK`/`TRANSACTION` spelling are normalized; the AST is not a lossless SQL text
 codec. No parser inherits settings or starts a chained transaction.
 
-The same 4096-byte whole-input cap, optional single trailing semicolon and ASCII
-lexical subset apply. Malformed options, multiple statements, comments and quoted
-identifiers reject explicitly. SAVEPOINT/RELEASE, ROLLBACK TO, SET TRANSACTION,
-two-phase transaction commands and other PostgreSQL syntax remain unsupported.
+The same 4096-byte whole-input cap and optional single trailing semicolon apply.
+Malformed options, multiple statements, comments, SET TRANSACTION and two-phase
+transaction commands reject explicitly. Named controls use the shared typed lexer
+and the identifier rules below; query identifiers retain their existing subset.
 These plans do not implement isolation, transaction execution, lock ownership,
 freshness, proof verification or a network SQL acceptance path.
 
@@ -134,3 +134,47 @@ cargo fmt --all -- --check
 ```
 
 These are pure parser/core checks, not SQL execution or distributed-lock tests.
+
+
+## Named transaction syntax
+
+`parse_statement` also returns distinct `Savepoint { name }`, `Release { name }`
+and `RollbackTo { name }` plans for `SAVEPOINT name`, `RELEASE [SAVEPOINT] name`
+and `ROLLBACK [WORK | TRANSACTION] TO [SAVEPOINT] name`. `ABORT TO` is not an
+alias. Extra clauses, CHAIN on a named command and a second statement reject.
+`SavepointName` has a private representation and a borrowed `as_str` accessor.
+It supplies no savepoint existence, lock ownership or accepted state.
+
+Names follow PostgreSQL 18's UTF8 `ColId` categories: ordinary identifiers,
+unreserved keywords and column-name keywords are allowed; reserved and
+function/type-only keywords require double quotes. Unquoted ASCII letters fold
+to lowercase. Quoting preserves case and decodes doubled double quotes. Both
+forms clip the decoded name to 63 UTF8 bytes without splitting a character;
+Unicode normalization and non-ASCII case folding are not performed. This fixes
+the usual 63-byte identifier limit, without PostgreSQL build-time customization.
+The 4096-byte budget applies to the complete original input before clipping.
+
+`SAVEPOINT` itself is an unreserved name. Thus `RELEASE SAVEPOINT` names
+`savepoint`, while `RELEASE SAVEPOINT other` names `other`; ROLLBACK TO has the
+same distinction. The pinned grammar has separate alternatives, not a greedy
+optional-keyword production. Empty/NUL/unterminated quoted names reject.
+Comments, Unicode `U&`/UESCAPE identifiers, strings and dollar quoting remain
+unsupported. Backslashes in ordinary double-quoted names are literal.
+
+One private lexer distinguishes words, quoted identifiers, integers and symbols.
+Quoted query identifiers remain unsupported and never become keywords, columns,
+operators or numeric literals. The query-only `parse_sql` still rejects named
+controls. Parsing does not execute transaction/savepoint state changes; duplicate
+names, unknown names, failed-transaction rules, rollback/release effects and their
+proof/owner/network integration remain separate work. New named-syntax tests in
+`tests/savepoints.rs` are source-only and unexecuted in this packet; the 35-case
+native evidence above applies to its earlier parser revision.
+
+Primary references: [PG18 SAVEPOINT](https://www.postgresql.org/docs/18/sql-savepoint.html),
+[RELEASE](https://www.postgresql.org/docs/18/sql-release-savepoint.html),
+[ROLLBACK TO](https://www.postgresql.org/docs/18/sql-rollback-to.html),
+[lexical rules](https://www.postgresql.org/docs/18/sql-syntax-lexical.html),
+[pinned grammar](https://github.com/postgres/postgres/blob/REL_18_0/src/backend/parser/gram.y)
+(`TransactionStmt`, `ColId`, conflict expectation),
+[keyword categories](https://github.com/postgres/postgres/blob/REL_18_0/src/include/parser/kwlist.h),
+and [UTF8 folding/clipping](https://github.com/postgres/postgres/blob/REL_18_0/src/backend/parser/scansup.c).

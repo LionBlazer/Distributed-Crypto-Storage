@@ -216,7 +216,7 @@ fn incomplete_or_malformed_modes_keywords_and_chain_reject_the_whole_statement()
 }
 
 #[test]
-fn multiple_statements_savepoints_and_other_transaction_commands_never_become_end() {
+fn multiple_statements_and_other_unsupported_transaction_commands_never_become_end() {
     for sql in [
         "",
         ";",
@@ -224,10 +224,6 @@ fn multiple_statements_savepoints_and_other_transaction_commands_never_become_en
         "BEGIN; COMMIT",
         "COMMIT; SELECT * FROM records",
         "ROLLBACK ABORT",
-        "SAVEPOINT s",
-        "RELEASE SAVEPOINT s",
-        "ROLLBACK TO SAVEPOINT s",
-        "ROLLBACK TRANSACTION TO s",
         "SET TRANSACTION READ ONLY",
         "PREPARE TRANSACTION x",
         "COMMIT PREPARED x",

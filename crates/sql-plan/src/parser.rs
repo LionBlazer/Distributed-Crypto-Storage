@@ -1,5 +1,8 @@
+mod lexer;
 mod predicate;
 mod transaction;
+
+use lexer::{Token, tokenize};
 
 use crate::{
     Column, Error, LockStrength, LockWait, LockingClause, MAX_SQL_BYTES, Projection, QueryPlan,
@@ -25,46 +28,8 @@ pub fn parse_statement(sql: &str) -> Result<StatementPlan, Error> {
     Ok(plan)
 }
 
-// A deliberately small lexical grammar; unsupported punctuation, comments, quoted
-// identifiers, arithmetic expressions and aliases fail explicitly rather than being ignored.
-fn tokenize(sql: &str) -> Result<Vec<String>, Error> {
-    let bytes = sql.as_bytes();
-    let mut tokens = Vec::new();
-    let mut index = 0;
-    while index < bytes.len() {
-        let byte = bytes[index];
-        if byte.is_ascii_whitespace() {
-            index += 1;
-        } else if byte.is_ascii_alphanumeric() || byte == b'_' {
-            let start = index;
-            while index < bytes.len()
-                && (bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_')
-            {
-                index += 1;
-            }
-            tokens.push(sql[start..index].to_ascii_uppercase());
-        } else if matches!(byte, b'<' | b'>' | b'!') {
-            let length = if bytes.get(index + 1) == Some(&b'=')
-                || (byte == b'<' && bytes.get(index + 1) == Some(&b'>'))
-            {
-                2
-            } else {
-                1
-            };
-            tokens.push(sql[index..index + length].into());
-            index += length;
-        } else if b"(),*+=;-".contains(&byte) {
-            tokens.push((byte as char).to_string());
-            index += 1;
-        } else {
-            return Err(unsupported("unsupported character or operator"));
-        }
-    }
-    Ok(tokens)
-}
-
 struct Parser {
-    tokens: Vec<String>,
+    tokens: Vec<Token>,
     index: usize,
     predicate_budget: usize,
 }
@@ -143,7 +108,7 @@ impl Parser {
                 QueryPlan::Count { predicate }
             });
         }
-        if self.tokens.get(self.index).map(String::as_str) == Some("SUM") {
+        if self.tokens.get(self.index).and_then(Token::syntax) == Some("SUM") {
             self.sum_expression()?;
             self.expect_from_records()?;
             return Ok(QueryPlan::Sum {
@@ -294,7 +259,7 @@ impl Parser {
         self.expect("RECORDS")
     }
     fn take(&mut self, token: &str) -> bool {
-        if self.tokens.get(self.index).map(String::as_str) == Some(token) {
+        if self.tokens.get(self.index).and_then(Token::syntax) == Some(token) {
             self.index += 1;
             true
         } else {
@@ -311,13 +276,9 @@ impl Parser {
     }
 
     fn number<T: std::str::FromStr>(&mut self, message: &str) -> Result<T, Error> {
-        let token = self
-            .tokens
-            .get(self.index)
-            .ok_or_else(|| unsupported(message))?;
-        if token.is_empty() || !token.bytes().all(|byte| byte.is_ascii_digit()) {
+        let Some(Token::Number(token)) = self.tokens.get(self.index) else {
             return Err(unsupported(message));
-        }
+        };
         let value = token.parse().map_err(|_| unsupported(message))?;
         self.index += 1;
         Ok(value)

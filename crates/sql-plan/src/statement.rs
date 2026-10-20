@@ -17,6 +17,44 @@ pub enum StatementPlan {
     Rollback {
         chain: TransactionChain,
     },
+    Savepoint {
+        name: SavepointName,
+    },
+    Release {
+        name: SavepointName,
+    },
+    RollbackTo {
+        name: SavepointName,
+    },
+}
+
+/// A PG18 UTF8 identifier normalized for named transaction syntax only.
+/// Unquoted ASCII letters fold to lowercase; quoted spelling is preserved.
+/// Both forms clip to 63 UTF8 bytes at a character boundary. No database lookup,
+/// savepoint existence, transaction state, hash identity or authority is implied.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SavepointName(String);
+
+impl SavepointName {
+    /// PostgreSQL's standard NAMEDATALEN - 1, not the whole-input SQL budget.
+    pub const MAX_BYTES: usize = 63;
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub(crate) fn from_identifier(value: &str, quoted: bool) -> Self {
+        let mut end = value.len().min(Self::MAX_BYTES);
+        while !value.is_char_boundary(end) {
+            end -= 1;
+        }
+        let value = &value[..end];
+        Self(if quoted {
+            value.to_owned()
+        } else {
+            value.to_ascii_lowercase()
+        })
+    }
 }
 
 /// A requested isolation level, never a guarantee that a backend implements it.

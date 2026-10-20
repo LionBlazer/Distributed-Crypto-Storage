@@ -14,6 +14,6 @@ pub use plan::{
     RowValues, RowWindow,
 };
 pub use statement::{
-    Deferrability, IsolationLevel, StatementPlan, TransactionAccess, TransactionChain,
-    TransactionMode,
+    Deferrability, IsolationLevel, SavepointName, StatementPlan, TransactionAccess,
+    TransactionChain, TransactionMode,
 };
