@@ -543,3 +543,4 @@ pub enum LockingPreparation {
 
 #[cfg(test)]
 mod tests;
+pub use joint::progress;

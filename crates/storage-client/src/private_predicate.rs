@@ -124,3 +124,4 @@ fn random_salt() -> crate::Result<[u64; 4]> {
 
 #[cfg(test)]
 mod tests;
+pub use source::progress;

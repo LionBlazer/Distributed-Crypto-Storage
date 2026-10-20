@@ -165,3 +165,14 @@ Recovery in this case preserves the original pending request in memory after
 the original handles are destroyed. It does not persist an owner bank, establish
 restart recovery or a current lease, or open Session SQL. The earlier two-Acquire
 held-row contention result retains its separate source in the participant record.
+
+## Distinct closed Progress owner
+
+The new [Progress module](progress/README.md) owns preparation, the actual remote
+product path, exact Progress History/QC completion and an independent private
+AEAD WAL. It never casts old Result144 or changes this historical Joint host.
+Only actual typed Done returns decrypted rows; Parked fsync preserves its
+original client call and frees global flight without ACK/lastCompleted. The
+new owner passed six fast tests and one genuine OS FHE/local-QC/recovery gate;
+see the [validation record](../../../../../../../docs/progress-owner-validation.md).
+Real network WAIT and the Session bridge still require their separate gates.

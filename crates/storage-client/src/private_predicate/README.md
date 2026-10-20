@@ -136,3 +136,13 @@ finalized admission or completed answer. Its eight owning tests passed natively;
 the [validation record](../../../../docs/private-locking-inputs.md) also records
 the separate failing legacy integration expectations. It must not bypass the
 existing Session capability guards.
+
+## Closed Progress installation owner
+
+The additive public `progress` namespace exposes the complete
+[Progress owner lifecycle](source/locking/joint/progress/README.md), including
+original Ready custody, actual remote FHE, exact own QC/Result160 completion and
+private durable parked calls. Codecs and private banks remain internal. This
+path passed six fast tests and one genuine OS FHE/local-QC/recovery gate; see the
+[validation record](../../../../docs/progress-owner-validation.md). It supplies
+no Session activation or full-SQL claim.

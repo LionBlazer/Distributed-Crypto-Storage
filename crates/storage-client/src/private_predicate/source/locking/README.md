@@ -142,3 +142,13 @@ client ownership compile-fail contracts passed; see the
 The distinct Joint adapter now also owns one-shot completion of its exact
 proof-and-QC-verified Acquire. Legacy preparation and generic SQL guards are
 unchanged; no Vault installation or generic current-head/lease assertion is added.
+
+## Separate Registry208 owner
+
+The additive [Progress owner](joint/progress/README.md) uses the actual new
+Control815/Predicate896 relation with WAIT/NOWAIT/SKIP in one bank. It retains the
+original private statement and full Key33 across fresh attempts, opens only
+QC-linked typed Result160, and fsyncs a private bank before freeing global flight.
+Six fast tests and one real OS FHE/local-QC/recovery gate passed; see the
+[validation record](../../../../../../docs/progress-owner-validation.md).
+The old locking producer and SQL guards are unchanged.

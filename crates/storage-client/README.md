@@ -602,3 +602,12 @@ records 14 script PASS cases and both actual TLS rejection cases. Typed peers ru
 in server threads; the fixed Session case uses an independent OS peer process.
 Both reject before locking-query I/O and retain the source version; fixture setup
 is separate. Historical GUI row tests and strict four-package checks also passed.
+
+## Distinct Progress owner
+
+The closed [Progress owner](src/private_predicate/source/locking/joint/progress/README.md)
+adds genuine Source/input16/Core896 preparation, the existing remote FHE product
+route, exact weighted-QC completion and a strict private AEAD owner WAL. Six fast
+tests and one actual OS FHE/local-QC/recovery gate passed; see the
+[validation record](../../docs/progress-owner-validation.md). Existing
+Session/PGwire locking guards remain closed; no legacy host is activated.

@@ -200,3 +200,4 @@ pub(super) struct LoadedSource {
     pub(super) plain: Zeroizing<Vec<u8>>,
     pub(super) originals: Zeroizing<[CoefficientRow; 4]>,
 }
+pub use locking::progress;

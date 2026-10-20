@@ -338,5 +338,6 @@ impl crate::private_predicate::SourceOwner {
     }
 }
 
+pub mod progress;
 #[cfg(test)]
 mod tests;
