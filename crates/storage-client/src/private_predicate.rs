@@ -15,6 +15,7 @@ pub use source::{
     RecoveredJointComputePrepared, SOURCE_STATE_BYTES, SOURCE_STATE_HEADER_BYTES, SourceOwner,
     SourceStateAuthority, SourceStateIdentity, StagedLockingTransition,
 };
+pub use source::{CompletedJointBootstrap, JointBootstrapCandidate, PreparedJointBootstrap};
 pub use source::{
     CompletedJointControl, JointControlCandidate, JointControlIntent, JointControlOutcome,
     JointControlParent, JointEndDisposition, JointOwnedLockingControl, JointOwnedRecovery,

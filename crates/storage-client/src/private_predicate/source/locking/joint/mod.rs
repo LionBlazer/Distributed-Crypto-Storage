@@ -1,5 +1,7 @@
 //! Owner-side preparation for the distinct Joint application. No SQL/lock grant.
+mod bootstrap;
 mod completion;
+pub use bootstrap::{CompletedJointBootstrap, JointBootstrapCandidate, PreparedJointBootstrap};
 mod control;
 pub use control::{
     CompletedJointControl, JointControlCandidate, JointControlIntent, JointControlOutcome,

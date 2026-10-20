@@ -2,6 +2,7 @@ use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
+use crate::chain::PreparedBlock;
 use crate::{
     Error, Genesis, HEADER_BYTES, Header, ImportOutcome, Journal, Result, TransitionVerifier, hash,
 };
@@ -15,6 +16,52 @@ pub struct DurableJournal {
     file: File,
     length: u64,
 }
+
+/// Exact fresh append preparation under one exclusive DurableJournal borrow.
+/// Drop performs no file write or in-memory publication. No success receipt,
+/// second header/body argument, storage-budget callback or authority flag exists.
+/// The exact input bytes remain immutably borrowed until commit or Drop:
+///
+/// ```compile_fail
+/// use version_journal::{DurableJournal, Header, RejectUnprovedTransitions, Result};
+/// fn change_body(j: &mut DurableJournal, h: Header, b: &mut Vec<u8>) -> Result<()> {
+///     let pending = j.prepare_append(h, b, 2000, &RejectUnprovedTransitions)?;
+///     b.clear();
+///     pending.commit()?;
+///     Ok(())
+/// }
+/// ```
+#[must_use = "dropping a pending append writes and publishes nothing"]
+pub struct PendingAppend<'journal> {
+    journal: &'journal mut DurableJournal,
+    header: Header,
+    body: &'journal [u8],
+    prepared: PreparedBlock,
+    next_length: u64,
+}
+impl PendingAppend<'_> {
+    /// Checked absolute journal-file length after this exact append. For a
+    /// known complete block it is unchanged. This is accounting metadata only;
+    /// the application must precharge its own file quota before commit.
+    pub fn next_disk_bytes(&self) -> u64 {
+        self.next_length
+    }
+    /// After all owner checks and external file precharge, append/fsync and only
+    /// then publish this exact state. Position/IO errors retain the original
+    /// failure ordering: the enclosing owner must conservatively charge/poison
+    /// uncertain writes. This crate does not own that independent storage quota.
+    pub fn commit(self) -> Result<ImportOutcome> {
+        let Self {
+            journal,
+            header,
+            body,
+            prepared,
+            next_length,
+        } = self;
+        journal.append_prepared(header, body, prepared, next_length)
+    }
+}
+
 impl DurableJournal {
     pub fn create(path: impl AsRef<Path>, genesis: Genesis, namespace: [u8; 32]) -> Result<Self> {
         let journal = Journal::new(genesis)?;
@@ -161,15 +208,64 @@ impl DurableJournal {
         let prepared = self
             .journal
             .prepare_block(header.clone(), body, now, verifier)?;
+        self.pending_append(header, body, prepared)?.commit()
+    }
+    /// Run the complete fresh block verification, even for a known block,
+    /// without writing/publishing. The returned borrow must stay local to this
+    /// operation while the owner checks its remaining semantics and precharges
+    /// next_disk_bytes. Cached append_block behavior is deliberately unchanged.
+    pub fn prepare_append<'journal, V: TransitionVerifier + ?Sized>(
+        &'journal mut self,
+        header: Header,
+        body: &'journal [u8],
+        now: u64,
+        verifier: &V,
+    ) -> Result<PendingAppend<'journal>> {
+        let prepared = self
+            .journal
+            .prepare_block_fresh(header.clone(), body, now, verifier)?;
+        self.pending_append(header, body, prepared)
+    }
+    fn pending_append<'journal>(
+        &'journal mut self,
+        header: Header,
+        body: &'journal [u8],
+        prepared: PreparedBlock,
+    ) -> Result<PendingAppend<'journal>> {
+        let next_length = if self.journal.body(prepared.id).is_some() {
+            self.length
+        } else {
+            let frame_len = HEADER_BYTES
+                .checked_add(body.len())
+                .ok_or(Error::ResourceLimit)?;
+            let added = (frame_len as u64)
+                .checked_add(4 + 32)
+                .ok_or(Error::ResourceLimit)?;
+            let next = self.length.checked_add(added).ok_or(Error::ResourceLimit)?;
+            if next > self.journal.profile().max_journal_bytes {
+                return Err(Error::ResourceLimit);
+            }
+            next
+        };
+        Ok(PendingAppend {
+            journal: self,
+            header,
+            body,
+            prepared,
+            next_length,
+        })
+    }
+    fn append_prepared(
+        &mut self,
+        header: Header,
+        body: &[u8],
+        prepared: PreparedBlock,
+        next_length: u64,
+    ) -> Result<ImportOutcome> {
         if self.journal.body(prepared.id).is_some() {
             return Ok(self.journal.publish(prepared));
         }
         let frame_len = HEADER_BYTES + body.len();
-        let added = 4 + frame_len as u64 + 32;
-        let next_length = self.length.checked_add(added).ok_or(Error::ResourceLimit)?;
-        if next_length > self.journal.profile().max_journal_bytes {
-            return Err(Error::ResourceLimit);
-        }
         // Recheck the owned append position; another writer is an application error.
         if self.file.metadata()?.len() != self.length {
             return Err(Error::CorruptJournal);
@@ -201,4 +297,94 @@ fn lock(file: &File) -> Result<()> {
         TryLockError::WouldBlock => Error::JournalLocked,
         TryLockError::Error(error) => error.into(),
     })
+}
+
+#[cfg(test)]
+mod pending_tests {
+    use super::*;
+    use crate::{
+        RejectUnprovedTransitions,
+        chain::pending_tests::{PublicFile, empty, genesis},
+    };
+
+    #[test]
+    fn pending_append_checks_actual_position_at_commit_without_publishing_or_repairing_it() {
+        let path = PublicFile::new();
+        let pinned = genesis();
+        let mut durable = DurableJournal::create(path.path(), pinned.clone(), [71; 32]).unwrap();
+        let root = durable.journal().genesis_head();
+        let before_disk = durable.disk_bytes();
+        let before_ram = durable.journal().accounted_bytes();
+        let (header, body) = empty(durable.journal(), root.block, 1001);
+        // Actual extent mismatch through the owning test's private file handle.
+        // Preparation must not silently relocate the existing post-precharge IO
+        // failure into an earlier harmless application/semantic rejection.
+        durable.file.write_all(&[0x7f]).unwrap();
+        durable.file.sync_all().unwrap();
+        let pending = durable
+            .prepare_append(header, &body, 2000, &RejectUnprovedTransitions)
+            .unwrap();
+        assert!(pending.next_disk_bytes() > before_disk);
+        assert_eq!(pending.commit(), Err(Error::CorruptJournal));
+        assert_eq!(durable.disk_bytes(), before_disk);
+        assert_eq!(durable.journal().best_validated(), root);
+        assert_eq!(durable.journal().accounted_bytes(), before_ram);
+        assert_eq!(durable.file.metadata().unwrap().len(), before_disk + 1);
+        drop(durable);
+        assert!(matches!(
+            DurableJournal::open(
+                path.path(),
+                pinned,
+                [71; 32],
+                2000,
+                &RejectUnprovedTransitions
+            ),
+            Err(Error::CorruptJournal)
+        ));
+    }
+
+    #[test]
+    fn pending_append_actual_write_failure_publishes_nothing_and_valid_prefix_reopens() {
+        let path = PublicFile::new();
+        let pinned = genesis();
+        let durable = DurableJournal::create(path.path(), pinned.clone(), [71; 32]).unwrap();
+        let DurableJournal {
+            journal,
+            file,
+            length,
+        } = durable;
+        drop(file); // release the old exclusive OS lock before changing file mode
+        let file = File::open(path.path()).unwrap();
+        lock(&file).unwrap();
+        let mut durable = DurableJournal {
+            journal,
+            file,
+            length,
+        };
+        let root = durable.journal().genesis_head();
+        let before_ram = durable.journal().accounted_bytes();
+        let (header, body) = empty(durable.journal(), root.block, 1001);
+        let pending = durable
+            .prepare_append(header, &body, 2000, &RejectUnprovedTransitions)
+            .unwrap();
+        assert!(pending.next_disk_bytes() > length);
+        // Genuine OS write failure on this read-only handle, not a fake proof or
+        // synthetic success counter. No frame or accepted state may escape.
+        assert!(matches!(pending.commit(), Err(Error::Io(_))));
+        assert_eq!(durable.disk_bytes(), length);
+        assert_eq!(durable.file.metadata().unwrap().len(), length);
+        assert_eq!(durable.journal().best_validated(), root);
+        assert_eq!(durable.journal().accounted_bytes(), before_ram);
+        drop(durable);
+        let reopened = DurableJournal::open(
+            path.path(),
+            pinned,
+            [71; 32],
+            2000,
+            &RejectUnprovedTransitions,
+        )
+        .unwrap();
+        assert_eq!(reopened.disk_bytes(), length);
+        assert_eq!(reopened.journal().best_validated(), root);
+    }
 }

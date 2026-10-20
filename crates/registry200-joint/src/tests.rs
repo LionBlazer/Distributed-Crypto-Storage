@@ -847,3 +847,88 @@ fn real_source_bootstrap_and_non_acquire_begin_are_signed_admitted_and_freshly_r
     // This proves local signed mathematical admission/reopen, not finality,
     // a private Acquire/product path, delegated rights or a live SQL lease.
 }
+
+#[test]
+fn genuine_source_pending_import_drops_unpublished_and_known_state_still_reads_actual_proof() {
+    let f = fixture();
+    let g = genesis(&f.descriptor);
+    let app = Application::new(f.descriptor.clone(), &g).unwrap();
+    let dir = Directory::new();
+    let quota =
+        ParticipantQuota::create_new(dir.root(), f.descriptor.id(), 10_000_000_000).unwrap();
+    let depot = JointDepot::open(quota.depot_budget()).unwrap();
+    let ingress = depot.ingress();
+    let claim = depot.retain_setup(&f.descriptor, &f.setup).unwrap();
+    let verifier = JointVerifier::new(f.descriptor.clone(), &g, &claim, depot).unwrap();
+    let mut journal = Journal::new(g).unwrap();
+    let e = lifecycle::statement::Expected::bootstrap(
+        &f.source,
+        app.genesis(),
+        journal.genesis_head().block,
+        [0; 32],
+    )
+    .unwrap();
+    let enrollment = source::statement::encode_digest(source::commitment::digest(
+        &lifecycle::circuit::commitment::enrollment_fields(&e, &f.mathematical),
+    ));
+    let body = make_body(f, &app, &journal, &ingress, true, enrollment, [0; 32]);
+    let mut header = journal
+        .candidate(journal.genesis_head().block, &body, 1001)
+        .unwrap();
+    header.mine(1).unwrap();
+    let wire = body.encode(journal.profile()).unwrap();
+    let snapshot = |j: &Journal| {
+        (
+            j.header_count(),
+            j.accounted_bytes(),
+            j.best_header(),
+            j.best_validated(),
+            j.ancestry_floor(),
+        )
+    };
+    let before = snapshot(&journal);
+    let used = quota.usage().unwrap();
+
+    // Real signed Source/Life verification precedes an unpublished Drop.
+    let pending = journal
+        .prepare_import(header.clone(), &wire, 1001, &verifier)
+        .unwrap();
+    drop(pending);
+    assert_eq!(snapshot(&journal), before);
+    assert_eq!(quota.usage().unwrap(), used);
+    journal
+        .prepare_import(header.clone(), &wire, 1001, &verifier)
+        .unwrap()
+        .commit();
+    let checked = snapshot(&journal);
+    assert_eq!(journal.best_validated().block, header.id());
+    journal
+        .prepare_import(header.clone(), &wire, 1001, &verifier)
+        .unwrap()
+        .commit();
+    assert_eq!(snapshot(&journal), checked);
+
+    // Corrupt the SAME retained premise after success. A known state must not
+    // make fresh preparation accept a hash/old application result as proof.
+    let Body::Transition(body) = body else {
+        unreachable!()
+    };
+    let pair = Manifest::decode(&body.proof).unwrap().reference(0).unwrap();
+    let hex: String = pair.sha256().iter().map(|b| format!("{b:02x}")).collect();
+    let path = quota
+        .depot_directory()
+        .join(format!("{hex}-{:016x}.blob", pair.bytes()));
+    let original = fs::read(&path).unwrap();
+    let mut corrupt = original.clone();
+    let at = corrupt.len() - 1;
+    corrupt[at] ^= 1;
+    fs::write(&path, &corrupt).unwrap();
+    assert!(matches!(
+        journal.prepare_import(header, &wire, 1001, &verifier),
+        Err(version_journal::Error::RejectedComputationProof)
+    ));
+    assert_eq!(snapshot(&journal), checked);
+    assert_eq!(quota.usage().unwrap(), used);
+    fs::write(path, original).unwrap(); // Repair only this explicit public-fixture fault.
+    // This is real Bootstrap math, not a substitute for the full Acquire OS gate.
+}

@@ -1,6 +1,8 @@
 //! Concrete durable Joint owner. No supplied verifier, journal, key getter or
 //! successor exists. All evidence must already be local in the SAME depot.
-use super::history::verify_candidate;
+use super::history::{
+    candidate_control, parent_heads, require_candidate_context, verify_candidate,
+};
 use super::{
     Error, Hash, JointBinding, JointCandidate, JointCheckpoint, Result, VerifiedJointParent,
     durable_profile_digest,
@@ -439,29 +441,28 @@ impl DurableJointFinality {
                 .ok_or(Error::Context)?
                 .parent;
             let d = JointCandidate::for_context(&state.binding, &state.current, header.clone())?;
-            verify_candidate(
-                &state.binding,
-                state.journal.journal(),
-                &state.verifier,
-                &state.current,
-                parent,
-                &d,
-                body,
-            )?;
-            if state.journal.journal().body(header.id()).is_none() {
-                let next = state
-                    .journal
-                    .disk_bytes()
-                    .checked_add((4 + version_journal::HEADER_BYTES + 32) as u64)
-                    .and_then(|n| n.checked_add(body.len() as u64))
-                    .ok_or(Error::ResourceLimit)?;
-                state.charge.grow(next).map_err(crate::Error::from)?;
+            let State {
+                binding,
+                journal,
+                charge,
+                verifier,
+                current,
+                ..
+            } = &mut *state;
+            require_candidate_context(binding, current, parent, &d)?;
+            let old = parent_heads(binding, journal.journal(), parent)?;
+            let before_disk = journal.disk_bytes();
+            // Fresh even for a known candidate. The SAME State MutexGuard and
+            // exclusive Journal borrow span proof checking, semantics, charge
+            // and the argument-free commit; no second verifier call is needed.
+            let pending = journal.prepare_append(header, body, crate::adapter::now()?, verifier)?;
+            candidate_control(binding, old, body)?;
+            let next = pending.next_disk_bytes();
+            if next > before_disk {
+                charge.grow(next).map_err(crate::Error::from)?;
                 uncertain = true;
             }
-            let State {
-                journal, verifier, ..
-            } = &mut *state;
-            journal.append_block(header, body, crate::adapter::now()?, verifier)?;
+            pending.commit()?;
             Ok(d)
         })();
         if result.is_err() && uncertain {

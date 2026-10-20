@@ -127,6 +127,54 @@ Empty work blocks and reject-only proof callbacks; the separate closed adapter
 also passed genuine Source/Lifecycle admission and durable reopen. The
 [native record](../../docs/registry200-finality.md) distinguishes these scopes.
 
+## Fresh same-call import handoff
+
+`Journal::prepare_import(header, body, now, verifier)` runs the complete fresh
+header, owner, canonical body, parent/CAS and application verification even when
+the exact block is already cached. A known complete block must also retain the
+same state as the newly checked successor. Header-only nodes and new blocks keep
+the existing capacity/accounting rules; historical duplicates cannot move the
+ancestry floor or become a competing tip.
+
+The returned opaque `PendingImport` exclusively borrows the Journal. Its only
+publication operation is consuming `commit()`, with no second header, body,
+verifier or caller-provided acceptance flag. Dropping it publishes nothing. The
+original `import_block`, `import_body`, `reverify_block` and their historical
+cached/replay behavior remain available and unchanged. This new path is a
+same-call handoff, not a reusable, serialized or durable verification receipt.
+
+`DurableJournal::prepare_append` provides the analogous `PendingAppend`, which
+also immutably borrows the exact body bytes. `next_disk_bytes()` reports a checked
+absolute file length; a known complete block requires no additional record. The
+owner finishes its independent context/finality/operation checks and precharges
+its actual file quota before consuming `commit()`. This library owns no external
+quota, generic quota callback, protocol-storage dependency, proof gate or signer.
+The exclusive borrow prevents changing the Journal between verification and
+publication; it does not grant SQL, freshness, finality or authorization rights
+beyond the actual application's checks.
+
+The old and new append APIs share the same record writer, checksum, `sync_all`,
+repair attempt and publication order. The actual append-position recheck stays
+inside commit, after the caller's precharge boundary. A position/write/sync
+failure cannot publish RAM state. The enclosing owner must retain conservative
+charges and its existing terminal poison policy for uncertain I/O; dropping a
+pending value cannot undo an external charge already made by that owner. All
+fallible semantic checks must precede precharge, then commit without an unrelated
+cancellation/queue/await gap. Reopen still verifies every actual stored record;
+separate vote, import, latest-retry, signer-advance and reopen trust boundaries
+must each retain their own fresh verification.
+
+The owning tests and two ownership compile-fail examples passed the
+[native handoff validation](../../docs/joint-owner-lifecycle.md). Positive mechanical cases use genuine Empty work
+blocks; owner/application negatives use rejection-only proof callbacks. One
+deliberately private unproved-cache control confirms that a cached-state marker
+cannot bypass fresh rejection. Other cases cover header-only DROP, the final
+admissible header, historical floor behavior, exact legacy durable record bytes,
+reopen, an actual file-extent mismatch and an actual read-only-handle write
+failure. They establish no successful SQL/FHE proof or measured performance.
+The closed application's genuine proof integration also passed at its owning
+boundary. This mechanical library changes no proof wire, profile or resource cap.
+
 ## Verification
 
 From the repository root:

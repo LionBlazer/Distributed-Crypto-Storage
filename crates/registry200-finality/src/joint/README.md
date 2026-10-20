@@ -104,6 +104,16 @@ JointVerifier again. Bootstrap/Control/Acquire keep the kernel's exact mandatory
 proof lanes. In particular no QC, manifest hash, catalog identity or previous
 proof-success bit replaces all input16/output118 replay for Acquire.
 
+Within one new import, `DurableJointFinality::import_candidate` now holds the
+same State MutexGuard through fresh `DurableJournal::prepare_append`, exact
+Control checks, absolute `FileCharge::grow` and argument-free pending commit.
+Preparation always runs the actual application, including known candidates.
+All fallible context/owner/application/Control/cap checks finish before charge
+growth. The Journal owns the checked next file extent and retains its original
+post-precharge position check, writer, sync and failure repair. A failure after
+growth still conservatively retains the charge and poisons the owner/shared
+ledger. No proof-success receipt is stored or reused between operations.
+
 Once the actual signer decision is durable, the owner rechecks application,
 quorum/successor and terminal/history bounds BEFORE floor append. It syncs the
 floor before restricting ancestry/installing historical parent state, then
@@ -233,10 +243,15 @@ encrypted request and CatalogId. This constructor grants no verification authori
 ordinary `apply` lifecycle and checks the genuine QC, exact Header/Body, direct
 parent/height, Context, slot and deterministic successor. Its fixed kernel adapter
 returns the same fresh input16/output118 result only after genuine Life/Link checks.
-Ordinary Journal import still performs its full proof check; no previously streamed
-product or cached parent replaces verification. No result escapes before successful
-import and ancestry restriction. The same API can recheck only the latest identical
-semantic decision, with another genuinely verified QC, while replaying all premises.
+For a new node that same fresh check prepares an unpublished Journal import;
+the exclusive pending borrow remains alive through remaining Control/own checks
+and argument-free commit, without a second application traversal in this call.
+Ordinary and own Control apply use the same fresh preparation. No previously
+streamed product or cached parent replaces verification. No result escapes before
+successful import and ancestry restriction. The latest identical semantic retry
+remains a separate fresh read-only check under its actual last Context and parent,
+with another genuinely verified QC and all premises replayed. It cannot use a new
+pending import below the already advanced ancestry floor.
 
 `VerifiedJointAcquire` owns the exact original Header/Body and QC bytes, before/after
 heads, previous/actual semantic decisions, slot and before/after context IDs, plus
@@ -278,3 +293,35 @@ its exact Body/Header/QC and before/after metadata. It grants historical operati
 evidence, not an encrypted SQL data commit or current lease. The
 [owner validation record](../../../../docs/joint-owner-preparation.md) records the
 genuine local proof tests and the finality/doc regressions for this boundary.
+
+## Fresh-import handoff validation status
+
+The same-call handoff and added tests passed the
+[native lifecycle and regression gates](../../../../docs/joint-owner-lifecycle.md).
+Existing native results above retain their separately pinned source. The additions use
+genuine Source/Lifecycle/Kind fixtures: precharge refusal leaves no candidate or
+file charge, retry writes the exact existing record geometry, known candidate
+corruption must be freshly rejected, and successful state is reverified on full
+reopen. The Journal owns its separate Drop, stale/known/unauthorized, exact extent
+and post-precharge I/O tests. Latest-QC retries, voting, floor replay and the actual
+signer's independent advance checks remain mandatory. The integrated full Acquire
+process regression and the typed Bootstrap/Begin/recovered-Acquire/End process
+case both passed; no speed or whole-process RAM improvement is asserted merely
+by removing a duplicate traversal within this one operation.
+
+## Own Bootstrap association
+
+The [Bootstrap boundary](bootstrap/README.md) supplies an opaque Pending parent
+only from live closed history, including legitimate EmptyPending lineage, and an
+exact own expectation checked before import. The sealed operation receipt requires
+the actual Source/Lifecycle, owner Body, weighted QC and ancestry checks. The
+genesis and EmptyPending owner tests, ownership contracts and independent-process
+lifecycle passed the native gates linked above. Historical metadata does not
+establish a current network head, lease, OwnerVault install or SQL grant.
+
+Own-operation dispatch uses a private closed enum for generic, Acquire, Control
+and Bootstrap paths. A move-only per-call receipt is prepared after actual
+verification and before publication, so a missing or unexpected Acquire payload
+cannot become a fallible result extraction after commit. The public sealed
+receipt is minted only after commit and ancestry restriction. Latest retries
+remain fresh read-only checks under their real preceding Context and parent.

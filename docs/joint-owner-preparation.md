@@ -15,6 +15,11 @@ two-Acquire held-row SKIP LOCKED, remain separately pinned in the
 [participant record](joint-participant-finality.md); they are not new recovery or
 restart evidence.
 
+The later [typed lifecycle and fresh-import record](joint-owner-lifecycle.md)
+adds the Bootstrap owner and a complete independent-process
+Bootstrap/Begin/recovered-Acquire/End case. It preserves the in-memory recovery
+scope here; a filesystem Vault and OS owner restart are still separate work.
+
 ## Checked behavior
 
 BEGIN and End reload the real encrypted Source and construct actual Source,

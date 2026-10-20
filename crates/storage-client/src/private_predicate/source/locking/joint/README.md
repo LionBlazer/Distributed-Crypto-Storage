@@ -1,8 +1,9 @@
 # Joint Acquire preparation and one-shot completion
 
-The [typed BEGIN/End owner](control/README.md) adds historical private candidates
-and exact own Control completion. It preserves strict Acquire and supplies no
-production RegistryBootstrap, Vault installation or encrypted SQL data COMMIT.
+The [typed Bootstrap owner](bootstrap/README.md) produces the initial private
+Registry candidate from closed Pending history. The [typed BEGIN/End owner](control/README.md)
+adds exact own Control completion and the stamped Acquire handoff. Durable Vault
+installation and encrypted SQL data COMMIT remain separate integration work.
 
 The optional [ComputePrepared recovery module](vault/README.md) captures the
 complete Link/Registry opening into a bounded owner-encrypted in-memory capsule
@@ -141,3 +142,18 @@ The latter accepts `JointOwnedRecovery` options without exposing private banks.
 Shared test fixtures are owned once by `joint::tests` and imported by Control,
 recovery and process tests within that cfg(test) boundary. Public libraries gain
 no app dependency. Durable owner storage and SQL Session admission remain absent.
+
+## Typed owner Bootstrap candidate
+
+The [Bootstrap module](bootstrap/README.md) prepares real Source/Lifecycle evidence
+from a closed genesis or actually checked EmptyPending parent. Exact own proof/QC
+completion yields the existing unverified historical Registry opening for BEGIN.
+Its genesis and EmptyPending owner tests passed, as did the full typed
+Bootstrap/Begin/recovered-Acquire/End case on four OS validators and a separate
+OS FHE peer. The existing full Acquire hostile-result/latest-retry regression
+also passed on the same source and rebuilt peer; see the
+[native record](../../../../../../../docs/joint-owner-lifecycle.md).
+Recovery in this case preserves the original pending request in memory after
+the original handles are destroyed. It does not persist an owner bank, establish
+restart recovery or a current lease, or open Session SQL. The earlier two-Acquire
+held-row contention result retains its separate source in the participant record.

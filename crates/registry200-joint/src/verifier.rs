@@ -10,7 +10,9 @@ use registry200_proof::{
     admission, coefficient_encoding, control_kind, lifecycle, predicate_acquire, source, wire,
 };
 use std::cell::RefCell;
-use version_journal::{Genesis, Header, Journal, TransitionStatement, TransitionVerifier};
+use version_journal::{
+    Genesis, Header, Journal, PendingImport, TransitionStatement, TransitionVerifier,
+};
 
 pub struct JointVerifier {
     application: Application,
@@ -63,6 +65,39 @@ impl JointVerifier {
         };
         journal.reverify_block(header, body, now, &verifier)?;
         verifier.result.into_inner().ok_or(Error::Verification)
+    }
+    /// Freshly verify the exact own Acquire and prepare its unpublished import.
+    /// The same private adapter returns the actual input16/output118/Life/Link
+    /// result from THIS check. The exclusive pending Journal borrow must remain
+    /// local until all owner semantics pass and commit() consumes it, or Drop
+    /// publishes nothing. This is not a finality/current-head receipt or cache.
+    /// ```compile_fail
+    /// fn mutate(v: &registry200_joint::JointVerifier, j: &mut version_journal::Journal,
+    ///     h: version_journal::Header, b: &[u8], e: &registry200_joint::AcquireExpected) {
+    ///     let (pending, _) = v.prepare_acquire_import(j, h, b, 2000, e).unwrap();
+    ///     let _ = j.best_validated();
+    ///     pending.commit();
+    /// }
+    /// ```
+    pub fn prepare_acquire_import<'journal>(
+        &self,
+        journal: &'journal mut Journal,
+        header: Header,
+        body: &[u8],
+        now: u64,
+        expected: &AcquireExpected,
+    ) -> Result<(PendingImport<'journal>, CheckedAcquire)> {
+        if expected.application_id() != self.application.id() {
+            return Err(Error::Domain);
+        }
+        let verifier = AcquireBlockVerifier {
+            verifier: self,
+            expected,
+            result: RefCell::new(None),
+        };
+        let pending = journal.prepare_import(header, body, now, &verifier)?;
+        let acquired = verifier.result.into_inner().ok_or(Error::Verification)?;
+        Ok((pending, acquired))
     }
     fn evaluate(
         &self,

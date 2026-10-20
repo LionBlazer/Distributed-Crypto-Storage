@@ -10,8 +10,8 @@ mod durable;
 mod floor_tests;
 mod wire;
 
-pub use chain::{Freshness, HeadRef, ImportOutcome, Journal, Reorganization};
-pub use durable::DurableJournal;
+pub use chain::{Freshness, HeadRef, ImportOutcome, Journal, PendingImport, Reorganization};
+pub use durable::{DurableJournal, PendingAppend};
 
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use num_bigint::BigUint;

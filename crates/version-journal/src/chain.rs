@@ -63,6 +63,35 @@ pub struct Journal {
     validated_tip: Hash,
     ancestry_floor: Hash,
 }
+
+/// One fresh, unpublished import bound to the exclusively borrowed Journal.
+/// Dropping it publishes nothing. This cannot be serialized, cloned, redirected
+/// to another journal or used as an application/finality verification receipt.
+///
+/// The Journal remains unavailable until this exact preparation is consumed:
+///
+/// ```compile_fail
+/// use version_journal::{Header, Journal, RejectUnprovedTransitions, Result};
+/// fn inspect_before_commit(j: &mut Journal, h: Header, b: &[u8]) -> Result<()> {
+///     let pending = j.prepare_import(h, b, 2000, &RejectUnprovedTransitions)?;
+///     let _ = j.best_validated();
+///     pending.commit();
+///     Ok(())
+/// }
+/// ```
+#[must_use = "dropping a pending import leaves the Journal unchanged"]
+pub struct PendingImport<'journal> {
+    journal: &'journal mut Journal,
+    prepared: PreparedBlock,
+}
+impl PendingImport<'_> {
+    /// Publish only this call's exact freshly checked header/body/state.
+    /// Owner-side semantic checks must finish before consuming this handoff.
+    pub fn commit(self) -> ImportOutcome {
+        self.journal.publish(self.prepared)
+    }
+}
+
 impl Journal {
     pub fn new(genesis: Genesis) -> Result<Self> {
         genesis.validate()?;
@@ -327,6 +356,24 @@ impl Journal {
         let prepared = self.prepare_block(header, body_wire, now, verifier)?;
         Ok(self.publish(prepared))
     }
+    /// Freshly verify without publishing, including an already cached block.
+    /// The complete header/body/owner/application checks run before this returns;
+    /// the exclusive borrow then prevents any intervening Journal mutation.
+    /// This is a same-call handoff, not a reusable proof-success cache. Existing
+    /// import_block/import_body retain their original cached-import behavior.
+    pub fn prepare_import<V: TransitionVerifier + ?Sized>(
+        &mut self,
+        header: Header,
+        body_wire: &[u8],
+        now: u64,
+        verifier: &V,
+    ) -> Result<PendingImport<'_>> {
+        let prepared = self.prepare_block_fresh(header, body_wire, now, verifier)?;
+        Ok(PendingImport {
+            journal: self,
+            prepared,
+        })
+    }
     pub fn resolve(&self, policy: Freshness) -> Result<HeadRef> {
         let best = self.best(true);
         if self.best(false) != best {
@@ -413,6 +460,35 @@ impl Journal {
     ) -> Result<PreparedBlock> {
         let id = self.check_header(&header, now)?;
         self.require_floor(&header)?;
+        if let Some(cached) = self.checked_cached_block(id, body_wire)? {
+            return Ok(cached);
+        }
+        let state = self.prepare_state(&header, body_wire, verifier)?;
+        self.prepare_new_block(id, header, body_wire, state)
+    }
+    pub(crate) fn prepare_block_fresh<V: TransitionVerifier + ?Sized>(
+        &self,
+        header: Header,
+        body_wire: &[u8],
+        now: u64,
+        verifier: &V,
+    ) -> Result<PreparedBlock> {
+        let id = self.check_header(&header, now)?;
+        self.require_floor(&header)?;
+        let cached = self.checked_cached_block(id, body_wire)?;
+        // In particular, a cached state is NOT evidence of a successful check
+        // by this call's independently supplied application verifier.
+        let state = self.prepare_state(&header, body_wire, verifier)?;
+        if let Some(cached) = cached {
+            if self.nodes.get(&id).and_then(|node| node.state.as_deref()) != Some(state.as_slice())
+            {
+                return Err(Error::InvalidTransition);
+            }
+            return Ok(cached);
+        }
+        self.prepare_new_block(id, header, body_wire, state)
+    }
+    fn checked_cached_block(&self, id: Hash, body_wire: &[u8]) -> Result<Option<PreparedBlock>> {
         if let Some(node) = self.nodes.get(&id) {
             if node.invalid {
                 return Err(Error::InvalidAncestor);
@@ -421,14 +497,22 @@ impl Journal {
                 if node.body.as_deref() != Some(body_wire) {
                     return Err(Error::InvalidBody);
                 }
-                return Ok(PreparedBlock {
+                return Ok(Some(PreparedBlock {
                     id,
                     node: None,
                     bytes: 0,
-                });
+                }));
             }
         }
-        let state = self.prepare_state(&header, body_wire, verifier)?;
+        Ok(None)
+    }
+    fn prepare_new_block(
+        &self,
+        id: Hash,
+        header: Header,
+        body_wire: &[u8],
+        state: Vec<ShardState>,
+    ) -> Result<PreparedBlock> {
         let header_bytes = if self.nodes.contains_key(&id) {
             0
         } else {
@@ -757,3 +841,7 @@ pub(crate) struct PreparedBlock {
     node: Option<Node>,
     bytes: u64,
 }
+
+#[cfg(test)]
+#[path = "pending_tests.rs"]
+pub(crate) mod pending_tests;

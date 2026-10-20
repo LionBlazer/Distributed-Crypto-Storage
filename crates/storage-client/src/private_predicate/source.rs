@@ -21,6 +21,7 @@ pub use locking::{
     PreparedJointLockingInputs, PreparedLockingInputs, RecoverableJointLockingInputs,
     RecoverableJointLockingPreparation, RecoveredJointComputePrepared, StagedLockingTransition,
 };
+pub use locking::{CompletedJointBootstrap, JointBootstrapCandidate, PreparedJointBootstrap};
 pub use locking::{
     CompletedJointControl, JointControlCandidate, JointControlIntent, JointControlOutcome,
     JointControlParent, JointEndDisposition, JointOwnedLockingControl, JointOwnedRecovery,

@@ -11,6 +11,7 @@ pub use joint::{
     RecoverableJointLockingInputs, RecoverableJointLockingPreparation,
     RecoveredJointComputePrepared,
 };
+pub use joint::{CompletedJointBootstrap, JointBootstrapCandidate, PreparedJointBootstrap};
 pub use joint::{
     CompletedJointControl, JointControlCandidate, JointControlIntent, JointControlOutcome,
     JointControlParent, JointEndDisposition, JointOwnedLockingControl, JointOwnedRecovery,

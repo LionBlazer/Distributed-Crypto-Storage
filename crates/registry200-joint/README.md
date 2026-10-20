@@ -154,3 +154,26 @@ and hostile-evidence checks, as recorded in the
 [native process record](../../docs/joint-participant-finality.md). Real prior-lock
 contention and general SQL admission remain separate. Individual
 input128/output-SDK policies and all existing wire/byte/element budgets are unchanged.
+
+## Unpublished fresh Journal import
+
+`JointVerifier::prepare_acquire_import` uses the same private Acquire adapter
+inside `Journal::prepare_import`. It returns this call's actual `CheckedAcquire`
+and an opaque, exclusively borrowing `PendingImport`. Actual owner/header/Body
+validation and all mandatory proofs have already run, including for a known
+block. The caller must finish its own operation/QC/successor checks before the
+argument-free `commit()` publishes that exact import. Dropping the handoff
+publishes nothing. Its exclusive borrow prevents another Journal mutation or
+header/body/verifier substitution in between. Neither value is a persisted
+verification receipt or a substitute for checking the next trust boundary.
+
+The read-only `check_acquire_block` remains the separate fresh path for a latest
+semantic retry whose parent is below the already advanced ancestry floor.
+Ordinary `check`, voting and reopening still invoke the real fixed verifier.
+No profile, proof bytes, caps, deadlines or SQL guards change. The new owning
+Source/Bootstrap case checks unpublished Drop and a known import after actual
+retained-premise corruption; it does not simulate a full Acquire. These cases,
+the integrated typed owner lifecycle and the existing full Acquire process
+regression passed [native validation](../../docs/joint-owner-lifecycle.md).
+The record keeps the mechanical, mathematical and independent-process scopes
+separate; removing one duplicate traversal is not a measured speed guarantee.

@@ -564,3 +564,163 @@ fn corrupt_owned_wal_tail_prevents_signer_reopen_and_is_never_truncated() {
     ));
     assert_eq!(fs::read(&paths.wal).unwrap(), original);
 }
+
+#[test]
+fn fresh_append_quota_refusal_publishes_nothing_and_retry_commits_exact_record() {
+    let (directory, quota, binding, mut owner) = install(2);
+    let block = empty(&owner);
+    let before = {
+        let state = owner.state.lock().unwrap();
+        (
+            state.journal.disk_bytes(),
+            state.charge.bytes().unwrap(),
+            state.journal.journal().best_validated(),
+            state.journal.journal().accounted_bytes(),
+        )
+    };
+    let context = owner.context().unwrap().clone();
+    let budget = quota.control_budget();
+    let reservation = budget
+        .reserve(protocol_storage::MAX_SHARED_BYTES - budget.used().unwrap())
+        .unwrap();
+    assert!(matches!(
+        owner.import_candidate(block.header().clone(), block.body()),
+        Err(Error::Durable(crate::Error::Storage(
+            protocol_storage::Error::ResourceLimit
+        )))
+    ));
+    assert!(!owner.poisoned, "a refused precharge is not uncertain I/O");
+    assert_eq!(owner.context().unwrap(), &context);
+    {
+        let state = owner.state.lock().unwrap();
+        assert_eq!(
+            (
+                state.journal.disk_bytes(),
+                state.charge.bytes().unwrap(),
+                state.journal.journal().best_validated(),
+                state.journal.journal().accounted_bytes()
+            ),
+            before
+        );
+        assert!(state.journal.journal().body(block.header().id()).is_none());
+    }
+    drop(reservation);
+    drop(budget);
+    let d = import(&mut owner, &block);
+    let expected_disk =
+        before.0 + (4 + version_journal::HEADER_BYTES + 32 + block.body().len()) as u64;
+    {
+        let state = owner.state.lock().unwrap();
+        assert_eq!(state.journal.disk_bytes(), expected_disk);
+        assert_eq!(state.charge.bytes().unwrap(), expected_disk);
+    }
+    let usage = quota.usage().unwrap();
+    assert_eq!(import(&mut owner, &block), d);
+    assert_eq!(quota.usage().unwrap(), usage);
+    let qc = checkpoint(&owner, &d, 0, 0);
+    owner.receive_checkpoint(&qc).unwrap();
+    let finalized = owner.finalized_parent().unwrap().unwrap();
+    drop(owner);
+    drop(quota);
+    let quota =
+        ParticipantQuota::open_existing(directory.root(), fixture().descriptor.id(), CAPACITY)
+            .unwrap();
+    let reopened =
+        DurableJointFinality::open_participant(&quota, binding, keys().remove(0)).unwrap();
+    assert_eq!(
+        reopened.finalized_parent().unwrap().unwrap().head(),
+        finalized.head()
+    );
+    assert_eq!(reopened.context().unwrap().slot(), 2);
+    assert_eq!(
+        reopened.state.lock().unwrap().journal.disk_bytes(),
+        expected_disk
+    );
+}
+
+#[test]
+fn known_candidate_import_rechecks_genuine_kind_before_any_charge_or_publication() {
+    let (directory, quota, binding, mut owner) = install(8);
+    let f = fixture();
+    let app = Application::new(f.descriptor.clone(), binding.journal_genesis()).unwrap();
+    let ingress = owner.evidence_ingress().unwrap();
+    let (boot, enrollment) = {
+        let state = owner.state.lock().unwrap();
+        let journal = state.journal.journal();
+        let e = lifecycle::statement::Expected::bootstrap(
+            &f.source,
+            app.genesis(),
+            journal.genesis_head().block,
+            [0; 32],
+        )
+        .unwrap();
+        let enrollment = source::statement::encode_digest(source::commitment::digest(
+            &lifecycle::circuit::commitment::enrollment_fields(&e, &f.witness),
+        ));
+        let (body, _) = proof_body(f, &app, journal, &ingress, true, enrollment, [0; 32]);
+        (proposed(journal, &body), enrollment)
+    };
+    let d = import(&mut owner, &boot);
+    let qc = checkpoint(&owner, &d, 0, 0);
+    owner.receive_checkpoint(&qc).unwrap();
+    let first = owner.finalized_parent().unwrap().unwrap();
+    let Control::Active { registry, .. } = first.control() else {
+        panic!("real bootstrap must activate")
+    };
+    let (block, kind) = {
+        let state = owner.state.lock().unwrap();
+        let journal = state.journal.journal();
+        let (body, kind) = proof_body(f, &app, journal, &ingress, false, enrollment, registry);
+        (proposed(journal, &body), kind.unwrap())
+    };
+    let candidate = import(&mut owner, &block);
+    let context = owner.context().unwrap().clone();
+    let snapshot = |owner: &DurableJointFinality| {
+        let state = owner.state.lock().unwrap();
+        (
+            state.journal.disk_bytes(),
+            state.charge.bytes().unwrap(),
+            state.journal.journal().accounted_bytes(),
+            state.journal.journal().best_validated(),
+            state.journal.journal().ancestry_floor(),
+        )
+    };
+    let before = snapshot(&owner);
+    let used = quota.usage().unwrap();
+    assert_eq!(import(&mut owner, &block), candidate);
+    assert_eq!(snapshot(&owner), before);
+    assert_eq!(quota.usage().unwrap(), used);
+    let path = blob_path(&quota.depot_directory(), kind);
+    let original = fs::read(&path).unwrap();
+    let mut corrupt = original.clone();
+    let at = corrupt.len() - 1;
+    corrupt[at] ^= 1;
+    fs::write(&path, corrupt).unwrap();
+    assert!(matches!(
+        owner.import_candidate(block.header().clone(), block.body()),
+        Err(Error::Journal(
+            version_journal::Error::RejectedComputationProof
+        ))
+    ));
+    assert_eq!(snapshot(&owner), before);
+    assert_eq!(owner.context().unwrap(), &context);
+    assert_eq!(
+        owner.finalized_parent().unwrap().unwrap().head(),
+        first.head()
+    );
+    assert_eq!(quota.usage().unwrap(), used);
+    fs::write(&path, original).unwrap();
+    drop(ingress);
+    drop(owner);
+    drop(quota);
+    let quota =
+        ParticipantQuota::open_existing(directory.root(), f.descriptor.id(), CAPACITY).unwrap();
+    let reopened =
+        DurableJointFinality::open_participant(&quota, binding, keys().remove(0)).unwrap();
+    assert_eq!(reopened.context().unwrap(), &context);
+    assert_eq!(
+        reopened.finalized_parent().unwrap().unwrap().head(),
+        first.head()
+    );
+    assert_eq!(snapshot(&reopened), before);
+}
