@@ -60,6 +60,32 @@ it does not parse their proofs. `MAX_INPUT_BYTES` is the unchanged worst-case
 sum, not a new aggregate message. The existing `byte_len` remains only a size
 counter and retains its earlier empty-input behavior for direct callers.
 
+Within each `Provenance::verify_inputs` call, the closed verifier itself freshly
+checks the independently pinned setup/anchor Key proof and ALL33. It then retains
+each operand's five actual scoped Basis results through that operand's genuine
+Formation check. Formation checks their full statements and exact borrowed Key
+scope instead of decoding the same Key and Basis proofs again. These public
+mathematical results are local stack-owned values; the function takes no external
+capability and returns no receipt. Five results are dropped before the next
+operand, and every input proof buffer still dies before output118 processing.
+The original two Source/Encoding verifications, output graph, standalone lower
+verifiers, all proof languages/profiles/caps and individual security floors are
+unchanged. Source/Query/Link reuse is not implemented.
+
+The source call graph changes Key verification from13 to1 and Basis verification
+from20 to10 per successful input collection. This is a static count, not a timing
+claim. The new owning gate uses ONE actual Source, Key, two Encoding, ten Basis
+and two Formation fixture; it checks genuine foreign CsHat, request/ciphertext,
+ordered and independently created scopes, repaired setup/Expected headers,
+malformed parameters/proofs and a second invocation after corruption. Its sole
+new dependency is test-only `compact-store`, which generates actual AEAD Source
+pages. The gate owns an explicit public canonical index suffix in `tests/fixtures/`;
+it does not import another crate's test code or fixture generator. This path and
+its two scope compile-fail examples passed the
+[owning native validation](../../docs/joint-query-fast-path-validation.md).
+The same record includes the successful seven-process network gate for this
+revision, with its complete timing and resource qualifications.
+
 `Prover` owns a prepared graph and emits one bounded record per `prove_next`.
 `GraphClaims` and all claim codecs are owned by the circuit library and directly
 re-exported. `profile_digest` retains the complete accepted protocol identity.

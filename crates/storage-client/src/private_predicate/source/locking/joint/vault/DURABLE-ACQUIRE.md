@@ -32,6 +32,10 @@ an older backup by choosing new salts or replaying `Registry::step`.
 - `acquire_inventory.rs` owns exactly twenty public content references. It uses
   existing Source/Encoding and Lifecycle frame codecs and their original caps.
   It never serializes private Aux, a proof vector, Ready backup or plaintext rows.
+- `acquire_live.rs` is a private original-object owner used only by the network
+  driver's same-execute fresh Idle path. It has no public constructor or restore
+  shortcut; its owning validation status and remaining full checks are documented in
+  the [network module](host/network/README.md).
 - `JointHistory::check_acquire_candidate` is a concrete read-only check of the
   actual signed Header/Body and all input16/output118/Source/Life/Link premises.
   It returns `()` and supplies no later import authority. `apply_acquire` still
@@ -81,8 +85,10 @@ the Registry model.
    saves the original outer request, next/result roots, capsule1242, that fixed
    inventory, exact preceding Idle410/stamp, original-material digest and invocation
    ID. It fsyncs before `OwnerVaultAcquireWork` exposes original public RPC work.
-   The original in-memory BFV pending and private candidates are dropped; future
-   attempts use the authenticated exact restore path.
+   The public API drops the original in-memory BFV pending and private candidates;
+   future attempts use the authenticated exact restore path. A private fresh-live
+   driver may retain those original objects only within its exclusive current
+   call, without changing any public/default/recovery contract or WAL bytes.
 3. Move `work.into_parts()` into
    `RemotePeer::prove_private_product_recorded_shared` with the SAME
    `vault.evidence_ingress()?.recording_store()`. Hold the host's one actual

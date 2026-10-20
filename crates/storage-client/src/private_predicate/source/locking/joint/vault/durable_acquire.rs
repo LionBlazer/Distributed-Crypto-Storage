@@ -16,6 +16,8 @@ use registry200_joint::AcquireExpected;
 use zeroize::Zeroize;
 #[path = "acquire_inventory.rs"]
 mod inventory;
+#[path = "acquire_live.rs"]
+pub(super) mod live;
 #[path = "acquire_run.rs"]
 mod run;
 use inventory::{Inventory, PublicInputs};
@@ -445,6 +447,27 @@ impl OwnerVault {
         transaction: u64,
         principal: u8,
     ) -> VaultResult<OwnerVaultAcquirePreparation> {
+        match self.prepare_acquire_original(cas, fetched, material, sql, transaction, principal)? {
+            live::Preparation::Prepared(work, original) => {
+                // The public/recovery API deliberately retains no live bank.
+                drop(original);
+                Ok(OwnerVaultAcquirePreparation::Prepared(work))
+            }
+            live::Preparation::NonAdmitted(conflict) => {
+                Ok(OwnerVaultAcquirePreparation::NonAdmitted(conflict))
+            }
+        }
+    }
+
+    pub(in crate::private_predicate::source::locking::joint::vault) fn prepare_acquire_original(
+        &mut self,
+        cas: OwnerVaultCursor,
+        fetched: FetchedSource<'_>,
+        material: &OwnerVaultAcquireMaterial<'_>,
+        sql: &str,
+        transaction: u64,
+        principal: u8,
+    ) -> VaultResult<live::Preparation> {
         self.require_cas(cas)?;
         if self.saved.phase != OwnerVaultPhase::Idle || self.draft.is_some() {
             return Err(OwnerVaultError::Phase);
@@ -528,7 +551,7 @@ impl OwnerVault {
             let RecoverableJointLockingPreparation::NonAdmitted(conflict) = prepared else {
                 unreachable!()
             };
-            return Ok(OwnerVaultAcquirePreparation::NonAdmitted(conflict));
+            return Ok(live::Preparation::NonAdmitted(conflict));
         };
         let (prepared, capsule) = prepared.into_parts();
         let (inputs, life, link, request, candidates) = prepared.into_parts();
@@ -567,13 +590,13 @@ impl OwnerVault {
             }),
         };
         self.require_managed_acquire(&saved, &candidates)?;
-        // Drop both original private completion banks and original BFV pending.
-        // Subsequent attempts use ONLY the exact authenticated restore path.
-        drop(candidates);
-        drop(inputs);
+        // The ordinary public wrapper drops this private original after fsync.
+        // Only the private same-execute driver moves it through live completion.
+        let (provenance, pending, proofs) = inputs.into_parts();
+        drop(provenance);
+        drop(proofs);
         drop(life);
         drop(link);
-        drop(owner);
         let remaining = self.wal.append(&saved, lease)?;
         self.terminal = Some(remaining);
         self.pending_parent = Some(before);
@@ -585,14 +608,16 @@ impl OwnerVault {
             &self.pins.binding,
             material,
         )?;
-        Ok(OwnerVaultAcquirePreparation::Prepared(Box::new(
-            OwnerVaultAcquireWork {
+        let original = live::Original::new(owner, pending, candidates, self.cursor()?);
+        Ok(live::Preparation::Prepared(
+            Box::new(OwnerVaultAcquireWork {
                 cursor: self.cursor()?,
                 invocation,
                 object: self.pins.binding.application_descriptor().source_object(),
                 public,
-            },
-        )))
+            }),
+            original,
+        ))
     }
 
     /// Reconstruct the ORIGINAL public request and authenticate original private
@@ -779,9 +804,36 @@ impl OwnerVault {
         self.require_managed_acquire(&self.saved, &candidates)?;
         let expected = saved.expectation(&public, &self.pins.binding, before)?;
         drop(public);
+        self.complete_acquire_original(
+            cas,
+            fetched,
+            material,
+            checkpoint,
+            (owner, pending, candidates),
+            &expected,
+        )
+    }
+
+    // Both callers supply actual original private objects: fresh production or
+    // full authenticated recovery. No verifier choice or success flag is taken.
+    fn complete_acquire_original(
+        &mut self,
+        cas: OwnerVaultCursor,
+        fetched: FetchedSource<'_>,
+        material: &OwnerVaultAcquireMaterial<'_>,
+        checkpoint: &JointCheckpoint,
+        original: (
+            Owner,
+            bfv_query_core::PreparedPrivateCoefficientPredicate,
+            JointLockingCandidates,
+        ),
+        expected: &AcquireExpectation,
+    ) -> VaultResult<OwnerVaultAcquireCompletion> {
+        let (owner, pending, candidates) = original;
+        let saved = self.saved.acquire.as_ref().ok_or(OwnerVaultError::Phase)?;
         let block = self.saved.block.as_ref().ok_or(OwnerVaultError::Encoding)?;
         let old_context = self.history.context()?.id();
-        let operation = match self.history.apply_acquire(checkpoint, block, &expected) {
+        let operation = match self.history.apply_acquire(checkpoint, block, expected) {
             Ok(op) => op,
             Err(e) => {
                 if self

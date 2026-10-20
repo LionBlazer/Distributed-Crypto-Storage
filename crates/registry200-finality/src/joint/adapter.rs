@@ -48,6 +48,104 @@ struct Historical {
     context: Hash,
     parent: HeadRef,
 }
+// Only a synchronous drive registers a frame. This channel contains no result
+// between drives and is never consulted to skip an application verification.
+#[derive(Default)]
+struct DriveHandoff {
+    active: Mutex<Option<Arc<DriveFrame>>>,
+}
+struct DriveFrame {
+    context: Hash,
+    checked: Mutex<Option<CheckedApplication>>,
+}
+// Fixed public metadata from a completed cold State::verify, never proof/SDK
+// buffers or a serialized success bit. There is deliberately no Clone impl.
+struct CheckedApplication {
+    binding: Hash,
+    context: Hash,
+    candidate: [u8; super::CANDIDATE_BYTES],
+    parent: HeadRef,
+    floor: HeadRef,
+    head: HeadRef,
+    control: Control,
+}
+struct DriveCapture<'drive> {
+    channel: &'drive DriveHandoff,
+    frame: Arc<DriveFrame>,
+}
+struct CheckedForFloor<'drive> {
+    channel: &'drive DriveHandoff,
+    frame: &'drive Arc<DriveFrame>,
+    application: CheckedApplication,
+}
+impl DriveHandoff {
+    fn begin(&self, context: Hash) -> Result<DriveCapture<'_>> {
+        let mut active = self.active.lock().map_err(|_| Error::Poisoned)?;
+        if active.is_some() {
+            return Err(Error::Poisoned);
+        }
+        let frame = Arc::new(DriveFrame {
+            context,
+            checked: Mutex::new(None),
+        });
+        *active = Some(frame.clone());
+        Ok(DriveCapture {
+            channel: self,
+            frame,
+        })
+    }
+    fn record(&self, application: CheckedApplication) -> Result<()> {
+        let active = self.active.lock().map_err(|_| Error::Poisoned)?;
+        if let Some(frame) = active.as_ref() {
+            if application.context != frame.context {
+                return Err(Error::Context);
+            }
+            // Every call has ALREADY run the real verifier, even if another
+            // check in this same Machine::apply concerned the same value.
+            *frame.checked.lock().map_err(|_| Error::Poisoned)? = Some(application);
+        }
+        Ok(())
+    }
+}
+impl DriveCapture<'_> {
+    fn take(&self) -> Result<CheckedForFloor<'_>> {
+        let application = self
+            .frame
+            .checked
+            .lock()
+            .map_err(|_| Error::Poisoned)?
+            .take()
+            .ok_or(Error::Context)?;
+        Ok(CheckedForFloor {
+            channel: self.channel,
+            frame: &self.frame,
+            application,
+        })
+    }
+}
+impl Drop for DriveCapture<'_> {
+    fn drop(&mut self) {
+        // Cleanup must also happen on unwinding. Recovering a poisoned lock
+        // here only removes this frame; it does not clear the poison flag.
+        let mut active = self
+            .channel
+            .active
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if active
+            .as_ref()
+            .is_some_and(|frame| Arc::ptr_eq(frame, &self.frame))
+        {
+            *active = None;
+        }
+        let _ = self
+            .frame
+            .checked
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+    }
+}
 struct State {
     binding: JointBinding,
     journal: DurableJournal,
@@ -57,6 +155,7 @@ struct State {
     current: Context,
     last_context: Option<Context>,
     finalized: Option<VerifiedJointParent>,
+    handoff: Arc<DriveHandoff>,
     #[cfg(test)]
     completed_application_checks: std::sync::atomic::AtomicUsize,
 }
@@ -127,6 +226,7 @@ impl State {
             current,
             last_context: None,
             finalized: None,
+            handoff: Arc::new(DriveHandoff::default()),
             #[cfg(test)]
             completed_application_checks: std::sync::atomic::AtomicUsize::new(0),
         }
@@ -175,6 +275,81 @@ impl State {
             return Err(Error::Context);
         }
         let (head, control) = self.verify(&self.current, decision.value())?;
+        self.prepare_finalization(decision, head, control)
+    }
+    fn preflight_checked<'state, 'decision>(
+        &'state mut self,
+        decision: &'decision Decision,
+        checked: CheckedForFloor<'_>,
+    ) -> Result<PreparedFinalization<'state, 'decision>> {
+        let CheckedForFloor {
+            channel,
+            frame,
+            application: checked,
+        } = checked;
+        let registered = self.handoff.active.lock().map_err(|_| Error::Poisoned)?;
+        if !registered
+            .as_ref()
+            .is_some_and(|active| Arc::ptr_eq(active, frame))
+            || !std::ptr::eq(self.handoff.as_ref(), channel)
+            || frame.context != self.current.id()
+            || checked.binding != self.binding.id()
+            || checked.context != self.current.id()
+            || decision.context_id() != self.current.id()
+            || decision.value() != checked.candidate.as_slice()
+            || checked.floor != self.journal.journal().ancestry_floor()
+        {
+            return Err(Error::Context);
+        }
+        drop(registered);
+        let d = JointCandidate::decode(decision.value())?;
+        let historical = self
+            .history
+            .get(&self.current.slot())
+            .ok_or(Error::Context)?;
+        if historical.context != self.current.id() || historical.parent != checked.parent {
+            return Err(Error::Context);
+        }
+        require_candidate_context(&self.binding, &self.current, checked.parent, &d)?;
+        let journal = self.journal.journal();
+        if journal.header(checked.head.block) != Some(&d.header)
+            || checked.head
+                != (HeadRef {
+                    genesis: d.header.genesis,
+                    database: self.binding.journal_genesis().database,
+                    block: d.header.id(),
+                    height: d.header.height,
+                    state_root: d.header.state_root,
+                })
+        {
+            return Err(Error::Context);
+        }
+        let body = journal
+            .body(checked.head.block)
+            .ok_or(crate::Error::MissingCandidate)?;
+        if body.len() > journal.profile().max_body_bytes as usize
+            || version_journal::hash(body) != d.header.body_hash
+        {
+            return Err(Error::Context);
+        }
+        if let version_journal::Body::Transition(transition) =
+            version_journal::Body::decode(body, journal.profile())?
+        {
+            transition.check_authorization(&journal.genesis().owner, journal.genesis_id())?;
+        }
+        let old = parent_heads(&self.binding, journal, checked.parent)?;
+        if candidate_control(&self.binding, old, body)? != checked.control {
+            return Err(Error::Context);
+        }
+        journal.validated_shards(checked.head)?;
+        self.prepare_finalization(decision, checked.head, checked.control)
+    }
+    fn prepare_finalization<'state, 'decision>(
+        &'state mut self,
+        decision: &'decision Decision,
+        head: HeadRef,
+        control: Control,
+    ) -> Result<PreparedFinalization<'state, 'decision>> {
         let next = self.current.after_decision(decision)?;
         // Initial slot plus each successor is retained for actual WAL replay.
         // len == max_headers is the LAST admissible decision, not exhaustion.
@@ -216,12 +391,31 @@ impl ApplicationVerifier for ClosedJointApplication {
         context: &ApplicationContext<'_>,
         value: &[u8],
     ) -> core::result::Result<(), ApplicationError> {
-        self.0
-            .lock()
-            .map_err(|_| ApplicationError)?
-            .verify(context.consensus(), value)
-            .map(|_| ())
+        self.check(context.consensus(), value)
             .map_err(|_| ApplicationError)
+    }
+}
+impl ClosedJointApplication {
+    fn check(&self, context: &Context, value: &[u8]) -> Result<()> {
+        let state = self.0.lock().map_err(|_| Error::Poisoned)?;
+        // Never look up a prior result. The fixed verifier runs in full before
+        // depositing metadata for this drive's possible floor finalization.
+        let (head, control) = state.verify(context, value)?;
+        let candidate = JointCandidate::decode(value)?;
+        let parent = state
+            .history
+            .get(&context.slot())
+            .ok_or(Error::Context)?
+            .parent;
+        state.handoff.record(CheckedApplication {
+            binding: state.binding.id(),
+            context: context.id(),
+            candidate: candidate.encode(),
+            parent,
+            floor: state.journal.journal().ancestry_floor(),
+            head,
+            control,
+        })
     }
 }
 
@@ -573,12 +767,23 @@ impl DurableJointFinality {
     }
     fn drive(&mut self, input: Input) -> Result<Vec<Action>> {
         self.live()?;
+        // &mut self excludes every other owner mutation. State and its Arc are
+        // private; ingress can only add immutable depot blobs. Do not hold the
+        // State mutex here: the actual application verifier locks it itself.
+        let handoff = self
+            .state
+            .lock()
+            .map_err(|_| Error::Poisoned)?
+            .handoff
+            .clone();
+        let capture = handoff.begin(self.voter.context().id())?;
         let finished = match self.voter.handle_for_finalization(input) {
             Ok((actions, Some(fresh))) => {
                 match Self::synchronize_fresh(
                     &self.state,
                     &mut self.floor,
                     fresh,
+                    &capture,
                     #[cfg(test)]
                     &mut self.poison_before_advance,
                 ) {
@@ -601,6 +806,7 @@ impl DurableJointFinality {
                 return Err(e);
             }
         };
+        drop(capture);
         if let Err(e) = self.synchronize() {
             self.poisoned = true;
             return Err(e);
@@ -611,6 +817,7 @@ impl DurableJointFinality {
         state: &Arc<Mutex<State>>,
         floor: &mut FloorLog,
         fresh: FreshDecision<'_, ClosedJointApplication>,
+        capture: &DriveCapture<'_>,
         #[cfg(test)] poison_before_advance: &mut bool,
     ) -> Result<()> {
         let mut guard = state.lock().map_err(|_| Error::Poisoned)?;
@@ -620,7 +827,9 @@ impl DurableJointFinality {
         // The capability came only from THIS owner's private voter and its
         // captured ClosedJointApplication. It is not accepted as an argument
         // from a client, checkpoint DTO, different owner or recovery path.
-        install_current_decision(&mut guard, floor, fresh.decision())?;
+        let prepared = guard.preflight_checked(fresh.decision(), capture.take()?)?;
+        floor.append(fresh.decision())?;
+        prepared.install()?;
         drop(guard);
         #[cfg(test)]
         Self::inject_advance_refusal(state, poison_before_advance)?;

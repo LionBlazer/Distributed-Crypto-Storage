@@ -25,3 +25,6 @@ fhe = { version = "=0.1.1", default-features = false }
 fhe-traits = "=0.1.1"
 p3-field = "=0.8.0"
 sha2 = "=0.10.9"
+
+[dev-dependencies]
+compact-store = { path = "../compact-store" }

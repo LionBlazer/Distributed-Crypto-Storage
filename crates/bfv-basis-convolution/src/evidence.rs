@@ -36,6 +36,29 @@ impl VerifiedBasis {
         self.full_setup_id
     }
 }
+/// One freshly checked Basis borrowing the actual transform used for this check.
+/// No proof/backend is retained, and no caller can construct this from claims.
+/// The closed composition still creates its transform afresh on every call.
+pub struct ScopedBasis<'key> {
+    key: &'key bfv_key_transform::VerifiedTransform,
+    checked: VerifiedBasis,
+}
+impl ScopedBasis<'_> {
+    pub fn statement(&self) -> &Statement {
+        self.checked.statement()
+    }
+    pub fn full_setup_id(&self) -> [u8; 32] {
+        self.checked.full_setup_id()
+    }
+    /// Both components must borrow the SAME actual checked transform instance.
+    /// Equal public labels alone cannot join independently created scopes.
+    pub fn require_same_scope(&self, other: &Self) -> Result<(), Error> {
+        if !core::ptr::eq(self.key, other.key) {
+            return Err(Error::Shape);
+        }
+        Ok(())
+    }
+}
 fn map_codec(_: codec::Error) -> Error {
     Error::Shape
 }
@@ -133,6 +156,35 @@ pub fn verify(
 ) -> Result<VerifiedBasis, Error> {
     verify_key(full_setup_id, expected, key)?;
     verify_fixed(full_setup_id, expected, bytes)
+}
+/// Verify this real child under a borrowed genuine transform. The caller owns
+/// independent setup/anchor provenance; ALL33, not stable29, must match exactly.
+/// This mathematical borrow supplies no SQL, freshness or per-call authority.
+/// ```compile_fail
+/// fn forge<'a>(key: &'a bfv_key_transform::VerifiedTransform,
+///     checked: bfv_basis_convolution::VerifiedBasis) -> bfv_basis_convolution::ScopedBasis<'a> {
+///     bfv_basis_convolution::ScopedBasis { key, checked }
+/// }
+/// ```
+/// ```compile_fail
+/// fn escape(k: &bfv_key_transform::VerifiedTransform, e: &bfv_basis_convolution::Expected,
+///     b: &[u8]) -> bfv_basis_convolution::ScopedBasis<'static> {
+///     bfv_basis_convolution::verify_scoped(k.full_setup_id(), k, e, b).unwrap()
+/// }
+/// ```
+pub fn verify_scoped<'key>(
+    full_setup_id: [u8; 32],
+    key: &'key bfv_key_transform::VerifiedTransform,
+    expected: &Expected,
+    bytes: &[u8],
+) -> Result<ScopedBasis<'key>, Error> {
+    if key.full_setup_id() != full_setup_id
+        || key.statement().public_values() != expected.key().public_values()
+    {
+        return Err(Error::Shape);
+    }
+    let checked = verify_fixed(full_setup_id, expected, bytes)?;
+    Ok(ScopedBasis { key, checked })
 }
 /// Compound public path: one actual Key verification under independent input pins,
 /// followed by exact Basis Expected construction and fixed cryptographic verification.

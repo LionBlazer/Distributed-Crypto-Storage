@@ -22,6 +22,18 @@ retain a vector of SDK proof objects. The consumer owns independently trusted
 producer/setup pins. A checked result is not a formation-chain, SQL or freshness
 acceptance token.
 
+`verify_scoped` is the typed composition path. It borrows exactly five genuine
+`ScopedBasis` results from one actual transform instance, validates every complete
+Basis Expected and all public values (including parameter/ciphertext bytes, q,
+order, result and ALL33), and then verifies the real Formation proof with the
+same header, AIR, codec limits and security assessment. It cannot construct or
+accept a result from public claims alone. The borrowing caller owns independent
+setup and fresh-call policy; the closed MulRelin verifier produces these results
+locally in that same call. Standalone `prove`, `verify` and their prerequisite
+byte checks keep their previous behavior. The scoped path and genuine Input16
+rejection gate passed the [owning validation](../../docs/joint-query-fast-path-validation.md);
+no performance result or new authorization/freshness capability is claimed.
+
 For every coefficient j and basis i, the circuit proves the exact INTEGER equation
 
 ```text

@@ -33,6 +33,17 @@ fn install(
     JointBinding,
     DurableJointFinality,
 ) {
+    install_with_signer(max_headers, keys().remove(0))
+}
+fn install_with_signer(
+    max_headers: u32,
+    signer: SigningKey,
+) -> (
+    Directory,
+    ParticipantQuota,
+    JointBinding,
+    DurableJointFinality,
+) {
     let f = fixture();
     let directory = Directory::new();
     let quota =
@@ -52,8 +63,7 @@ fn install(
         claim,
     )
     .unwrap();
-    let owner = DurableJointFinality::create_participant(&quota, binding.clone(), keys().remove(0))
-        .unwrap();
+    let owner = DurableJointFinality::create_participant(&quota, binding.clone(), signer).unwrap();
     (directory, quota, binding, owner)
 }
 fn empty(owner: &DurableJointFinality) -> CandidateBlock {
@@ -310,6 +320,34 @@ fn real_signed_bootstrap_begin_kind_and_alternate_qc_reopen_then_missing_or_corr
     );
     assert!(owner.checkpoint_after(1).unwrap().is_none());
 
+    // An actual Source/Life/Kind result cannot finalize a mismatching context.
+    // The frame is local; no voter/floor mutation occurs on this rejected take.
+    {
+        let handoff = owner.state.lock().unwrap().handoff.clone();
+        let capture = handoff.begin(previous.id()).unwrap();
+        ClosedJointApplication(owner.state.clone())
+            .check(&previous, &d.encode())
+            .unwrap();
+        let mut checked = capture.take().unwrap();
+        checked.application.context[0] ^= 1;
+        let mut state = owner.state.lock().unwrap();
+        assert!(matches!(
+            state.preflight_checked(&decision, checked),
+            Err(Error::Context)
+        ));
+        assert_eq!(state.current, previous);
+        assert_eq!(state.journal.journal().ancestry_floor(), first.head());
+        assert_eq!(state.finalized.as_ref().unwrap().head(), first.head());
+        assert!(
+            matches!(capture.take(), Err(Error::Context)),
+            "the actual result was consumed even on rejection"
+        );
+    }
+    assert_eq!(file_bytes(), files_before_handoff);
+    assert_eq!(owner.voter.file_bytes(), wal_bytes);
+    assert_eq!(owner.outbound().unwrap(), outbound);
+    assert_eq!(quota.usage().unwrap().total_bytes(), used_before_handoff);
+
     let before_decision_checks = owner
         .state
         .lock()
@@ -324,8 +362,8 @@ fn real_signed_bootstrap_begin_kind_and_alternate_qc_reopen_then_missing_or_corr
             .unwrap()
             .completed_application_checks
             .load(std::sync::atomic::Ordering::SeqCst),
-        before_decision_checks + 2,
-        "The genuine decision and full floor preflight both check Source/Life/Kind; same-call advance adds no third traversal"
+        before_decision_checks + 1,
+        "The genuine deciding check supplies this drive's exact floor result; floor and advance do not repeat its math"
     );
     let final_parent = owner.finalized_parent().unwrap().unwrap();
     let next = owner.context().unwrap().clone();
@@ -672,7 +710,9 @@ fn fresh_append_quota_refusal_publishes_nothing_and_retry_commits_exact_record()
 
 #[test]
 fn known_candidate_import_rechecks_genuine_kind_before_any_charge_or_publication() {
-    let (directory, quota, binding, mut owner) = install(8);
+    // Slot two elects this actual participant at round zero. Its private
+    // durable signer can therefore publish the real nondeciding proposal.
+    let (directory, quota, binding, mut owner) = install_with_signer(8, keys().remove(1));
     let f = fixture();
     let app = Application::new(f.descriptor.clone(), binding.journal_genesis()).unwrap();
     let ingress = owner.evidence_ingress().unwrap();
@@ -707,6 +747,35 @@ fn known_candidate_import_rechecks_genuine_kind_before_any_charge_or_publication
     };
     let candidate = import(&mut owner, &block);
     let context = owner.context().unwrap().clone();
+    // A successful NONDECIDING drive must not leave verification authority for
+    // the next command. The genuine durable signer owns the elected key.
+    assert_eq!(
+        context.proposer(0).unwrap(),
+        keys().remove(1).verifying_key().to_bytes()
+    );
+    let actions = owner.propose(&candidate).unwrap();
+    assert!(
+        actions
+            .iter()
+            .any(|action| matches!(action, Action::Proposal(_)))
+    );
+    assert!(
+        !actions
+            .iter()
+            .any(|action| matches!(action, Action::Decided(_)))
+    );
+    assert!(
+        owner
+            .state
+            .lock()
+            .unwrap()
+            .handoff
+            .active
+            .lock()
+            .unwrap()
+            .is_none()
+    );
+    let genuine_qc = checkpoint(&owner, &candidate, 0, 0);
     let snapshot = |owner: &DurableJointFinality| {
         let state = owner.state.lock().unwrap();
         (
@@ -728,6 +797,27 @@ fn known_candidate_import_rechecks_genuine_kind_before_any_charge_or_publication
     let at = corrupt.len() - 1;
     corrupt[at] ^= 1;
     fs::write(&path, corrupt).unwrap();
+    let voter_bytes = owner.voter.file_bytes();
+    let outbound = owner.outbound().unwrap();
+    assert!(matches!(
+        owner.receive_checkpoint(&genuine_qc),
+        Err(Error::Consensus(
+            work_finality::consensus::Error::ApplicationRejected
+        ))
+    ));
+    assert_eq!(owner.voter.file_bytes(), voter_bytes);
+    assert_eq!(owner.outbound().unwrap(), outbound);
+    assert!(
+        owner
+            .state
+            .lock()
+            .unwrap()
+            .handoff
+            .active
+            .lock()
+            .unwrap()
+            .is_none()
+    );
     assert!(matches!(
         owner.import_candidate(block.header().clone(), block.body()),
         Err(Error::Journal(
@@ -748,11 +838,33 @@ fn known_candidate_import_rechecks_genuine_kind_before_any_charge_or_publication
     let quota =
         ParticipantQuota::open_existing(directory.root(), f.descriptor.id(), CAPACITY).unwrap();
     let reopened =
-        DurableJointFinality::open_participant(&quota, binding, keys().remove(0)).unwrap();
+        DurableJointFinality::open_participant(&quota, binding, keys().remove(1)).unwrap();
     assert_eq!(reopened.context().unwrap(), &context);
     assert_eq!(
         reopened.finalized_parent().unwrap().unwrap().head(),
         first.head()
     );
     assert_eq!(snapshot(&reopened), before);
+}
+
+#[test]
+fn drive_frame_is_one_use_and_cleared_on_drop_unwind_or_reentrant_refusal() {
+    let channel = DriveHandoff::default();
+    {
+        let capture = channel.begin([0x31; 32]).unwrap();
+        assert!(matches!(channel.begin([0x32; 32]), Err(Error::Poisoned)));
+        assert!(
+            matches!(capture.take(), Err(Error::Context)),
+            "an empty frame is no acceptance"
+        );
+    }
+    assert!(channel.active.lock().unwrap().is_none());
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _capture = channel.begin([0x33; 32]).unwrap();
+        panic!("PUBLIC test unwind before any application verification");
+    }));
+    assert!(result.is_err());
+    assert!(channel.active.lock().unwrap().is_none());
+    let capture = channel.begin([0x34; 32]).unwrap();
+    assert!(matches!(capture.take(), Err(Error::Context)));
 }

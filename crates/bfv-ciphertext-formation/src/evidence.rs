@@ -116,6 +116,39 @@ pub fn verify(
     p: &Prerequisites<'_>,
     bytes: &[u8],
 ) -> Result<VerifiedFormation, Error> {
+    let noise = checked_noise(full_setup_id, expected, bytes)?;
+    verify_inputs(full_setup_id, expected, p)?;
+    verify_child(full_setup_id, expected, noise, bytes)
+}
+/// Verify the real Formation child using exactly five previously checked Basis
+/// components from ONE borrowed transform scope. Full public claims, canonical
+/// parameters/ciphertext, q, basis order and ALL33 still match through Expected.
+/// Raw standalone `verify` retains its complete Key/five-Basis proof checks.
+pub fn verify_scoped(
+    full_setup_id: [u8; 32],
+    expected: &Expected,
+    bases: [&bfv_basis_convolution::ScopedBasis<'_>; 5],
+    bytes: &[u8],
+) -> Result<VerifiedFormation, Error> {
+    let noise = checked_noise(full_setup_id, expected, bytes)?;
+    expected.validate()?;
+    for (actual, wanted) in bases.iter().zip(expected.bases()) {
+        actual.require_same_scope(bases[0])?;
+        if actual.full_setup_id() != full_setup_id {
+            return Err(Error::Shape);
+        }
+        actual.statement().require_expected(&wanted.expected)?;
+        if actual.statement().public_values() != wanted.public_values() {
+            return Err(Error::Shape);
+        }
+    }
+    verify_child(full_setup_id, expected, noise, bytes)
+}
+fn checked_noise(
+    full_setup_id: [u8; 32],
+    expected: &Expected,
+    bytes: &[u8],
+) -> Result<[Val; 4], Error> {
     if bytes.len() < HEADER_BYTES || bytes.len() > HEADER_BYTES + MAX_PROOF_BYTES {
         return Err(Error::Shape);
     }
@@ -128,7 +161,14 @@ pub fn verify(
     {
         return Err(Error::Shape);
     }
-    verify_inputs(full_setup_id, expected, p)?;
+    Ok(noise)
+}
+fn verify_child(
+    full_setup_id: [u8; 32],
+    expected: &Expected,
+    noise: [Val; 4],
+    bytes: &[u8],
+) -> Result<VerifiedFormation, Error> {
     let statement = Statement {
         expected: expected.clone(),
         full_setup_id,

@@ -386,3 +386,54 @@ the same owning APIs. All seven Joint cases passed the release native gate on
 core consensus cases and three ownership compile-fail checks also passed. Earlier
 records remain pinned to their original source. These cases establish no new SQL,
 current lease, whole-query latency or RAM guarantee.
+
+## Private floor handoff
+
+The owning genuine proof/failure checks passed as recorded in the
+[validation](../../../../docs/joint-query-fast-path-validation.md). This changes only
+the closed durable Joint adapter and its owning tests. The preceding native record measured
+the earlier implementation with two full application traversals at a newly
+decided command. The same validation record now includes the affected successful
+seven-process gate and qualified combined before/after measurements.
+
+One synchronous `DurableJointFinality::drive` owns a private RAII frame. The
+fixed `ClosedJointApplication` always runs the complete genuine verifier before
+depositing fixed metadata: binding, full candidate bytes, Context, full parent
+and ancestry floor, checked head and Control. There is no lookup that skips a
+proof check. No proof buffers, SDK state, decrypted result or serialized success
+flag is retained. A nondeciding command, error or unwind clears the frame;
+reentrant registration fails. Nothing is reused by another drive or restart.
+
+Only the SAME command's actual fsynced `FreshDecision` can consume that frame
+for floor work. The private one-use result is checked against the current
+binding/Context, whole candidate, full parent/floor/head, stored Header, bounded
+Body hash, owner signature, derived Control and validated shards. Actual QC,
+semantic successor and history bounds remain mandatory. The resulting
+`PreparedFinalization` holds the exclusive State borrow across floor fsync and
+installation. Signer advance follows exactly as before, and no actions escape
+until all durable work succeeds. Uncertain I/O keeps the existing conservative
+charge and poisoned-owner recovery behavior.
+
+The State mutex is released between the original verification and floor
+preflight: retaining it through the Voter callback would deadlock. The exclusive
+mutable owner borrow and private State/Arc ownership prevent intervening state
+mutation. The SAME concrete depot/gate remain in use, and ingress adds immutable
+public blobs only. No network operation occurs inside a State/store guard.
+
+Ordinary import, historical retries, public History paths and recovery retain
+their original full verification. Every full reopen still replays the Journal,
+all floor records and the original signer WAL, including genuine application
+checks. The frame is never reconstructed from disk, a QC, an AEAD record or a
+supplied receipt. Work consensus APIs, wire/profile/caps and quorum rules are
+unchanged.
+
+The existing genuine Source/Life/Kind case now also rejects a mismatched fresh
+frame without floor/WAL publication and consumes its one-use result on failure.
+The known-candidate case runs a genuine nondeciding proposal, corrupts its
+actual Kind blob, then requires the deciding QC to fail without new actions or
+WAL/floor advancement. A cheap ownership test covers empty frames, reentrance
+and unwind cleanup. Existing floor-sync loss, torn-floor, advance-refusal,
+quota and strict-reopen cases remain required. The owning native cases and
+affected actual four-validator/FHE Acquire gate passed. Its combined timing does
+not isolate this handoff's contribution, establish a fresh SQL grant or provide
+a current lease.

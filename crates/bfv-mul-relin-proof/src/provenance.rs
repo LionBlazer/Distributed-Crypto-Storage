@@ -5,7 +5,7 @@
 //! nor this composition proves that the public relinearization key uses the same
 //! secret, supplies a fresh agreed head, or authorizes SQL admission.
 use crate::Error;
-use bfv_ciphertext_formation::{EncodedCommitment, Expected as FormationExpected, Prerequisites};
+use bfv_ciphertext_formation::{EncodedCommitment, Expected as FormationExpected};
 use bfv_query_core::{BfvKeyAnchor, PublicSetup};
 use p3_field::PrimeField64;
 use registry200_proof::coefficient_encoding::{
@@ -308,8 +308,7 @@ impl Provenance {
             .relinearization_material()
             .map_err(|_| Error::InputVerification)?;
         for (operand, encoding) in encodings.iter().enumerate() {
-            let bases =
-                self.verify_bases(operand, material.parameters(), key.statement(), evidence)?;
+            let bases = self.verify_bases(operand, material.parameters(), &key, evidence)?;
             let commitment = EncodedCommitment::new(
                 encoding.producer_identity(),
                 encoding
@@ -319,19 +318,18 @@ impl Provenance {
                 encoding.encoded.map(|v| v.as_canonical_u64()),
             )
             .map_err(|_| Error::InputVerification)?;
-            let expected =
-                FormationExpected::new(commitment, bases).map_err(|_| Error::InputVerification)?;
-            let parents = Prerequisites {
-                key: evidence.key,
-                bases: evidence.bases[operand],
-            };
-            // Formation's existing public verifier genuinely verifies the Key
-            // and ordered five Basis proofs again. No earlier receipt replaces
-            // those prerequisite bytes or supplies an alternate private opening.
-            let _ = bfv_ciphertext_formation::verify(
+            let expected = FormationExpected::new(
+                commitment,
+                core::array::from_fn(|i| bases[i].statement().clone()),
+            )
+            .map_err(|_| Error::InputVerification)?;
+            // These actual child results borrow THIS call's freshly verified
+            // transform. Formation checks all five complete statements before
+            // its real child verification; no external capability is accepted.
+            let _ = bfv_ciphertext_formation::verify_scoped(
                 self.anchor.full_setup_id(),
                 &expected,
-                &parents,
+                bases.each_ref(),
                 evidence.formations[operand],
             )
             .map_err(|_| Error::InputVerification)?;
@@ -355,30 +353,30 @@ impl Provenance {
         Ok(actual.clone())
     }
 
-    fn verify_bases(
+    fn verify_bases<'key>(
         &self,
         operand: usize,
         parameters: &[u8],
-        key: &bfv_key_transform::Statement,
+        key: &'key bfv_key_transform::VerifiedTransform,
         evidence: &InputEvidence<'_>,
-    ) -> Result<[bfv_basis_convolution::Statement; 5], Error> {
+    ) -> Result<[bfv_basis_convolution::ScopedBasis<'key>; 5], Error> {
         // This holds five PUBLIC statements and canonical ciphertext rows, not
         // decoded proofs, PCS data or a new aggregate evidence buffer. Each
         // verification finishes before the next Expected/backend is constructed.
         let mut statements = Vec::with_capacity(5);
         for (basis, bytes) in evidence.bases[operand].iter().enumerate() {
             let expected = bfv_basis_convolution::Expected::new(
-                key.clone(),
+                key.statement().clone(),
                 parameters,
                 &self.ciphertexts[operand],
                 self.query(),
                 basis,
             )
             .map_err(|_| Error::InputVerification)?;
-            let checked = bfv_basis_convolution::verify(
+            let checked = bfv_basis_convolution::verify_scoped(
                 self.anchor.full_setup_id(),
+                key,
                 &expected,
-                evidence.key,
                 bytes,
             )
             .map_err(|_| Error::InputVerification)?;
@@ -386,7 +384,7 @@ impl Provenance {
                 .statement()
                 .require_expected(&expected)
                 .map_err(|_| Error::InputVerification)?;
-            statements.push(checked.statement().clone());
+            statements.push(checked);
         }
         statements.try_into().map_err(|_| Error::InputVerification)
     }
@@ -396,3 +394,7 @@ fn feed_bytes(h: &mut Sha512, bytes: &[u8]) {
     h.update((bytes.len() as u64).to_le_bytes());
     h.update(bytes);
 }
+
+#[cfg(test)]
+#[path = "input_prerequisites_tests.rs"]
+mod input_prerequisites_tests;

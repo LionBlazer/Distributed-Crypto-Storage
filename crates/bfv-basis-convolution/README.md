@@ -38,9 +38,24 @@ requires the individual fixed-suite floor, proves and genuinely self-verifies, t
 encodes one bounded component. `verify` repeats actual Key verification under exact
 Expected. `PublicInput` plus `verify_with_key` is the compound path: verify the Key
 once under independently pinned KeyExpected, derive the full Key statement, then
-privately check the fixed Basis component. No public unchecked or receipt/token
-path skips that prerequisite. A `VerifiedBasis` checks only one mathematical
+privately check the fixed Basis component. Those standalone paths always verify
+the supplied prerequisite bytes. A `VerifiedBasis` checks only one mathematical
 component; it carries no Owner authority, complete-five admission or freshness.
+
+`verify_scoped(full_setup_id, &VerifiedTransform, &Expected, bytes)` verifies the
+actual Basis child after matching the borrowed genuine transform's full setup
+label and ALL33 against the complete Expected. Its opaque `ScopedBasis` borrows
+that exact transform instance, retains the checked full statement, and cannot
+outlive the transform or be constructed from claims. `require_same_scope` rejects
+mixing components borrowed from distinct transform objects, even if their public
+claims agree. The caller still owns setup provenance and fresh-call policy:
+the closed MulRelin input verifier creates its own fresh transform on every call
+and accepts no caller-supplied capability. No SDK proof/backend is retained by
+these mathematical results. The old raw-evidence verifiers are unchanged.
+
+The genuine Input16 gate and both ownership compile-fail examples passed native
+checks. See the [validation record](../../docs/joint-query-fast-path-validation.md).
+Whole-operation speedup remains unmeasured for this revision.
 
 The new DCSBCP01 header is 308 bytes: magic8/profile32/full-setup-label32/unchanged
 descriptor68/Cs32/CsHat32/request32/canonical-public-input-binding32/basis4/result32/

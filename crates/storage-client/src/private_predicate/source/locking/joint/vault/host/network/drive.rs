@@ -1,6 +1,8 @@
 //! One concrete private phase engine. Durable pending always keeps its original intent.
 use super::*;
 use bfv_mul_relin_proof::InputEvidence;
+#[path = "live.rs"]
+mod live;
 
 impl JointSqlNetworkHost {
     pub(super) fn drive(
@@ -58,6 +60,9 @@ impl JointSqlNetworkHost {
             }
             Some(JointSqlPreparation::ExistingPending(_)) | None => {}
             Some(_) => return Err(OwnerVaultError::Phase.into()),
+        }
+        if call.verb == Verb::Acquire && self.host.phase()? == OwnerVaultPhase::Idle {
+            return live::execute(self, call, sql, input, operation);
         }
         if matches!(
             self.host.phase()?,

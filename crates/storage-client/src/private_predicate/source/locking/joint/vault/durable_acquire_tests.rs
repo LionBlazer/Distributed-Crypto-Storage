@@ -3,6 +3,8 @@
 use super::*;
 #[path = "host/tests.rs"]
 mod host_tests;
+#[path = "acquire_live_tests.rs"]
+mod live_tests;
 #[path = "acquire_run_tests.rs"]
 mod run_tests;
 use crate::private_predicate::{EncryptedSourceState, SourceStateAuthority, SourceStateIdentity};

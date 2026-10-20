@@ -10,6 +10,7 @@ the legacy Session guards, or claim a general SQL implementation.
 | --- | --- |
 | [Host](../mod.rs) | Exact logical client/call identity, existing supported statement parser, shared bank and prepaid ACK |
 | [Drive](drive.rs) | Original Compute/catalog/Body continuation and actual private completion |
+| [Live execution](live.rs) | Private same-execute original banks and genuine recorded stream; no exported or persisted proof receipt |
 | [Signing](sign.rs) | Owned database signer and bounded mining against the real historical Journal |
 | [RPC scheduler](upload.rs) | Bounded fixed-role uploads, exact candidate submissions and independent QC checking |
 | [Vault](../../durable.rs) | Existing exclusive phase/WAL/CAS/fsync, retained exact bytes and terminal quota |
@@ -64,8 +65,9 @@ For a new Control operation the Host produces genuine Source/Lifecycle/Kind.
 For Acquire it first fsyncs the original Compute/capsule/input inventory, then
 passes those original inputs to the real FHE peer using the SAME shared recorder
 store. The existing RPC must complete genuine input16/output118, END and clean
-EOF. Its heavy checked output and borrowed frames are dropped before the Host's
-mandatory fresh catalog replay. A catalog-only restart uses `acquire_draft`;
+EOF. A NEW Idle Acquire uses the private same-execute continuation described
+below; existing pending/default/recovery paths retain their full fresh catalog
+replay. A catalog-only restart uses `acquire_draft`;
 it does not re-encrypt, re-prove, choose new salts or rerun FHE.
 
 The runner signs the actual fixed request/manifest and deterministic control-shard
@@ -144,3 +146,85 @@ The [validation record](../../../../../../../../../../docs/joint-sql-network-val
 pins the source, logs, resource observations and remaining boundaries. This is
 not interactive latency, a comparable speedup, a whole-process RAM guarantee or
 a complete SQL implementation.
+
+## One-blob transport turns
+
+Within one immutable network Round, the scheduler parses the signed Body's
+bounded manifest/catalog metadata once and retains only selectors, blob IDs and
+caps. Each peer owns a volatile next-upload ordinal. A successful actual PUT
+advances that ordinal; BUSY retries the same current blob without retransmitting
+its successful prefix. Lost ACK advances nothing. Existing terminal transport,
+rejection and foreign-QC classification remains unchanged; a later Round starts
+with new transport bookkeeping and still checks the original durable intent.
+
+Each claimed turn performs one original-submit observation, one bounded blob PUT,
+one full candidate submit, or one checkpoint RPC. A saved original is observed
+at most once per peer/Round before its first upload, independently of the
+response. No ACK or remembered ordinal grants proof, freshness or SQL authority.
+Successful turns yield immediately to the common queue; the existing 50 ms
+backoff applies only when no progress was made. Three workers and one bounded
+blob buffer per worker remain the limits. Cancellation is checked before and
+after each step and after a local blob read before its RPC.
+
+The concrete production adapter still invokes the original Joint client PUT
+authorization/hash/retention protocol and full server admission. Every returned
+checkpoint remains untrusted until the unchanged exact-context/candidate and
+weighted-signature check. All workers still cancel/join after one valid QC.
+No timeout, proof profile, native gate, public verifier API or wire is changed.
+
+Four new source tests exercise the private ordinary-I/O scheduling boundary over
+real bounded framed TCP exchanges: late BUSY preserves the successful prefix and
+original-submit count; the fourth peer receives I/O while an earlier peer still
+has a large upload tail; lost ACK does not advance and keeps terminal failure
+classification; and cancellation during checkpoint I/O discards even a genuine
+weighted QC and prevents another call. These explicit untrusted response scripts
+are not a Joint server, TLS authorization, computation proof or SQL success test.
+The existing genuine weighted-QC isolation test remains unchanged.
+The six owning scheduler/transport cases, including these four additions, passed
+native validation. The affected full Driver/FHE gate also passed as recorded in
+the [combined validation](../../../../../../../../../../docs/joint-query-fast-path-validation.md).
+Its complete before/after measurements do not isolate the scheduler's effect or
+establish a whole-process memory improvement.
+
+
+## Private fresh-live continuation
+
+Only a new Idle Acquire within one `execute` uses `live.rs`. Its private
+move-only owner borrows the WHOLE concrete driver and retains the actual
+original BFV Owner, pending request and private candidates across that call.
+It invokes the existing recorder itself with those exact original inputs and
+the SAME Host ingress/store. It accepts no supplied store, verifier, callback,
+success flag or serialized receipt. Compute, Catalog, Body and Completed still
+use the existing reserved WAL writer and fsync/poison behavior.
+
+The actual Source/query/Lifecycle/PredicateAcquire proof composition is checked
+before streaming. The recorder independently checks all input16/output118 and
+END/EOF before publishing its catalog. The private Catalog step consumes that
+actual result, checks the fixed original Inventory roles, original setup chunks
+and full SHA256/SHA512, graph/response association, and hash/extent/EOF of EVERY
+retained reference plus Life/Link. It removes only a redundant Catalog output118
+replay and private Owner/Ready/capsule reconstructions during this live call.
+The complete existing `check_acquire_candidate` before Body fsync and fresh
+`apply_acquire` with QC/lineage/application/private Result and successor checks
+remain mandatory. No checked stream is passed to those verifiers.
+
+Frames are released immediately after the stream; the live owner retains no
+input proof collection or output proof records. It keeps only original guarded
+private objects and bounded public expectation/response temporaries. A native
+permit spans native work, never ordinary quorum RPCs; completion reacquires
+the SAME gate. Every yield, cancellation or error drops the live owner, leaving
+the actual durable phase for unchanged full recovery. Shared poison and WAL
+position checks remain active even though Rust prevents another Host mutation.
+No replay authority survives a return, restart, consumed response or new call.
+
+The added owning test performs genuine input16/Source/Life/Link and a live-bank
+drop followed by exact full Compute reopen. It also rejects malformed catalog
+metadata, stale CAS and a wrong recovery authority while preserving cursor,
+WAL extent and quota; it fabricates no CheckedProduct or valid catalog. It
+supplies no output118 or QC success. That owning drop/reopen test passed native
+validation. The fresh-live positive path subsequently passed the affected genuine
+FHE/validator Driver gate in the same combined validation, including original
+recovery behavior and resource observations. Earlier native records above remain
+pinned to their preceding source. The combined timing does not isolate this
+continuation's contribution, establish a memory improvement, or supply a new
+current lease or SQL capability.

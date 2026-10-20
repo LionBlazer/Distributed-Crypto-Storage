@@ -388,6 +388,7 @@ dependencies = [
  "bfv-relinearization-multilinear-proof",
  "bfv-scale-circuit",
  "bfv-tensor-circuit",
+ "compact-store",
  "fhe",
  "fhe-traits",
  "p3-field",

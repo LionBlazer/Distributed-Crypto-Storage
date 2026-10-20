@@ -3,6 +3,7 @@
 //! is the caller-configured pinned Endpoint; no private owner witness is sent.
 use super::*;
 use peer_runtime::finality::ProofBlobSelector;
+use protocol_storage::BlobId;
 use registry200_joint::{JointEvidenceIngress, Lane, Manifest, ManifestRole};
 use std::sync::{
     atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
@@ -30,63 +31,89 @@ where
 {
     result.map_err(|error| PeerFailure::Local(error.into()))
 }
-fn upload(
-    client: &JointFinalityClient,
-    block: &CandidateBlock,
-    ingress: &JointEvidenceIngress,
-    binding: &JointBinding,
-) -> PeerResult<()> {
-    let Body::Transition(body) = local(Body::decode(
-        block.body(),
-        &binding.journal_genesis().profile,
-    ))?
-    else {
-        return Err(PeerFailure::Local(
-            io::Error::new(io::ErrorKind::InvalidData, "Owner transition required").into(),
-        ));
-    };
-    let manifest = local(Manifest::decode(&body.proof))?;
-    for reference in manifest.references() {
-        let bytes = local(ingress.read_public_blob(reference.blob_id(), reference.byte_cap()))?;
-        let ordinal = reference
-            .ordinal()
-            .try_into()
-            .map_err(|_| PeerFailure::Local(JointSqlNetworkError::Configuration))?;
-        let selector = local(ProofBlobSelector::manifest(ordinal))?;
-        client
-            .put_proof_blob(block, selector, reference.blob_id(), &bytes)
-            .map_err(PeerFailure::Remote)?;
-    }
-    if manifest.lane() == Lane::Acquire {
-        let id = manifest
-            .references()
-            .find(|r| r.role() == ManifestRole::ProductCatalog)
-            .ok_or_else(|| {
-                PeerFailure::Local(
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "Acquire catalog reference missing",
-                    )
-                    .into(),
-                )
-            })?
-            .blob_id();
-        let catalog = bfv_product_evidence::CatalogId::from_blob(id).map_err(|e| {
-            PeerFailure::Local(io::Error::new(io::ErrorKind::InvalidData, e.to_string()).into())
-        })?;
-        let claim = local(ingress.catalog_claim(catalog))?;
-        for reference in claim.references() {
-            let bytes = local(ingress.read_public_blob(reference.blob_id(), reference.byte_cap()))?;
-            let selector = local(ProofBlobSelector::catalog(
-                reference.role(),
-                reference.ordinal(),
-            ))?;
-            client
-                .put_proof_blob(block, selector, reference.blob_id(), &bytes)
-                .map_err(PeerFailure::Remote)?;
+struct UploadPart {
+    selector: ProofBlobSelector,
+    id: BlobId,
+    cap: usize,
+}
+struct UploadPlan {
+    parts: Vec<UploadPart>,
+}
+impl UploadPlan {
+    // One bounded metadata plan per immutable Round. No proof bytes or success
+    // result are cached; each actual turn reads only its one current blob.
+    fn new(
+        block: &CandidateBlock,
+        ingress: &JointEvidenceIngress,
+        binding: &JointBinding,
+    ) -> PeerResult<Self> {
+        let Body::Transition(body) = local(Body::decode(
+            block.body(),
+            &binding.journal_genesis().profile,
+        ))?
+        else {
+            return Err(PeerFailure::Local(
+                io::Error::new(io::ErrorKind::InvalidData, "Owner transition required").into(),
+            ));
+        };
+        let manifest = local(Manifest::decode(&body.proof))?;
+        let mut parts = Vec::new();
+        for reference in manifest.references() {
+            let ordinal = reference
+                .ordinal()
+                .try_into()
+                .map_err(|_| PeerFailure::Local(JointSqlNetworkError::Configuration))?;
+            parts.push(UploadPart {
+                selector: local(ProofBlobSelector::manifest(ordinal))?,
+                id: reference.blob_id(),
+                cap: reference.byte_cap(),
+            });
         }
+        if manifest.lane() == Lane::Acquire {
+            let id = manifest
+                .references()
+                .find(|r| r.role() == ManifestRole::ProductCatalog)
+                .ok_or_else(|| {
+                    PeerFailure::Local(
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "Acquire catalog reference missing",
+                        )
+                        .into(),
+                    )
+                })?
+                .blob_id();
+            let catalog = bfv_product_evidence::CatalogId::from_blob(id).map_err(|e| {
+                PeerFailure::Local(io::Error::new(io::ErrorKind::InvalidData, e.to_string()).into())
+            })?;
+            let claim = local(ingress.catalog_claim(catalog))?;
+            for reference in claim.references() {
+                parts.push(UploadPart {
+                    selector: local(ProofBlobSelector::catalog(
+                        reference.role(),
+                        reference.ordinal(),
+                    ))?,
+                    id: reference.blob_id(),
+                    cap: reference.byte_cap(),
+                });
+            }
+        }
+        Ok(Self { parts })
     }
-    Ok(())
+}
+
+// Private ordinary-I/O scheduling only. A returned checkpoint is UNVERIFIED;
+// Round::observed_checkpoint remains the mandatory concrete weighted-QC check.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PeerAction {
+    Original,
+    Blob(usize),
+    Submit,
+    Checkpoint,
+}
+enum StepReply {
+    Stopped,
+    Completed(Option<Box<JointCheckpoint>>),
 }
 pub(super) fn require_checkpoint(
     binding: &JointBinding,
@@ -121,6 +148,75 @@ fn require_expected(
 struct PeerProgress {
     busy: AtomicBool,
     stage: AtomicU8,
+    ordinal: AtomicUsize,
+    original_attempted: AtomicBool,
+}
+impl PeerProgress {
+    fn position(&self) -> (u8, usize, bool) {
+        (
+            self.stage.load(Ordering::Acquire),
+            self.ordinal.load(Ordering::Acquire),
+            self.original_attempted.load(Ordering::Acquire),
+        )
+    }
+    fn perform(
+        &self,
+        order: &SubmissionOrder,
+        parts: usize,
+        active: impl Fn() -> bool,
+        mut call: impl FnMut(PeerAction) -> PeerResult<StepReply>,
+    ) -> PeerResult<Option<JointCheckpoint>> {
+        if !active() {
+            return Ok(None);
+        }
+        let action = match self.stage.load(Ordering::Acquire) {
+            0 => {
+                if matches!(order, SubmissionOrder::SavedOriginal)
+                    && !self.original_attempted.swap(true, Ordering::AcqRel)
+                {
+                    PeerAction::Original
+                } else {
+                    let ordinal = self.ordinal.load(Ordering::Acquire);
+                    if ordinal == parts {
+                        self.stage.store(1, Ordering::Release);
+                        return Ok(None);
+                    }
+                    PeerAction::Blob(ordinal)
+                }
+            }
+            1 => PeerAction::Submit,
+            2 => PeerAction::Checkpoint,
+            _ => return Ok(None),
+        };
+        let result = call(action);
+        let reply = if action == PeerAction::Original {
+            // Exact original observation happens at most once per peer/Round.
+            // Neither ACK nor rejection authorizes a proof or a changed intent.
+            let _ = result;
+            StepReply::Completed(None)
+        } else {
+            result?
+        };
+        let StepReply::Completed(checkpoint) = reply else {
+            return Ok(None);
+        };
+        match action {
+            PeerAction::Blob(ordinal) => {
+                // Advance only after the actual current PUT returned success.
+                // BUSY/lost ACK leaves this exact ordinal unchanged.
+                self.ordinal.store(ordinal + 1, Ordering::Release);
+                if ordinal + 1 == parts {
+                    self.stage.store(1, Ordering::Release);
+                }
+            }
+            PeerAction::Submit => self.stage.store(2, Ordering::Release),
+            PeerAction::Original | PeerAction::Checkpoint => {}
+        }
+        if !active() {
+            return Ok(None);
+        }
+        Ok(checkpoint.map(|checkpoint| *checkpoint))
+    }
 }
 struct Scheduler {
     next: AtomicUsize,
@@ -170,6 +266,7 @@ struct Round<'a> {
     binding: &'a JointBinding,
     context: &'a Context,
     order: &'a SubmissionOrder,
+    plan: &'a UploadPlan,
     scheduler: &'a Scheduler,
 }
 struct WorkerExit<'a> {
@@ -199,10 +296,15 @@ impl Round<'_> {
             };
             let progress = &self.scheduler.peers[index];
             let client = &self.operation.clients[index];
+            let before = progress.position();
             if let Some(qc) = observe_peer(progress, self.turn(client, progress))? {
                 return Ok(Some(qc));
             }
-            thread::park_timeout(Duration::from_millis(50));
+            if progress.position() == before {
+                // Successful one-blob/stage turns yield immediately. Retain the
+                // existing backoff only for BUSY or a checkpoint not yet present.
+                thread::park_timeout(Duration::from_millis(50));
+            }
         }
         Ok(None)
     }
@@ -211,38 +313,48 @@ impl Round<'_> {
         client: &JointFinalityClient,
         progress: &PeerProgress,
     ) -> PeerResult<Option<JointCheckpoint>> {
-        let stage = progress.stage.load(Ordering::Acquire);
-        if stage == 0 {
-            if matches!(self.order, SubmissionOrder::SavedOriginal) {
-                // Fixed recovery sequence: observe the exact original submit
-                // FIRST, independently of its result. No rejection is classified
-                // as a missing-proof claim or accepted as permission. The SAME
-                // authorized public references are then staged, and admission
-                // is attempted again with unchanged full server verification.
-                let _ = client.submit(self.block);
-                if self.operation.check().is_err() {
-                    return Ok(None);
+        let checkpoint = progress.perform(
+            self.order,
+            self.plan.parts.len(),
+            || self.operation.check().is_ok(),
+            |action| match action {
+                PeerAction::Original | PeerAction::Submit => {
+                    client.submit(self.block).map_err(PeerFailure::Remote)?;
+                    Ok(StepReply::Completed(None))
                 }
-            }
-            upload(client, self.block, self.ingress, self.binding)?;
-            progress.stage.store(1, Ordering::Release);
-        }
+                PeerAction::Blob(ordinal) => {
+                    let part = self
+                        .plan
+                        .parts
+                        .get(ordinal)
+                        .ok_or(PeerFailure::Local(JointSqlNetworkError::Configuration))?;
+                    let bytes = local(self.ingress.read_public_blob(part.id, part.cap))?;
+                    if self.operation.check().is_err() {
+                        return Ok(StepReply::Stopped);
+                    }
+                    client
+                        .put_proof_blob(self.block, part.selector, part.id, &bytes)
+                        .map_err(PeerFailure::Remote)?;
+                    Ok(StepReply::Completed(None))
+                }
+                PeerAction::Checkpoint => {
+                    let slot = self
+                        .context
+                        .slot()
+                        .checked_sub(1)
+                        .ok_or(PeerFailure::Local(JointSqlNetworkError::Configuration))?;
+                    client
+                        .checkpoint_after(slot)
+                        .map(|checkpoint| StepReply::Completed(checkpoint.map(Box::new)))
+                        .map_err(PeerFailure::Remote)
+                }
+            },
+        )?;
+        let result = self.observed_checkpoint(Ok(checkpoint));
         if self.operation.check().is_err() {
             return Ok(None);
         }
-        if progress.stage.load(Ordering::Acquire) == 1 {
-            client.submit(self.block).map_err(PeerFailure::Remote)?;
-            progress.stage.store(2, Ordering::Release);
-        }
-        if self.operation.check().is_err() {
-            return Ok(None);
-        }
-        let slot = self
-            .context
-            .slot()
-            .checked_sub(1)
-            .ok_or(PeerFailure::Local(JointSqlNetworkError::Configuration))?;
-        self.observed_checkpoint(client.checkpoint_after(slot))
+        result
     }
     fn observed_checkpoint(
         &self,
@@ -273,6 +385,10 @@ impl JointSqlNetworkHost {
         let binding = self.host.vault.pins.binding.clone();
         let context = self.host.vault.history.context()?.clone();
         let ingress = self.host.evidence_ingress()?;
+        let plan = UploadPlan::new(block, &ingress, &binding).map_err(|failure| match failure {
+            PeerFailure::Local(error) => error,
+            PeerFailure::Remote(error) => error.into(),
+        })?;
         let count = operation.clients.len().min(LANES);
         let scheduler = Scheduler {
             next: AtomicUsize::new(self.next_peer),
@@ -281,6 +397,8 @@ impl JointSqlNetworkHost {
                 .map(|_| PeerProgress {
                     busy: AtomicBool::new(false),
                     stage: AtomicU8::new(0),
+                    ordinal: AtomicUsize::new(0),
+                    original_attempted: AtomicBool::new(false),
                 })
                 .collect(),
         };
@@ -292,6 +410,7 @@ impl JointSqlNetworkHost {
             binding: &binding,
             context: &context,
             order: &order,
+            plan: &plan,
             scheduler: &scheduler,
         };
         // At most three scoped workers, one bounded public blob each (32 MiB).
