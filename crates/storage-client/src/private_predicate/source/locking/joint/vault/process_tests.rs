@@ -43,6 +43,8 @@ use work_finality::{
     consensus::{Context, MAX_RECORD_BYTES, Rules},
 };
 
+#[path = "acquire_process_tests.rs"]
+mod acquire;
 #[path = "process_worker.rs"]
 mod process_worker;
 
@@ -220,8 +222,19 @@ fn persist(
     let id: [u8; 32] =
         Sha256::digest([b"DCS/test-owner-restart-custody/v1".as_slice(), &[role]].concat()).into();
     let path = quota.control_file(id, ControlFile::Metadata);
+    write_custody(quota, &path, bytes)?;
+    inventory.files.push(Pin {
+        role,
+        bytes: bytes.len() as u64,
+        sha256: Sha256::digest(bytes).into(),
+    });
+    Ok(())
+}
+// One actual writer shared by both closed test inventories. Each caller first
+// enforces its own fixed role/cap; no serializer, bank or proof authority here.
+fn write_custody(quota: &ParticipantQuota, path: &Path, bytes: &[u8]) -> io::Result<()> {
     let budget = quota.control_budget();
-    let mut permit = checked(budget.preflight_file(&path, bytes.len() as u64))?;
+    let mut permit = checked(budget.preflight_file(path, bytes.len() as u64))?;
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -250,11 +263,6 @@ fn persist(
     drop(file);
     drop(charge);
     drop(permit);
-    inventory.files.push(Pin {
-        role,
-        bytes: bytes.len() as u64,
-        sha256: Sha256::digest(bytes).into(),
-    });
     Ok(())
 }
 #[derive(Serialize, Deserialize)]
@@ -278,10 +286,13 @@ struct Report {
 }
 fn report(value: &Report) -> io::Result<()> {
     let bytes = checked(serde_json::to_vec(value))?;
+    write_report(&bytes)
+}
+fn write_report(bytes: &[u8]) -> io::Result<()> {
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
     out.write_all(b"\nDCS-OWNER-PUBLIC-REPORT-01\n")?;
-    peer_transport::write_frame(&mut out, &bytes, PUBLIC_JSON)?;
+    peer_transport::write_frame(&mut out, bytes, PUBLIC_JSON)?;
     out.flush()
 }
 fn binding(inventory: &Inventory, root: &Path) -> io::Result<JointBinding> {

@@ -55,9 +55,43 @@ pub(crate) struct OwnerProcess {
     reports: mpsc::Receiver<io::Result<Vec<u8>>>,
     reader: Option<std::thread::JoinHandle<io::Result<()>>>,
 }
+enum OwnerAuthorityFrame {
+    Control,
+    Acquire,
+}
+impl OwnerAuthorityFrame {
+    fn bytes(&self) -> usize {
+        match self {
+            Self::Control => 128,
+            Self::Acquire => 160,
+        }
+    }
+}
 #[allow(dead_code)]
 impl OwnerProcess {
     pub(crate) fn start(executable: &Path, worker: &str, frames: [&[u8]; 5]) -> io::Result<Self> {
+        Self::start_owned(executable, worker, frames, OwnerAuthorityFrame::Control)
+    }
+    /// Distinct test-only bootstrap: Source/Core/Vault/signing/capsule authorities.
+    /// The old Control entry remains exactly 128 bytes, never an optional tail.
+    pub(crate) fn start_acquire(
+        executable: &Path,
+        worker: &str,
+        frames: [&[u8]; 5],
+    ) -> io::Result<Self> {
+        Self::start_owned(executable, worker, frames, OwnerAuthorityFrame::Acquire)
+    }
+    fn start_owned(
+        executable: &Path,
+        worker: &str,
+        frames: [&[u8]; 5],
+        authority: OwnerAuthorityFrame,
+    ) -> io::Result<Self> {
+        if frames[1].len() != authority.bytes() {
+            return Err(io::Error::other(
+                "Exact private owner authority frame required",
+            ));
+        }
         let mut command = Command::new(executable);
         command
             .args([
@@ -87,7 +121,7 @@ impl OwnerProcess {
         };
         for (bytes, cap) in frames.into_iter().zip([
             64 * 1024,
-            128,
+            authority.bytes(),
             64 * 1024,
             work_finality::MAX_GENESIS_BYTES,
             64 * 1024,

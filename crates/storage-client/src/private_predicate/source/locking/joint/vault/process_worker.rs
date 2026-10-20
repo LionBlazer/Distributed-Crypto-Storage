@@ -1,5 +1,10 @@
 //! Actual owner-only subprocess body. No serialized or inherited Rust capability.
 use super::*;
+#[path = "acquire_process_worker.rs"]
+mod acquire_worker;
+pub(super) fn run_acquire() -> io::Result<()> {
+    acquire_worker::run()
+}
 
 struct Authorities {
     source: SourceStateAuthority,

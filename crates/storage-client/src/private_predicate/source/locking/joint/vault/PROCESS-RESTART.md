@@ -94,3 +94,8 @@ public recovery files must still be available. This same-machine process test is
 not a power-loss theorem: Windows directory sync remains qualified by the storage
 contract. Only explicit owned secret buffers have zeroization guarantees; native
 SDK scratch, compiler temporaries and caller copies have none.
+
+The additive [durable Acquire process scenario](ACQUIRE-PROCESS.md) is a separate
+SOURCE ONLY / UNEXECUTED gate. It uses a distinct exact 160-byte private bootstrap
+and the same launcher; it does not change the validation status of this Control
+case.

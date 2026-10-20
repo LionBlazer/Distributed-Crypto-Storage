@@ -82,8 +82,10 @@ real new typed End closes that actual acquired bank at generation three.
 That case reopens Vault objects within the test process. Its QC is assembled by
 the genuine local fixture, not by four network validators. The separate Cold
 Control regression uses four actual validators and sequential owner A/B PIDs,
-but performs no FHE Acquire after restart. These passing gates do not establish
-their combined durable Acquire/owner-process/four-validator scenario. The older
+but performs no FHE Acquire after restart. These gates alone do not establish
+their combined durable Acquire/owner-process/four-validator scenario. The later
+[seven-process validation](joint-owner-acquire-process.md) records that separate
+combined gate on its own frozen source and executable. The older
 [full network Acquire gate](joint-owner-lifecycle.md) retains its separate source
 and evidence scope.
 
