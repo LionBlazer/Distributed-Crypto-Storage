@@ -60,39 +60,25 @@ impl ProductStore {
         reader.finish()?;
         Ok(out)
     }
-    pub(crate) fn check_setup(
+    pub(crate) fn hash_setup_part(
         &mut self,
-        ids: &[BlobId],
-        setup_len: u64,
-        provenance: &Provenance,
+        id: BlobId,
+        hash: &mut Sha512,
+        sha256: &mut Sha256,
+        count: &mut u64,
     ) -> Result<()> {
-        let mut hash = Sha512::new();
-        let mut sha256 = Sha256::new();
-        let mut count = 0u64;
         let mut buffer = [0; 64 * 1024];
-        for id in ids {
-            let mut reader = self.inner.reader(*id)?;
-            loop {
-                let n = reader.read(&mut buffer)?;
-                if n == 0 {
-                    break;
-                }
-                count = count.checked_add(n as u64).ok_or(Error::ResourceLimit)?;
-                hash.update(&buffer[..n]);
-                sha256.update(&buffer[..n]);
+        let mut reader = self.inner.reader(id)?;
+        loop {
+            let n = reader.read(&mut buffer)?;
+            if n == 0 {
+                break;
             }
-            reader.finish()?;
+            *count = count.checked_add(n as u64).ok_or(Error::ResourceLimit)?;
+            hash.update(&buffer[..n]);
+            sha256.update(&buffer[..n]);
         }
-        // Catalog decoding has already required the exact canonical one/two
-        // chunk extents. The complete streamed SHA512 and independent full ID
-        // bind original bytes AND their length; do not serialize another 64-MiB
-        // setup merely to recover a length already checked by that identity.
-        if count != setup_len
-            || <[u8; 64]>::from(hash.finalize()) != provenance.original_setup_digest()
-            || <[u8; 32]>::from(sha256.finalize()) != provenance.anchor().full_setup_id()
-        {
-            return Err(Error::Association);
-        }
+        reader.finish()?;
         Ok(())
     }
 }

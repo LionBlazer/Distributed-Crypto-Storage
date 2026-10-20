@@ -148,7 +148,49 @@ head, SQL completeness, writer right, FOR UPDATE/SKIP LOCKED or finality grant.
 Lifecycle/PredicateAcquireLink and a future closed JointApp require separate
 actual evidence and admission composition; they are not part of this catalog.
 
-## Executed validation
+## Shared store ownership
+
+`ProductStore::into_shared()` moves the existing exclusive store into one
+`SharedProductStore`. Cloning this owner opens no directory and creates no new
+budget, allowance or verification result. `RecordingVerifier::new_shared` and
+`SharedProductStore::replay` use the same private fixed verifier and replay engine
+as the existing exclusive APIs. The exclusive borrow remains a valid standalone
+ownership model.
+
+The shared owner exposes bounded owned-byte `read_public_blob`,
+`retain_public_blob` and `catalog_claim` operations. No mutex guard, reader,
+verification callback or unchecked acceptance flag is public. Each blob's
+read/hash/EOF or staged write/publication holds the private store lock; SDK
+decoding, native proof verification, network I/O, cancellation checks and stream
+END/EOF run outside it. Setup identity is still checked with streaming SHA256 and
+SHA512 before SDK use, without serializing another complete setup during replay.
+Filesystem I/O and sync may block; a short critical section is a lifetime boundary,
+not a wall-clock deadline or a performance measurement.
+
+The host must separately own and share one actual native resource gate across
+producer, recorder, replay and application services. Store sharing supplies no
+native-work admission, current head or proof-validity cache. Keeping another
+setup/History owner alive can increase process memory; this change establishes
+no measured RAM bound.
+
+The added owning cases cover clone/root-lock lifetime, one-charge deduplication,
+concurrent same-store ingress, quota/reopen behavior and invalid public bounds
+returning while the private store is locked. They use explicit public byte
+fixtures and confer no cryptographic success. The additive opt-in OS case
+`private_product_success::shared_retained_product_replays_after_private_owners_drop_and_rejects_repaired_splices`
+uses the real shared RPC and all existing genuine proof/decryption, END/EOF,
+fresh reopen/replay and repaired-splice assertions. The twelve evidence-store
+tests, eight Joint tests and this actual OS-peer case passed native validation.
+The unchanged four-validator/FHE Acquire regression also passed with the shared
+Joint verifier. See the [executed record](../../docs/shared-evidence-owner-restart.md).
+These cases do not measure concurrent ingress during a live RPC or
+mid-filesystem-publication cancellation. The original exclusive pre-cancel case
+is retained; no additional shared mid-stream cancellation result is claimed.
+
+The executed record includes the exact serial owning commands, source and peer
+image identities, resource observations and remaining integration boundaries.
+
+## Earlier executed validation
 
 The library's nine owning tests use public nonsecret bytes and actual owned files
 for fixed grammar/caps, quotas, immutable reopen, missing/corrupt references and

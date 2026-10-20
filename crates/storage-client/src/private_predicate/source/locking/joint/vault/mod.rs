@@ -2,6 +2,8 @@
 mod codec;
 mod durable;
 mod durable_wal;
+#[cfg(test)]
+mod process_tests;
 mod restore;
 use super::*;
 use bfv_mul_relin_proof::{InputEvidence, Provenance};

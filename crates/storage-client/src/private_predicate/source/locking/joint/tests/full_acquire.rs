@@ -26,8 +26,7 @@ mod contention;
 #[path = "full_acquire_lifecycle.rs"]
 mod lifecycle;
 use super::full_acquire_fixture as fixture;
-#[path = "../../../../../../../../apps/dcs-peer/tests/support/joint_process.rs"]
-mod os_process;
+use super::os_process;
 
 const NAMESPACE: [u8; 32] = [0x91; 32];
 const WAIT: Duration = Duration::from_secs(1800);

@@ -3,7 +3,7 @@ use crate::{
     AcquireExpected, Application, CheckedAcquire, Descriptor, Error, JointDepot, Lane, Manifest,
     Request, Result, SetupClaim,
 };
-use bfv_product_evidence::{CatalogId, ProductStore};
+use bfv_product_evidence::{CatalogId, SharedProductStore};
 use bfv_query_core::PublicSetup;
 use registry200_journal::Control;
 use registry200_proof::{
@@ -184,22 +184,22 @@ impl JointVerifier {
             return Err(Error::Transition);
         }
 
-        // This lock covers LOCAL bounded blob reads and actual verification only.
-        // Upload/fetch network I/O must finish outside Journal/application locks.
-        let mut store = self.depot.lock()?;
+        // Each bounded local read releases its store lock before actual proof
+        // verification. Network fetch/upload remains outside application locks.
+        let store = self.depot.store();
         match request.lane() {
             Lane::Bootstrap => {
-                let pair = read(&mut store, &manifest, 0)?;
+                let pair = read(store, &manifest, 0)?;
                 let checked = wire::verify(&expected, &pair).map_err(|_| Error::Verification)?;
                 if checked.next_root() != manifest.next_root() || checked.result_root().is_some() {
                     return Err(Error::Verification);
                 }
             }
             Lane::Control => {
-                let pair = read(&mut store, &manifest, 0)?;
+                let pair = read(store, &manifest, 0)?;
                 let statement = claim(&expected, &manifest)?;
                 let kind = control_kind::Expected::new(&statement).map_err(|_| Error::Domain)?;
-                let proof = read(&mut store, &manifest, 1)?;
+                let proof = read(store, &manifest, 1)?;
                 // This genuinely verifies the complete Source/Life pair AND
                 // private opcode membership. An outer Control tag is insufficient.
                 control_kind::verify(
@@ -211,7 +211,7 @@ impl JointVerifier {
             }
             Lane::Acquire => {
                 return self
-                    .acquire(&mut store, &request, manifest, &expected, own)
+                    .acquire(store, &request, manifest, &expected, own)
                     .map(Some);
             }
         }
@@ -219,7 +219,7 @@ impl JointVerifier {
     }
     fn acquire(
         &self,
-        store: &mut ProductStore,
+        store: &SharedProductStore,
         r: &Request,
         m: Manifest,
         e: &admission::Expected,
@@ -335,7 +335,7 @@ impl TransitionVerifier for AcquireBlockVerifier<'_> {
         Ok(())
     }
 }
-fn read(store: &mut ProductStore, m: &Manifest, i: usize) -> Result<Vec<u8>> {
+fn read(store: &SharedProductStore, m: &Manifest, i: usize) -> Result<Vec<u8>> {
     Ok(store.read_public_blob(m.reference(i)?, m.cap(i).ok_or(Error::Encoding)?)?)
 }
 fn claim(e: &admission::Expected, m: &Manifest) -> Result<lifecycle::statement::Statement> {

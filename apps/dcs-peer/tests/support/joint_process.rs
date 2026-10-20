@@ -46,6 +46,144 @@ impl Drop for ChildOwner {
         let _ = self.child.wait();
     }
 }
+
+// Owner-only unit-test subprocesses use a different bounded IPC grammar from
+// dcs-peer. No private owner frame is ever sent to Process::start_joint.
+#[allow(dead_code)]
+pub(crate) struct OwnerProcess {
+    owned: ChildOwner,
+    reports: mpsc::Receiver<io::Result<Vec<u8>>>,
+    reader: Option<std::thread::JoinHandle<io::Result<()>>>,
+}
+#[allow(dead_code)]
+impl OwnerProcess {
+    pub(crate) fn start(executable: &Path, worker: &str, frames: [&[u8]; 5]) -> io::Result<Self> {
+        let mut command = Command::new(executable);
+        command
+            .args([
+                "--exact",
+                worker,
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .env("RAYON_NUM_THREADS", "2");
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000);
+        }
+        let mut child = command.spawn()?;
+        let input = child
+            .stdin
+            .take()
+            .ok_or_else(|| io::Error::other("Missing owner stdin"))?;
+        let mut owned = ChildOwner {
+            child,
+            input: Some(input),
+        };
+        for (bytes, cap) in frames.into_iter().zip([
+            64 * 1024,
+            128,
+            64 * 1024,
+            work_finality::MAX_GENESIS_BYTES,
+            64 * 1024,
+        ]) {
+            peer_transport::write_frame(owned.input.as_mut().unwrap(), bytes, cap)?;
+        }
+        let stdout = owned
+            .child
+            .stdout
+            .take()
+            .ok_or_else(|| io::Error::other("Missing owner stdout"))?;
+        let (sender, reports) = mpsc::sync_channel(2);
+        let reader = std::thread::spawn(move || {
+            let mut stdout = BufReader::new(stdout);
+            let mut prelude_bytes = 0usize;
+            loop {
+                // libtest prefixes its own bounded textual status. Only this
+                // exact marker introduces a public binary report frame.
+                let mut line = Vec::new();
+                let n = stdout
+                    .by_ref()
+                    .take(64 * 1024 + 1)
+                    .read_until(b'\n', &mut line)?;
+                if n == 0 {
+                    return Ok(());
+                }
+                if n > 64 * 1024 || !line.ends_with(b"\n") {
+                    return Err(io::Error::other("Unbounded owner report prelude"));
+                }
+                prelude_bytes = prelude_bytes
+                    .checked_add(n)
+                    .ok_or_else(|| io::Error::other("Owner prelude overflow"))?;
+                if prelude_bytes > 64 * 1024 {
+                    return Err(io::Error::other("Owner prelude limit"));
+                }
+                // libtest may place 'test <name> ... ' before the marker.
+                if line.ends_with(b"DCS-OWNER-PUBLIC-REPORT-01\n") {
+                    let bytes = peer_transport::read_frame(&mut stdout, 64 * 1024)?;
+                    sender
+                        .try_send(Ok(bytes))
+                        .map_err(|_| io::Error::other("Unexpected owner report count"))?;
+                }
+            }
+        });
+        Ok(Self {
+            owned,
+            reports,
+            reader: Some(reader),
+        })
+    }
+    pub(crate) fn pid(&self) -> u32 {
+        self.owned.child.id()
+    }
+    pub(crate) fn send_endpoints(&mut self, bytes: &[u8]) -> io::Result<()> {
+        peer_transport::write_frame(
+            self.owned
+                .input
+                .as_mut()
+                .ok_or_else(|| io::Error::other("Closed owner IPC"))?,
+            bytes,
+            64 * 1024,
+        )
+    }
+    pub(crate) fn public_report(&self) -> io::Result<Vec<u8>> {
+        self.reports
+            .recv_timeout(peer_runtime::finality::JOINT_OPERATION_BUDGET)
+            .map_err(io::Error::other)?
+    }
+    pub(crate) fn finish(mut self) -> io::Result<()> {
+        let process = self.owned.finish();
+        if process.is_err() {
+            drop(self.owned.input.take());
+            let _ = self.owned.child.kill();
+            let _ = self.owned.child.wait();
+        }
+        let reader = self
+            .reader
+            .take()
+            .unwrap()
+            .join()
+            .map_err(|_| io::Error::other("Owner stdout reader panicked"))?;
+        process.and(reader)
+    }
+}
+impl Drop for OwnerProcess {
+    fn drop(&mut self) {
+        drop(self.owned.input.take());
+        if self.owned.child.try_wait().ok().flatten().is_none() {
+            let _ = self.owned.child.kill();
+        }
+        let _ = self.owned.child.wait();
+        if let Some(reader) = self.reader.take() {
+            let _ = reader.join();
+        }
+    }
+}
 pub(crate) struct Process {
     owned: ChildOwner,
     ready: JointParticipantReady,

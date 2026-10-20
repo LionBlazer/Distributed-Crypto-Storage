@@ -8,8 +8,24 @@ use std::sync::{
 #[derive(Clone)]
 pub struct ProofGate(Arc<AtomicBool>);
 pub struct ProofPermit(Arc<AtomicBool>);
+#[expect(
+    clippy::new_without_default,
+    reason = "resource ownership must be explicit at process composition"
+)]
 impl ProofGate {
-    pub(crate) fn new() -> Self {
+    /// Create one explicit resource owner. The process composition must create
+    /// ONE gate and pass clones to its producer, recorder, replay and services.
+    /// This allocates an independent gate; it is not process-global enforcement
+    /// and conveys no proof, authorization, finalized head or lock capability.
+    /// ```
+    /// let owner = peer_runtime::ProofGate::new();
+    /// let service = owner.clone();
+    /// let work = owner.try_acquire().unwrap();
+    /// assert!(service.try_acquire().is_err());
+    /// drop(work);
+    /// assert!(service.try_acquire().is_ok());
+    /// ```
+    pub fn new() -> Self {
         Self(Arc::new(AtomicBool::new(false)))
     }
     pub fn try_acquire(&self) -> Result<ProofPermit, RemoteError> {

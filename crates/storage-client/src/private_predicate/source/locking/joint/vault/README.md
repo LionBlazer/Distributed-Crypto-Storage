@@ -7,6 +7,12 @@ local proof/file tests passed the native release build. Neither API supplies a
 current-lock check, rollback protection or SQL admission. The Control WAL does
 not persist Source/BFV keys or the Acquire pending/capsule collection.
 
+The [Control process restart gate](PROCESS-RESTART.md) also passed with four
+actual validators and sequential owner A/B processes. It restores the original
+Source and BFV Owner/Anchor/Ready records before completing the exact saved
+Begin and typed End. The [executed record](../../../../../../../../docs/shared-evidence-owner-restart.md)
+distinguishes this historical Control recovery from durable Acquire and SQL.
+
 | Direct dependency | Responsibility |
 | --- | --- |
 | [Joint producer](../mod.rs) and [shared producer](../../produce.rs) | Actual all-original Source/input16/Lifecycle/Link preparation; default route captures nothing |

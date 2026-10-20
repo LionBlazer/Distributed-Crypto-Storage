@@ -27,7 +27,33 @@ fn retained_stored_product_replays_after_private_owners_drop_and_rejects_repaire
     run(true);
 }
 
+#[test]
+#[ignore = "Real shared-store OS-peer input16/full134, END/EOF and fresh retained replay; allow 1800 seconds"]
+fn shared_retained_product_replays_after_private_owners_drop_and_rejects_repaired_splices() {
+    run_mode(RetentionMode::Shared);
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RetentionMode {
+    None,
+    Exclusive,
+    Shared,
+}
+
 fn run(retained: bool) {
+    run_mode(if retained {
+        RetentionMode::Exclusive
+    } else {
+        RetentionMode::None
+    });
+}
+
+fn run_mode(mode: RetentionMode) {
+    let retained = mode != RetentionMode::None;
+    // The standalone shared host owns ONE actual native resource gate. This
+    // does not construct a dummy server or claim process-global enforcement.
+    let native_gate = (mode == RetentionMode::Shared).then(peer_runtime::ProofGate::new);
+    let _native_work = native_gate.as_ref().map(|gate| gate.try_acquire().unwrap());
     let started = Instant::now();
     let identity = identity();
     let connector = Connector::permissionless(&identity).unwrap();
@@ -147,6 +173,13 @@ fn run(retained: bool) {
     let mut store = quota
         .as_ref()
         .map(|q| bfv_product_evidence::ProductStore::open(q.depot_budget()).unwrap());
+    let shared = if mode == RetentionMode::Shared {
+        store
+            .take()
+            .map(bfv_product_evidence::ProductStore::into_shared)
+    } else {
+        None
+    };
     drop(compiled);
     drop(fetched);
     drop(epoch);
@@ -156,7 +189,19 @@ fn run(retained: bool) {
     // Act: the independently running peer has no source key, private openings,
     // owner plaintext fixture or locally preselected answer.
     let computation = Instant::now();
-    let (checked, catalog) = if let Some(store) = &mut store {
+    let (checked, catalog) = if let Some(shared) = &shared {
+        let (checked, catalog) = remote
+            .prove_private_product_recorded_shared(
+                object,
+                provenance,
+                &prepared.request,
+                &frames.as_input_evidence(),
+                shared.clone(),
+            )
+            .unwrap()
+            .into_parts();
+        (checked, Some(catalog))
+    } else if let Some(store) = &mut store {
         let (checked, catalog) = remote
             .prove_private_product_recorded(
                 object,
@@ -224,7 +269,7 @@ fn run(retained: bool) {
     );
     println!(
         "{}",
-        serde_json::json!({"case":if retained {"actual-retained-stored-private-where-peer"} else {"actual-stored-private-where-peer"},"peer_pid":process.pid(),"owner_pid":std::process::id(),
+        serde_json::json!({"case":match mode {RetentionMode::Shared=>"actual-shared-retained-stored-private-where-peer",RetentionMode::Exclusive=>"actual-retained-stored-private-where-peer",RetentionMode::None=>"actual-stored-private-where-peer"},"peer_pid":process.pid(),"owner_pid":std::process::id(),
         "input_frames":15,"input_proofs":16,"logical_output_nodes":134,"output_records":118,"input_bytes":input_bytes,"output_ciphertext_bytes":output_bytes,
         "sent_application_bytes":requests.iter().map(|e|e.bytes).sum::<u64>(),"received_application_bytes":replies.iter().map(|e|e.bytes).sum::<u64>(),
         "prepare_ms":prepare_ms,"stream_and_full_verify_ms":stream_ms,"total_ms":started.elapsed().as_secs_f64()*1000.,
@@ -247,6 +292,7 @@ fn run(retained: bool) {
     drop(frames);
     drop(owner);
     drop(store);
+    drop(shared); // Release the SAME store before strict filesystem reopen.
     drop(quota);
     process.finish(&remote);
     if let (Some(owned), Some(pins), Some(catalog)) = (owned, pins, catalog) {

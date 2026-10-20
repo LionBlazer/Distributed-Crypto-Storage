@@ -1,7 +1,7 @@
 use super::*;
 use crate::private_product::*;
 use bfv_mul_relin_proof::{Expected, InputEvidence, Provenance, Verifier};
-use bfv_product_evidence::{CatalogId, ProductStore, RecordingVerifier};
+use bfv_product_evidence::{CatalogId, ProductStore, RecordingVerifier, SharedProductStore};
 use bfv_query_core::EvaluatedPrivateCoefficientPredicate;
 use bfv_relinearization_key_source::PreparedKey;
 use std::io::Read;
@@ -32,8 +32,37 @@ impl RemotePeer {
         inputs: &InputEvidence<'_>,
         store: &mut ProductStore,
     ) -> io::Result<RecordedPrivateProduct> {
-        let (checked, catalog) =
-            self.private_product(object, provenance, ciphertext, inputs, Some(store))?;
+        let (checked, catalog) = self.private_product(
+            object,
+            provenance,
+            ciphertext,
+            inputs,
+            Some(RecordingTarget::Exclusive(store)),
+        )?;
+        Ok(RecordedPrivateProduct {
+            checked,
+            catalog: catalog.ok_or_else(|| rejected("missing completed product catalog"))?,
+        })
+    }
+    /// The SAME actual stream/verifier, retaining evidence in an already-open
+    /// shared depot. Network waits, native proof checks and END/EOF hold no store
+    /// lock. The owner must hold its one shared native resource permit.
+    /// Only full completion publishes the untrusted catalog; no SQL/lease grant.
+    pub fn prove_private_product_recorded_shared(
+        &self,
+        object: [u8; 32],
+        provenance: Provenance,
+        ciphertext: &[u8],
+        inputs: &InputEvidence<'_>,
+        store: SharedProductStore,
+    ) -> io::Result<RecordedPrivateProduct> {
+        let (checked, catalog) = self.private_product(
+            object,
+            provenance,
+            ciphertext,
+            inputs,
+            Some(RecordingTarget::Shared(store)),
+        )?;
         Ok(RecordedPrivateProduct {
             checked,
             catalog: catalog.ok_or_else(|| rejected("missing completed product catalog"))?,
@@ -45,7 +74,7 @@ impl RemotePeer {
         provenance: Provenance,
         ciphertext: &[u8],
         inputs: &InputEvidence<'_>,
-        recording: Option<&mut ProductStore>,
+        recording: Option<RecordingTarget<'_>>,
     ) -> io::Result<(CheckedPrivateProduct, Option<CatalogId>)> {
         let started = Instant::now();
         let cancellation = self.control.as_ref().and_then(|control| control.current());
@@ -104,8 +133,19 @@ impl RemotePeer {
             check_budget(started, cancellation.as_ref())?;
             let expected = Expected::new(provenance, output).map_err(rejected)?;
             let mut verifier = match recording {
-                Some(store) => ProductVerification::Recorded(Box::new(
+                Some(RecordingTarget::Exclusive(store)) => ProductVerification::Recorded(Box::new(
                     RecordingVerifier::new(
+                        store,
+                        &expected,
+                        &key,
+                        object,
+                        ciphertext,
+                        &response.output,
+                    )
+                    .map_err(retention_error)?,
+                )),
+                Some(RecordingTarget::Shared(store)) => ProductVerification::Recorded(Box::new(
+                    RecordingVerifier::new_shared(
                         store,
                         &expected,
                         &key,
@@ -191,6 +231,10 @@ impl RemotePeer {
 
 // A closed choice of the SAME actual verifier. No peer-supplied verification
 // policy, cached receipt or configurable accept callback is introduced.
+enum RecordingTarget<'a> {
+    Exclusive(&'a mut ProductStore),
+    Shared(SharedProductStore),
+}
 enum ProductVerification<'a> {
     Ephemeral(Box<Verifier<'a>>),
     Recorded(Box<RecordingVerifier<'a>>),

@@ -433,3 +433,124 @@ fn public_reference_enumeration_has_every_fixed_role_ordinal_and_original_byte_c
         assert_eq!(reversed, expected_reverse);
     }
 }
+
+#[test]
+fn shared_clones_keep_one_exclusive_store_and_one_retained_byte_charge() {
+    let owned = OwnedDirectory::new();
+    let namespace = [0xa1; 32];
+    let q = ParticipantQuota::create_new(owned.root(), namespace, 1024 * 1024).unwrap();
+    let shared = ProductStore::open(q.depot_budget()).unwrap().into_shared();
+    let another = shared.clone();
+    let before = q.usage().unwrap().total_bytes();
+    let public = b"PUBLIC shared fixture, no proof claim";
+    let blob = shared.retain_public_blob(public).unwrap();
+    assert_eq!(another.retain_public_blob(public).unwrap(), blob);
+    assert_eq!(
+        q.usage().unwrap().total_bytes(),
+        before + public.len() as u64
+    );
+    assert_eq!(
+        another.read_public_blob(blob, public.len()).unwrap(),
+        public
+    );
+    assert!(ProductStore::open(q.depot_budget()).is_err());
+    drop(shared);
+    drop(q);
+    assert!(ParticipantQuota::open_existing(owned.root(), namespace, 1024 * 1024).is_err());
+    assert_eq!(
+        another.read_public_blob(blob, public.len()).unwrap(),
+        public
+    );
+    drop(another);
+    let q = ParticipantQuota::open_existing(owned.root(), namespace, 1024 * 1024).unwrap();
+    assert_eq!(
+        q.usage().unwrap().total_bytes(),
+        before + public.len() as u64
+    );
+    let mut exclusive = ProductStore::open(q.depot_budget()).unwrap();
+    assert_eq!(
+        exclusive.read_public_blob(blob, public.len()).unwrap(),
+        public
+    );
+}
+
+#[test]
+fn shared_invalid_public_bounds_return_before_acquiring_the_busy_store() {
+    let owned = OwnedDirectory::new();
+    let q = ParticipantQuota::create_new(owned.root(), [0xa2; 32], 1024 * 1024).unwrap();
+    let shared = ProductStore::open(q.depot_budget()).unwrap().into_shared();
+    let before = q.usage().unwrap();
+    let entries = fs::read_dir(q.depot_directory()).unwrap().count();
+    let another = shared.clone();
+    let locked = shared.inner.lock().unwrap();
+    let (sent, received) = std::sync::mpsc::sync_channel(1);
+    let worker = std::thread::spawn(move || {
+        let missing = id(b"PUBLIC missing");
+        let oversized = vec![0x55; MAX_BLOB_BYTES as usize + 1];
+        let results = [
+            matches!(
+                another.read_public_blob(missing, 0),
+                Err(Error::ResourceLimit)
+            ),
+            matches!(
+                another.read_public_blob(missing, MAX_BLOB_BYTES as usize + 1),
+                Err(Error::ResourceLimit)
+            ),
+            matches!(
+                another.read_public_blob(missing, 1),
+                Err(Error::ResourceLimit)
+            ),
+            matches!(another.retain_public_blob(&[]), Err(Error::ResourceLimit)),
+            matches!(
+                another.retain_public_blob(&oversized),
+                Err(Error::ResourceLimit)
+            ),
+        ];
+        sent.send(results).unwrap();
+    });
+    let while_locked = received.recv_timeout(std::time::Duration::from_secs(10));
+    // Always release and join before assertions, including the failure path.
+    drop(locked);
+    worker.join().unwrap();
+    assert_eq!(
+        while_locked.expect("invalid bounds must not wait for the store"),
+        [true; 5]
+    );
+    assert_eq!(q.usage().unwrap(), before);
+    assert_eq!(fs::read_dir(q.depot_directory()).unwrap().count(), entries);
+}
+
+#[test]
+fn shared_concurrent_ingress_and_quota_failure_leave_only_accounted_public_blobs() {
+    let owned = OwnedDirectory::new();
+    let capacity = 136 + 2 * 200; // Profile header, retained blob, full duplicate stage.
+    let q = ParticipantQuota::create_new(owned.root(), [0xa3; 32], capacity).unwrap();
+    let shared = ProductStore::open(q.depot_budget()).unwrap().into_shared();
+    let jobs: Vec<_> = (0..2)
+        .map(|_| {
+            let store = shared.clone();
+            std::thread::spawn(move || store.retain_public_blob(&[0x63; 200]))
+        })
+        .collect();
+    let mut results = jobs.into_iter().map(|job| job.join()).collect::<Vec<_>>();
+    let second = results.pop().unwrap().unwrap().unwrap();
+    let first = results.pop().unwrap().unwrap().unwrap();
+    assert_eq!(first, second, "deduplication uses the same concrete store");
+    let used = q.usage().unwrap();
+    assert!(matches!(
+        shared.retain_public_blob(&[0x64; 201]),
+        Err(Error::Storage(protocol_storage::Error::ResourceLimit))
+    ));
+    assert_eq!(q.usage().unwrap(), used);
+    assert_eq!(shared.read_public_blob(first, 200).unwrap(), [0x63; 200]);
+    assert!(
+        shared
+            .retain_public_blob(&catalog(false).encode().unwrap())
+            .is_err()
+    );
+    drop(shared);
+    drop(q);
+    let q = ParticipantQuota::open_existing(owned.root(), [0xa3; 32], capacity).unwrap();
+    let shared = ProductStore::open(q.depot_budget()).unwrap().into_shared();
+    assert_eq!(shared.read_public_blob(first, 200).unwrap(), [0x63; 200]);
+}

@@ -9,6 +9,9 @@ use zeroize::Zeroizing;
 pub(super) mod fixture;
 mod full_acquire;
 pub(super) mod full_acquire_fixture;
+// One test-only supervisor module is shared by the owning process gates.
+#[path = "../../../../../../../apps/dcs-peer/tests/support/joint_process.rs"]
+pub(super) mod os_process;
 
 fn context<'a>(
     owner: &'a Owner,

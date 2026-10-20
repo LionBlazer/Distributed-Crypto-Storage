@@ -932,3 +932,39 @@ fn genuine_source_pending_import_drops_unpublished_and_known_state_still_reads_a
     fs::write(path, original).unwrap(); // Repair only this explicit public-fixture fault.
     // This is real Bootstrap math, not a substitute for the full Acquire OS gate.
 }
+
+#[test]
+fn recording_ingress_keeps_the_same_depot_and_ledger_after_the_joint_owner_moves() {
+    let directory = Directory::new();
+    let namespace = [0xd1; 32];
+    let quota = ParticipantQuota::create_new(directory.root(), namespace, 1024 * 1024).unwrap();
+    let depot = JointDepot::open(quota.depot_budget()).unwrap();
+    let ingress = depot.ingress();
+    let recorder = ingress.recording_store();
+    let before = quota.usage().unwrap();
+    let public = b"PUBLIC joint ingress, not a proof or completed catalog";
+    let id = recorder.retain_public_blob(public).unwrap();
+    assert_eq!(ingress.read_public_blob(id, public.len()).unwrap(), public);
+    assert_eq!(ingress.retain_public_blob(public).unwrap(), id);
+    assert_eq!(
+        quota.usage().unwrap().total_bytes(),
+        before.total_bytes() + public.len() as u64
+    );
+    assert!(JointDepot::open(quota.depot_budget()).is_err());
+    drop(depot);
+    drop(ingress);
+    drop(quota);
+    assert!(ParticipantQuota::open_existing(directory.root(), namespace, 1024 * 1024).is_err());
+    assert_eq!(recorder.read_public_blob(id, public.len()).unwrap(), public);
+    drop(recorder);
+    let quota = ParticipantQuota::open_existing(directory.root(), namespace, 1024 * 1024).unwrap();
+    let reopened = JointDepot::open(quota.depot_budget()).unwrap();
+    assert_eq!(
+        reopened
+            .ingress()
+            .read_public_blob(id, public.len())
+            .unwrap(),
+        public
+    );
+    // No cryptographic operation or accepted application state is manufactured.
+}

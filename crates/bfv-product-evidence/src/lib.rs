@@ -3,14 +3,17 @@
 //! cryptographic checks again against independently supplied owner-local pins.
 #![forbid(unsafe_code)]
 
+mod access;
 mod catalog;
 mod record;
 mod replay;
+mod shared;
 mod storage;
 
 pub use catalog::{CatalogClaim, CatalogId, CatalogReference, MAX_CATALOG_BYTES, profile_digest};
 pub use record::{CompletedRecording, RecordedProduct, RecordingVerifier};
 pub use replay::ReplayedProduct;
+pub use shared::SharedProductStore;
 pub use storage::ProductStore;
 
 #[derive(Debug)]

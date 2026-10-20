@@ -1,5 +1,6 @@
 use crate::{
-    CatalogClaim, CatalogId, Error, ProductStore, Result,
+    CatalogClaim, CatalogId, Error, ProductStore, Result, SharedProductStore,
+    access::StoreAccess,
     catalog::{CLAIMS, INPUT_START, MAX_SETUP_BYTES, PARTS, RECORDS},
     storage,
 };
@@ -31,12 +32,12 @@ impl RecordedProduct {
 /// recheck cancellation/deadline before `publish`. Dropping it publishes no
 /// catalog and releases no already retained file charge.
 pub struct CompletedRecording<'a> {
-    store: &'a mut ProductStore,
+    store: StoreAccess<'a>,
     product: CheckedProduct,
     catalog: CatalogClaim,
 }
 impl CompletedRecording<'_> {
-    pub fn publish(self) -> Result<RecordedProduct> {
+    pub fn publish(mut self) -> Result<RecordedProduct> {
         let id = CatalogId::from_blob(self.store.put(&self.catalog.encode()?)?)?;
         Ok(RecordedProduct {
             product: self.product,
@@ -52,7 +53,7 @@ impl CompletedRecording<'_> {
 pub struct RecordingVerifier<'a> {
     verifier: Verifier<'a>,
     expected: &'a Expected,
-    store: &'a mut ProductStore,
+    store: StoreAccess<'a>,
     setup: Vec<BlobId>,
     setup_len: u64,
     parts: [Option<BlobId>; PARTS],
@@ -62,6 +63,43 @@ pub struct RecordingVerifier<'a> {
 impl<'a> RecordingVerifier<'a> {
     pub fn new(
         store: &'a mut ProductStore,
+        expected: &'a Expected,
+        key: &'a PreparedKey,
+        object: [u8; 32],
+        request: &[u8],
+        response: &[u8],
+    ) -> Result<Self> {
+        Self::new_in(
+            StoreAccess::Exclusive(store),
+            expected,
+            key,
+            object,
+            request,
+            response,
+        )
+    }
+    /// Record into the SAME already-open shared store. The recorder owns only
+    /// a handle clone: no mutex guard is retained through verification, network
+    /// I/O, cancellation checks or END/EOF. Publication still requires finish.
+    pub fn new_shared(
+        store: SharedProductStore,
+        expected: &'a Expected,
+        key: &'a PreparedKey,
+        object: [u8; 32],
+        request: &[u8],
+        response: &[u8],
+    ) -> Result<Self> {
+        Self::new_in(
+            StoreAccess::Shared(store),
+            expected,
+            key,
+            object,
+            request,
+            response,
+        )
+    }
+    fn new_in(
+        mut store: StoreAccess<'a>,
         expected: &'a Expected,
         key: &'a PreparedKey,
         object: [u8; 32],

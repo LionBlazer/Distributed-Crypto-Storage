@@ -67,6 +67,18 @@ prior QC or successful earlier read supplies no cached proof authority. See the
 [retention contract](../bfv-product-evidence/README.md) and its
 [actual OS-peer/replay gate](../../docs/retained-product-evidence.md).
 
+The additive `RemotePeer::prove_private_product_recorded_shared` takes one
+`SharedProductStore` cloned from the actual `JointEvidenceIngress::recording_store`
+or obtained by moving an exclusive `ProductStore::into_shared`. Both recorded
+methods use the SAME private transport/verification implementation. Only bounded
+blob I/O holds the store's private lock; no network read/write, cancellation
+check, SDK proof work or terminal END/EOF runs under it. Catalog publication
+remains last, after actual verifier finish and the live budget fence. The new
+shared OS-peer owning case and unchanged four-validator/FHE Acquire regression
+passed [native validation](../../docs/shared-evidence-owner-restart.md); earlier
+measurements above apply to the exclusive path. No new wire, timeout, proof policy or blob cap
+is introduced.
+
 One heavy permit spans the connection. Errors, EOF, cancellation and terminal
 delivery drop its in-memory state and permit. I/O has a 180-second inactivity
 budget and an absolute 1800-second socket deadline; these are service resource
@@ -637,6 +649,13 @@ heavy work. A permit is resource ownership, never proof validity. The TLS owning
 tests passed in one process; four existing OS-peer rejection/cancellation cases
 also passed. These are not a four-OS-peer finality deployment result; see the
 [native record](../../docs/network-finality.md).
+Standalone hosts can now explicitly construct `ProofGate::new()` without a dummy
+server, then pass clones to all their actual heavy consumers. Each construction
+creates an independent resource; it does not enforce a process-global singleton.
+The composition owner must create and share ONE gate. Construction supplies no
+proof validity, authorization, finalized head or lock grant. The existing clone,
+busy and unwind owning test remains unchanged and passed with the public
+constructor's documentation example and the real shared-recorder OS case.
 The participant-quota/bootstrap integration below has now passed its distinct
 four-OS gate. System-lane admission, work roster activation/reconfiguration and
 a hidden-SQL lock grant remain open. It adds no alternate Jobs application or

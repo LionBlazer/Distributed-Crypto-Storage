@@ -63,11 +63,12 @@ for the required quorum. No quorum means no lock or End permission.
 `JointDepot::open` consumes the existing **typed participant DepotBudget** and
 opens one concrete ProductStore. Before moving it into `JointVerifier`, retain
 `depot.ingress()`. Cloneable `JointEvidenceIngress` handles use the **same**
-`Arc<Mutex<ProductStore>>`, exclusive store gate and shared participant ledger for
+`SharedProductStore`, exclusive filesystem ownership and shared participant ledger for
 bounded public-byte retain/read. They expose no mutable store or lock guard and
 never mark a blob as verified. Future candidate uploads therefore remain possible
 after verifier construction. Network fetching must finish outside Journal locks;
-the verifier performs local reads only and serializes them with ingress.
+the verifier performs local reads only and serializes each bounded blob I/O with
+ingress. Native proof verification runs outside the private store lock.
 `JointEvidenceIngress::catalog_claim` uses that same store's bounded local read,
 hash/EOF checks and existing canonical catalog parser. The returned unverified
 `CatalogClaim::references()` enumerates every retained product premise for
@@ -75,6 +76,18 @@ prefetch; neither operation checks those premises or establishes admission.
 No network operation may hold the depot mutex. After prefetch, the host must
 recheck the current context and run the actual fixed verifier under its one
 existing ProofGate; no copied metadata can replace that replay.
+
+`JointEvidenceIngress::recording_store()` clones that SAME concrete shared owner
+for `RemotePeer::prove_private_product_recorded_shared`; it opens no second store
+or budget. Keep ingress before moving the depot into the fixed verifier. Actual
+recording and fixed replay use the lower library's single closed storage access,
+with no public mutex guard, reader or accepting callback. The host shares its one
+native resource gate and performs every required actual proof check; the byte
+capability supplies no receipt or SQL permission. The additive storage-only
+`recording_ingress_keeps_the_same_depot_and_ledger_after_the_joint_owner_moves`
+case passed, together with the actual shared-recorder OS case and the unchanged
+four-validator/FHE Acquire regression. Their separate scopes and measurements
+are recorded in [native validation](../../docs/shared-evidence-owner-restart.md).
 
 `retain_setup` stores the canonical original setup in one or two nonempty chunks,
 each at most 32 MiB. `SetupClaim` is a small untrusted 96/136-byte reference record.
