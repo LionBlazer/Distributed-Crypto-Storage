@@ -22,6 +22,8 @@ use std::{
 };
 use version_journal::{HEADER_BYTES, Header as BlockHeader, MAX_BODY_BYTES};
 
+mod relay;
+
 pub struct JointFinalityServer {
     listener: TcpListener,
     endpoint: Endpoint,
@@ -258,40 +260,6 @@ fn listen(
 ) -> io::Result<()> {
     let bodies = BodyGate::new();
     let blobs = BlobGate::new();
-    let relay_handle = handle.clone();
-    let relay_bodies = bodies.clone();
-    let relay_blobs = blobs.clone();
-    let relay_binding = binding.clone();
-    let relay_ingress = ingress.clone();
-    let relay_cancel = cancellation.clone();
-    let neighbors = config.neighbors.clone();
-    let connector = config.connector.clone();
-    let relay = thread::Builder::new()
-        .name("dcs-joint-finality-relay".into())
-        .spawn(move || {
-            while !relay_handle.stop.load(Ordering::Acquire) {
-                for endpoint in &neighbors {
-                    if relay_handle.stop.load(Ordering::Acquire) {
-                        break;
-                    }
-                    let client = super::JointFinalityClient::new(
-                        connector.clone(),
-                        endpoint.clone(),
-                        &relay_binding,
-                    )
-                    .with_cancellation(relay_cancel.clone());
-                    let _ = synchronize(
-                        &client,
-                        &relay_binding,
-                        &relay_ingress,
-                        &relay_handle,
-                        &relay_bodies,
-                        &relay_blobs,
-                    );
-                }
-                thread::park_timeout(Duration::from_millis(100));
-            }
-        })?;
     let service = Service {
         acceptor: config.acceptor,
         owner: config.owner,
@@ -304,6 +272,7 @@ fn listen(
         neighbors: config.neighbors,
         cancellation: cancellation.clone(),
     };
+    let mut relay = relay::Workers::spawn(service.clone(), sockets.clone())?;
     let mut workers: Vec<JoinHandle<()>> = Vec::new();
     let result = (|| {
         while !handle.stop.load(Ordering::Acquire) {
@@ -351,7 +320,7 @@ fn listen(
     for worker in workers {
         let _ = worker.join();
     }
-    relay.join().map_err(|_| error("Joint relay panicked"))?;
+    relay.shutdown_and_join()?;
     result
 }
 fn send(

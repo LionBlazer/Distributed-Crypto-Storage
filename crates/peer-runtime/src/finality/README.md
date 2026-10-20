@@ -105,8 +105,17 @@ manifest and, for product parts, the same stored canonical catalog. It rejects a
 foreign ID before allocating a blob payload. This grants only retention of public
 bytes, never computation acceptance. Public GET rehashes exact local bytes and
 returns one bounded blob. Exactly one download/receive and one export lease,
-each at most 32 MiB, are shared across all workers and the sequential relay.
+each at most 32 MiB, are shared across all workers and the bounded Joint relay.
 Legacy Body and control reservations keep their separate unchanged bounds.
+
+The private [relay scheduler](joint_server/README.md) owns at most three joined
+workers over disjoint rotating neighbor lanes. One slow neighbor no longer
+serializes all three neighbors of a four-validator deployment. Accepted inbound
+workers remain bounded by eight; this is not a bound of eight total TCP sockets.
+The owner, proof gate, participant ledger, body/blob leases, protocol and deadlines
+are unchanged. An internal prefetch snapshot superseded by another genuine
+decision returns Busy; the retry captures a new snapshot and repeats the actual
+checks. Malformed data, owner/QC/proof failures remain hard rejections.
 
 Every new candidate prefetches all fixed manifest references and every catalog
 reference before entering the actor or taking the actual proof gate. No network
@@ -137,7 +146,9 @@ request rejection, lost ACK and exact duplicate replay. This test passed in
 distinguishes that source from the subsequent certificate/queue corrections.
 The full Acquire 16+118 process gate and exact FHE result/Result144 completion
 also passed on four OS validators plus a separate FHE peer, with fresh client
-replay and hostile-proof checks; see the same native record. Real prior-lock
-contention, a fresh-head barrier, owner Vault and delegated rights remain
-separate requirements. No ordinary SELECT lane, SQL grant,
-plaintext fallback or quorum-as-computation shortcut is introduced here.
+replay and hostile-proof checks; see the same native record. The separate actual
+two-Acquire gate also passed with a genuinely held row and SKIP LOCKED before
+OFFSET/LIMIT. On the bounded relay source, both four-process protocol regressions
+and all 110 peer-runtime library tests passed again. A fresh-head barrier, owner
+Vault and delegated rights remain separate requirements. No ordinary SELECT lane,
+SQL grant, plaintext fallback or quorum-as-computation shortcut is introduced here.

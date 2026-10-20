@@ -99,8 +99,12 @@ one consuming completion. These malformed openings must fail before decryption.
 This full gate passed with all four actual QCs, fresh keyless replay and exact
 client completion; the [native record](../../../../../../../docs/joint-participant-finality.md)
 pins its source, binary, timings and resource observations. The separate
-two-Acquire test in `tests/full_acquire_contention.rs` remains unexecuted: only
-that gate can demonstrate real prior-lock SKIP LOCKED behavior.
+two-Acquire test in `tests/full_acquire_contention.rs` also passed. Its first
+actual Acquire holds ordinal0; the second skips that real conflict before OFFSET
+consumes ordinal3. The second result is empty and its checked Registry locks
+ordinal3. Both operations use real OS FHE streams, four-validator QCs and fresh
+client replay. This remains a fixed-N4 historical operation; owner persistence,
+current-network reconciliation and general SQL admission remain separate.
 It imports only a cfg(test) shared OS supervisor; no production Core-to-app edge exists.
 
 Native proposal from the repository root (PowerShell, using the default target

@@ -160,9 +160,7 @@ fn finish_recorded(
     println!(
         "Joint contention phase finished: same-depot closed parent replay and evidence uploads to all four OS validators"
     );
-    for client in clients {
-        until(|| client.submit(&block).map(|()| Some(())));
-    }
+    submit_to_all_validators(clients, &block, Instant::now());
     let checkpoints: Vec<_> = clients
         .iter()
         .map(|c| checkpoint(c, before.parent.slot(), &block))
@@ -348,9 +346,7 @@ fn four_os_real_prior_acquire_makes_skip_locked_conflict_precede_offset_and_limi
         for client in &clients {
             upload_manifest(client, &block, &ingress, &binding);
         }
-        for client in &clients {
-            until(|| client.submit(&block).map(|()| Some(())));
-        }
+        submit_to_all_validators(&clients, &block, started);
         let checkpoints: Vec<_> = clients
             .iter()
             .map(|c| checkpoint(c, phase, &block))

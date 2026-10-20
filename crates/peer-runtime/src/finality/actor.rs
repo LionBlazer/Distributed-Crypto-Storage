@@ -460,7 +460,10 @@ fn require_joint(owned: &Owner) -> io::Result<()> {
 }
 fn require_snapshot(owned: &Owner, expected: Snapshot) -> io::Result<()> {
     if owned.snapshot()? != expected {
-        return Err(invalid());
+        // Another genuine decision can supersede our internal prefetch snapshot
+        // while this command waits. Reject this attempt and require a new
+        // snapshot/full verification; the payload itself has not been rejected.
+        return Err(busy());
     }
     Ok(())
 }

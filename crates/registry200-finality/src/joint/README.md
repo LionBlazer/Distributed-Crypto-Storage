@@ -252,7 +252,10 @@ scenario, including all four actual QCs, fresh client proof verification, exact
 Result144 completion, stale-QC rejection, fresh latest retry, missing output117
 and independently challenged corrupt Link. See the
 [native record](../../../../docs/joint-participant-finality.md) for pinned source,
-binary, timing and resources. It establishes the fixed historical operation;
-real prior-lock contention, current lease and general SQL remain separate.
+binary, timing and resources. The separate two-Acquire process gate also passed:
+the first actual QC establishes the conflicting held row, and the second full
+FHE/QC/client completion skips it before OFFSET/LIMIT. These establish fixed
+historical operations; current lease, owner persistence and general SQL remain
+separate.
 No profile, frame cap, arithmetic relation or old ordinary-apply rejection
 is changed by this return boundary.

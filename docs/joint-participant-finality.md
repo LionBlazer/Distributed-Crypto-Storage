@@ -4,7 +4,8 @@ The full fixed-N4 Acquire scenario also passed: four OS validators certified
 the actual hidden-predicate FHE operation, and the client freshly checked and
 completed its exact result. This establishes the bounded historical operation;
 general SQL admission, durable owner-state installation and a current lock lease
-remain unavailable. Real prior-lock SKIP LOCKED contention is a separate gate.
+remain unavailable. The separate two-Acquire gate also passed with a genuinely
+held conflicting row, SKIP LOCKED before OFFSET/LIMIT and fresh client completion.
 
 The owning Joint control scenario passed with four independently running
 `dcs-peer` validators. The original participant's separate four-process
@@ -174,10 +175,9 @@ the test's 30-minute consensus observation window. The whole failing command
 took 3,139.417 seconds. Client-side fresh Acquire replay and completion were not
 reached and receive no positive validation credit.
 
-The successful run above resolves that first gate. A second scenario must still
-demonstrate real prior-lock contention followed by SKIP LOCKED before
-OFFSET/LIMIT. Source-only tests, control QCs, cached presence, TLS success and
-successful decryption cannot substitute for that scenario.
+The successful run above resolves that first gate. The separate real prior-lock
+scenario passed later, as recorded below. Source-only tests, control QCs, cached
+presence, TLS success and successful decryption cannot substitute for that gate.
 
 The next full run used the 1,537-file inventory
 `039FF2B7ED674755EFF124B0F2F030D6985F816EC914653181B2CB33A07A9F12`
@@ -202,6 +202,78 @@ errors remain terminal. The original bounded observation window, whole-test
 supervision, production connection/I/O deadlines, proof checks and quorum are
 unchanged. FHE stream completion and candidate/QC/client verification are never
 replaced by an upload acknowledgement.
+
+## Bounded relay and real prior-lock contention
+
+The next 1,539-file source inventory had SHA-256
+`8E7DF7A50EE65D889649013356EFA693A6125DC0CB4BA028031307BADDDBF801`.
+The explicitly rebuilt `dcs-peer` binary contained 21,413,888 bytes and had SHA-256
+`9F2CA4E7E4EEED6C07A979480647854F4BF4D6034087C74BDA0E0A62F9CB68E3`.
+Every source file, the complete Git inventory, both supervision runners, the
+binary and all recorded native logs/results matched after validation. The final
+local audit receipt had SHA-256
+`B513A58A8A06F0E0FDF0A479F884711267317381803CC461431533D71723438D`.
+Documentation was updated after that audit.
+
+Joint relay delivery now uses at most three owned, joined workers over disjoint
+rotating neighbor lanes. The same `synchronize` implementation, proof gate,
+control ledger, signer, protocol and production deadlines remain in force. An
+internal prefetch snapshot superseded by a genuine decision returns Busy; retry
+captures a new snapshot and repeats actual verification. Bad evidence still
+fails. The owning test overlaps only its four initial exact-candidate offers,
+joins all workers and requires four real acknowledgements before fetching QCs.
+These changes establish no quantified query speedup.
+
+The peer-runtime library passed 110 tests, with two unrelated opt-in tests left
+ignored. All five new relay scheduling/lifecycle cases passed. The original
+four-OS participant regression passed in 602.04 seconds and the Joint four-OS
+regression in 246.72 seconds; their whole monitored command took 868.605 seconds.
+Strict all-target Clippy for all six affected packages, formatting and the direct
+canonical requirements/mirror comparison passed. The earlier relay candidate's
+local-reader shutdown test failed on Windows; the revised peer-EOF test passes
+but does not resolve prompt local-receive interruption. See the owning
+[relay record](../crates/peer-runtime/src/finality/joint_server/README.md).
+
+With the explicit binary above, the contention command was:
+
+```sh
+cargo test --release --offline --locked -p storage-client \
+  --features private-input-proofs --lib \
+  private_predicate::source::locking::joint::tests::full_acquire::contention::four_os_real_prior_acquire_makes_skip_locked_conflict_precede_offset_and_limit \
+  -- --exact --ignored --nocapture --test-threads=1
+```
+
+It passed in 3,049.43 seconds. The whole monitored command, including compilation,
+took 3,062.618 seconds. Four OS validators and one separate OS FHE peer performed
+two actual sequential Acquire operations. Each produced genuine input16/output118
+through clean END/EOF, uploaded the fixed-role evidence to all four validators,
+obtained actual Acquire QCs and completed fresh Source/input/product/Lifecycle/Link
+verification before one consuming client completion. No fixture fabricated a held
+Registry, QC, FHE result or accepted answer. Private producers were dropped before
+the second public replay; the client BFV Owner remained only for allowed decrypt.
+
+The first hidden query is `WHERE age IN (0) LIMIT 1 FOR UPDATE`: it returns
+ordinal 0 with age 0 and amount 65,535. Its actually completed Registry holds only
+ordinal 0 for transaction 1, with revision 3. The second query is
+`WHERE age IN (0,255) LIMIT 1 OFFSET 1 FOR UPDATE SKIP LOCKED`. It consumes that
+exact completed state. The conflicting ordinal 0 is skipped before OFFSET;
+available ordinal 3 is locked and consumed by OFFSET, leaving an empty result.
+The final Registry retains transaction 1's ordinal 0 and transaction 2's ordinal 3,
+with revision 4, transaction-2 sequence 2 and agreed slot 5. The expected behavior
+matches [PostgreSQL's locking clause](https://www.postgresql.org/docs/18/sql-select.html#SQL-FOR-UPDATE-SHARE).
+There is only one available matching row, so this case needs no ordering assumption
+among multiple available matches. Every validator and the FHE peer joined cleanly.
+
+Across 89,393 process observations, maximum working set and OS peak working set
+were 1,525,182,464 bytes; maximum private usage was 1,550,684,160 bytes. The largest
+sampling gap was 496.91 ms. Neither the unchanged 1,792-MiB-per-process soft fuse
+nor the finite whole-run supervisor fired. Sampling does not prove a formal RAM
+bound. This includes two full operations, setup, prior-history replay, consensus
+and cleanup; it is not a steady-state SQL latency measurement.
+The stdout SHA-256 is
+`1968BA4374E3187121AFC1D15A204BD0555D2A2D9FA35CEE1497A4C8FC7236A2`;
+stderr SHA-256 is
+`06DE843F51CAD8E281C73C4432C537F69FD36115FD5331C8CE1755A5A40B90A9`.
 
 Owner restart/Vault reconciliation, a fresh-head barrier, delegated rights,
 encrypted data mutation, general SQL session admission and unrestricted

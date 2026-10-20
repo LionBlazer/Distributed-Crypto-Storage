@@ -51,6 +51,39 @@ fn until<T>(mut action: impl FnMut() -> io::Result<Option<T>>) -> T {
         std::thread::park_timeout(Duration::from_millis(25));
     }
 }
+fn submit_to_all_validators(
+    clients: &[JointFinalityClient],
+    block: &registry200_finality::CandidateBlock,
+    started: Instant,
+) {
+    assert_eq!(
+        clients.len(),
+        4,
+        "Four independent validator clients are required"
+    );
+    std::thread::scope(|scope| {
+        // Only these four initial exact-candidate offers overlap. Each worker
+        // retains the existing bounded per-endpoint retry/error contract.
+        let workers: [_; 4] = core::array::from_fn(|index| {
+            let client = &clients[index];
+            scope.spawn(move || {
+                until(|| client.submit(block).map(|()| Some(())));
+                println!(
+                    "Joint candidate import ACK: validator {index} ({:.1} ms)",
+                    started.elapsed().as_secs_f64() * 1000.
+                );
+            })
+        });
+        // Join every admitted worker before propagating any failure. Returning
+        // means four actual ACKs; the caller must still fetch and verify QCs.
+        let results = workers.map(|worker| worker.join());
+        for result in results {
+            if let Err(payload) = result {
+                std::panic::resume_unwind(payload);
+            }
+        }
+    });
+}
 fn upload_public_blob(
     client: &JointFinalityClient,
     block: &registry200_finality::CandidateBlock,
@@ -404,9 +437,7 @@ fn four_os_quorum_and_fhe_peer_complete_only_the_exact_own_joint_acquire_after_f
         for client in &clients {
             upload_manifest(client, &block, &ingress, &binding);
         }
-        for client in &clients {
-            until(|| client.submit(&block).map(|()| Some(())));
-        }
+        submit_to_all_validators(&clients, &block, started);
         let qcs: Vec<_> = clients
             .iter()
             .map(|c| checkpoint(c, ordinal, &block))
@@ -573,13 +604,7 @@ fn four_os_quorum_and_fhe_peer_complete_only_the_exact_own_joint_acquire_after_f
     });
     assert!(clients[0].checkpoint_after(2).unwrap().is_none());
     assert_eq!(history.context().unwrap(), &current);
-    for (index, client) in clients.iter().enumerate() {
-        until(|| client.submit(&block).map(|()| Some(())));
-        println!(
-            "Joint full Acquire candidate import ACK: validator {index} ({:.1} ms)",
-            started.elapsed().as_secs_f64() * 1000.
-        );
-    }
+    submit_to_all_validators(&clients, &block, started);
     let qcs: Vec<_> = clients
         .iter()
         .enumerate()
