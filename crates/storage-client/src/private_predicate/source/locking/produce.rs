@@ -1,8 +1,8 @@
 //! Actual Source/input16/Lifecycle/Link orchestration, with no admission path.
 use super::{
     CompiledLockingSelect, LockingCompletion, LockingConflict, LockingControl, LockingParent,
-    LockingPreparation, NextOwnerOpening, NonAdmittedLocking, PreparationParent,
-    PreparedLockingInputs, StagedLockingTransition,
+    LockingPreparation, NextOwnerOpening, NonAdmittedLocking, PreparationParent, PreparationRoute,
+    PreparedLockingInputs, StagedLockingTransition, joint::vault,
 };
 use crate::private_predicate::{
     BfvContext, FetchedSource, InputProofFrames, ProducedInputs, SourceOwner, cryptography,
@@ -63,7 +63,10 @@ impl SourceOwner {
             epoch,
             fetched,
             compiled,
-            &PreparationParent::Legacy(parent),
+            &PreparationRoute {
+                parent: PreparationParent::Legacy(parent),
+                recovery: None,
+            },
             control,
         )
     }
@@ -73,9 +76,10 @@ impl SourceOwner {
         epoch: &mut OwnerProofEpoch<'_>,
         fetched: FetchedSource<'_>,
         compiled: &CompiledLockingSelect,
-        parent: &PreparationParent<'_>,
+        route: &PreparationRoute<'_>,
         control: LockingControl,
     ) -> crate::Result<LockingPreparation> {
+        let parent = &route.parent;
         parent.require_object(fetched.object)?;
         let object = fetched.object;
         let mut loaded = self.load(fetched)?;
@@ -398,26 +402,29 @@ impl SourceOwner {
         proofs.byte_len().map_err(cryptography)?;
         let link_expected =
             link::Expected::new(&statements[1], lifecycle.statement()).map_err(cryptography)?;
-        let link_witness = link::circuit::Witness::new(
-            &link_expected,
-            LinkOpening {
-                mask: *compiled.mask,
-                transaction: staging.control.actor.transaction,
-                principal: staging.control.actor.principal,
-                controller: staging.control.controllers
-                    [usize::from(staging.control.actor.principal - 1)],
-                revision: staging.control.actor.revision,
-                sequence: staging.control.actor.sequence,
-                mode: compiled.mode,
-                wait: compiled.wait,
-                offset: compiled.offset,
-                limit: compiled.limit,
-                projection: compiled.projection,
-                flags: *completion.flags,
-                salts: [*mask_salt, *command_salt, *result_salt],
-            },
-        )
-        .map_err(cryptography)?;
+        let link_opening = LinkOpening {
+            mask: *compiled.mask,
+            transaction: staging.control.actor.transaction,
+            principal: staging.control.actor.principal,
+            controller: staging.control.controllers
+                [usize::from(staging.control.actor.principal - 1)],
+            revision: staging.control.actor.revision,
+            sequence: staging.control.actor.sequence,
+            mode: compiled.mode,
+            wait: compiled.wait,
+            offset: compiled.offset,
+            limit: compiled.limit,
+            projection: compiled.projection,
+            flags: *completion.flags,
+            salts: [*mask_salt, *command_salt, *result_salt],
+        };
+        // Capture only on the explicit owner-recovery route WHILE every actual
+        // opening still exists. The ordinary route retains no plaintext mask.
+        let recovery_capture = route
+            .recovery
+            .map(|_| vault::Capture::new(&staging, &completion, &link_opening));
+        let link_witness =
+            link::circuit::Witness::new(&link_expected, link_opening).map_err(cryptography)?;
         let link = link::prove(
             &link_expected,
             &link_witness,
@@ -434,6 +441,13 @@ impl SourceOwner {
         };
         let staged =
             StagedLockingTransition::new(parent, &request, &inputs, &lifecycle, &link, staging)?;
+        let recovery = match (route.recovery, recovery_capture) {
+            (Some(target), Some(capture)) => {
+                Some(capture.seal(target, &inputs, &lifecycle, &link, &request)?)
+            }
+            (None, None) => None,
+            _ => return Err(invalid("Joint recovery capture association differs")),
+        };
         Ok(LockingPreparation::Prepared(Box::new(
             PreparedLockingInputs {
                 inputs,
@@ -442,6 +456,7 @@ impl SourceOwner {
                 request,
                 completion,
                 staged,
+                recovery,
             },
         )))
     }

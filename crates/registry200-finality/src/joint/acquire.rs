@@ -166,4 +166,8 @@ impl VerifiedJointAcquire {
     pub fn acquired(&self) -> &CheckedAcquire {
         &self.acquired
     }
+    /// Historical sealed post-operation metadata, never a permanent lock lease.
+    pub fn checked_parent(&self) -> &VerifiedJointParent {
+        &self.checked_parent
+    }
 }

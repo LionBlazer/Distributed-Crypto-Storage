@@ -5,12 +5,20 @@ mod produce;
 mod source;
 pub use compiler::CompiledPrivatePredicate;
 pub use source::{
-    CompiledLockingSelect, CompletedJointAcquire, CompletedJointRow, EncryptedSourceState,
-    FetchedSource, JointLockingCandidates, JointLockingParent, JointLockingPreparation,
-    LockingActor, LockingCompletion, LockingConflict, LockingControl, LockingParent,
-    LockingPreparation, NonAdmittedJointLocking, NonAdmittedLocking, PreparedJointLockingInputs,
-    PreparedLockingInputs, SOURCE_STATE_BYTES, SOURCE_STATE_HEADER_BYTES, SourceOwner,
+    CompiledLockingSelect, CompletedJointAcquire, CompletedJointRow, EncryptedJointRecovery,
+    EncryptedSourceState, FetchedSource, JOINT_RECOVERY_BYTES, JOINT_RECOVERY_HEADER_BYTES,
+    JointLockingCandidates, JointLockingParent, JointLockingPreparation, JointRecovery,
+    JointRecoveryIdentity, JointRecoveryInputs, JointRecoveryKey, LockingActor, LockingCompletion,
+    LockingConflict, LockingControl, LockingParent, LockingPreparation, NonAdmittedJointLocking,
+    NonAdmittedLocking, PreparedJointLockingInputs, PreparedLockingInputs,
+    RecoverableJointLockingInputs, RecoverableJointLockingPreparation,
+    RecoveredJointComputePrepared, SOURCE_STATE_BYTES, SOURCE_STATE_HEADER_BYTES, SourceOwner,
     SourceStateAuthority, SourceStateIdentity, StagedLockingTransition,
+};
+pub use source::{
+    CompletedJointControl, JointControlCandidate, JointControlIntent, JointControlOutcome,
+    JointControlParent, JointEndDisposition, JointOwnedLockingControl, JointOwnedRecovery,
+    JointRegistryOpening, PreparedJointControl,
 };
 
 use bfv_mul_relin_proof::{InputEvidence, Provenance};

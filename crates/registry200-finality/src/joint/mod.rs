@@ -4,6 +4,7 @@
 mod acquire;
 mod adapter;
 mod binding;
+mod control;
 mod history;
 mod wire;
 
@@ -11,6 +12,7 @@ pub use crate::CandidateBlock;
 pub use acquire::{AcquireExpectation, VerifiedJointAcquire};
 pub use adapter::{DurableJointFinality, participant_storage_profile_digest};
 pub use binding::{JointBinding, durable_profile_digest, profile_digest};
+pub use control::{ControlExpectation, VerifiedJointControl};
 pub use history::{JointHistory, VerifiedJointParent};
 pub use wire::{CANDIDATE_BYTES, JointCandidate, JointCheckpoint, MAX_CHECKPOINT_BYTES};
 

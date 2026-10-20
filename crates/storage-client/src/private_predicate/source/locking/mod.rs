@@ -4,8 +4,17 @@ mod joint;
 mod produce;
 pub use compiler::CompiledLockingSelect;
 pub use joint::{
-    CompletedJointAcquire, CompletedJointRow, JointLockingCandidates, JointLockingParent,
-    JointLockingPreparation, NonAdmittedJointLocking, PreparedJointLockingInputs,
+    CompletedJointAcquire, CompletedJointRow, EncryptedJointRecovery, JOINT_RECOVERY_BYTES,
+    JOINT_RECOVERY_HEADER_BYTES, JointLockingCandidates, JointLockingParent,
+    JointLockingPreparation, JointRecovery, JointRecoveryIdentity, JointRecoveryInputs,
+    JointRecoveryKey, NonAdmittedJointLocking, PreparedJointLockingInputs,
+    RecoverableJointLockingInputs, RecoverableJointLockingPreparation,
+    RecoveredJointComputePrepared,
+};
+pub use joint::{
+    CompletedJointControl, JointControlCandidate, JointControlIntent, JointControlOutcome,
+    JointControlParent, JointEndDisposition, JointOwnedLockingControl, JointOwnedRecovery,
+    JointRegistryOpening, PreparedJointControl,
 };
 
 use crate::private_predicate::{ProducedInputs, cryptography, invalid};
@@ -60,6 +69,10 @@ impl LockingParent {
 enum PreparationParent<'a> {
     Legacy(&'a LockingParent),
     Joint(&'a JointLockingParent),
+}
+struct PreparationRoute<'a> {
+    parent: PreparationParent<'a>,
+    recovery: Option<&'a joint::vault::RecoveryTarget<'a>>,
 }
 impl PreparationParent<'_> {
     fn application(&self) -> &Application {
@@ -245,6 +258,8 @@ pub struct PreparedLockingInputs {
     request: Request,
     completion: LockingCompletion,
     staged: StagedLockingTransition,
+    // Only the explicitly recoverable Joint API fills this ciphertext-only field.
+    recovery: Option<EncryptedJointRecovery>,
 }
 impl PreparedLockingInputs {
     pub fn inputs(&self) -> &ProducedInputs {

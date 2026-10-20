@@ -1,5 +1,14 @@
 # Joint Acquire preparation and one-shot completion
 
+The [typed BEGIN/End owner](control/README.md) adds historical private candidates
+and exact own Control completion. It preserves strict Acquire and supplies no
+production RegistryBootstrap, Vault installation or encrypted SQL data COMMIT.
+
+The optional [ComputePrepared recovery module](vault/README.md) captures the
+complete Link/Registry opening into a bounded owner-encrypted in-memory capsule
+during preparation and genuinely revalidates it on restore. It supplies no file,
+durable Vault, current lock or SQL grant. Default preparation remains unchanged.
+
 This owner-side adapter produces the existing genuine Source/input16/Lifecycle/
 PredicateAcquire relations under the distinct Joint application genesis. It
 accepts only a sealed `VerifiedJointParent` plus independently pinned `JointBinding`,
@@ -118,3 +127,17 @@ cargo test --release --locked -p storage-client --features private-input-proofs 
 
 Missing binary is a hard test failure. The old producer tests and their
 historical validation record above remain separate evidence.
+
+## Typed owner control and recoverable preparation
+
+The typed BEGIN/End, owned Acquire handoff and in-memory ComputePrepared recovery
+now passed their [native owner gates](../../../../../../../docs/joint-owner-preparation.md).
+The combined regular batch also covers the fixed private grammar. Its two explicit
+OS gates remain opt-in and are not counted as new process passes in that batch.
+Both `prepare_joint_locking_owned` and `prepare_joint_locking_owned_recoverable`
+check the same complete private parent/context stamp before the actual producer.
+The latter accepts `JointOwnedRecovery` options without exposing private banks.
+
+Shared test fixtures are owned once by `joint::tests` and imported by Control,
+recovery and process tests within that cfg(test) boundary. Public libraries gain
+no app dependency. Durable owner storage and SQL Session admission remain absent.

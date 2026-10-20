@@ -12,6 +12,7 @@ private-input-proofs = [
     "dep:registry200-journal",
     "dep:registry200-joint",
     "dep:registry200-finality",
+    "dep:work-finality",
     "dep:bfv-key-transform",
     "dep:bfv-basis-convolution",
     "dep:bfv-ciphertext-formation",
@@ -26,6 +27,7 @@ registry200-proof = { path = "../registry200-proof", optional = true }
 registry200-journal = { path = "../registry200-journal", optional = true }
 registry200-joint = { path = "../registry200-joint", optional = true }
 registry200-finality = { path = "../registry200-finality", optional = true }
+work-finality = { path = "../work-finality", optional = true }
 bfv-key-transform = { path = "../bfv-key-transform", optional = true }
 bfv-basis-convolution = { path = "../bfv-basis-convolution", optional = true }
 bfv-ciphertext-formation = { path = "../bfv-ciphertext-formation", optional = true }

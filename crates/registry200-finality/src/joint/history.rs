@@ -1,7 +1,7 @@
 //! Closed keyless history. Only actual Joint mathematics plus weighted QC advance it.
 use super::{
-    AcquireExpectation, CandidateBlock, Error, Hash, JointBinding, JointCandidate, JointCheckpoint,
-    Result, VerifiedJointAcquire,
+    AcquireExpectation, CandidateBlock, ControlExpectation, Error, Hash, JointBinding,
+    JointCandidate, JointCheckpoint, Result, VerifiedJointAcquire, VerifiedJointControl,
 };
 use registry200_joint::{AcquireExpected, CheckedAcquire, Descriptor, JointDepot, JointVerifier};
 use registry200_journal::Control;
@@ -119,8 +119,8 @@ impl JointHistory {
         checkpoint: &JointCheckpoint,
         block: &CandidateBlock,
     ) -> Result<VerifiedJointParent> {
-        self.apply_owned(checkpoint, block, None)
-            .map(|(parent, _)| parent)
+        self.apply_owned(checkpoint, block, None, None)
+            .map(|(parent, _, _)| parent)
     }
     /// Apply the exact independently pinned own Acquire in the next slot, or
     /// genuinely recheck the latest identical semantic decision. No signer is
@@ -131,16 +131,35 @@ impl JointHistory {
         block: &CandidateBlock,
         expected: &AcquireExpectation,
     ) -> Result<VerifiedJointAcquire> {
-        let (_, acquired) = self.apply_owned(checkpoint, block, Some(expected))?;
+        let (_, acquired, _) = self.apply_owned(checkpoint, block, Some(expected), None)?;
         acquired.ok_or(Error::Context)
+    }
+    /// Recheck the exact own non-Acquire operation through the same concrete
+    /// application verifier and weighted QC. No supplied verifier is accepted.
+    pub fn apply_control(
+        &mut self,
+        checkpoint: &JointCheckpoint,
+        block: &CandidateBlock,
+        expected: &ControlExpectation,
+    ) -> Result<VerifiedJointControl> {
+        let (_, _, controlled) = self.apply_owned(checkpoint, block, None, Some(expected))?;
+        controlled.ok_or(Error::Context)
     }
     fn apply_owned(
         &mut self,
         checkpoint: &JointCheckpoint,
         block: &CandidateBlock,
         own: Option<&AcquireExpectation>,
-    ) -> Result<(VerifiedJointParent, Option<VerifiedJointAcquire>)> {
+        own_control: Option<&ControlExpectation>,
+    ) -> Result<(
+        VerifiedJointParent,
+        Option<VerifiedJointAcquire>,
+        Option<VerifiedJointControl>,
+    )> {
         self.live()?;
+        if own.is_some() && own_control.is_some() {
+            return Err(Error::Context);
+        }
         let candidate = checkpoint.candidate();
         if candidate.header() != block.header() {
             return Err(Error::Context);
@@ -157,6 +176,10 @@ impl JointHistory {
         };
         if let Some(own) = own {
             own.require_context(&self.binding, context, parent)?;
+        }
+        if let Some(own) = own_control {
+            own.require_context(&self.binding, context, parent)?;
+            own.require_block(&self.binding, block)?;
         }
         let decision = context.verify_commit(
             &candidate.encode(),
@@ -206,7 +229,16 @@ impl JointHistory {
                     )
                 })
             });
-            return Ok((last.checked.clone(), receipt)); // full actual revalidation above
+            let controlled = own_control.map(|own| {
+                VerifiedJointControl::checked(
+                    own,
+                    last.checked.clone(),
+                    next.id(),
+                    block,
+                    checkpoint,
+                )
+            });
+            return Ok((last.checked.clone(), receipt, controlled)); // full actual revalidation above
         }
         let checked = VerifiedJointParent {
             binding: self.binding.id(),
@@ -249,7 +281,16 @@ impl JointHistory {
             checked: checked.clone(),
         });
         self.context = next;
-        Ok((checked, receipt))
+        let controlled = own_control.map(|own| {
+            VerifiedJointControl::checked(
+                own,
+                checked.clone(),
+                self.context.id(),
+                block,
+                checkpoint,
+            )
+        });
+        Ok((checked, receipt, controlled))
     }
     fn live(&self) -> Result<()> {
         if self.poisoned {

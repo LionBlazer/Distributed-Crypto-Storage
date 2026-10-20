@@ -6,8 +6,9 @@ use compact_query::{PlainRow, RowIds, TableId};
 use peer_runtime::RawBundle;
 use registry200_proof::admission::CanonicalSource;
 use zeroize::Zeroizing;
-mod fixture;
+pub(super) mod fixture;
 mod full_acquire;
+pub(super) mod full_acquire_fixture;
 
 fn context<'a>(
     owner: &'a Owner,
@@ -290,14 +291,25 @@ fn genuine_joint_parent_rejects_foreign_pins_then_produces_new_g_input16_after_h
 
     // Act: the shared actual producer encrypts ALL originals and proves the old
     // same-q input16 plus actual new-G Lifecycle and private-mask Link.
+    let owned_parent =
+        JointControlParent::from_verified(&built.parent, &built.binding, &built.context).unwrap();
+    let owned_control = JointRegistryOpening::from_private_parts(
+        &owned_parent,
+        built.registry.clone(),
+        fixture::CONTROLLERS,
+        good_salts,
+    )
+    .unwrap()
+    .for_acquire(&owned_parent, 1, 1)
+    .unwrap();
     let JointLockingPreparation::Prepared(prepared) = source_owner
-        .prepare_joint_locking(
+        .prepare_joint_locking_owned(
             context(&owner, &setup, &anchor),
             &mut epoch,
             fetched(),
             &compiled,
-            &parent,
-            control(&built.registry, fixture::CONTROLLERS, good_salts),
+            &owned_parent,
+            owned_control,
         )
         .unwrap()
     else {

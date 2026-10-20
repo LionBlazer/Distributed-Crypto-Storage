@@ -1,5 +1,12 @@
 # Closed Joint history, exact Acquire operation and durable owner
 
+`ControlExpectation` and `JointHistory::apply_control` add an exact own Control
+association on the same closed application/QC path. Own expectation checks run
+before import; Source/Life/ControlKind proofs and weighted QC are genuinely
+reverified, including latest semantic retries. `VerifiedJointControl` exposes
+historical public operation metadata only. It is not RegistryBootstrap, a current
+lock, encrypted SQL data COMMIT, or a supplied verification callback.
+
 This module checks historical checkpoints for the NEW fixed Registry200 Joint
 application. Its four keyless owning cases and two ownership contracts passed,
 alongside five durable owning cases and two durable ownership contracts.
@@ -259,3 +266,15 @@ historical operations; current lease, owner persistence and general SQL remain
 separate.
 No profile, frame cap, arithmetic relation or old ordinary-apply rejection
 is changed by this return boundary.
+
+## Typed BEGIN/End owner completion
+
+`ControlExpectation` pins the exact Control request, Statement, Manifest and
+independent parent/context. `JointHistory::apply_control` checks those own-operation
+guards before import and performs actual Source/Lifecycle/ControlKind and weighted
+QC replay. A latest identical semantic retry performs fresh premise verification.
+Only the completed path creates the private-field `VerifiedJointControl` carrying
+its exact Body/Header/QC and before/after metadata. It grants historical operation
+evidence, not an encrypted SQL data commit or current lease. The
+[owner validation record](../../../../docs/joint-owner-preparation.md) records the
+genuine local proof tests and the finality/doc regressions for this boundary.

@@ -13,10 +13,18 @@ use zeroize::Zeroizing;
 mod locking;
 mod state;
 pub use locking::{
-    CompiledLockingSelect, CompletedJointAcquire, CompletedJointRow, JointLockingCandidates,
-    JointLockingParent, JointLockingPreparation, LockingActor, LockingCompletion, LockingConflict,
-    LockingControl, LockingParent, LockingPreparation, NonAdmittedJointLocking, NonAdmittedLocking,
-    PreparedJointLockingInputs, PreparedLockingInputs, StagedLockingTransition,
+    CompiledLockingSelect, CompletedJointAcquire, CompletedJointRow, EncryptedJointRecovery,
+    JOINT_RECOVERY_BYTES, JOINT_RECOVERY_HEADER_BYTES, JointLockingCandidates, JointLockingParent,
+    JointLockingPreparation, JointRecovery, JointRecoveryIdentity, JointRecoveryInputs,
+    JointRecoveryKey, LockingActor, LockingCompletion, LockingConflict, LockingControl,
+    LockingParent, LockingPreparation, NonAdmittedJointLocking, NonAdmittedLocking,
+    PreparedJointLockingInputs, PreparedLockingInputs, RecoverableJointLockingInputs,
+    RecoverableJointLockingPreparation, RecoveredJointComputePrepared, StagedLockingTransition,
+};
+pub use locking::{
+    CompletedJointControl, JointControlCandidate, JointControlIntent, JointControlOutcome,
+    JointControlParent, JointEndDisposition, JointOwnedLockingControl, JointOwnedRecovery,
+    JointRegistryOpening, PreparedJointControl,
 };
 pub use state::{
     EncryptedSourceState, SOURCE_STATE_BYTES, SOURCE_STATE_HEADER_BYTES, SourceStateAuthority,

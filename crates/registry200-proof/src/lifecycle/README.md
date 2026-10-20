@@ -114,3 +114,17 @@ The new parity source case retains the exact pre-extraction builder as its oracl
 checks all seven opcodes/four outcomes and u64 limb boundaries, and asserts fixed
 offsets/padding. No AIR expression, profile, commitment domain or proof limit changes.
 Its native result is separate from the historical producer validation above.
+
+## Enrollment and Registry opening without Source plaintext
+
+`circuit::commitment::enrollment_fields_opening` accepts the existing Expected,
+TableId, controller labels and salt. `registry_fields_opening` additionally takes
+all four original RowIDs and a canonical bounded Registry. The original witness
+builders delegate to these pure field encoders with the exact same ordering and
+padding. They expose no owner getter, Source copy, model execution or verification
+authority. The owner recovery path can rehash its captured enrollment64 and
+Registry200 without reconstructing unrelated plaintext DATA.
+
+Independent literal old-builder parity, all existing Core Lifecycle cases and
+the 21 original experiment regressions passed; see the
+[owner validation record](../../../../docs/joint-owner-preparation.md).

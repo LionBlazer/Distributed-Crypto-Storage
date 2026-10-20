@@ -25,13 +25,16 @@ use work_finality::{
     consensus::{Context, MAX_RECORD_BYTES, Rules},
 };
 
-pub(super) const CONTROLLERS: [[u8; 32]; 2] = [[0x84; 32], [0xa5; 32]];
-pub(super) const ENROLL_SALT: [u64; 4] = [11, 12, 13, 14];
-pub(super) struct Built {
+pub(in crate::private_predicate::source::locking::joint) const CONTROLLERS: [[u8; 32]; 2] =
+    [[0x84; 32], [0xa5; 32]];
+pub(in crate::private_predicate::source::locking::joint) const ENROLL_SALT: [u64; 4] =
+    [11, 12, 13, 14];
+pub(in crate::private_predicate::source::locking::joint) struct Built {
     pub binding: JointBinding,
     pub parent: VerifiedJointParent,
     pub registry: Registry,
     pub registry_salt: [u64; 4],
+    pub context: work_finality::consensus::Context,
 }
 struct Directory(PathBuf);
 impl Directory {
@@ -126,7 +129,7 @@ fn qc(context: &Context, candidate: &JointCandidate) -> Vec<u8> {
 
 /// The only sealed-parent constructor is actual JointHistory::apply. A temporary
 /// empty Journal supplies the canonical genesis head, never authorizes a block.
-pub(super) fn sealed_begin(
+pub(in crate::private_predicate::source::locking::joint) fn sealed_begin(
     owner: &SourceOwner,
     loaded: &crate::private_predicate::source::LoadedSource,
     descriptor: Descriptor,
@@ -426,6 +429,7 @@ pub(super) fn sealed_begin(
             history.checked_parent().unwrap().unwrap().control()
         );
     }
+    let context = history.context().unwrap().clone();
     // No History, ingress, native proof buffers or CAS handle overlaps input16 production.
     drop(history);
     drop(ingress);
@@ -436,5 +440,6 @@ pub(super) fn sealed_begin(
         parent: last.unwrap(),
         registry,
         registry_salt,
+        context,
     }
 }

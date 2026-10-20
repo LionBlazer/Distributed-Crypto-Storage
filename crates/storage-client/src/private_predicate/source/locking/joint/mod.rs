@@ -1,5 +1,12 @@
 //! Owner-side preparation for the distinct Joint application. No SQL/lock grant.
 mod completion;
+mod control;
+pub use control::{
+    CompletedJointControl, JointControlCandidate, JointControlIntent, JointControlOutcome,
+    JointControlParent, JointEndDisposition, JointOwnedLockingControl, JointOwnedRecovery,
+    JointRegistryOpening, PreparedJointControl,
+};
+pub(super) mod vault;
 use super::*;
 use crate::private_predicate::{BfvContext, FetchedSource};
 use bfv_query_core::{OwnerProofEpoch, ProofEpochStage};
@@ -9,6 +16,11 @@ use registry200_joint::{
     Application as JointApplication, Descriptor, Lane, Request as JointRequest,
 };
 use registry200_journal::ApplicationDescriptor;
+pub use vault::{
+    EncryptedJointRecovery, JOINT_RECOVERY_BYTES, JOINT_RECOVERY_HEADER_BYTES, JointRecovery,
+    JointRecoveryIdentity, JointRecoveryInputs, JointRecoveryKey, RecoverableJointLockingInputs,
+    RecoverableJointLockingPreparation, RecoveredJointComputePrepared,
+};
 
 /// Historical actual Joint proof+QC lineage matched to independent local pins.
 /// This does not certify that no later finalized state exists.
@@ -208,6 +220,7 @@ impl PreparedJointLockingInputs {
             request: _,
             completion,
             staged,
+            recovery: _,
         } = self.prepared;
         (
             inputs,
@@ -258,15 +271,34 @@ impl crate::private_predicate::SourceOwner {
         parent: &JointLockingParent,
         control: LockingControl,
     ) -> crate::Result<JointLockingPreparation> {
-        parent.require_ready(&bfv, epoch)?;
-        let prepared = self.prepare_with_parent(
+        self.prepare_joint_inner(
             bfv,
             epoch,
             fetched,
             compiled,
-            &PreparationParent::Joint(parent),
             control,
-        )?;
+            PreparationRoute {
+                parent: PreparationParent::Joint(parent),
+                recovery: None,
+            },
+        )
+    }
+    fn prepare_joint_inner(
+        &self,
+        bfv: BfvContext<'_>,
+        epoch: &mut OwnerProofEpoch<'_>,
+        fetched: FetchedSource<'_>,
+        compiled: &CompiledLockingSelect,
+        control: LockingControl,
+        route: PreparationRoute<'_>,
+    ) -> crate::Result<JointLockingPreparation> {
+        let PreparationParent::Joint(parent) = &route.parent else {
+            return Err(invalid(
+                "Joint preparation requires its closed parent route",
+            ));
+        };
+        parent.require_ready(&bfv, epoch)?;
+        let prepared = self.prepare_with_parent(bfv, epoch, fetched, compiled, &route, control)?;
         let app = parent.application()?;
         Ok(match prepared {
             LockingPreparation::Prepared(prepared) => {

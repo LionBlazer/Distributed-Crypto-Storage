@@ -23,8 +23,7 @@ use std::{
 // storage-client source imports an app, Source fixture or process launcher.
 #[path = "full_acquire_contention.rs"]
 mod contention;
-#[path = "full_acquire_fixture.rs"]
-mod fixture;
+use super::full_acquire_fixture as fixture;
 #[path = "../../../../../../../../apps/dcs-peer/tests/support/joint_process.rs"]
 mod os_process;
 

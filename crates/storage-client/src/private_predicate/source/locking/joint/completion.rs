@@ -29,6 +29,9 @@ pub struct CompletedJointAcquire {
     head: HeadRef,
     decision: [u8; 32],
     staged: StagedLockingTransition,
+    binding: JointBinding,
+    checked_parent: VerifiedJointParent,
+    next_context: [u8; 32],
 }
 impl CompletedJointAcquire {
     pub fn rows(&self) -> &[CompletedJointRow] {
@@ -42,6 +45,28 @@ impl CompletedJointAcquire {
     }
     pub fn into_parts(self) -> (Vec<CompletedJointRow>, StagedLockingTransition) {
         (self.rows, self.staged)
+    }
+    /// Consume only an ACTUALLY completed operation. The returned private bank
+    /// is historical/unverified for its next use; Source is re-audited there.
+    /// There is deliberately no such conversion on raw prepared StagedNext.
+    /// ```compile_fail
+    /// fn forbidden(x:storage_client::private_predicate::StagedLockingTransition){let _=x.into_opening();}
+    /// ```
+    pub fn into_opening(mut self) -> (Vec<CompletedJointRow>, JointRegistryOpening) {
+        let registry =
+            core::mem::replace(&mut self.staged.next, Zeroizing::new(Registry::default()));
+        let controllers =
+            core::mem::replace(&mut self.staged.controllers, Zeroizing::new([[0; 32]; 2]));
+        let salts = core::mem::replace(&mut self.staged.salts, Zeroizing::new([[0; 4]; 2]));
+        let opening = JointRegistryOpening::from_completed(
+            self.binding,
+            self.checked_parent,
+            self.next_context,
+            registry,
+            controllers,
+            salts,
+        );
+        (self.rows, opening)
     }
 }
 
@@ -95,6 +120,7 @@ impl JointLockingCandidates {
         let JointLockingCandidates {
             _completion: completion,
             _staged: staged,
+            _binding: binding,
             ..
         } = self;
         let decoded = Decoded(
@@ -130,6 +156,9 @@ impl JointLockingCandidates {
             head: operation.head(),
             decision: operation.decision_id(),
             staged,
+            binding,
+            checked_parent: operation.checked_parent().clone(),
+            next_context: operation.next_context_id(),
         })
     }
     // Borrowed validation is private and unconditional in complete_acquire.

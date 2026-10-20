@@ -32,13 +32,15 @@ use work_finality::{
     consensus::{MAX_RECORD_BYTES, Rules},
 };
 
-pub(super) const CONTROLLERS: [[u8; 32]; 2] = [[0x84; 32], [0xa5; 32]];
-pub(super) const ENROLL_SALT: [u64; 4] = [11, 12, 13, 14];
-pub(super) const CAPACITY: u64 = 10_000_000_000;
-pub(super) const TIMEOUTS: [u64; 3] = [180_000; 3];
-pub(super) const DELTA: u64 = 1_000;
+pub(in crate::private_predicate::source::locking::joint) const CONTROLLERS: [[u8; 32]; 2] =
+    [[0x84; 32], [0xa5; 32]];
+pub(in crate::private_predicate::source::locking::joint) const ENROLL_SALT: [u64; 4] =
+    [11, 12, 13, 14];
+pub(in crate::private_predicate::source::locking::joint) const CAPACITY: u64 = 10_000_000_000;
+pub(in crate::private_predicate::source::locking::joint) const TIMEOUTS: [u64; 3] = [180_000; 3];
+pub(in crate::private_predicate::source::locking::joint) const DELTA: u64 = 1_000;
 
-pub(super) struct Directory(PathBuf);
+pub(in crate::private_predicate::source::locking::joint) struct Directory(PathBuf);
 impl Directory {
     pub fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -70,7 +72,7 @@ impl Drop for Directory {
         }
     }
 }
-pub(super) fn identity() -> peer_runtime::Identity {
+pub(in crate::private_predicate::source::locking::joint) fn identity() -> peer_runtime::Identity {
     use rcgen::{CertificateParams, ExtendedKeyUsagePurpose, KeyPair, KeyUsagePurpose};
     let mut p = CertificateParams::new(vec!["dcs-peer".into()]).unwrap();
     p.key_usages = vec![KeyUsagePurpose::DigitalSignature];
@@ -85,12 +87,12 @@ pub(super) fn identity() -> peer_runtime::Identity {
         private_key_pkcs8: key.serialize_der(),
     }
 }
-pub(super) fn signers() -> Vec<SigningKey> {
+pub(in crate::private_predicate::source::locking::joint) fn signers() -> Vec<SigningKey> {
     let mut out: Vec<_> = (1..=4).map(|n| SigningKey::from_bytes(&[n; 32])).collect();
     out.sort_by_key(|k| k.verifying_key().to_bytes());
     out
 }
-pub(super) fn binding(
+pub(in crate::private_predicate::source::locking::joint) fn binding(
     loaded: &crate::private_predicate::source::LoadedSource,
     setup: &bfv_query_core::PublicSetup,
     anchor: &bfv_query_core::BfvKeyAnchor,
@@ -160,7 +162,7 @@ pub(super) fn binding(
     JointBinding::for_durable(spec.network, rules, work, g, descriptor, claim).unwrap()
 }
 
-pub(super) struct ControlState {
+pub(in crate::private_predicate::source::locking::joint) struct ControlState {
     pub registry: Registry,
     pub salt: [u64; 4],
     pub enrollment: [u8; 32],
@@ -177,7 +179,7 @@ impl ControlState {
 
 /// Actual owning Source/Life/Kind production for Bootstrap then Begin. The
 /// returned model state is private prover input, never an accepted network state.
-pub(super) fn control_block(
+pub(in crate::private_predicate::source::locking::joint) fn control_block(
     owner: &SourceOwner,
     loaded: &crate::private_predicate::source::LoadedSource,
     binding: &JointBinding,
@@ -196,7 +198,7 @@ pub(super) fn control_block(
         (!bootstrap).then_some((1, 1)),
     )
 }
-pub(super) fn begin_block(
+pub(in crate::private_predicate::source::locking::joint) fn begin_block(
     owner: &SourceOwner,
     loaded: &crate::private_predicate::source::LoadedSource,
     binding: &JointBinding,
@@ -428,7 +430,7 @@ fn control_block_for(
     )
 }
 
-pub(super) fn transition(
+pub(in crate::private_predicate::source::locking::joint) fn transition(
     binding: &JointBinding,
     parent: HeadRef,
     request: registry200_joint::Request,
