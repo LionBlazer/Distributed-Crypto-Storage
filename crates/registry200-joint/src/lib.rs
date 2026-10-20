@@ -6,6 +6,7 @@ mod acquire;
 mod depot;
 mod descriptor;
 mod manifest;
+pub mod progress;
 mod request;
 mod verifier;
 

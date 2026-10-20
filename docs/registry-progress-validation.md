@@ -100,4 +100,6 @@ Local generated observations remain uncommitted under
 source freeze. The same batch also passed four preliminary new application
 Bootstrap/Control/descriptor/store cases and two application privacy examples;
 it did not run a positive new-application FHE input16/output118 Predicate case
-or any new network/finality gate. Those are separate required integration work.
+or any new network/finality gate. The later positive FHE/application gate passed
+as recorded in [its validation](progress-application-validation.md); new network
+and finality integration remain unfinished.

@@ -18,6 +18,8 @@ sha2 = "=0.10.9"
 p3-field = "=0.8.0"
 
 [dev-dependencies]
+bfv-ciphertext-formation = { path = "../bfv-ciphertext-formation" }
+bfv-relinearization-key-source = { path = "../bfv-relinearization-key-source" }
 compact-store = { path = "../compact-store" }
 zeroize = "=1.9.1"
 ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std", "fast", "zeroize"] }

@@ -4215,10 +4215,12 @@ dependencies = [
 name = "registry200-joint"
 version = "0.1.0"
 dependencies = [
+ "bfv-ciphertext-formation",
  "bfv-key-transform",
  "bfv-mul-relin-proof",
  "bfv-product-evidence",
  "bfv-query-core",
+ "bfv-relinearization-key-source",
  "compact-store",
  "ed25519-dalek",
  "p3-field",

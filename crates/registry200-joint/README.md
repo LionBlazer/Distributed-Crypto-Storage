@@ -1,5 +1,11 @@
 # Registry200 Joint kernel
 
+The [Registry208 progress namespace](src/progress/README.md) is a separate
+application kernel with a passed local full-FHE
+[validation](../../docs/progress-application-validation.md). Its descriptor, Genesis,
+request/manifest/setup domains and Core proofs are distinct; it does not enable
+SQL or alter this legacy application's APIs, bytes, profiles or acceptance.
+
 This fixed N4/T2/D2 application composes hidden predicate locking with the
 original Source and Lifecycle relations and retained real BFV computation.
 Its six owning native cases passed; full Acquire and application/runtime
