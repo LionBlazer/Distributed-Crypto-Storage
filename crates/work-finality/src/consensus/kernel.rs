@@ -137,7 +137,11 @@ impl Machine {
                 let proposal = Proposal::sign(ctx, self.round, value, pol, key)?;
                 self.own_proposal = Some(proposal.clone());
                 out.push(Action::Proposal(proposal.clone()));
-                self.receive_proposal(ctx, verifier, key, &proposal, &mut out)?;
+                // This exact moved value was checked synchronously BEFORE we
+                // signed it. Keep authentication/POL/round checks, then reuse
+                // only this same-call application check for our own prevote.
+                self.authenticate_proposal(ctx, &proposal)?;
+                self.accept_application_checked_proposal(ctx, key, &proposal, &mut out)?;
             }
             Input::Proposal(proposal) => {
                 // An authenticated byte-identical remote retry adds no protocol
@@ -260,11 +264,27 @@ impl Machine {
         proposal: &Proposal,
         out: &mut Vec<Action>,
     ) -> Result<()> {
+        self.authenticate_proposal(ctx, proposal)?;
+        ctx.verify_application(verifier, proposal.value())?;
+        self.accept_application_checked_proposal(ctx, key, proposal, out)
+    }
+    fn authenticate_proposal(&self, ctx: &Context, proposal: &Proposal) -> Result<()> {
         proposal.verify(ctx)?;
         if proposal.round() != self.round {
             return Err(Error::Stale);
         }
-        ctx.verify_application(verifier, proposal.value())?;
+        Ok(())
+    }
+    // Exactly two private call sites: authenticated remote receive after its
+    // actual application check, and local Propose after checking the exact value
+    // before signing. No token/flag escapes or survives this Machine::apply.
+    fn accept_application_checked_proposal(
+        &mut self,
+        ctx: &Context,
+        key: &SigningKey,
+        proposal: &Proposal,
+        out: &mut Vec<Action>,
+    ) -> Result<()> {
         if let Some(old) = &self.proposal {
             if old != proposal {
                 return Err(Error::Equivocation);

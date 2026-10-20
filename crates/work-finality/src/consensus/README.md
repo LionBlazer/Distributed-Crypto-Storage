@@ -80,8 +80,8 @@ after its complete Context, current round, proposer signature and attached POL
 verify and the complete Proposal equals the one already retained. It returns no
 actions, does not run `drive`, recheck the application, or grow the WAL. It grants
 no computation, freshness, finality or SQL authority. A different signature/POL,
-new or conflicting proposal still follows the original application checks; the
-owner-local Propose path is unchanged. Actual stored WAL inputs are fully replayed
+new or conflicting proposal still follows the original application checks. The
+same-call local Propose reduction below is separate. Stored WAL inputs are fully replayed
 on reopen. Client/checkpoint retries and missing-premise checks in closed journal
 adapters are separate and retain their actual verification requirements. Owning
 tests use the real WorkTicket verifier to cover exact retries, changed signed
@@ -106,6 +106,35 @@ compile-fail examples passed, including the revised genuine-subset assertions
 and new first-POL quota and post-fsync lost-ACK cases. Those cases retain actual
 application checks before the first durable admission and on recovery.
 No complete peer-process latency or liveness improvement is established here.
+
+### One synchronous local-proposal check
+
+Local Propose checks the actual selected value once before
+creating its Proposal signature. If an earlier valid value/POL is retained, that
+is the selected value; an unused caller value does not replace it. The same
+`Machine::apply` then authenticates the signed packet's complete Context, POL and
+current round and enters a private shared retained-proposal/lock/prevote helper.
+Those state/action rules and their ordering are unchanged. The two private call
+sites are local Propose after its check-before-signing and remote receive after
+its ordinary actual application check. No boolean, checked token, new public API
+or persisted/cross-call result is introduced.
+
+Remote proposals still authenticate and application-check, apart from the already
+specified exact authenticated duplicate no-op. Decision, floor preflight, signer
+advance and independent recovery still perform their existing checks. Recovery
+replays an original local Propose with one fresh selected-value check and compares
+the same exact durable signatures/actions; it does not trust a recorded success.
+No work/vote/proposal/WAL profile, codec, quorum, timeout or quota changes.
+
+Three new owning cases count the real WorkTicket/signature verifier:
+normal local proposal/prevote plus strict replay, actual retained-valid-value
+reproposal, and invalid local or genuinely signed remote application rejection
+without any published proposal, vote or WAL change. The existing locked/reopen
+case retains all behavior/byte assertions with only the reduced same-call counts
+updated. All 33 consensus cases passed the release native gate on 2026-10-20
+(0.29 seconds in tests; 4.65 seconds including compilation and observation). Their
+abstract application is genuine puzzle/signature validation, not a SQL/FHE proof,
+distributed deployment or measured whole-operation performance improvement.
 
 ### Application and local-control boundary
 

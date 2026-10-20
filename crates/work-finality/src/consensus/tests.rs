@@ -1447,6 +1447,215 @@ fn exact_authenticated_remote_proposal_retries_do_not_recheck_or_change_the_owne
 }
 
 #[test]
+fn local_propose_checks_actual_application_once_and_recovery_revalidates_original_signed_actions() {
+    let f = fixture();
+    let files = OwnedFiles::new();
+    let path = files.path("local-propose-once");
+    let budget = ByteBudget::new(MAX_SHARED_BYTES).unwrap();
+    let (application, calls) = counted_ticket_application(&f);
+    let mut voter = DurableVoter::create_new(
+        &path,
+        f.context.clone(),
+        application.clone(),
+        f.key(0),
+        &budget,
+    )
+    .unwrap();
+    let initial_bytes = voter.file_bytes();
+    let initial_used = budget.used().unwrap();
+
+    let actions = voter.handle(Input::Propose(f.a.clone())).unwrap();
+
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let [Action::Proposal(proposal), Action::Vote(vote)] = actions.as_slice() else {
+        panic!("One actual signed proposal precedes its actual non-nil prevote");
+    };
+    proposal.verify(&f.context).unwrap();
+    assert_eq!(proposal.value(), f.a);
+    vote.verify(
+        f.context.set(),
+        &f.context
+            .vote(0, Step::Prevote, Some(proposal.value_id()))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(vote.public_key(), f.keys[0].verifying_key().to_bytes());
+    assert_eq!(voter.outbound().unwrap(), actions);
+    assert_eq!(voter.step(), RoundStep::Prevote);
+    assert_eq!(voter.locked(), None);
+    assert_eq!(voter.valid(), None);
+    assert!(voter.decision().is_none());
+    assert!(voter.file_bytes() > initial_bytes);
+    assert!(budget.used().unwrap() > initial_used);
+    drop(voter);
+    let original_wal = fs::read(&path).unwrap();
+
+    // This same-call reduction is not a stored application-success flag.
+    // Reopen still invokes the actual captured verifier on the original value.
+    let mut rejecting = application.clone();
+    rejecting.actual.network = [99; 32];
+    assert!(matches!(
+        DurableVoter::open_existing(&path, f.context.clone(), rejecting, f.key(0), &budget),
+        Err(Error::CorruptWal)
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(fs::read(&path).unwrap(), original_wal);
+    let reopened =
+        DurableVoter::open_existing(&path, f.context.clone(), application, f.key(0), &budget)
+            .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    assert_eq!(reopened.outbound().unwrap(), actions);
+    assert_eq!(reopened.step(), RoundStep::Prevote);
+    drop(reopened);
+    assert_eq!(fs::read(&path).unwrap(), original_wal);
+}
+
+#[test]
+fn local_reproposal_checks_the_actual_retained_valid_value_once_not_the_unused_caller_value() {
+    let f = fixture();
+    let files = OwnedFiles::new();
+    let budget = ByteBudget::new(MAX_SHARED_BYTES).unwrap();
+    let (application, calls) = counted_ticket_application(&f);
+    let mut voter = DurableVoter::create_new(
+        files.path("local-valid-reproposal"),
+        f.context.clone(),
+        application,
+        f.key(1),
+        &budget,
+    )
+    .unwrap();
+    voter
+        .handle(Input::Proposal(f.proposal(0, &f.a, None)))
+        .unwrap();
+    for n in [0, 2] {
+        voter
+            .handle(Input::Vote(f.vote(n, 0, Step::Prevote, Some(&f.a))))
+            .unwrap();
+    }
+    let locked = Some((0, f.context.value_id(&f.a).unwrap()));
+    assert_eq!(voter.locked(), locked);
+    assert_eq!(voter.valid(), locked);
+    for n in [0, 2] {
+        voter
+            .handle(Input::Vote(f.vote(n, 0, Step::Precommit, None)))
+            .unwrap();
+    }
+    voter
+        .handle(Input::Timeout(voter.timeout().unwrap()))
+        .unwrap();
+    assert_eq!(voter.round(), 1);
+    assert_eq!(
+        f.context.proposer(1).unwrap(),
+        f.keys[1].verifying_key().to_bytes()
+    );
+    let before = calls.load(Ordering::SeqCst);
+    let mut unused = f.b.clone();
+    *unused.last_mut().unwrap() ^= 1;
+    assert!(WorkTicket::decode(&f.application.election, &unused).is_err());
+
+    let actions = voter.handle(Input::Propose(unused)).unwrap();
+
+    assert_eq!(calls.load(Ordering::SeqCst), before + 1);
+    let [Action::Proposal(proposal), Action::Vote(vote)] = actions.as_slice() else {
+        panic!("The real older POL reproposal precedes its own same-value prevote");
+    };
+    proposal.verify(&f.context).unwrap();
+    assert_eq!(proposal.value(), f.a);
+    assert_eq!(proposal.pol().unwrap().context().round(), 0);
+    vote.verify(
+        f.context.set(),
+        &f.context
+            .vote(1, Step::Prevote, Some(proposal.value_id()))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(voter.locked(), locked);
+    assert_eq!(voter.valid(), locked);
+    assert_eq!(voter.step(), RoundStep::Prevote);
+    assert!(voter.decision().is_none());
+}
+
+#[test]
+fn invalid_local_or_authenticated_remote_application_publishes_no_proposal_vote_or_wal_record() {
+    let f = fixture();
+    let files = OwnedFiles::new();
+    let path = files.path("invalid-local-propose");
+    let budget = ByteBudget::new(MAX_SHARED_BYTES).unwrap();
+    let (application, calls) = counted_ticket_application(&f);
+    let voter = DurableVoter::create_new(
+        &path,
+        f.context.clone(),
+        application.clone(),
+        f.key(0),
+        &budget,
+    )
+    .unwrap();
+    drop(voter); // Read only after releasing the exclusive Windows file lock.
+    let original_wal = fs::read(&path).unwrap();
+    let mut voter = DurableVoter::open_existing(
+        &path,
+        f.context.clone(),
+        application.clone(),
+        f.key(0),
+        &budget,
+    )
+    .unwrap();
+    let initial_bytes = voter.file_bytes();
+    let initial_used = budget.used().unwrap();
+    let initial_timer = voter.timeout().unwrap();
+    let mut invalid = f.a.clone();
+    *invalid.last_mut().unwrap() ^= 1;
+    assert!(WorkTicket::decode(&f.application.election, &invalid).is_err());
+
+    assert!(matches!(
+        voter.handle(Input::Propose(invalid.clone())),
+        Err(Error::ApplicationRejected)
+    ));
+
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(voter.outbound().unwrap().is_empty());
+    assert_eq!(voter.file_bytes(), initial_bytes);
+    assert_eq!(budget.used().unwrap(), initial_used);
+    assert_eq!(voter.context(), &f.context);
+    assert_eq!(voter.round(), 0);
+    assert_eq!(voter.step(), RoundStep::Propose);
+    assert_eq!(voter.locked(), None);
+    assert_eq!(voter.valid(), None);
+    assert!(voter.decision().is_none());
+    assert_eq!(voter.timeout().unwrap(), initial_timer);
+
+    // A genuine proposer signature/POL is not application correctness. The
+    // external path must still invoke the actual verifier and reject this work.
+    let remote = f.proposal(0, &invalid, None);
+    remote.verify(&f.context).unwrap();
+    assert!(matches!(
+        voter.handle(Input::Proposal(remote)),
+        Err(Error::ApplicationRejected)
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert!(voter.outbound().unwrap().is_empty());
+    assert_eq!(voter.file_bytes(), initial_bytes);
+    assert_eq!(budget.used().unwrap(), initial_used);
+    assert_eq!(voter.context(), &f.context);
+    assert_eq!(voter.round(), 0);
+    assert_eq!(voter.step(), RoundStep::Propose);
+    assert_eq!(voter.locked(), None);
+    assert_eq!(voter.valid(), None);
+    assert!(voter.decision().is_none());
+    assert_eq!(voter.timeout().unwrap(), initial_timer);
+    drop(voter);
+    assert_eq!(fs::read(&path).unwrap(), original_wal);
+    let reopened =
+        DurableVoter::open_existing(&path, f.context.clone(), application, f.key(0), &budget)
+            .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert!(reopened.outbound().unwrap().is_empty());
+    assert_eq!(reopened.step(), RoundStep::Propose);
+    drop(reopened);
+    assert_eq!(fs::read(&path).unwrap(), original_wal);
+}
+
+#[test]
 fn first_prevote_quota_refusal_never_publishes_a_same_value_noop() {
     let f = fixture();
     let files = OwnedFiles::new();
@@ -1773,9 +1982,9 @@ fn remote_proposal_noop_preserves_local_signing_locked_wal_replay_and_stale_afte
     )
     .unwrap();
     let initial = voter.handle(Input::Propose(f.a.clone())).unwrap();
-    // Owner-local Propose retains BOTH old application checks, including the
-    // check before signing. This optimization is remote-message-only.
-    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    // Owner-local Propose checks the actual application once before signing;
+    // only that same apply's own receive/prevote path shares the result.
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
     let proposal = initial
         .iter()
         .find_map(|action| match action {
@@ -1805,7 +2014,7 @@ fn remote_proposal_noop_preserves_local_signing_locked_wal_replay_and_stale_afte
         &budget,
     )
     .unwrap();
-    assert_eq!(calls.load(Ordering::SeqCst), 4);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
     assert_eq!(voter.outbound().unwrap(), persisted);
     assert_eq!(voter.locked(), locked);
     assert_eq!(voter.valid(), locked);
@@ -1815,7 +2024,7 @@ fn remote_proposal_noop_preserves_local_signing_locked_wal_replay_and_stale_afte
             .unwrap()
             .is_empty()
     );
-    assert_eq!(calls.load(Ordering::SeqCst), 4);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
     assert_eq!(voter.outbound().unwrap(), persisted);
     assert_eq!(voter.locked(), locked);
     assert_eq!(voter.valid(), locked);
@@ -1858,7 +2067,7 @@ fn remote_proposal_noop_preserves_local_signing_locked_wal_replay_and_stale_afte
     let reopened =
         DurableVoter::open_existing(&path, f.context.clone(), application, f.key(0), &budget)
             .unwrap();
-    assert_eq!(calls.load(Ordering::SeqCst), before_replay + 3);
+    assert_eq!(calls.load(Ordering::SeqCst), before_replay + 2);
     assert_eq!(reopened.decision(), Some(&decision));
     assert_eq!(reopened.outbound().unwrap(), decided_actions);
     assert_eq!(reopened.locked(), locked);
