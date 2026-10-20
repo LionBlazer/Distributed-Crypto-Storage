@@ -178,3 +178,40 @@ pins the source, commands, phase intervals and observed memory. This removes
 repeated work within one open; no comparable before/after latency or RAM
 improvement is claimed. It adds no freshness, current lease, rollback protection
 or SQL admission guarantee.
+
+## Reject-only pending checkpoint candidate
+
+Both Control and Acquire completion compare the whole incoming `JointCandidate`
+with the independently pinned binding, the ORIGINAL pending Context and the exact
+saved Header before loading or restoring private inputs. A different binding,
+slot, previous decision or Header returns `Context` without changing the owner,
+WAL, cursor or shared storage charges. This local comparison authenticates no
+certificate, proof, result or fresh head.
+
+The original pending Context is deliberately retained after external replay of
+the same finalized target. The later private completion still supports that
+semantic duplicate, including valid alternate QC rounds or signer subsets.
+Matching candidate metadata takes the unchanged full private restoration,
+managed-call binding, actual QC/signature/weight and application proof checks,
+freshness checks, private completion and durable publication. No receipt, cache,
+accepting callback or public History API is introduced.
+
+The existing [Control owning test](durable_tests.rs) reuses its genuine
+Source/Bootstrap/Begin setup to check exact old-QC rejection with unchanged bank,
+WAL, cursor, header and charges; actual damaged-signature rejection for matching
+metadata; and old-QC rejection before a damaged private record, while a matching
+QC still hard-fails that record's real restoration. The separate existing
+exact-target duplicate-recovery test remains a required native regression. The
+[OS-FHE Acquire recovery case](durable_acquire_tests.rs) keeps its genuine old-QC
+case and requires the exact `Context` error without extra FHE generation.
+The extended genuine Control case and the separate exact-target duplicate-recovery
+regression passed on 2026-10-20, together with two affected network ownership cases
+and the fixed Host phase grammar:5 tests,144.76 seconds in the test body and
+202.009 seconds including compilation. Strict release Clippy for storage-client,
+private input proofs and all targets also passed. The1612-file source inventory
+was unchanged across both commands. Source receipt SHA256 is
+`F0916EB18275A473BF613623A1324121961EF9A57BB27710F62671108A9C6CE9`;
+the after receipt is `57C931D15DE6B6F57A4869A672B2CF7417B9CEE9FA9CF3B5D4D5B0C7CC2115BF`.
+The stricter OS-FHE Acquire assertion remains unexecuted; the separate network
+Host gate also targets that real rejection. No complete-operation latency or
+resource improvement has been measured.

@@ -766,6 +766,7 @@ impl OwnerVault {
             .pending_parent
             .as_ref()
             .ok_or(OwnerVaultError::Encoding)?;
+        self.require_pending_checkpoint(checkpoint)?;
         let public = saved.load(&self.ingress, &self.pins.binding, material)?;
         let (owner, pending, candidates) = restore(
             saved,

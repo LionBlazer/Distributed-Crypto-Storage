@@ -11,7 +11,7 @@ use crate::private_predicate::{FetchedSource, SourceOwner};
 use protocol_storage::{ControlFile, ParticipantQuota, Reservation};
 use registry200_finality::{
     CandidateBlock,
-    joint::{JointCheckpoint, JointHistory},
+    joint::{JointCandidate, JointCheckpoint, JointHistory},
 };
 use registry200_joint::{JointDepot, JointEvidenceIngress, Manifest};
 use sha2::{Digest, Sha256};
@@ -720,6 +720,7 @@ impl OwnerVault {
             .pending_parent
             .as_ref()
             .ok_or(OwnerVaultError::Encoding)?;
+        self.require_pending_checkpoint(checkpoint)?;
         let (candidate, expected) = restore_candidate(
             &self.saved,
             before,
@@ -969,6 +970,25 @@ impl OwnerVault {
         } else {
             Err(OwnerVaultError::Cas)
         }
+    }
+    // Reject only: the original pending Context survives exact-target external
+    // replay even when History already holds its successor. Matching metadata
+    // grants no authority and still takes the full private/proof/QC completion.
+    fn require_pending_checkpoint(&self, checkpoint: &JointCheckpoint) -> VaultResult<()> {
+        let before = self
+            .pending_parent
+            .as_ref()
+            .ok_or(OwnerVaultError::Encoding)?;
+        let block = self.saved.block.as_ref().ok_or(OwnerVaultError::Encoding)?;
+        let candidate = JointCandidate::for_context(
+            &self.pins.binding,
+            before.current_context(),
+            block.header().clone(),
+        )?;
+        if checkpoint.candidate() != &candidate {
+            return Err(registry200_finality::joint::Error::Context.into());
+        }
+        Ok(())
     }
     fn is_pending(&self) -> bool {
         matches!(

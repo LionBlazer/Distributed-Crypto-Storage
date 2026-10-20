@@ -723,14 +723,78 @@ fn candidate_preflight_requires_actual_owner_and_kind_without_publishing_a_wal_o
     assert_eq!(vault.wal.length, length);
     let checkpoint = qc(&rig.binding, &vault.history, &block);
     let pending = vault.seal_body(cursor, block).unwrap();
-    assert!(
-        vault
-            .complete_control(pending, &rig.owner, rig.fetched(), &rig.boot.checkpoint)
-            .is_err()
-    );
+    let pending_length = vault.wal.length;
+    let pending_digest = vault.wal.digest;
+    let control_charge = rig.quota().control_budget().used().unwrap();
+    let depot_charge = rig.quota().depot_budget().used().unwrap();
+    let exact_block = vault.saved.block.as_ref().unwrap().encode();
+    let original_idle = Zeroizing::new(*vault.saved.idle);
+    let assert_unchanged = |vault: &OwnerVault| {
+        assert_eq!(vault.cursor().unwrap(), pending);
+        assert_eq!(vault.phase().unwrap(), OwnerVaultPhase::BodyPrepared);
+        assert_eq!(vault.historical_parent().unwrap().head(), head);
+        assert_eq!(vault.history.context().unwrap().id(), context);
+        assert_eq!(vault.wal.length, pending_length);
+        assert_eq!(vault.wal.digest, pending_digest);
+        assert_eq!(rig.quota().control_budget().used().unwrap(), control_charge);
+        assert_eq!(rig.quota().depot_budget().used().unwrap(), depot_charge);
+        assert_eq!(vault.saved.block.as_ref().unwrap().encode(), exact_block);
+        assert_eq!(&vault.saved.idle[..], &original_idle[..]);
+    };
+
+    // A genuine older QC is rejected before touching the private candidate.
+    assert!(matches!(
+        vault.complete_control(pending, &rig.owner, rig.fetched(), &rig.boot.checkpoint),
+        Err(OwnerVaultError::Joint(
+            registry200_finality::joint::Error::Context
+        ))
+    ));
     assert_eq!(vault.cursor().unwrap(), pending);
     assert_eq!(vault.historical_parent().unwrap().head(), head);
     assert_eq!(vault.history.context().unwrap().id(), context);
+    assert_unchanged(&vault);
+
+    // Equal public metadata cannot substitute for the actual QC signatures.
+    let mut damaged = checkpoint.certificate().to_vec();
+    *damaged.last_mut().unwrap() ^= 1;
+    let bad_signature =
+        JointCheckpoint::new(checkpoint.candidate().clone(), checkpoint.round(), damaged).unwrap();
+    assert!(matches!(
+        vault.complete_control(pending, &rig.owner, rig.fetched(), &bad_signature),
+        Err(OwnerVaultError::Joint(
+            registry200_finality::joint::Error::Consensus(
+                work_finality::consensus::Error::Evidence(work_finality::Error::InvalidSignature)
+            )
+        ))
+    ));
+    assert_unchanged(&vault);
+
+    // This owning fixture deliberately damages its PUBLIC NONSECRET private
+    // record. The old QC still stops before restoration, whereas the matching
+    // genuine QC must take restoration and hard-fail its real private grammar.
+    let original_candidate = vault.saved.candidate.take().unwrap();
+    let mut damaged_candidate = Zeroizing::new(*original_candidate);
+    damaged_candidate[0] ^= 1;
+    vault.saved.candidate = Some(damaged_candidate);
+    assert!(matches!(
+        vault.complete_control(pending, &rig.owner, rig.fetched(), &rig.boot.checkpoint),
+        Err(OwnerVaultError::Joint(
+            registry200_finality::joint::Error::Context
+        ))
+    ));
+    assert_unchanged(&vault);
+    assert!(matches!(
+        vault.complete_control(pending, &rig.owner, rig.fetched(), &checkpoint),
+        Err(OwnerVaultError::Owner(crate::Error::InvalidInput(ref message)))
+            if message == "Private Control role differs"
+    ));
+    assert_unchanged(&vault);
+    assert_eq!(
+        vault.saved.candidate.as_ref().unwrap()[0],
+        original_candidate[0] ^ 1
+    );
+    vault.saved.candidate = Some(original_candidate);
+
     assert_eq!(
         vault
             .complete_control(pending, &rig.owner, rig.fetched(), &checkpoint)

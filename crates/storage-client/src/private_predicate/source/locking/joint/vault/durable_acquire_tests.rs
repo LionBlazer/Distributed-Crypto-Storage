@@ -440,16 +440,17 @@ fn os_fhe_catalog_body_and_completed_lost_ack_recover_original_invocation_then_e
             .encode(),
         exact
     );
-    assert!(
-        vault
-            .complete_acquire(
-                cursor,
-                rig.fetched(),
-                &rig.backups.as_ref().unwrap().material(),
-                &rig.boot.checkpoint
-            )
-            .is_err()
-    );
+    assert!(matches!(
+        vault.complete_acquire(
+            cursor,
+            rig.fetched(),
+            &rig.backups.as_ref().unwrap().material(),
+            &rig.boot.checkpoint
+        ),
+        Err(OwnerVaultError::Joint(
+            registry200_finality::joint::Error::Context
+        ))
+    ));
     assert_eq!(vault.cursor().unwrap(), cursor);
     // Actual all-math/QC + one original pending decrypt, then lost completion ACK.
     vault.wal.fault = Some(Fault::AfterSync);
