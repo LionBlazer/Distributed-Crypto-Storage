@@ -184,6 +184,15 @@ between ROM proof and concrete hashing;
 The implementation-specific derivations above are not theorems of those papers.
 
 A faithful lattice/confidentiality estimate for n4096,q=Q,CBD(20) is pending.
+An actual Linux Sage 10.10/Python 3.12.3 runtime was reached on 2026-10-21 with
+an observed 2 GiB operator memory limit and GNU timeout 9.4. The reviewed numerical
+runner stopped before staging or attacks because Git was absent. No model or
+attack completed, and this observation supplies no numerical security estimate.
+The intended ordinary estimator remains pinned at
+`53da5982597709ba0fdf94ea37a84d822310fd84`, with exact CBD20 secret/error,
+full Q, m=infinity, all eight attacks and separate classical MATZOV/ADPS16
+models. Faithful source/runtime preparation remains an explicit blocker;
+an approximation, Git shim or omitted attack is not an equivalent assessment.
 Smallness does not prove sampler entropy. The certificate does not establish
 same-secret Formation, authenticated Source/hidden-program completeness,
 authorization, current agreed head/QC, durable locks or SQL admission.
