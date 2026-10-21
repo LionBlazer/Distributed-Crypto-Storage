@@ -7,6 +7,12 @@ cryptographic cases and three ownership compile-fail examples passed the
 [native validation](../../../../docs/registry-progress-validation.md).
 This module does not enable SQL SKIP LOCKED/WAIT/NOWAIT, finality or a current lock.
 
+The newer [Word API](word/README.md) has its own distinct
+[SourceVersion-first EMPTY208 bootstrap](word/bootstrap/README.md). Its private
+implementation shares this module's fixed EMPTY208 equations and trace writer;
+the original Bootstrap803 headers, profile, public values and Source contract below
+remain unchanged. The two proof families cannot substitute for each other.
+
 ## Actual proof boundary
 
 BootstrapExpected/BootstrapStatement and BootstrapWitness own the empty role.

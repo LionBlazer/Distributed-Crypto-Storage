@@ -43,3 +43,9 @@ separate receiving setup for one fixed role, consumes owner inputs into unverifi
 evidence, then verifies the evidence against the receiver's original expectation.
 Higher layers must independently join Source/DATA admission, authorized prior
 state and fresh weighted finality before accepting an SQL/locking result.
+
+The [EMPTY208 bootstrap](bootstrap/README.md) separately proves the original empty
+Word registry against an actual SourceVersion certificate and fixed enrollment.
+It does not authorize that enrollment or establish a current network head. Its
+distinct frame/profile cannot be substituted for a Word transition or the old
+Bootstrap803 role.

@@ -39,8 +39,9 @@ pub(super) fn reset(row: usize) -> bool {
     matches!(row, 0 | 85 | 93)
 }
 
-pub(super) struct BootstrapAir {
-    values: [Val; BOOTSTRAP_VALUES],
+/// Shared fixed EMPTY208 relation. Callers own distinct statement/profile families.
+pub(super) struct EmptyRegistryAir<const PUBLIC: usize> {
+    values: [Val; PUBLIC],
     source_prefix: Vec<Val>,
     enrollment_prefix: Vec<Val>,
     registry_prefix: Vec<Val>,
@@ -49,6 +50,7 @@ pub(super) struct BootstrapAir {
     next: [Val; 4],
     periodics: OnceLock<Vec<Vec<Val>>>,
 }
+pub(super) type BootstrapAir = EmptyRegistryAir<BOOTSTRAP_VALUES>;
 impl BootstrapAir {
     pub(super) fn new(s: &BootstrapStatement) -> Self {
         Self {
@@ -62,6 +64,93 @@ impl BootstrapAir {
             enrollment: s.expected.enrollment,
             opening: s.expected.source().open_commitment,
             next: s.next,
+            periodics: OnceLock::new(),
+        }
+    }
+}
+impl<const PUBLIC: usize> EmptyRegistryAir<PUBLIC> {
+    pub(super) fn trace(
+        &self,
+        plain: &[u8; 2348],
+        controllers: &[[u8; 32]; 2],
+        salts: &[[u64; 4]; 3],
+    ) -> p3_matrix::dense::RowMajorMatrix<Val> {
+        use crate::lifecycle::circuit::{bits, inverse};
+        let mut bank = Val::zero_vec(WIDTH);
+        for (i, v) in crate::source::statement::words(&plain[124..156]).enumerate() {
+            bank[TABLE + i] = v;
+        }
+        for (i, v) in crate::source::statement::words(&plain[2220..2348]).enumerate() {
+            bank[IDS + i] = v;
+        }
+        for (t, controller) in controllers.iter().enumerate() {
+            for (i, byte) in controller.iter().enumerate() {
+                bits(
+                    &mut bank[CONTROLLERS + 256 * t + 8 * i..CONTROLLERS + 256 * t + 8 * (i + 1)],
+                    u64::from(*byte),
+                );
+            }
+            bank[INVERSES + t] = inverse(Val::from_u32(
+                controller.iter().map(|b| b.count_ones()).sum(),
+            ));
+        }
+        for (i, s) in salts.iter().enumerate() {
+            bank[SALTS + 4 * i..SALTS + 4 * (i + 1)].copy_from_slice(&s.map(Val::from_u64));
+        }
+        let mut values = Val::zero_vec(WIDTH * TRACE_HEIGHT);
+        let mut checkpoint = [Val::ZERO; 12];
+        for (physical, row) in values.as_chunks_mut::<WIDTH>().0.iter_mut().enumerate() {
+            row.copy_from_slice(&bank);
+            if physical < 85 {
+                for word in 0..8 {
+                    let f = 8 * physical + word;
+                    if (87..674).contains(&f) {
+                        let at = 4 * (f - 87);
+                        bits(
+                            &mut row[WORDS + 32 * word..WORDS + 32 * (word + 1)],
+                            u64::from(u32::from_le_bytes(plain[at..at + 4].try_into().unwrap())),
+                        );
+                    }
+                }
+            }
+            row[CHECKPOINT..WORDS].copy_from_slice(&checkpoint);
+            let mut input = [Val::ZERO; 12];
+            if let Some((stream, block)) = absorb(physical) {
+                for (slot, value) in input[..8].iter_mut().enumerate() {
+                    *value = self.field(row, stream, block * 8 + slot, slot);
+                }
+                if !reset(physical) {
+                    input[8..].copy_from_slice(&checkpoint[8..]);
+                }
+            }
+            let output = crate::poseidon::write(&mut row[..CHECKPOINT], input);
+            if absorb(physical).is_some() {
+                checkpoint = output;
+            }
+        }
+        bank.fill(Val::ZERO);
+        p3_matrix::dense::RowMajorMatrix::new(values, WIDTH)
+    }
+    pub(super) fn from_fields(
+        values: [Val; PUBLIC],
+        source_prefix: Vec<Val>,
+        enrollment_prefix: Vec<Val>,
+        registry_prefix: Vec<Val>,
+        enrollment: [Val; 4],
+        opening: [Val; 4],
+        next: [Val; 4],
+    ) -> Self {
+        assert_eq!(source_prefix.len(), 87);
+        assert_eq!(enrollment_prefix.len(), 33);
+        assert_eq!(registry_prefix.len(), 33);
+        Self {
+            values,
+            source_prefix,
+            enrollment_prefix,
+            registry_prefix,
+            enrollment,
+            opening,
+            next,
             periodics: OnceLock::new(),
         }
     }
@@ -102,12 +191,12 @@ impl BootstrapAir {
         }
     }
 }
-impl BaseAir<Val> for BootstrapAir {
+impl<const PUBLIC: usize> BaseAir<Val> for EmptyRegistryAir<PUBLIC> {
     fn width(&self) -> usize {
         WIDTH
     }
     fn num_public_values(&self) -> usize {
-        BOOTSTRAP_VALUES
+        PUBLIC
     }
     fn main_next_row_columns(&self) -> Vec<usize> {
         (0..WIDTH).collect()
@@ -122,9 +211,9 @@ impl BaseAir<Val> for BootstrapAir {
         Some(5)
     }
 }
-impl<AB: AirBuilder<F = Val>> Air<AB> for BootstrapAir {
+impl<AB: AirBuilder<F = Val>, const PUBLIC: usize> Air<AB> for EmptyRegistryAir<PUBLIC> {
     fn eval(&self, b: &mut AB) {
-        let public: [AB::PublicVar; BOOTSTRAP_VALUES] = b.public_values().try_into().unwrap();
+        let public: [AB::PublicVar; PUBLIC] = b.public_values().try_into().unwrap();
         for (a, v) in public.into_iter().zip(self.values) {
             b.assert_eq(a, v);
         }

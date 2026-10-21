@@ -90,6 +90,17 @@ impl SourceOpening {
             bytes: plain[..12].try_into().map_err(|_| Error::Shape)?,
         })
     }
+    // Consuming private transfer to the sibling EMPTY208 producer; no raw public getter.
+    pub(super) fn into_bootstrap(self) -> (Zeroizing<[u8; 2348]>, Zeroizing<[u64; 4]>) {
+        let mut plain = Zeroizing::new([0; 2348]);
+        for (out, word) in plain.as_chunks_mut::<4>().0.iter_mut().zip(self.words) {
+            out.copy_from_slice(&(word.as_canonical_u64() as u32).to_le_bytes());
+        }
+        (
+            plain,
+            Zeroizing::new(self.salt.map(|v| v.as_canonical_u64())),
+        )
+    }
 }
 impl Drop for SourceOpening {
     fn drop(&mut self) {

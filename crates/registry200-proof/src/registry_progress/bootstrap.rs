@@ -1,12 +1,8 @@
 //! Genuine Source-first EMPTY Registry208 bootstrap. No application admission.
 use super::{BootstrapExpected, BootstrapStatement, bootstrap_air as air, circuit::State};
-use crate::{
-    BackendError, Val,
-    lifecycle::circuit::{bits, inverse},
-    source,
-};
+use crate::{BackendError, Val, source};
 pub use air::WIDTH;
-use bfv_hiding_stark::{self as engine, Config, SecurityReport, TRACE_HEIGHT, codec};
+use bfv_hiding_stark::{self as engine, Config, SecurityReport, codec};
 use p3_air::BaseAir;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_matrix::dense::RowMajorMatrix;
@@ -105,64 +101,7 @@ impl BootstrapWitness {
         &self.statement
     }
     fn trace(&self) -> RowMajorMatrix<Val> {
-        let air = air::BootstrapAir::new(&self.statement);
-        let mut bank = Val::zero_vec(WIDTH);
-        for (i, v) in source::statement::words(&self.plain[124..156]).enumerate() {
-            bank[air::TABLE + i] = v;
-        }
-        for (i, v) in source::statement::words(&self.plain[2220..2348]).enumerate() {
-            bank[air::IDS + i] = v;
-        }
-        for (t, controller) in self.controllers.iter().enumerate() {
-            for (i, byte) in controller.iter().enumerate() {
-                bits(
-                    &mut bank[air::CONTROLLERS + 256 * t + 8 * i
-                        ..air::CONTROLLERS + 256 * t + 8 * (i + 1)],
-                    u64::from(*byte),
-                );
-            }
-            bank[air::INVERSES + t] = inverse(Val::from_u32(
-                controller.iter().map(|b| b.count_ones()).sum(),
-            ));
-        }
-        for (i, s) in self.salts.iter().enumerate() {
-            bank[air::SALTS + 4 * i..air::SALTS + 4 * (i + 1)]
-                .copy_from_slice(&s.map(Val::from_u64));
-        }
-        let mut values = Val::zero_vec(WIDTH * TRACE_HEIGHT);
-        let mut checkpoint = [Val::ZERO; 12];
-        for (physical, row) in values.as_chunks_mut::<WIDTH>().0.iter_mut().enumerate() {
-            row.copy_from_slice(&bank);
-            if physical < 85 {
-                for word in 0..8 {
-                    let f = 8 * physical + word;
-                    if (87..674).contains(&f) {
-                        let at = 4 * (f - 87);
-                        bits(
-                            &mut row[air::WORDS + 32 * word..air::WORDS + 32 * (word + 1)],
-                            u64::from(u32::from_le_bytes(
-                                self.plain[at..at + 4].try_into().unwrap(),
-                            )),
-                        );
-                    }
-                }
-            }
-            row[air::CHECKPOINT..air::WORDS].copy_from_slice(&checkpoint);
-            let mut input = [Val::ZERO; 12];
-            if let Some((stream, block)) = air::absorb(physical) {
-                for (slot, value) in input[..8].iter_mut().enumerate() {
-                    *value = air.field(row, stream, block * 8 + slot, slot);
-                }
-                if !air::reset(physical) {
-                    input[8..].copy_from_slice(&checkpoint[8..]);
-                }
-            }
-            let output = crate::poseidon::write(&mut row[..air::CHECKPOINT], input);
-            if air::absorb(physical).is_some() {
-                checkpoint = output;
-            }
-        }
-        RowMajorMatrix::new(values, WIDTH)
+        air::BootstrapAir::new(&self.statement).trace(&self.plain, &self.controllers, &self.salts)
     }
 }
 

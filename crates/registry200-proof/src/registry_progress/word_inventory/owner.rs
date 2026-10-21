@@ -177,7 +177,7 @@ pub(super) fn append64(v: &mut Vec<Val>, x: u64) {
 /// Only two honest cases are generated here: Begin and Start/Done. The complete
 /// evaluator still handles every recipe, input kind, hash and fixed lookup.
 #[cfg(test)]
-pub(super) fn public_case(predicate: bool) -> (Metadata, PrimaryInputs) {
+pub(in crate::registry_progress) fn public_case(predicate: bool) -> (Metadata, PrimaryInputs) {
     public_case_variant(predicate, 0)
 }
 #[cfg(test)]

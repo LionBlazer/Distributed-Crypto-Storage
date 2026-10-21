@@ -1,5 +1,6 @@
 //! Fixed Word mathematics relative to independently retained Source and OldRoot.
 //! Native verification grants no source authentication, history, freshness or SQL authority.
+pub mod bootstrap;
 mod expected;
 mod inputs;
 use super::word_inventory::{probe, probe_wire};

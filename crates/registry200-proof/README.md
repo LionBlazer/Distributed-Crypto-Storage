@@ -217,3 +217,10 @@ before returning the privately constructed mathematical result. Role-only public
 preprocessing can be retained; private inputs, randomness and verdicts cannot.
 The exact original profiles, full graph/PP pins and codecs are preserved. This is
 not Source/OldRoot authentication, current weighted finality or SQL/lock admission.
+
+The distinct [Word EMPTY208 bootstrap](src/registry_progress/word/bootstrap/README.md)
+now proves the initial original Word root against a genuine immutable SourceVersion
+and enrollment. Both producer and receiver independently verify the Source native
+proof. An actual Word Begin proof can continue from that exact empty root. Enrollment
+authorization, current weighted head, durable finality and network SQL remain separate
+requirements. See its [validation](src/registry_progress/word/bootstrap/VALIDATION.md).
