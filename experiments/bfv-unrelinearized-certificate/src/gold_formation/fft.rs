@@ -4,7 +4,7 @@ use zeroize::Zeroizing;
 
 pub(super) const GOLD: u64 = 0xffff_ffff_0000_0001;
 // Pinned Goldilocks primitive8192-th root; new() checks its exact order.
-const PSI: u64 = 0x1544_ef23_35d1_7997;
+pub(super) const PSI: u64 = 0x1544_ef23_35d1_7997;
 fn add(a: u64, b: u64) -> u64 {
     ((u128::from(a) + u128::from(b)) % u128::from(GOLD)) as u64
 }
@@ -14,7 +14,7 @@ fn sub(a: u64, b: u64) -> u64 {
 pub(super) fn mul(a: u64, b: u64) -> u64 {
     ((u128::from(a) * u128::from(b)) % u128::from(GOLD)) as u64
 }
-fn pow(mut value: u64, mut exponent: u64) -> u64 {
+pub(super) fn pow(mut value: u64, mut exponent: u64) -> u64 {
     let mut out = 1;
     while exponent != 0 {
         if exponent & 1 != 0 {
@@ -129,6 +129,18 @@ impl Plan {
                 })
                 .collect::<Vec<_>>(),
         );
+        self.transform(&mut out, false)?;
+        Ok(out)
+    }
+    /// Public-input preprocessing only. Secret graph stages are constructed independently.
+    pub(super) fn public_frequency(&self, values: &[u64], q: u64) -> Result<Vec<u64>> {
+        if values.len() != N || !crate::geometry::Q.contains(&q) {
+            return Err(Error::Shape);
+        }
+        if values.iter().any(|&v| v >= q) {
+            return Err(Error::Arithmetic);
+        }
+        let mut out = values.to_vec();
         self.transform(&mut out, false)?;
         Ok(out)
     }

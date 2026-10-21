@@ -1,6 +1,7 @@
 //! Owner-only pre-proving witness arithmetic. Consumes secrets; NEVER a peer verifier.
 //! No proof, key authentication, Source/SQL admission or assessed security is supplied.
 mod fft;
+mod graph;
 #[cfg(test)]
 mod tests;
 
@@ -15,6 +16,19 @@ use zeroize::Zeroizing;
 pub(super) const SCALE: u64 = 16389;
 pub(super) const PRIVATE_WITNESS_BYTES: usize = 7 * N * core::mem::size_of::<i64>();
 pub(super) const LOGICAL_VECTOR_BYTES: usize = 14 * N * 8 + N + 3;
+/// Public numeric observation only; not a proof/result/key/SQL receipt.
+pub(super) struct GraphObservation {
+    pub(super) gates: usize,
+    pub(super) rows: usize,
+    pub(super) slots: usize,
+    pub(super) nodes: usize,
+    pub(super) trace_bytes: usize,
+    pub(super) logical_vector_upper_bound_bytes: usize,
+    pub(super) precheck_ms: f64,
+    pub(super) public_plan_ms: f64,
+    pub(super) trace_build_and_audit_ms: f64,
+    pub(super) coefficient_check_ms: f64,
+}
 const SMALL: i64 = 20;
 const MAX_K: i64 = (1 << 19) - 1;
 // SDK parameters.rs: inv(-t) in each Q basis, not floor(Q/t).
@@ -172,6 +186,53 @@ impl Witness {
     }
     pub(super) fn check(&self, statement: &Statement, raw: [&[u64]; 2]) -> Result<()> {
         self.check_inputs(Inputs::new(statement)?, raw)
+    }
+    /// Separate owner-only graph diagnostic. Existing check/protocol remain unchanged.
+    pub(super) fn audit_graph(
+        &self,
+        statement: &Statement,
+        raw: [&[u64]; 2],
+    ) -> Result<GraphObservation> {
+        let start = std::time::Instant::now();
+        self.check(statement, raw)?;
+        let words = scaled(raw)?;
+        let precheck_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let inputs = Inputs::new(statement)?;
+        let start = std::time::Instant::now();
+        let plan = graph::Plan::new(inputs)?;
+        let public_plan_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let start = std::time::Instant::now();
+        let trace = plan.build(&self.secret)?;
+        let trace_build_and_audit_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let start = std::time::Instant::now();
+        for (operand, words) in words.iter().enumerate() {
+            for basis in 0..2 {
+                let product = plan.product(&trace, operand, basis)?;
+                for at in 0..N {
+                    let residual = i128::from(inputs.components[2 * operand][basis][at])
+                        + i128::from(product[at])
+                        - i128::from(DELTA[basis]) * i128::from(words[at])
+                        - i128::from(self.errors[operand][at])
+                        - i128::from(Q[basis]) * i128::from(self.quotients[operand][basis][at]);
+                    if residual != 0 {
+                        return Err(Error::Arithmetic);
+                    }
+                }
+            }
+        }
+        let coefficient_check_ms = start.elapsed().as_secs_f64() * 1000.0;
+        Ok(GraphObservation {
+            gates: graph::GATES,
+            rows: graph::ROWS,
+            slots: graph::SLOTS,
+            nodes: 65 * N,
+            trace_bytes: graph::GATES * 4 * core::mem::size_of::<u64>(),
+            logical_vector_upper_bound_bytes: graph::LOGICAL_VECTOR_CAP,
+            precheck_ms,
+            public_plan_ms,
+            trace_build_and_audit_ms,
+            coefficient_check_ms,
+        })
     }
     fn check_inputs(&self, inputs: Inputs<'_>, raw: [&[u64]; 2]) -> Result<()> {
         inputs.validate()?;

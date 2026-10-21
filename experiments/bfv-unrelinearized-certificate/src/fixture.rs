@@ -153,3 +153,38 @@ pub(crate) fn audit_private_witness() -> Result<PrivateWitnessObservation> {
         whole_local_ms: began.elapsed().as_secs_f64() * 1000.,
     })
 }
+
+pub(crate) struct PrivateGraphObservation {
+    pub(crate) preparation_ms: f64,
+    pub(crate) sdk_product_ms: f64,
+    pub(crate) witness_build_ms: f64,
+    pub(crate) graph: crate::gold_formation::GraphObservation,
+    pub(crate) whole_local_ms: f64,
+}
+
+/// One owner-local full graph diagnostic with the original SDK encryption inputs.
+/// The guarded secret, trace and all private products die before the observation.
+pub(crate) fn audit_private_graph() -> Result<PrivateGraphObservation> {
+    let began = Instant::now();
+    let example = example()?;
+    let raw = [
+        example.private_inputs[0].as_slice(),
+        example.private_inputs[1].as_slice(),
+    ];
+    let key_bytes = Zeroizing::new(example.key.to_bytes());
+    let build = Instant::now();
+    let witness = crate::gold_formation::Witness::from_sdk_key(&example.statement, raw, key_bytes)?;
+    let witness_build_ms = build.elapsed().as_secs_f64() * 1000.;
+    let graph = witness.audit_graph(&example.statement, raw)?;
+    let preparation_ms = example.preparation_ms;
+    let sdk_product_ms = example.product_ms;
+    drop(witness);
+    drop(example);
+    Ok(PrivateGraphObservation {
+        preparation_ms,
+        sdk_product_ms,
+        witness_build_ms,
+        graph,
+        whole_local_ms: began.elapsed().as_secs_f64() * 1000.,
+    })
+}

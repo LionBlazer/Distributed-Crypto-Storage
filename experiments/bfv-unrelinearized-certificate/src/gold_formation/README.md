@@ -102,3 +102,56 @@ including the SDK product and cleanup was13.7364ms. Process RSS was not measured
 No network/FHE-proof/recovery gate or accepted DCS profile is implied. Actual
 hiding Formation, authenticated Source/Key composition and the500ms complete
 query remain unimplemented.
+
+## Complete private arithmetic graph
+
+The private `graph` module supplies the complete 139264-gate arithmetic
+schedule for the future N4096 Formation AIR: one secret forward transform,
+four actual public-A pointwise jobs and four inverse transforms. Its 32 slots make
+4352 exact rows. Lazy metadata owns original node IDs, twiddles, folded first
+input bit-reversal/twists, last inverse normalization and the final-forward
+four-consumer fanout. Precomputed bounded public tables avoid repeated per-gate
+exponentiation. Public A transforms are input preprocessing; no secret FFT or
+private equation is recomputed by a peer verifier in this source slice.
+
+`Witness::audit_graph(&Statement, raw[2])` is a separate owner-local diagnostic
+entry point. It returns only public numeric counts and phase durations, after
+the existing witness checks, exact graph replay/audit and all 4*4096 equations
+using graph-derived products. The explicit `--private-formation-graph-fixture`
+mode owns the original SDK inputs and the guarded witness lifecycle. The previous
+check paths, public profile and public fixture protocol are unchanged. No secret Trace,
+SDK/key owner, input/output coefficient getter or proof result escapes.
+
+`Plan::new` is private to this module and consumes its already canonical Inputs
+view. It binds the nonce, SHA512 of the literal original request, and every
+canonical c0/A coefficient. A Trace is bound to that plan. Audit checks each
+input against its exact producer and the retained S boundary before checking
+local arithmetic; locally repaired inconsistent wires therefore reject. An
+exhaustive inventory checks exactly one producer per node, actual fanout and
+the explicit outer coefficient boundaries (S producer, four final-AS consumers).
+Graph output comparison alone is not the audit.
+
+Private Trace stores 139264*4 u64 values (4456448 bytes); the temporary 65*4096
+wire bank is 2129920 bytes. Public A/twiddle/twist/normalization tables, inventory
+and four lifted outputs put the explicitly counted graph vectors below 8MiB.
+Trace and private wire/product scratch are Zeroizing. That is a LOGICAL vector
+cap, not a whole-process/allocator/stack/SDK RSS bound. No AIR/LDE/quotient/FRI
+proof buffer is allocated. The original small-witness buffer estimate describes
+only the old check path, not this separately opt-in diagnostic.
+
+The existing random SDK fixture now compares all four complete graph products to
+the independent SDK Poly oracle and fast Gold arithmetic; no second SDK fixture
+or proof was added. A new ordinary metadata/replay test changes the real fanout,
+repairs a row's local equations with a false wire, and changes the retained
+context; each rejects. Short/out-of-range secrets and a noncanonical Gold value
+are also rejected using the same bounded public setup. All 20 owning tests passed
+in 0.54s. The explicit graph fixture took 24.9815ms including actual SDK work and
+cleanup; [executed graph validation](GRAPH-VALIDATION.md) records the evidence.
+
+This module does not yet constrain the graph in a cryptographic AIR, open the
+actual two Cw4096 roots, prove a new N4096 Cs/key commitment or bind Source/SQL.
+The new pair's Witness coefficients are already scaled W; passing them to this
+old raw-input API would double-scale. A future private typed FormationOpening
+must preserve actual W/salt/context without reusing old N8192 openings. Native
+single-AIR packing/security/resources and full query/Core/app/finality binding
+remain mandatory. Full Formation/SQL and <=500ms/1–2GiB stay unestablished.

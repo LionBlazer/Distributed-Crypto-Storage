@@ -60,6 +60,7 @@ cargo test --release --offline --locked -p bfv-unrelinearized-certificate -- --t
 cargo run --release --offline --locked -p bfv-unrelinearized-certificate -- --show-profile
 cargo run --release --offline --locked -p bfv-unrelinearized-certificate -- --public-fixture
 cargo run --release --offline --locked -p bfv-unrelinearized-certificate -- --private-formation-fixture
+cargo run --release --offline --locked -p bfv-unrelinearized-certificate -- --private-formation-graph-fixture
 ```
 
 Default execution reports metadata only. The explicit public fixture measures
@@ -74,9 +75,17 @@ The separate [private Goldilocks witness candidate](src/gold_formation/README.md
 is owner-only pre-proving arithmetic. Explicit `--private-formation-fixture`
 derives/checks bounded shared-secret/error/quotient witnesses from real SDK
 ciphertexts and the SAME original guarded plaintext buffers, and reports no key
-or witness values. All19 arithmetic tests and strict Clippy passed; the
+or witness values. All20 arithmetic tests and strict Clippy passed; the
 [private diagnostic observation](src/gold_formation/VALIDATION.md) took13.7364ms
 including SDK preparation/product. Cryptographic Formation, Source/SQL authority
 and the500ms complete-query target remain open. The public certificate profile and
 `--public-fixture` protocol are unchanged. The client fixture retains two extra
 guarded4096-word inputs; logical buffer counts do not establish process RSS.
+
+The separate `--private-formation-graph-fixture` runs the complete private
+139264-gate transform graph and checks all four 4096-coefficient Formation
+equations against the original SDK inputs. Its observed local total was
+24.9815ms; [graph validation](src/gold_formation/GRAPH-VALIDATION.md) records the
+phase timings, process observation and rejection cases. This remains owner-side
+pre-proving preparation. The actual cryptographic Formation argument and its
+Source/Cw/Cs/current-head composition are still required before SQL admission.

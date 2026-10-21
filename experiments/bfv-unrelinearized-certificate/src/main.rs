@@ -81,6 +81,36 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         );
         return Ok(());
     }
+    if args == ["--private-formation-graph-fixture"] {
+        let observation = fixture::audit_private_graph()?;
+        let graph = observation.graph;
+        println!(
+            "{}",
+            serde_json::json!({
+                "kind":"owner_private_gold_formation_graph_observation",
+                "degree":geometry::N,"ordered_q":geometry::Q,
+                "phases":{
+                    "preparation_ms":observation.preparation_ms,
+                    "sdk_product_ms":observation.sdk_product_ms,
+                    "witness_build_ms":observation.witness_build_ms,
+                    "precheck_ms":graph.precheck_ms,"public_plan_ms":graph.public_plan_ms,
+                    "trace_build_and_audit_ms":graph.trace_build_and_audit_ms,
+                    "coefficient_check_ms":graph.coefficient_check_ms,
+                    "whole_local_including_sdk_product_ms":observation.whole_local_ms
+                },
+                "graph":{
+                    "gates":graph.gates,"rows":graph.rows,"slots":graph.slots,
+                    "nodes":graph.nodes,"trace_bytes":graph.trace_bytes,
+                    "logical_vector_upper_bound_bytes":graph.logical_vector_upper_bound_bytes
+                },
+                "private_graph_checked":true,"private_graph_exported":false,
+                "proof_verified":false,"cryptographic_security_assessed":false,
+                "source_authenticated":false,"sql_accepted":false,
+                "fresh_head_verified":false,"network_measured":false
+            })
+        );
+        return Ok(());
+    }
     if args != ["--public-fixture"] {
         return Err(Error::Shape.into());
     }

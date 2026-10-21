@@ -106,6 +106,9 @@ fn exact_sdk_ciphertexts_match_gold_witness_and_all4096_independent_sdk_poly_pro
     sdk_s.change_representation(Representation::Ntt);
     let plan = fft::Plan::new().unwrap();
     let sf = plan.secret_frequency(&witness.secret).unwrap();
+    // SAME genuine SDK fixture; full139264-gate graph, not another encryption/proof.
+    let graph = graph::Plan::new(Inputs::new(&statement).unwrap()).unwrap();
+    let trace = graph.build(&witness.secret).unwrap();
     for (operand, ct) in ciphertexts.iter().enumerate() {
         let mut sdk_as = Zeroizing::new(&ct[1] * &*sdk_s);
         sdk_as.change_representation(Representation::PowerBasis);
@@ -113,6 +116,11 @@ fn exact_sdk_ciphertexts_match_gold_witness_and_all4096_independent_sdk_poly_pro
             let gold = plan
                 .product(&statement.input(2 * operand + 1)[basis], &sf, q)
                 .unwrap();
+            let graph_product = graph.product(&trace, operand, basis).unwrap();
+            assert!(
+                graph_product.as_slice() == gold.as_slice(),
+                "private graph product oracle mismatch"
+            );
             for at in 0..N {
                 assert!(
                     i128::from(gold[at]).rem_euclid(i128::from(q)) as u64
@@ -189,6 +197,12 @@ fn exact_sdk_ciphertexts_match_gold_witness_and_all4096_independent_sdk_poly_pro
         witness.check(&replacement, refs),
         Err(Error::Binding)
     ));
+    assert!(matches!(
+        graph::Plan::new(Inputs::new(&replacement).unwrap())
+            .unwrap()
+            .audit(&trace, &witness.secret),
+        Err(Error::Binding)
+    ));
     let replacement = Statement::new(
         statement.binding(),
         [ciphertexts[1].to_bytes(), ciphertexts[0].to_bytes()],
@@ -197,6 +211,12 @@ fn exact_sdk_ciphertexts_match_gold_witness_and_all4096_independent_sdk_poly_pro
     .unwrap();
     assert!(matches!(
         witness.check(&replacement, refs),
+        Err(Error::Binding)
+    ));
+    assert!(matches!(
+        graph::Plan::new(Inputs::new(&replacement).unwrap())
+            .unwrap()
+            .audit(&trace, &witness.secret),
         Err(Error::Binding)
     ));
     witness.check(&statement, refs).unwrap();
