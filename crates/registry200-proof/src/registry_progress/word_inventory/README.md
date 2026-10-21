@@ -38,8 +38,9 @@ The module uses this crate's SourceVersion metadata and encodings,
 suite and Poseidon2 gadget, and
 [bounded-postcard](../../../../bounded-postcard/README.md) for shared decoding
 limits. Direct test dependencies include the pinned P3 batch STARK, lookup, DFT,
-FRI and security APIs, Postcard, SHA2 and the matching public-setup RNG. Default
-library builds do not compile this module.
+FRI and security APIs, Postcard, SHA2 and the matching public-setup RNG. Owner
+examples, diagnostics and the standalone query-mask inventory remain excluded
+from normal library builds.
 
 ## Complete bounded relation
 

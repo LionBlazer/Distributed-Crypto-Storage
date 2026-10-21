@@ -254,7 +254,7 @@ pub(super) mod probe_wire;
 
 // Independent PUBLIC branch witness/proof coverage, no runtime admission.
 #[cfg(test)]
-mod owner_cases;
+pub(super) mod owner_cases;
 #[cfg(test)]
 mod owner_cases_tests;
 

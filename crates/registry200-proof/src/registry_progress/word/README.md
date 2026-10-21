@@ -44,6 +44,12 @@ evidence, then verifies the evidence against the receiver's original expectation
 Higher layers must independently join Source/DATA admission, authorized prior
 state and fresh weighted finality before accepting an SQL/locking result.
 
+The normal [conditional read composition](read/README.md) joins complete immutable
+DATA, this Word Predicate, fused original Query Formation and a real FHE product.
+It retains only an actual immutable DATA theorem and freshly checks per-query
+arguments. BFV/product security and fresh weighted SQL/lock admission remain
+separate obligations.
+
 The [EMPTY208 bootstrap](bootstrap/README.md) separately proves the original empty
 Word registry against an actual SourceVersion certificate and fixed enrollment.
 It does not authorize that enrollment or establish a current network head. Its

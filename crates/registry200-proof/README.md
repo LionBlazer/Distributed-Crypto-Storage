@@ -218,6 +218,12 @@ preprocessing can be retained; private inputs, randomness and verdicts cannot.
 The exact original profiles, full graph/PP pins and codecs are preserved. This is
 not Source/OldRoot authentication, current weighted finality or SQL/lock admission.
 
+The [conditional Word read API](src/registry_progress/word/read/README.md) makes the
+complete Source/Role3/DATA/Word/fused Query/product mathematical join available in
+normal builds. It accepts unverified frames or an actual retained immutable DATA
+theorem with fresh per-query arguments. Its move-only result grants no assessed
+BFV/product security, authenticated prior root, current weighted head or SQL admission.
+
 The distinct [Word EMPTY208 bootstrap](src/registry_progress/word/bootstrap/README.md)
 now proves the initial original Word root against a genuine immutable SourceVersion
 and enrollment. Both producer and receiver independently verify the Source native

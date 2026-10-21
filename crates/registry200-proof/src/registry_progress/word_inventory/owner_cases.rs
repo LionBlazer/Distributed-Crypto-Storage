@@ -7,7 +7,7 @@ use super::{
 use crate::registry_progress::word::{CommandInput, WalkInput};
 use p3_field::PrimeCharacteristicRing;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Kind {
+pub(in crate::registry_progress) enum Kind {
     ConflictBeforeOffset,
     SkipBeforeOffset,
     LimitZero,
@@ -40,12 +40,12 @@ impl Kind {
 }
 // Clone is confined to these PUBLIC fixture values, never protected owner inputs.
 #[derive(Clone)]
-pub(super) struct Frame {
+pub(in crate::registry_progress) struct Frame {
     pub name: [u32; 8],
     pub saved: [u8; 4],
 }
 #[derive(Clone)]
-pub(super) struct Slot {
+pub(in crate::registry_progress) struct Slot {
     pub id: u64,
     pub principal: usize,
     pub sequence: u64,
@@ -85,7 +85,7 @@ impl Slot {
     }
 }
 #[derive(Clone)]
-pub(super) struct Bank {
+pub(in crate::registry_progress) struct Bank {
     pub revision: u64,
     pub allocator: u64,
     pub slots: [Option<Slot>; 2],
@@ -115,7 +115,7 @@ impl Bank {
     }
 }
 #[derive(Clone)]
-pub(super) struct Outcome {
+pub(in crate::registry_progress) struct Outcome {
     pub action: u8,
     pub status: u8,
     pub cursor: u8,
@@ -138,7 +138,7 @@ struct Progress {
     revision: u64,
     salt: [Val; 4],
 }
-pub(super) struct Case {
+pub(in crate::registry_progress) struct Case {
     pub kind: Kind,
     pub metadata: Metadata,
     pub input: PrimaryInputs,
@@ -159,7 +159,11 @@ fn own<'a>(bank: &'a Bank, p: &PrimaryInputs) -> &'a Slot {
         .as_ref()
         .expect("present actor")
 }
-pub(super) fn statement(m: &Metadata, p: &PrimaryInputs, old: &Bank) -> Vec<Val> {
+pub(in crate::registry_progress) fn statement(
+    m: &Metadata,
+    p: &PrimaryInputs,
+    old: &Bank,
+) -> Vec<Val> {
     let c = &p.command;
     let w = &p.walk;
     let mut v = header("statement");
@@ -329,7 +333,7 @@ fn slot(id: u64, principal: usize, snapshot: [Val; 8]) -> Slot {
         progress: None,
     }
 }
-pub(super) fn case(kind: Kind) -> Case {
+pub(in crate::registry_progress) fn case(kind: Kind) -> Case {
     let (mut metadata, mut input) = owner::public_case(kind.predicate());
     let snapshot = metadata.parent;
     let mut old = Bank {

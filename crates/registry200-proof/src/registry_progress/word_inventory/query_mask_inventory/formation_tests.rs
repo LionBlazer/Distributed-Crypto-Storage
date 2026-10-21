@@ -5,6 +5,7 @@ use bfv_hiding_stark::{Challenge, Config};
 use fhe::bfv::{BfvParameters, BfvParametersBuilder, Ciphertext, Encoding, Plaintext, SecretKey};
 use fhe_traits::{FheEncoder, FheEncrypter, Serialize};
 use p3_batch_stark::BatchProof;
+use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_goldilocks::default_goldilocks_poseidon2_12;
 use p3_symmetric::Permutation;
 use std::{
@@ -202,7 +203,7 @@ fn original_pair_statement_and_complete_data_expectation_fix_the_same_query_and_
     .unwrap();
     assert!(matches!(
         encoding_context(&swapped, &e.installed, e.expected.mask.statement),
-        Err(Error::Binding)
+        Err(association::Error::Binding)
     ));
 }
 

@@ -3,6 +3,7 @@
 pub mod bootstrap;
 mod expected;
 mod inputs;
+pub mod read;
 use super::word_inventory::{probe, probe_wire};
 pub use expected::{Claims, Expected};
 pub use inputs::{CommandInput, PrivateInputs, RegistryOpening, SourceOpening, WalkInput};

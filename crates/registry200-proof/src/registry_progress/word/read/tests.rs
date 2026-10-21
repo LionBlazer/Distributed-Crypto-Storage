@@ -1,5 +1,7 @@
 //! Bounded PUBLIC example. Actual encrypted arithmetic precedes owner-only assertions.
+use super::query as formation;
 use super::*;
+use crate::registry_progress::{word, word_inventory::probe};
 use crate::{
     Val,
     registry_progress::word_inventory::owner_cases::{self, Kind},
@@ -19,6 +21,87 @@ use p3_symmetric::Permutation;
 use std::{sync::Arc, time::Instant};
 use zeroize::Zeroizing;
 
+fn word_expected(case: &owner_cases::Case) -> word::Expected {
+    let m = &case.metadata;
+    word::Expected::checked(
+        &m.source,
+        if m.predicate {
+            word::Role::Predicate
+        } else {
+            word::Role::Control
+        },
+        [0xa7; 32],
+        m.parent
+            .into_iter()
+            .flat_map(|v| u32::try_from(v.as_canonical_u64()).unwrap().to_le_bytes())
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap(),
+        m.enrollment,
+        word::Claims {
+            old: m.old,
+            command: m.command,
+            statement: m.statement,
+            next: m.next,
+            result: m.result,
+            blind_sql: m.blind_sql,
+        },
+    )
+    .unwrap()
+}
+fn produce_query(
+    expected: &fused::Expected,
+    statement: [Val; 96],
+    mask: [u8; 32],
+    salt: [Val; 4],
+    secret: gold::SecretOpening,
+) -> gold::Result<fused::UnverifiedFormationEvidence> {
+    let core = expected.core_expected();
+    let words = Zeroizing::new(
+        (0..gold::N)
+            .map(|i| {
+                if i < 256 {
+                    u64::from((mask[(255 - i) / 8] >> ((255 - i) % 8)) & 1) * gold::SCALE
+                } else {
+                    0
+                }
+            })
+            .collect(),
+    );
+    let opening = gold::ScaledOpening::checked(
+        core.contexts()[0],
+        core.roots()[0],
+        words,
+        Zeroizing::new(salt.map(|v| v.as_canonical_u64())),
+    )?;
+    let input = data::Prepared::new(core, opening, secret)?;
+    fused::prove(expected, fused::Prepared::new(expected, input, statement)?)
+}
+fn produce_word(case: &mut owner_cases::Case) -> Vec<u8> {
+    let expected = word_expected(case);
+    assert_eq!(expected.binding(), probe::binding(&case.metadata));
+    let input = &mut case.input;
+    let source = word::SourceOpening::checked(
+        Zeroizing::new(
+            input
+                .source
+                .iter()
+                .flat_map(|v| u32::try_from(v.as_canonical_u64()).unwrap().to_le_bytes())
+                .collect(),
+        ),
+        Zeroizing::new(input.source_salt.map(|v| v.as_canonical_u64())),
+    )
+    .unwrap();
+    let private = word::PrivateInputs::new(
+        source,
+        word::RegistryOpening::new(input.controllers, input.banks),
+        core::mem::take(&mut input.command),
+        core::mem::take(&mut input.walk),
+        Zeroizing::new(input.mask),
+        input.salts,
+    );
+    word::prove(&expected, private).unwrap().into_bytes()
+}
 fn root(context: [Val; 8], salt: [Val; 4], words: &[u64]) -> [Val; 4] {
     let mut fields = context
         .into_iter()
@@ -137,10 +220,7 @@ fn different_retained_query(
     let salt = [Val::from_u8(10); 4];
     let scaled = Zeroizing::new(mask.iter().map(|v| v * gold::SCALE).collect::<Vec<_>>());
     let vector = root(context, salt, &scaled);
-    let mask_expected =
-        super::super::Expected::checked(case.metadata.statement, vector, context, request.nonce())
-            .unwrap();
-    let formation = formation::Expected::checked(
+    let formation = formation::expected(
         &request,
         data.core_expected(),
         case.metadata.statement,
@@ -149,13 +229,14 @@ fn different_retained_query(
     .unwrap();
     let prepared_ms = began.elapsed().as_secs_f64() * 1000.;
     let started = Instant::now();
-    let word = probe::produce(&case.metadata, &case.input).unwrap();
+    let word = produce_word(&mut case);
     let word_ms = started.elapsed().as_secs_f64() * 1000.;
     let started = Instant::now();
-    let query = super::formation::produce(
+    let query = produce_query(
         &formation,
-        super::super::writer::Opening::checked(&mask_expected, statement, case.input.mask, salt)
-            .unwrap(),
+        statement,
+        case.input.mask,
+        salt,
         gold::SecretOpening::checked(
             data.core_expected().contexts()[1],
             data.core_expected().roots()[1],
@@ -168,7 +249,8 @@ fn different_retained_query(
     let query_ms = started.elapsed().as_secs_f64() * 1000.;
     let started = Instant::now();
     let output = evaluate(p, &request);
-    let expected = Expected::checked(&case.metadata, data, &request, vector, output).unwrap();
+    let expected =
+        Expected::checked(&word_expected(&case), data, &request, vector, output).unwrap();
     let product = product::produce(&expected.product).unwrap().into_bytes();
     let product_ms = started.elapsed().as_secs_f64() * 1000.;
     let evidence = || QueryEvidence {
@@ -197,6 +279,18 @@ fn different_retained_query(
         "retained_math_read different_query=true prepared_ms={prepared_ms:.3} word_prove_ms={word_ms:.3} query_fused_prove_ms={query_ms:.3} fhe_product_and_certificate_ms={product_ms:.3} cold_receive_ms={receive_ms:.3} client_ms={client_ms:.3} per_query_ms={per_query_ms:.3} query_frames_bytes={} SAME_DATA=true SQL=false freshness=false network=false security_assessed=false",
         word.len() + query.as_bytes().len() + product.len()
     );
+    // All hostile examples are outside the measured per-query interval.
+    let control = word_expected(&owner_cases::case(Kind::EndCompact));
+    assert!(matches!(
+        Expected::checked(
+            &control,
+            data,
+            &request,
+            vector,
+            expected.product.output_wire().to_vec()
+        ),
+        Err(Error::Binding)
+    ));
     // Prior success may not cache either per-query proof's acceptance.
     let bad = damage_batch(query.as_bytes());
     assert!(matches!(
@@ -208,9 +302,7 @@ fn different_retained_query(
                 ..evidence()
             }
         ),
-        Err(Error::Query(formation::Error::Formation(
-            gold::Error::Verification
-        )))
+        Err(Error::Formation(gold::Error::Verification))
     ));
     let bad = damage_batch(&word);
     assert!(matches!(
@@ -222,7 +314,7 @@ fn different_retained_query(
                 ..evidence()
             }
         ),
-        Err(Error::Word(probe::Error::Verification))
+        Err(Error::Word(word::Error::Verification))
     ));
     let mut bad = product.clone();
     bad[8] ^= 1;
@@ -254,8 +346,9 @@ fn different_retained_query(
 #[test]
 fn original_version_word_data_query_and_real_product_are_all_required_before_client_completion() {
     let began = Instant::now();
-    let case = owner_cases::case(Kind::SkipBeforeOffset);
-    let state_expected = &case.metadata.source;
+    let mut case = owner_cases::case(Kind::SkipBeforeOffset);
+    let state_expected_owned = case.metadata.source.clone();
+    let state_expected = &state_expected_owned;
     let claim = state_expected.statement();
     let key_commitment = source::commitment::digest(&source::commitment::key_fields(
         &claim.heads[0],
@@ -345,10 +438,7 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
             .collect::<Vec<_>>(),
     );
     let vector = root(context, salt, &scaled);
-    let mask_expected =
-        super::super::Expected::checked(case.metadata.statement, vector, context, request.nonce())
-            .unwrap();
-    let query_expected = formation::Expected::checked(
+    let query_expected = formation::expected(
         &request,
         data_expected.core_expected(),
         case.metadata.statement,
@@ -381,13 +471,14 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
     .into_bytes();
     let data_ms = started.elapsed().as_secs_f64() * 1000.;
     let started = Instant::now();
-    let word = probe::produce(&case.metadata, &case.input).unwrap();
+    let word = produce_word(&mut case);
     let word_ms = started.elapsed().as_secs_f64() * 1000.;
     let started = Instant::now();
-    let query = formation::produce(
+    let query = produce_query(
         &query_expected,
-        super::super::writer::Opening::checked(&mask_expected, statement, case.input.mask, salt)
-            .unwrap(),
+        statement,
+        case.input.mask,
+        salt,
         gold::SecretOpening::checked(
             data_expected.core_expected().contexts()[1],
             data_expected.core_expected().roots()[1],
@@ -400,8 +491,14 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
     let query_ms = started.elapsed().as_secs_f64() * 1000.;
     let started = Instant::now();
     let output = evaluate(&p, &request);
-    let expected =
-        Expected::checked(&case.metadata, &data_expected, &request, vector, output).unwrap();
+    let expected = Expected::checked(
+        &word_expected(&case),
+        &data_expected,
+        &request,
+        vector,
+        output,
+    )
+    .unwrap();
     let product = product::produce(&expected.product).unwrap().into_bytes();
     let product_ms = started.elapsed().as_secs_f64() * 1000.;
     let frames = Frames {
@@ -502,7 +599,7 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
         Err(installed::Error::Binding)
     ));
     let foreign_read = Expected::checked(
-        &foreign.metadata,
+        &word_expected(&foreign),
         &foreign_data,
         &request,
         vector,
@@ -546,7 +643,7 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
     ));
     assert!(matches!(
         Expected::checked(
-            &foreign.metadata,
+            &word_expected(&foreign),
             &data_expected,
             &request,
             vector,
@@ -564,7 +661,7 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
     .unwrap();
     assert!(matches!(
         Expected::checked(
-            &case.metadata,
+            &word_expected(&case),
             &data_expected,
             &swapped,
             vector,
@@ -614,9 +711,7 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
                 ..frames.borrowed()
             }
         ),
-        Err(Error::Query(formation::Error::Formation(
-            gold::Error::Verification
-        )))
+        Err(Error::Formation(gold::Error::Verification))
     ));
     let bad_word = damage_batch(&frames.word);
     assert!(matches!(
@@ -627,7 +722,7 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
                 ..frames.borrowed()
             }
         ),
-        Err(Error::Word(probe::Error::Verification))
+        Err(Error::Word(word::Error::Verification))
     ));
     let backend = crate::fixed::Backend::source_version(state_expected).unwrap();
     let mut false_state: p3_uni_stark::Proof<Config> = codec::decode(
@@ -703,5 +798,5 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
         }
         assert!(matches!(verify(&expected, evidence), Err(Error::Resource)));
     }
-    assert_ne!(profile(), installed::dense_profile_digest());
+    assert_ne!(profile_digest(), installed::dense_profile_digest());
 }

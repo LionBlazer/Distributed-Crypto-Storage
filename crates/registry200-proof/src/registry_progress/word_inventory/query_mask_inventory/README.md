@@ -187,7 +187,8 @@ verification. No old-frame fallback, DATA admission, Word proof, freshness or SQ
 capability is introduced. The 13 standalone mask cases remain independently
 owned; the three composition cases exercise the public lower API from this crate.
 
-The private `read` composition independently retains the complete Word metadata,
+The [normal Word read composition](../../word/read/README.md) now owns the former
+private `read` contract. It independently retains the complete Word metadata,
 version-specific DATA expectation, original ordered request and claimed Ct3.
 Construction compares full Source values, both original heads and complete packets,
 then derives the same fused query and arithmetic expectations. Its original

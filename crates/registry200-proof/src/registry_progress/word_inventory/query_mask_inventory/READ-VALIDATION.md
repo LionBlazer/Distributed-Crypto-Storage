@@ -1,5 +1,10 @@
 # Joined immutable-version read validation
 
+Historical private-boundary measurements follow. The normal library successor
+now lives in [word::read](../../word/read/README.md), with its own
+[validation](../../word/read/VALIDATION.md). Its owning example consumes guarded
+public Word and Gold Query inputs; the public receiver replaces the private probe.
+
 The private `read` boundary joins six unverified frames: StateCertificate,
 VersionSource Role3, dense DATA Formation, original Word, fused original Query
 Formation and the conditional unrelinearized-product certificate. It does not

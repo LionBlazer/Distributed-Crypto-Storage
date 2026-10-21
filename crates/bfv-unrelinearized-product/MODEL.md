@@ -208,10 +208,39 @@ descendants and must not be presented as whole-estimator resource usage.
 The ordinary estimator remains pinned at
 `53da5982597709ba0fdf94ea37a84d822310fd84`, with exact CBD20 secret/error,
 full Q, m=infinity, all eight attacks and separate classical MATZOV/ADPS16 models.
-No sweep or minimum cost has been established. The next diagnostic samples the
-Python stack under the same deadline to locate the slow stage. All eight attacks
-remain required for a numerical claim. Full confidentiality assessment remains
-an explicit receiving blocker.
+No sweep or minimum cost has been established. All eight attacks remain required
+for a numerical claim. Full confidentiality assessment remains an explicit
+receiving blocker.
+
+The later r4b diagnostic located a failed FLINT allocation in the official dense
+Hilbert-series construction and exited nonzero before any attack result. A
+separately reviewed exact-prefix implementation avoids forming the entire dense
+power series: for H(z)=prod(1-z^d)^m/(1-z)^n, it uses
+`k*A[k] = sum((n-sum(m*d for d|j))*A[k-j], j=1..k)`, with exact Sage integers,
+zero-remainder division, the same first strictly negative coefficient and
+unchanged cost/metadata. Unsupported domains call the original official function.
+The original archive bytes remain unchanged; this is an explicit in-memory
+`gb_cost` override, not a vanilla official execution or an omitted attack.
+
+The authorized public r6 run actually exercised that implementation under Sage
+10.10/Python3.12.3. Before installing the override,57 cases checked711 exact QQ
+coefficients and full Cost/metadata equivalence against the original function;
+two fallback cases and the42-coefficient bounded public prefix also passed
+(first negative at41). The controller rechecked the complete official source
+archive and retained the full source map, script hashes and terminal receipts in
+`.local/lattice-runtime-archive-run-r6`. The optimization module SHA256 is
+`cd69034d8d5888c5e86ea4d9fad359055d35970e0aaaefb448956e986e8e45ff`.
+
+MATZOV then entered the required Gaussian-like Arora–GB branch and remained in
+the exact coefficient recurrence in repeated30s stack snapshots. Independent
+GNU SIGKILL terminated it at120.044s. There was no attack-result record, completed
+model, estimated minimum or ADPS16 execution. This diagnoses a remaining research
+runtime cost; it supplies no attack-cost lower bound. The120s/2GiB research guards
+were preserved, and kernel absence/server shutdown were confirmed. Waited-child
+CPU/RSS again does not account for the full Sage process tree. All security and
+SQL admission flags remain false. The next numerical step must handle this
+Gaussian-like prefix without dropping attacks or replacing resource failure by
+an infinite attack cost.
 Smallness does not prove sampler entropy. The certificate does not establish
 same-secret Formation, authenticated Source/hidden-program completeness,
 authorization, current agreed head/QC, durable locks or SQL admission.

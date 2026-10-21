@@ -3,15 +3,14 @@
 mod air;
 mod assessment;
 mod layout;
-mod read;
 mod snapshot;
 mod tests;
 
 use crate::Val;
+use crate::registry_progress::word::read::query::MASK_PROFILE_DOMAIN as PROFILE_DOMAIN;
 use p3_field::PrimeCharacteristicRing;
 use sha2::{Digest, Sha256};
 
-const PROFILE_DOMAIN: &[u8] = b"DCS/research/QueryMaskEncoding/WordStmt96-Cw4112/v1/full4208/526P2/H1024/MAIN649/PP49/PUBLIC33/overwrite8-cap4/reverse256-scale16389-mod65537/high3840zero/all-padding-zero/no-owner-no-formation-no-authority";
 const QUERY_ROLE: u32 = 0x514d_0001;
 const PUBLIC_COUNT: usize = 33;
 const PUBLIC_ROLE: usize = 8;
@@ -21,11 +20,7 @@ const PUBLIC_CONTEXT: usize = 17;
 const PUBLIC_NONCE: usize = 25;
 
 fn profile() -> [u8; 32] {
-    let mut h = Sha256::new();
-    h.update(PROFILE_DOMAIN);
-    // The inner Stmt96 format remains the original Word profile, not this one.
-    h.update(super::profile());
-    h.finalize().into()
+    crate::registry_progress::word::read::query::mask_profile_digest()
 }
 fn profile_words() -> [Val; 8] {
     let digest = profile();
