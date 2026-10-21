@@ -9,7 +9,8 @@ complete-query500ms remain unfinished. The standalone mask proof has no
 QueryCt/Cs association; the additional test-private join is described below.
 
 The test-private [original-query join](formation.rs) additionally connects these
-mask proofs to the existing full single-ciphertext Formation relation. Its
+mask proofs to the existing full single-ciphertext Formation relation through
+the explicit `prove_dense`/`verify_dense` mathematical facade. Its
 acyclic Cw context binds the exact original ordered `[DataCt, QueryCt]`, nonce,
 complete retained DATA expectation and original Stmt96 root. The Cw root is
 excluded from its own context. Query Formation uses the exact second ciphertext
@@ -24,6 +25,10 @@ admission, full product/result, fresh weighted head, network locks and SQL still
 need a real joined implementation. Composed security and <=500ms remain unproved.
 The [joined validation](VALIDATION.md#original-queryct-formation-join) records its
 actual native proofs, independent rejection checks and measured remaining cost.
+The v2 join profile includes the distinct dense proof protocol. The benchmark
+also produces and independently verifies the original H8192 proof against the
+SAME captured pair, key, statement and W; this is a test comparison only, with
+no receiving fallback. Both format directions must reject one another.
 
 `layout` owns the sole fixed schedule, full field inventory and immutable public
 routes. `air` uses the existing native-equivalent Poseidon2 gadget directly.

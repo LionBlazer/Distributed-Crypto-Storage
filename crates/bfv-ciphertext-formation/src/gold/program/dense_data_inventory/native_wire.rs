@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 
 const MAGIC: &[u8; 8] = b"DCSGDD01";
 pub(super) const HEADER_BYTES: usize = 128;
-pub(super) const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
+pub(in crate::gold) const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
 const MAX_PAYLOAD_BYTES: usize = MAX_FRAME_BYTES - HEADER_BYTES;
 pub(super) const MAX_SEQUENCE: usize = 4096;
 pub(super) const MAX_SLOTS: usize = 4 * 1024 * 1024;
@@ -26,7 +26,7 @@ const INPUT_DEPTH: usize = DEGREE_BITS + LOG_BLOWUP;
 // Canonical Gold binary8bytes/<=9boundedslots, EF5 40bytes/<=48slots, digest32/37.
 const HONEST_SLOTS: usize = 350_000 * 9 + 5_100 * 48 + 15_000 * 37 + 32_768;
 const HONEST_PAYLOAD_BYTES: usize = 350_000 * 8 + 5_100 * 40 + 15_000 * 32 + 3 * 32_768;
-pub(super) fn profile() -> [u8; 32] {
+pub(in crate::gold) fn profile() -> [u8; 32] {
     let mut h = Sha256::new();
     h.update(b"DCS/research/dense-data56/actual-native-frame/v1\0");
     h.update(DOMAIN);

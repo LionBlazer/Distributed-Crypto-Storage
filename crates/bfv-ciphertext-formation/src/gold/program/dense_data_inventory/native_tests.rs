@@ -85,15 +85,18 @@ fn one_real_data_fixture_proves_cold_verifies_and_false_local_wire_fails_real_na
 {
     let (e, honest_prepared, false_prepared) = data::dense_native_fixture();
     let start = native::phase_start("honest_complete_producer");
-    let frame = native::produce(&e, honest_prepared).unwrap();
+    let frame = data::prove_dense(&e, honest_prepared).unwrap().into_bytes();
     native::phase_end("honest_complete_producer", start);
     let start = native::phase_start("honest_complete_cold_receive");
-    native::receive(&e, &frame).unwrap();
+    let verified = data::verify_dense(&e, &frame).unwrap();
+    assert_eq!(verified.expected().binding(), e.binding());
+    assert_eq!(verified.expected().values(), e.values());
     native::phase_end("honest_complete_cold_receive", start);
     eprintln!(
         "dense_data_native frame_bytes={} honest_native=true cold_receiver_independent=true accepted_Data_or_Query=false",
         frame.len()
     );
+    assert!(matches!(data::verify(&e, &frame), Err(Error::Encoding)));
     // Wrong outer scope rejects BEFORE PP. Repairing only that public header must
     // still reach actual native Verification under the independent foreign values.
     let foreign =

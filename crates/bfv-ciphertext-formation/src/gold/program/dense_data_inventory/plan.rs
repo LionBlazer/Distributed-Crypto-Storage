@@ -26,6 +26,7 @@ impl Plan {
     pub(super) fn shared(self) -> Arc<Self> {
         Arc::new(self)
     }
+    #[cfg(test)]
     pub(super) fn gate(&self, index: usize) -> Result<Option<graph::Gate>> {
         if index >= GRAPH_ROWS * SLOTS {
             return Err(Error::Shape);

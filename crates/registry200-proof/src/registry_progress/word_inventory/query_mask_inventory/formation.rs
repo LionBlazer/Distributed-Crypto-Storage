@@ -31,9 +31,10 @@ type Result<T> = core::result::Result<T, Error>;
 
 fn profile() -> [u8; 32] {
     let mut h = Sha256::new();
-    h.update(b"DCS/research/WordStmt96-QueryMask-OriginalQueryFormation/v1/no-admission");
+    h.update(b"DCS/research/WordStmt96-QueryMask-OriginalQueryFormation/v2/dense/no-admission");
     h.update(super::profile());
     h.update(data::profile_digest());
+    h.update(data::dense_profile_digest());
     h.update(b"literal-ordered-pair/full-DATA-Expected/same-Cs-and-context/full-Stmt-root/nonzero-original-nonce/acyclic-Cw-context/two-independent-native-verifiers");
     h.finalize().into()
 }
@@ -119,7 +120,7 @@ pub(super) fn produce(
         secret,
     )?;
     let mask = backend::ProverSetup::new()?.produce(&expected.mask, opening)?;
-    let formation = data::prove(&expected.formation, prepared)?.into_bytes();
+    let formation = data::prove_dense(&expected.formation, prepared)?.into_bytes();
     Ok(Evidence { mask, formation })
 }
 
@@ -129,11 +130,11 @@ pub(super) fn verify(expected: &Expected, evidence: &Evidence) -> Result<()> {
     if evidence.mask.is_empty()
         || evidence.mask.len() > wire::MAX_FRAME
         || evidence.formation.is_empty()
-        || evidence.formation.len() > data::MAX_EVIDENCE_BYTES
+        || evidence.formation.len() > data::MAX_DENSE_EVIDENCE_BYTES
     {
         return Err(Error::Resource);
     }
     backend::verify(&expected.mask, &evidence.mask)?;
-    data::verify(&expected.formation, &evidence.formation)?;
+    data::verify_dense(&expected.formation, &evidence.formation)?;
     Ok(())
 }

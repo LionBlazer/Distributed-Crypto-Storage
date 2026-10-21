@@ -183,13 +183,17 @@ The focused SDK query case passed in 0.11s and all 14 CoreGold cases passed in
 observations. This establishes no whole-process erasure or 500ms complete-query
 result.
 
-The test-private [dense DATA inventory](program/dense_data_inventory/README.md)
+The internal [dense DATA backend](program/dense_data_inventory/README.md)
 reuses the original graph and private range equation emitter in a new H2048
 layout. Actual metadata, default packing, analytical security and resource gates
 passed, with complete original Pair/Data golden preservation. The subsequent
 private writer, genuine proofs and independent cold verification passed the
-[native proof validation](DENSE-VALIDATION.md). There is no accepting API or
-runtime registration; the deployed H8192 family above keeps its original behavior.
+[native proof validation](DENSE-VALIDATION.md). The explicit `data::prove_dense`
+and `data::verify_dense` facade now makes that fixed mathematical backend usable
+by library consumers. It retains the same guarded inputs/Expected and returns
+the existing move-only mathematical result only after native verification.
+Its distinct frame is never accepted as the original H8192 frame. No runtime,
+DATA admission or SQL registration is added; the H8192 APIs retain their behavior.
 
 The separate [role coefficient inventory](program/role_coefficient_inventory/README.md)
 uses that same static Schedule with a second AIR binding every public coefficient.

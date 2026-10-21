@@ -252,6 +252,41 @@ pub fn verify(expected: &Expected, bytes: &[u8]) -> Result<VerifiedDataFormation
     })
 }
 
+/// Bound for the separate DCSGDD01 dense proof frame. No legacy-frame fallback.
+pub const MAX_DENSE_EVIDENCE_BYTES: usize = super::program::dense_data_inventory::MAX_FRAME_BYTES;
+
+/// Identifies the dense proof protocol, not a new key, Source or SQL capability.
+pub fn dense_profile_digest() -> [u8; 32] {
+    super::program::dense_data_inventory::profile()
+}
+
+/// Prove the SAME complete single-Ct relation using the fixed H2048 layout.
+/// Consumes the original guarded W/Cs inputs; returns unverified bytes only.
+///
+/// The original prove()/verify() and their H8192 frame remain independent.
+/// Both layouts are conditional mathematical components, without key/DATA
+/// admission, lattice assurance, freshness or SQL authorization.
+pub fn prove_dense(
+    expected: &Expected,
+    prepared: Prepared,
+) -> Result<UnverifiedDataFormationEvidence> {
+    let bytes = super::program::dense_data_inventory::produce(expected, prepared)?;
+    Ok(UnverifiedDataFormationEvidence {
+        expected: expected.clone(),
+        bytes,
+    })
+}
+
+/// Independently reconstruct PUBLIC PP, bound/decode the distinct dense frame,
+/// and run the actual native verifier before returning mathematical evidence.
+/// No producer-supplied setup, checked flag or alternate verifier is accepted.
+pub fn verify_dense(expected: &Expected, bytes: &[u8]) -> Result<VerifiedDataFormation> {
+    super::program::dense_data_inventory::receive(expected, bytes)?;
+    Ok(VerifiedDataFormation {
+        expected: expected.clone(),
+    })
+}
+
 #[cfg(test)]
 pub(super) fn dense_native_fixture() -> (Expected, Prepared, Prepared) {
     tests::dense_native_fixture()

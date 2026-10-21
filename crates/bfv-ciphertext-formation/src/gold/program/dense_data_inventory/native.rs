@@ -1,4 +1,4 @@
-//! Private genuine proof probe; no Data/Query mathematics or SQL token is minted.
+//! Fixed genuine dense proof backend; the facade owns mathematical result types.
 use super::*;
 use crate::gold::witness::PrivateTrace;
 use bfv_hiding_stark::Config;
@@ -65,17 +65,21 @@ pub(super) fn config() -> Result<Config> {
     bfv_hiding_stark::config().map_err(|_| Error::Backend)
 }
 pub(super) fn phase_start(phase: &str) -> Instant {
+    #[cfg(test)]
     eprintln!("dense_data_native phase={phase} state=start");
+    let _ = phase;
     Instant::now()
 }
 pub(super) fn phase_end(phase: &str, t: Instant) {
+    #[cfg(test)]
     eprintln!(
         "dense_data_native phase={phase} state=end elapsed_ms={:.3}",
         t.elapsed().as_secs_f64() * 1000.
-    )
+    );
+    let _ = (phase, t);
 }
 
-pub(super) fn produce(e: &data::Expected, prepared: data::Prepared) -> Result<Vec<u8>> {
+pub(in crate::gold) fn produce(e: &data::Expected, prepared: data::Prepared) -> Result<Vec<u8>> {
     catch_unwind(AssertUnwindSafe(|| {
         prepared.inner.require_expected(ExpectedRef::Data(e))?;
         let (air, report) = prescreen(e)?;
@@ -117,7 +121,7 @@ pub(super) fn prove_trace(
     phase_end("prove_batch", t);
     result
 }
-pub(super) fn receive(e: &data::Expected, frame: &[u8]) -> Result<()> {
+pub(in crate::gold) fn receive(e: &data::Expected, frame: &[u8]) -> Result<()> {
     let payload = super::native_wire::payload(e, frame)?;
     catch_unwind(AssertUnwindSafe(|| {
         let (air, report) = prescreen(e)?;

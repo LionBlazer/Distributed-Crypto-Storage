@@ -1,4 +1,4 @@
-//! TEST-PRIVATE metadata assessment for the explicit dense Data research domain.
+//! Metadata assessment for the explicit dense Data mathematical proof domain.
 //! SDK calls and checked ownership-envelope formulas retained from original assessor.
 //! No trace, proof, trusted preprocessing or mathematical capability is created.
 

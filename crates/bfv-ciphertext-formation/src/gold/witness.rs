@@ -425,6 +425,5 @@ impl Drop for PrivateTrace {
     }
 }
 
-#[cfg(test)]
 #[path = "witness_dense.rs"]
 mod dense;

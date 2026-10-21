@@ -107,3 +107,15 @@ covers actual native proofs, hostile arguments and exact preservation of both
 Pair profiles, ordered symbolic constraints and the full preprocessing matrix.
 This supplies request-independent DATA mathematics; production installation,
 query provenance and fresh SQL/lock finality remain separate boundaries.
+
+`gold::data::prove_dense` and `verify_dense` explicitly select the complete H2048
+layout of that SAME mathematical relation. They consume the existing protected
+`Prepared` and retain the same independently selected `Expected`, without private
+getters or new dependencies. `dense_profile_digest` identifies its distinct
+`DCSGDD01` protocol and `MAX_DENSE_EVIDENCE_BYTES` fixes its 4 MiB frame cap.
+Only actual independent native verification returns `VerifiedDataFormation`;
+that move-only type still grants mathematical evidence only. Original H8192
+`prove`/`verify` and dense receiving reject each other's frames. There is no
+automatic fallback or runtime/SQL registration. The internal dense fixture,
+snapshot and attack helpers remain test-only; normal library builds include
+the fixed equations, guarded writer, codec and assessed native backend.

@@ -1,9 +1,11 @@
-# Private dense DATA proof candidate
+# Dense DATA mathematical proof backend
 
-This test-private child implements a compact layout for the complete single-DATA
+This internal child implements a compact layout for the complete single-DATA
 Formation relation. Genuine proving, independent cold verification and hostile
-native proof tests passed. It creates no DATA/Query admission token or runtime API.
-The production H8192 family retains its original behavior.
+native proof tests passed. The explicit `gold::data::prove_dense`/`verify_dense`
+facade owns its public mathematical inputs and evidence lifecycle. It creates
+no DATA/Query admission token or runtime API. The original H8192 family retains
+its behavior and rejects dense frames; dense receiving also rejects old frames.
 
 | Module | Responsibility |
 | --- | --- |
@@ -43,6 +45,9 @@ and EOF before native verification. A valid header or zero terminal is insuffici
 The deterministic seeded config handles PUBLIC PP only and dies before fresh OS
 randomness is created for private commitments. Receiving derives its own PP.
 Current PP still depends on the exact request and cannot be reused across queries.
+Fixture factories, semantic/golden snapshots and attack helpers are compiled
+only for tests. Actual admission checks retain the complete inventory; numerical
+inventory summaries are checked in normal builds too. Phase logging is test-only.
 
 ```sh
 cargo test --release --offline --locked -p bfv-ciphertext-formation --lib constraints_lookups_and_full_preprocessing_snapshot -- --nocapture --test-threads=1
@@ -59,5 +64,7 @@ The [executed validation](../../DENSE-VALIDATION.md) records timings, memory,
 larger proof bytes and limitations. On 16 threads, one measured local production
 plus independent cold receiving took 570.975 ms. It excludes SQL, FHE query
 execution and network/finality, so it does not meet the 500 ms complete-query goal.
-Query Stmt96/encoding/formation composition, installed DATA authority and fresh
-agreed heads remain separate requirements.
+The separate `registry200-proof` QueryMask join consumes this facade, but remains
+test-private and still needs Word/Source admission, actual SQL and fresh agreed
+heads. Its paired complete component measurements are recorded at the consuming
+boundary; no complete-query claim follows from the lower proof measurements.

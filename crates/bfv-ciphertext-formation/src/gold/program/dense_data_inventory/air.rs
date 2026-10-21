@@ -32,7 +32,16 @@ impl MetadataAir {
         RelationKind::Data
     }
     pub(super) fn inventory(&self) -> Result<()> {
-        self.plan.inventory().map(|_| ())
+        let inventory = self.plan.inventory()?;
+        if inventory.gates != GATES
+            || inventory.hash_rows != 580
+            || inventory.coefficients != 4096
+            || inventory.positive_uses != inventory.negative_uses
+            || inventory.producers != 40 * 4096 + 512
+        {
+            return Err(Error::Shape);
+        }
+        Ok(())
     }
 }
 impl BaseAir<Val> for MetadataAir {

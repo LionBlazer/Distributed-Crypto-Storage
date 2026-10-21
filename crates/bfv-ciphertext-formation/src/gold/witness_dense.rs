@@ -1,5 +1,5 @@
-//! Test-private child of witness: direct access to SAME guarded equation banks.
-//! No raw opening/key getter, alternative derivation, production API or grant.
+//! Dense child of witness: direct access to SAME guarded equation banks.
+//! No raw opening/key getter, alternative derivation or admission grant.
 use super::*;
 use crate::gold::{data, program::dense_data_inventory::WRITER_LAYOUT};
 impl Preparation {

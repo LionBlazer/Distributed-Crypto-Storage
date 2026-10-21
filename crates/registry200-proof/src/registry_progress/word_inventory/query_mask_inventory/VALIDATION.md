@@ -173,3 +173,77 @@ do not themselves establish composed cryptographic or lattice security. The
 full-query target is still unmet. The measured Formation cost must be reduced
 while preserving its all-coefficient, same-secret and bounded-error constraints;
 removing this proof or relying on successful decryption would violate admission.
+
+## Dense QueryCt proof selection and paired observations
+
+The v2 join uses the explicit `gold::data::prove_dense`/`verify_dense` API and
+includes its distinct protocol digest in the join profile. The lower library
+now compiles the fixed dense backend in ordinary builds; fixture factories and
+test/attack code remain test-only. It reuses the SAME guarded equation derivation
+and original Expected, not a query-specific plaintext answer. There are no new
+dependencies, runtime registration or automatic proof fallback. Both directions
+between old `DCSGFD01` and dense `DCSGDD01` frames reject with `Encoding`.
+
+The final 16-test join gate passed in 10.78 seconds. Six lower dense cases passed
+in 4.33 seconds, including honest public-facade receiving and actual false-wire
+proof rejection. Two complete original Pair/DATA symbolic/PP golden regressions
+passed in 0.06 seconds. Both libraries passed strict all-target release Clippy;
+four compile-fail ownership checks and the dependency-free requirements-sync
+test passed. No AIR equation, native packing/security parameter, resource limit
+or original proof profile was changed. Normal builds also validate the complete
+inventory's numerical summary before preparing the proof.
+
+After all of this task's builds had completed, the exact joined honest/hostile
+case ran once at two threads and once at sixteen threads, sequentially on the
+SAME release image and source. Within each process both backends use the exact
+same original pair, original statement, secret/Cs and scaled W. Each creates
+fresh private proofs and independently reconstructs its own PUBLIC setup.
+Dense runs first; the old backend is a test-only baseline, not a receiving path.
+Keys/proof randomness differ across the two process runs. Background load was
+uncontrolled; one observation per setting is not a bound or statistical benchmark.
+
+| Rayon threads | Backend | Produce ms | Cold receive ms | Sum ms | Mask bytes | Formation bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 2 | Dense H2048 |1500.884|522.540|2023.424|1737968|3278709|
+| 2 | Original H8192 |4762.917|1033.965|5796.882|1730576|2512179|
+| 16 | Dense H2048 |521.833|252.442|774.275|1733392|3283125|
+| 16 | Original H8192 |1122.453|292.479|1414.933|1730672|2529587|
+
+Both intervals include opening checks, actual private proving, canonical frames,
+independent cold PP, bounded decoding and full native verification of both
+arguments. Fixture encryption, Word/Source/DATA admission, FHE product and result,
+client completion, current weighted finality, transport, durable locks and SQL
+remain outside them. The sixteen-thread configuration is an observation setting;
+no production thread policy changed. Larger dense frames remain a network cost.
+The 774.275 ms component does not meet the complete-query 500 ms target.
+
+All final observers retained the 120-second/1792 MiB fuses, 20 ms sampling, held
+process/image/creation identity, successful terminal state and no direct child.
+There were no faults, fuses or forced cleanup. The exact two/sixteen-thread
+processes lived 8604.6797/2518.6236 ms and used 15.890625/22.421875 CPU-seconds.
+Their OS peak working sets were 1357795328/1363021824 bytes. These peaks include
+the OLD baseline, so they do not measure the dense chain alone. The standalone
+lower six-test dense process peaked at 526409728 working-set and 519372800 sampled
+private bytes; it is also not a concurrent peer memory bound.
+
+The final registry release image was 11333632 bytes, SHA256
+F351E15C89FEABF2E126900DF0EDD8CE90F9D71DF7B123142F0C324F21157D72.
+Lower release image: 5975552 bytes, SHA256
+BC6100B58A18456A9C4C2D6362E7B80C208F80FDF802ACF0BD1719913D957CA9.
+Ignored local build/held records r82-r84 retain sources, exact command contracts,
+complete output and memory samples. The first r81 functional run overlapped a
+lower build and is not the paired performance evidence above. These snapshots
+precede this documentation-only validation update. Generated proofs stay ignored.
+
+For comparison set `RAYON_NUM_THREADS` to 2 and then 16 and execute the SAME
+release image with the fully qualified owning test above, `--exact --nocapture
+--test-threads=1`. The existing all16 command continues to run that test plus the
+other required mask/association/hostile cases. Never interpret test duration as
+query latency.
+
+The two independent proofs still both process the complete Cw stream. A future
+joint relation could eliminate that duplicated work, but must explicitly retain
+the original statement/mask, every high-zero coefficient, same Cs, bounded noise
+and original-query association. Omitting a proof from the existing Expected is
+not such an optimization. Word/state admission, composed security and the real
+peer SQL/finality path remain unfinished.

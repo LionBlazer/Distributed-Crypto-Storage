@@ -84,3 +84,29 @@ FHE query execution, other query proofs and network agreement. No complete-query
 speedup, production memory bound or system-security claim follows from this gate.
 Module ownership, fixed limits and focused commands are in the
 [inventory README](program/dense_data_inventory/README.md).
+
+## Explicit mathematical facade
+
+The fixed backend is now available through `gold::data::prove_dense` and
+`verify_dense`, with a separate digest and 4 MiB frame cap. It consumes the same
+guarded Prepared and independently retained Expected. Actual cold native
+verification alone creates the existing move-only mathematical result; this
+does not install a DATA/key, authorize SQL or establish composed security.
+The original H8192 functions/profiles are unchanged, and the frame families
+reject each other. Fixture factories and attack helpers remain test-only.
+
+The final six-test native gate passed in 4.33 s, two complete original Pair/DATA
+symbolic/PP regressions in 0.06 s, and strict all-target release Clippy passed for
+this library and its consuming registry library. Four compile-fail ownership
+checks passed. The dense ordered constraints, complete PP and semantic goldens
+are unchanged. Public-facade honest receiving and genuine false-wire/terminal
+repair failures run the same native backend. No security or resource gate was
+relaxed; normal builds now also check the complete inventory summary.
+
+The consuming [QueryCt join validation](../../../registry200-proof/src/registry_progress/word_inventory/query_mask_inventory/VALIDATION.md#dense-queryct-proof-selection-and-paired-observations)
+records a paired comparison on the same original ciphertexts, including both
+mask and Formation proofs. At16 threads the dense joined component took774.275ms
+against1414.933ms for the old backend in that pair. It still exceeds500ms before
+SQL, result proofs and network/finality. The whole proof is larger, and neither
+that component improvement nor the standalone lower memory observation proves
+the full-query target or a composed peer resource bound.

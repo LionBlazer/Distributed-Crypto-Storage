@@ -225,6 +225,48 @@ fn real_query_formation_and_mask_proofs_both_verify_and_each_corrupted_native_ar
         evidence.formation.len()
     );
 
+    // Comparable baseline on the SAME literal ciphertext, key, statement and W.
+    // This old backend is test-only comparison, never a receiving fallback.
+    let began = Instant::now();
+    let opening = e.opening();
+    let prepared = data::Prepared::new(
+        &e.expected.formation,
+        opening.formation_opening(&e.expected.mask).unwrap(),
+        e.secret(),
+    )
+    .unwrap();
+    let original = Evidence {
+        mask: backend::ProverSetup::new()
+            .unwrap()
+            .produce(&e.expected.mask, opening)
+            .unwrap(),
+        formation: data::prove(&e.expected.formation, prepared)
+            .unwrap()
+            .into_bytes(),
+    };
+    let original_produced = began.elapsed();
+    let began = Instant::now();
+    backend::verify(&e.expected.mask, &original.mask).unwrap();
+    data::verify(&e.expected.formation, &original.formation).unwrap();
+    let original_received = began.elapsed();
+    eprintln!(
+        "query_formation_join_baseline produce_ms={:.3} cold_receive_ms={:.3} sum_ms={:.3} mask_bytes={} formation_bytes={} SAME_original_pair=true SAME_statement=true SAME_Cs=true SQL=false",
+        original_produced.as_secs_f64() * 1000.,
+        original_received.as_secs_f64() * 1000.,
+        (original_produced + original_received).as_secs_f64() * 1000.,
+        original.mask.len(),
+        original.formation.len()
+    );
+    assert!(matches!(
+        data::verify(&e.expected.formation, &evidence.formation),
+        Err(gold::Error::Encoding)
+    ));
+    assert!(matches!(
+        verify(&e.expected, &original),
+        Err(Error::Formation(gold::Error::Encoding))
+    ));
+    drop(original);
+
     let gate = super::super::security::assess(&super::super::air::QueryMaskAir::closed().unwrap())
         .unwrap();
     let mut bad: BatchProof<Config> = super::super::wire::decode(
@@ -246,7 +288,7 @@ fn real_query_formation_and_mask_proofs_both_verify_and_each_corrupted_native_ar
     drop(bad);
 
     // Genuine locally produced lower frame only; production always uses its bounded decoder.
-    assert_eq!(&evidence.formation[..8], b"DCSGFD01");
+    assert_eq!(&evidence.formation[..8], b"DCSGDD01");
     let mut bad: BatchProof<Config> = postcard::from_bytes(&evidence.formation[128..]).unwrap();
     bad.opened_values.instances[0]
         .base_opened_values
