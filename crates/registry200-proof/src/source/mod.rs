@@ -10,6 +10,7 @@ pub mod layout;
 pub mod poly1305;
 mod prover;
 pub(crate) mod verification;
+pub mod version;
 pub use prover::{SourceEvidence, prove};
 pub mod schedule;
 pub mod statement;

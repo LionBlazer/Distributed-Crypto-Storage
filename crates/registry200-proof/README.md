@@ -60,11 +60,22 @@ wire::decode_and_verify_claim exposes
 actual verified proof objects for downstream mathematical composition; it does
 not grant application permission.
 
-Source uses width 11521/PV691; Bootstrap width 1082/PV104; Transition width 6741/PV116.
+Original Canonical Source uses width 11521/PV691; Bootstrap width 1082/PV104;
+Transition width 6741/PV116.
 DCSLFPW1 retains Source 20 MiB, child 12,578,091 B, sequence 16384, Source 24 Mi and child 16 Mi
 decoded-element budgets and the original 32 MiB signed-Body reservation. Element
 budgets are not bytes/RSS. Each original proof has its individual fixed security
 floor; no composed 128 or whole-protocol security claim follows.
+
+The separate [Source version capability](src/source/version/README.md) owns an
+immutable independently derived StateCertificate expectation, an explicitly
+unverified producer and a move-only mathematical result created only after fresh
+native verification. It uses the existing packed width 7161/PV691 relation and
+original codec/security policy. The four new runtime cases and two ownership
+examples passed; [validation](src/source/version/VALIDATION.md) records actual
+1930.865 ms proving and 527.465 ms cold verification. It supplies no application
+cache, current-head, key, Formation, SQL or finality authority and preserves the
+original Canonical-only APIs. The 500 ms complete-query target remains unmet.
 
 The extraction, preserved profiles and real two-peer control consumer are covered
 by the [validation record](../../experiments/hiding-fri-sha256-gate/REGISTRY200-PEER-CONTROL-VALIDATION.md).

@@ -52,3 +52,16 @@ on every exit. Coefficient framing and `encode_source` retain their current ABI
 and implementation. The new [lifecycle producer](../lifecycle/README.md) consumes
 these actual bytes; no Source DTO or cached success substitutes for verification.
 This new extraction is source-only until its native validation is recorded.
+
+The additive [version capability](version/README.md) owns a separate closed
+`SourceVersionExpected` for the existing mathematical StateCertificate profile.
+It derives the exact legacy version tag from independent complete images/heads
+and C_key, with independently retained C_state. The producer returns explicitly
+UNVERIFIED bytes; only fresh fixed native verification creates its move-only
+mathematical result. No cache, freshness, key, Formation or SQL admission is added.
+The original Canonical-only source()/producer and Source-first child APIs retain
+their existing meaning and bytes. Four new runtime cases, two compile-fail
+examples, strict Clippy and the affected Canonical policy regressions passed.
+[Native version validation](version/VALIDATION.md) records a 1930.865ms proof
+construction and 527.465ms cold verification; the complete-query 500ms target
+remains unmet.

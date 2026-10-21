@@ -84,6 +84,20 @@ impl Backend {
             (11521, 691),
         )
     }
+    /// Separate sealed StateCertificate policy; the original source() remains Canonical-only.
+    pub(crate) fn source_version(
+        e: &source::version::SourceVersionExpected,
+    ) -> Result<Self, Error> {
+        let s = e.statement();
+        Self::new(
+            FixedAir::Source(Box::new(source::air::OpeningAir::new(s))),
+            s.values(),
+            (
+                source::layout::PACKED_WIDTH,
+                source::statement::PUBLIC_VALUES,
+            ),
+        )
+    }
     pub fn child(s: &lifecycle::statement::Statement) -> Result<Self, Error> {
         if s.expected.is_bootstrap() {
             Self::new(
