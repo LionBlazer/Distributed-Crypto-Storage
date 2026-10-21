@@ -174,3 +174,34 @@ LDE, PCS or proof was allocated. A typed honest witness recipe, actual complete
 native proofs and hostile cold verification, full resource/soundness assessment
 and the independently admitted Source/DATA/Owner/current-head composition remain
 required. The complete DCS query has not met the <=500ms target.
+
+## Native parameter and workspace assessment
+
+A separate private inspector assessed the actual packed AIR with the pinned SDK.
+It derives all BASE and EXT constraints, default LogUp packing and weighted
+degree, both MAIN/PP rotations, eight ZK quotient chunks and 3012 opening powers.
+The hiding reserve is 404 rows against H512. Original lookup counts remain 98
+with widest tuple 5; signed count-height weights are 7158272/7165440.
+
+Both independent SDK baselines and the reports with the lookup term reached
+128 bits for UDR and LDR. Every reported term was finite and at least 128 bits;
+the lookup fingerprint term was 299.577935 bits. These are conditional SDK model
+results for this standalone AIR. They do not establish the confidentiality of
+the BFV profile, the soundness of the complete DCS operation or an accepted proof.
+
+The arithmetic workspace envelope is 155095040 bytes. Explicit additional
+reserves for IR/Plan, future recipes and SSA values, symbolic/native runtime,
+codec buffers, owner prerequisites, threads and allocator raise the policy
+ledger to 712764925/713022687 bytes. Future code must enforce its actual bounds;
+these reserves are not measurements or a whole-process memory theorem. The
+external 1792 MiB held-process cap stays unchanged.
+
+All six owning cases passed in 0.11 s; strict all-target Clippy passed. The
+process lasted 122.7371 ms with 0.078125 CPU seconds and OS peak working set
+14307328 bytes, without a fuse, cleanup kill or unexpected direct child. It
+built no PP/MAIN, PCS or proof. Its 10001408-byte image SHA256 is
+`E3630724040BDAE606AF4490B3CF0CCF52C6DA0E7CCFA21DA39FD06920471D80`.
+The complete per-term reports are in `.local/word-cmd-native-r6-`; the exact
+15-file inspector is archived at `.local/word-cmd-assessment-native-overlay-r1`.
+Only its own temporary files and guarded Core edits were removed/restored.
+The honest witness and actual native proof/rejection gates remain outstanding.
