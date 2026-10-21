@@ -1,7 +1,7 @@
 //! Complete actual row/port/constant inventory. Never supplied by a prover.
 use super::*;
-use crate::geometry::N;
 use bfv_hiding_stark::Val;
+use bfv_unrelinearized_product::N;
 use p3_field::PrimeCharacteristicRing;
 pub(super) const COEFFICIENTS: usize = 128;
 pub(super) const FLAGS: usize = 256;

@@ -1,10 +1,8 @@
 //! Complete owner-private pre-proving graph; NOT an AIR, proof or peer verifier.
 //! Public row metadata is lazy. Every secret gate/wire buffer is locally guarded.
 use super::{Inputs, fft};
-use crate::{
-    Error, Result,
-    geometry::{N, Q},
-};
+use crate::{Error, Result};
+use bfv_unrelinearized_product::{N, Q};
 use sha2::{Digest, Sha512};
 use zeroize::Zeroizing;
 

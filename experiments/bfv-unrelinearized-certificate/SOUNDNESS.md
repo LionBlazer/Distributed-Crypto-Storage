@@ -18,7 +18,7 @@ Four exact integer certificates extend the original Q components to QP, includin
 exact copies of both original Q rows. Three exact integer certificates scale the
 same certified product components down to the original output Q components.
 Every coefficient and every rounding/reduction identity is mandatory. See the
-[scaler contract](src/scale/README.md). These deterministic checks do not depend
+[scaler contract](../../crates/bfv-unrelinearized-product/src/scale/README.md). These deterministic checks do not depend
 on a random challenge, a scalar-certificate signature or a caller-supplied hash.
 
 For each of the four prime fields, let the extended inputs be A0,A1,B0,B1. The

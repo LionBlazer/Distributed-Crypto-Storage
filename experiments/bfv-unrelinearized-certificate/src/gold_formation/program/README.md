@@ -23,7 +23,7 @@ internal; a future native verifier must check its sole actual terminal sum is ze
 packing, ZK quotient chunks, openings and security terms before any PP commitment
 or private proof trace. The resource gate remains mandatory.
 
-Direct dependencies are the parent Statement/geometry/Gold graph, SHA2,
+Direct dependencies are the parent Expected/geometry/Gold graph, SHA2,
 registry200-proof's two_lane_encoding metadata and opaque pair, bfv-hiding-stark's
 Gold/EF5/Poseidon/configuration types, and native 0.8.0 p3-air, p3-batch-stark,
 p3-commit, p3-field, p3-lookup, p3-matrix, p3-security and p3-uni-stark. The new
@@ -86,3 +86,10 @@ A future accepting path still needs an actual consuming W/salt/S opening, fresh
 pair verification, private OS randomness, sealed public PP setup, genuine proving,
 bounded canonical decoding and independent cold verification. Lattice/noise,
 composed security, current QC, network and the complete-query target remain open.
+
+
+Endpoint `Expected` and geometry now come directly from `bfv-unrelinearized-product`.
+This private diagnostic remains an experimental consumer; no pass-through
+statement or geometry module is retained. Its nine owning diagnostics and
+strict Clippy passed after extraction; [validation](../../../../../crates/bfv-unrelinearized-product/VALIDATION.md)
+records the new gate without changing historical observations above.

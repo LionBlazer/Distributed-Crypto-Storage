@@ -17,6 +17,7 @@ pub struct Request {
 struct Data {
     nonce: [u8; 32],
     bytes: Vec<u8>,
+    first_ciphertext_len: usize,
     inputs: [Polynomial; 4],
 }
 impl Request {
@@ -39,6 +40,7 @@ impl Request {
             inner: Arc::new(Data {
                 nonce,
                 bytes,
+                first_ciphertext_len: a.len(),
                 inputs: [a0, a1, b0, b1],
             }),
         })
@@ -73,6 +75,15 @@ impl Request {
     }
     pub fn bytes(&self) -> &[u8] {
         &self.inner.bytes
+    }
+    /// Exact ordered public SDK endpoints retained by the canonical request.
+    /// Borrowing these bytes does not construct a proof or a verification grant.
+    pub fn ciphertexts(&self) -> [&[u8]; 2] {
+        let middle = HEADER + self.inner.first_ciphertext_len;
+        [
+            &self.inner.bytes[HEADER..middle],
+            &self.inner.bytes[middle..],
+        ]
     }
     /// Public natural-PB coefficients; fixed indices0..4, basis-major Q0/Q1.
     pub fn input(&self, component: usize) -> &[Vec<u64>] {

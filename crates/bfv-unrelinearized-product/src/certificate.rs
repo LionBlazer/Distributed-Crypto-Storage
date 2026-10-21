@@ -4,7 +4,7 @@ use crate::{
     geometry::{N, P, QP},
     pit::{self, ProductCertificate},
     scale::{self, Role},
-    statement::Statement,
+    statement::Expected,
 };
 use sha2::{Digest, Sha256, Sha512};
 
@@ -20,20 +20,20 @@ struct Certificate {
     product: ProductCertificate,
     scalers: [scale::PublicCertificate; 7],
 }
-fn job_binding(statement: &Statement, ordinal: usize) -> [u8; 32] {
+fn job_binding(statement: &Expected, ordinal: usize) -> [u8; 32] {
     let mut h = Sha256::new();
     h.update(b"DCS/UNREL-PIT/v1/exact-rounding-job/");
-    h.update(statement.binding());
+    h.update(statement.nonce());
     h.update(Sha512::digest(statement.request_wire()));
     h.update(Sha512::digest(statement.output_wire()));
     h.update((ordinal as u32).to_le_bytes());
     h.finalize().into()
 }
-fn header(statement: &Statement) -> [u8; HEADER] {
+fn header(statement: &Expected) -> [u8; HEADER] {
     let mut bytes = [0; HEADER];
     bytes[..8].copy_from_slice(MAGIC);
     bytes[8..72].copy_from_slice(&crate::profile_digest());
-    bytes[72..104].copy_from_slice(&statement.binding());
+    bytes[72..104].copy_from_slice(&statement.nonce());
     bytes[104..168].copy_from_slice(&Sha512::digest(statement.request_wire()));
     bytes[168..232].copy_from_slice(&Sha512::digest(statement.output_wire()));
     bytes[232..240].copy_from_slice(&(FRAME_BYTES as u64).to_le_bytes());
@@ -133,7 +133,7 @@ impl<'a> Unpacker<'a> {
         }
     }
 }
-fn encode(statement: &Statement, certificate: &Certificate) -> Result<Vec<u8>> {
+fn encode(statement: &Expected, certificate: &Certificate) -> Result<Vec<u8>> {
     let mut pack = Packer::new();
     for polynomial in &certificate.extended_p {
         pack.polynomial(polynomial, &P, N)?;
@@ -154,7 +154,7 @@ fn encode(statement: &Statement, certificate: &Certificate) -> Result<Vec<u8>> {
     }
     Ok(bytes)
 }
-fn decode(statement: &Statement, bytes: &[u8]) -> Result<Certificate> {
+fn decode(statement: &Expected, bytes: &[u8]) -> Result<Certificate> {
     if bytes.len() != FRAME_BYTES || bytes[..HEADER] != header(statement) {
         return Err(Error::Binding);
     }
@@ -186,7 +186,7 @@ fn decode(statement: &Statement, bytes: &[u8]) -> Result<Certificate> {
         scalers: scalers.try_into().map_err(|_| Error::Shape)?,
     })
 }
-pub(crate) fn produce(statement: &Statement) -> Result<Vec<u8>> {
+pub(crate) fn produce(statement: &Expected) -> Result<Vec<u8>> {
     let mut extended = Vec::with_capacity(4);
     let mut scalers = Vec::with_capacity(7);
     for i in 0..4 {
@@ -226,7 +226,7 @@ pub(crate) fn produce(statement: &Statement) -> Result<Vec<u8>> {
 
 /// Experimental public arithmetic checks only. It grants no assessed protocol,
 /// key, Source, hidden-program, database, freshness or SQL authority.
-pub(crate) fn check(statement: &Statement, frame: &[u8]) -> Result<()> {
+pub(crate) fn check(statement: &Expected, frame: &[u8]) -> Result<()> {
     let certificate = decode(statement, frame)?;
     let extended: [Polynomial; 4] = std::array::from_fn(|i| {
         let mut rows = statement.input(i).clone();
@@ -287,11 +287,30 @@ mod tests {
     #[test]
     fn genuine_sdk_certificate_is_independently_checked_and_repaired_mutations_fail() -> Result<()>
     {
-        let example = crate::fixture::example()?;
+        let example = crate::tests::fixture::example()?;
         example.complete()?;
         let statement = example.statement;
-        let frame = produce(&statement)?;
-        check(&statement, &frame)?;
+        let frame = crate::produce(&statement)?.into_bytes();
+        let checked = crate::check_arithmetic(&statement, &frame)?;
+        assert_eq!(checked.expected().request_wire(), statement.request_wire());
+        assert_eq!(checked.expected().output_wire(), statement.output_wire());
+        assert_eq!(checked.expected().nonce(), statement.nonce());
+        drop(checked);
+        // Public metadata cannot relabel a genuine complete certificate.
+        let request = statement.request_wire();
+        let a_len = u32::from_le_bytes(request[104..108].try_into().unwrap()) as usize;
+        let originals = [
+            request[112..112 + a_len].to_vec(),
+            request[112 + a_len..].to_vec(),
+        ];
+        let mut foreign_nonce = statement.nonce();
+        foreign_nonce[0] ^= 1;
+        let foreign =
+            Expected::checked(foreign_nonce, originals, statement.output_wire().to_vec())?;
+        assert!(matches!(
+            crate::check_arithmetic(&foreign, &frame),
+            Err(Error::Binding)
+        ));
         for change in 0..4 {
             let mut c = decode(&statement, &frame)?;
             match change {

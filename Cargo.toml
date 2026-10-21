@@ -9,6 +9,7 @@ members = [
     "crates/bfv-key-transform",
     "crates/bfv-basis-convolution",
     "crates/bfv-ciphertext-formation",
+    "crates/bfv-unrelinearized-product",
 
     "crates/relational-types",
     "crates/peer-protocol",
@@ -64,6 +65,7 @@ default-members = [
     "crates/bfv-key-transform",
     "crates/bfv-basis-convolution",
     "crates/bfv-ciphertext-formation",
+    "crates/bfv-unrelinearized-product",
 
     "crates/relational-types",
     "crates/peer-protocol",

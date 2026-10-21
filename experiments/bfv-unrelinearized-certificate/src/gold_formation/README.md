@@ -8,7 +8,7 @@ arithmetic/SDK/tamper gates and strict Clippy passed; the
 [executed validation](VALIDATION.md) records their scope and one local timing.
 No public arithmetic certificate is accepted through this module.
 
-`Witness::from_sdk_key(&Statement, raw[2], guarded_key_bytes)` derives one secret S,
+`Witness::from_sdk_key(&Expected, raw[2], guarded_key_bytes)` derives one secret S,
 two error vectors E and four quotient vectors K. Private `check` checks every
 coefficient against the independently retained original inputs. There is no
 Clone/Debug/serialization/key getter or witness output. One error vector is shared
@@ -17,7 +17,7 @@ The full original request wire, including the exact ciphertexts, is bound by a
 domain-separated SHA512 identity; a reused nonce cannot rebind the witness.
 
 Direct dependencies are the parent experiment's fixed geometry/canonical
-Statement and Error types, SHA512 and zeroize. `fft` is fixed-N integer modular
+Expected and Error types, SHA512 and zeroize. `fft` is fixed-N integer modular
 arithmetic with no new package. The existing dev-only `fhe-math` supplies an
 independent SDK Poly oracle. This is not the old Basis/Formation ABI or a new
 cryptographic profile. The public PIT certificate/protocol/profile is unchanged.
@@ -74,9 +74,9 @@ checked before FFT allocation. The explicit witness owns7*N i64 coefficients
 (229376 bytes). Additional logical buffers, including that witness, two public
 twist tables, W, secret transform, work and lifted product, are bounded by
 14*N*8+4099=462851 bytes. This is a conservative logical-buffer estimate, not RSS:
-Vec capacities/allocator/stack/SDK/Statement/fixture buffers are extra. The fixture
+Vec capacities/allocator/stack/SDK/Expected/fixture buffers are extra. The fixture
 now retains the SAME two original guarded plaintext buffers for its client
-lifetime (65536 additional bytes); producer/checker still receive only Statement.
+lifetime (65536 additional bytes); producer/checker still receive only Expected.
 
 The separate `--private-formation-fixture` mode builds/checks then drops the private
 witness inside the fixture. It emits only counts, public phase durations and
@@ -115,7 +115,7 @@ four-consumer fanout. Precomputed bounded public tables avoid repeated per-gate
 exponentiation. Public A transforms are input preprocessing; no secret FFT or
 private equation is recomputed by a peer verifier in this source slice.
 
-`Witness::audit_graph(&Statement, raw[2])` is a separate owner-local diagnostic
+`Witness::audit_graph(&Expected, raw[2])` is a separate owner-local diagnostic
 entry point. It returns only public numeric counts and phase durations, after
 the existing witness checks, exact graph replay/audit and all 4*4096 equations
 using graph-derived products. The explicit `--private-formation-graph-fixture`
@@ -156,3 +156,10 @@ old raw-input API would double-scale. A future private typed FormationOpening
 must preserve actual W/salt/context without reusing old N8192 openings. Native
 single-AIR packing/security/resources and full query/Core/app/finality binding
 remain mandatory. Full Formation/SQL and <=500ms/1–2GiB stay unestablished.
+
+
+Endpoint `Expected` and geometry now come directly from `bfv-unrelinearized-product`.
+This private diagnostic remains an experimental consumer; no pass-through
+statement or geometry module is retained. Its nine owning diagnostics and
+strict Clippy passed after extraction; [validation](../../../../crates/bfv-unrelinearized-product/VALIDATION.md)
+records the new gate without changing historical observations above.

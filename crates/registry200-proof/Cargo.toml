@@ -7,6 +7,7 @@ publish = false
 
 [dependencies]
 bfv-ciphertext-formation = { path = "../bfv-ciphertext-formation" }
+bfv-unrelinearized-product = { path = "../bfv-unrelinearized-product" }
 bfv-key-transform = { path = "../bfv-key-transform" }
 bfv-hiding-stark = { path = "../bfv-hiding-stark" }
 compact-store = { path = "../compact-store" }

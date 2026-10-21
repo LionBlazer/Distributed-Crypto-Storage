@@ -1,11 +1,15 @@
 //! One explicit PUBLIC NONSECRET full-chain fixture. Never a SQL/network answer.
+use super::super::product;
 use super::*;
 use crate::{Val, admission::CanonicalSource, source};
 use bfv_hiding_stark::{Challenge, Config};
+use bfv_unrelinearized_product as arithmetic;
 use compact_store::{Layout, Owner};
 use fhe::bfv::{BfvParametersBuilder, Ciphertext, Encoding, Plaintext, SecretKey};
 use fhe_math::zq::Modulus;
-use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize};
+use fhe_traits::{
+    DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
+};
 use p3_goldilocks::default_goldilocks_poseidon2_12;
 use p3_symmetric::Permutation;
 use std::time::Instant;
@@ -58,21 +62,62 @@ fn cs_root(context: [Val; 8], key: &[u8], salt: [u64; 4]) -> [Val; 4] {
     }
     state[..4].try_into().unwrap()
 }
+/// Fixture owner-only completion; never passed to the public producer/checker.
+struct ClientCompletion {
+    key: SecretKey,
+    parameters: std::sync::Arc<fhe::bfv::BfvParameters>,
+    expected: Zeroizing<Vec<u64>>,
+}
+impl ClientCompletion {
+    fn complete(self, actual_output: &[u8]) {
+        let output = Ciphertext::from_bytes(actual_output, &self.parameters).unwrap();
+        let plaintext: Plaintext = self.key.try_decrypt(&output).unwrap();
+        let plaintext = Zeroizing::new(plaintext);
+        let actual = Zeroizing::new(Vec::<u64>::try_decode(&*plaintext, Encoding::poly()).unwrap());
+        assert!(*actual == *self.expected); // PUBLIC full-ring oracle only after checked response.
+    }
+}
+/// Public encrypted evaluator: no owner key, plaintext, private mask or expected answer.
+fn public_product(
+    ciphertexts: [&[u8]; 2],
+    parameters: &std::sync::Arc<fhe::bfv::BfvParameters>,
+) -> Vec<u8> {
+    let [a, b] = ciphertexts.map(|bytes| Ciphertext::from_bytes(bytes, parameters).unwrap());
+    let output = &a * &b;
+    assert_eq!(output.len(), 3);
+    output.to_bytes()
+}
+fn public_ring_oracle(inputs: &[Zeroizing<Vec<u64>>; 2]) -> Zeroizing<Vec<u64>> {
+    // Independent PUBLIC fixture oracle. It never feeds the encrypted producer.
+    let mut output = Zeroizing::new(vec![0; super::super::N]);
+    for (i, &x) in inputs[0].iter().enumerate().filter(|(_, x)| **x != 0) {
+        for (j, &y) in inputs[1].iter().enumerate().filter(|(_, y)| **y != 0) {
+            let term = (u128::from(x) * u128::from(y) % u128::from(super::super::T)) as u64;
+            let at = (i + j) % super::super::N;
+            output[at] = if i + j < super::super::N {
+                (output[at] + term) % super::super::T
+            } else {
+                (output[at] + super::super::T - term) % super::super::T
+            };
+        }
+    }
+    output
+}
 fn encrypted_request(
     key: &SecretKey,
     parameters: &std::sync::Arc<fhe::bfv::BfvParameters>,
-) -> gold::Request {
+) -> (gold::Request, Vec<u8>, Zeroizing<Vec<u64>>) {
     let modulus = Modulus::new(super::super::T).unwrap();
     let inverse = modulus.inv(super::super::SCALE).unwrap();
-    let inputs = [
+    let mut inputs = [
         super::super::circuit::compile_source(&ROWS),
         super::super::circuit::compile_mask(&public_mask()),
     ];
     let mut ciphertexts = Vec::with_capacity(2);
-    for mut w in inputs {
+    for w in &mut inputs {
         // W is already the source/command compiler output. SDK internally scales
         // plaintext by SCALE exactly ONCE; encrypt m=W*SCALE^-1 modt.
-        modulus.scalar_mul_vec(&mut w, inverse);
+        modulus.scalar_mul_vec(w, inverse);
         let plaintext = Zeroizing::new(
             Plaintext::try_encode(w.as_slice(), Encoding::poly(), parameters).unwrap(),
         );
@@ -80,10 +125,19 @@ fn encrypted_request(
         let full = Ciphertext::new(encrypted.iter().cloned().collect(), parameters).unwrap();
         let decrypted: Plaintext = key.try_decrypt(&full).unwrap();
         let decoded = Zeroizing::new(Vec::<u64>::try_decode(&decrypted, Encoding::poly()).unwrap());
-        assert!(*decoded == *w); // Fixture-only encryption-input oracle, no selected result.
+        assert!(*decoded == **w); // Fixture-only encryption-input oracle, no selected result.
         ciphertexts.push(full.to_bytes());
     }
-    gold::Request::checked([0x61; 32], ciphertexts.try_into().unwrap()).unwrap()
+    let request = gold::Request::checked([0x61; 32], ciphertexts.try_into().unwrap()).unwrap();
+    let began = Instant::now();
+    let output = public_product(request.ciphertexts(), parameters);
+    eprintln!(
+        "two_lane_product phase=sdk_public_product ms={:.3} bytes={}",
+        began.elapsed().as_secs_f64() * 1000.,
+        output.len()
+    );
+    let oracle = public_ring_oracle(&inputs);
+    (request, output, oracle)
 }
 fn canonical_source(q: [u8; 32]) -> (CanonicalSource, Zeroizing<Vec<u8>>) {
     let owner = Owner::from_key([0x42; 16], [0x73; 16], Zeroizing::new(AEAD_KEY));
@@ -162,6 +216,8 @@ struct Fixture {
     mask: Witness,
     key: Zeroizing<Vec<u8>>,
     cs_salt: Zeroizing<[u64; 4]>,
+    output: Vec<u8>,
+    completion: ClientCompletion,
 }
 fn fixture() -> Fixture {
     let parameters = BfvParametersBuilder::new()
@@ -172,7 +228,7 @@ fn fixture() -> Fixture {
         .build_arc()
         .unwrap();
     let key = SecretKey::random(&parameters, &mut rand::rng());
-    let request = encrypted_request(&key, &parameters);
+    let (request, output, oracle) = encrypted_request(&key, &parameters);
     let bytes = Zeroizing::new(key.to_bytes());
     let cs_salt = Zeroizing::new([7; 4]);
     let context = secret_context(&key_binding([Val::ZERO; 4]).values()).unwrap();
@@ -205,9 +261,13 @@ fn fixture() -> Fixture {
     let mask = Witness::private_mask(&mask_expected, Zeroizing::new(mask), [4; 4], [6; 4]).unwrap();
     let expected = Expected::checked(&request, &source.statement(), &mask.statement()).unwrap();
     // The SAME key encrypted both actual operands and supplied Cs/serializedS.
-    // No live key/configuration/Owner or checked result survives the fixture scope.
-    drop(key);
-    drop(parameters);
+    // Only this private fixture owner retains the actual key for completion AFTER
+    // the new receiving checker. Neither public evaluator nor checker sees it.
+    let completion = ClientCompletion {
+        key,
+        parameters,
+        expected: oracle,
+    };
     Fixture {
         request,
         expected,
@@ -216,6 +276,8 @@ fn fixture() -> Fixture {
         mask,
         key: bytes,
         cs_salt,
+        output,
+        completion,
     }
 }
 struct Evidence {
@@ -280,6 +342,33 @@ fn early_rejections(f: &Fixture) {
     let foreign = gold::Request::decode(&raw).unwrap();
     assert!(Expected::checked(&foreign, &f.expected.source, &f.expected.mask).is_err());
     assert!(f.expected.require_request(&foreign).is_err());
+    assert!(
+        product::Expected::checked(
+            &foreign,
+            f.expected.source(),
+            f.expected.private_mask(),
+            f.output.clone()
+        )
+        .is_err()
+    );
+    assert!(
+        product::Expected::checked(
+            &f.request,
+            f.expected.private_mask(),
+            f.expected.source(),
+            f.output.clone()
+        )
+        .is_err()
+    );
+    assert!(
+        product::Expected::checked(
+            &f.request,
+            f.expected.source(),
+            f.expected.private_mask(),
+            Vec::new()
+        )
+        .is_err()
+    );
     let mut tail = super::super::circuit::compile_source(&ROWS);
     tail[super::super::N - 1] = super::super::T;
     assert!(
@@ -352,8 +441,22 @@ fn genuine_final_witnesses_form_actual_sdk_ciphertexts_then_require_fresh_receiv
         mask,
         key,
         cs_salt,
+        output,
+        completion,
     } = f;
     drop(original);
+    let query_expected =
+        product::Expected::checked(&request, expected.source(), expected.private_mask(), output)
+            .unwrap();
+    let began = Instant::now();
+    let public_arithmetic = arithmetic::produce(query_expected.product())
+        .unwrap()
+        .into_bytes();
+    eprintln!(
+        "two_lane_product phase=arithmetic_produce ms={:.3} bytes={}",
+        began.elapsed().as_secs_f64() * 1000.,
+        public_arithmetic.len()
+    );
     let private = PrivateInputs::checked(source, mask, key, cs_salt).unwrap();
     let began = Instant::now();
     let bytes = prove(&expected, &request, evidence.borrowed(), private)
@@ -365,13 +468,22 @@ fn genuine_final_witnesses_form_actual_sdk_ciphertexts_then_require_fresh_receiv
         bytes.len()
     );
     let began = Instant::now();
-    let verified = verify(&expected, &request, evidence.borrowed(), &bytes).unwrap();
-    assert!(verified.expected().request().bytes() == request.bytes());
-    drop(verified);
+    let verified = product::verify(
+        &query_expected,
+        product_prerequisites(&evidence, &bytes, &public_arithmetic),
+    )
+    .unwrap();
+    assert!(verified.expected().formation().request().bytes() == request.bytes());
+    assert!(verified.expected().product().output_wire() == query_expected.product().output_wire());
+    let receive_ms = began.elapsed().as_secs_f64() * 1000.;
+    let complete_started = Instant::now();
+    completion.complete(verified.expected().product().output_wire());
     eprintln!(
-        "two_lane_formation phase=fresh_receive ms={:.3}",
-        began.elapsed().as_secs_f64() * 1000.
+        "two_lane_product phase=checked_client_completion ms={:.3}",
+        complete_started.elapsed().as_secs_f64() * 1000.
     );
+    drop(verified);
+    eprintln!("two_lane_product phase=fresh_receive ms={receive_ms:.3}");
     // Wrong independent Cw cannot pass the cheap unverified-frame association.
     let mut foreign = expected.source.clone();
     foreign.encoded[3] += Val::ONE;
@@ -386,16 +498,132 @@ fn genuine_final_witnesses_form_actual_sdk_ciphertexts_then_require_fresh_receiv
         verify(&expected, &request, evidence.borrowed(), &bad_header),
         Err(Error::Formation(gold::Error::Binding))
     ));
+    assert!(matches!(
+        product::verify(
+            &query_expected,
+            product_prerequisites(&evidence, &bad_header, &public_arithmetic)
+        ),
+        Err(product::Error::Formation(Error::Formation(
+            gold::Error::Binding
+        )))
+    ));
     let repaired = repaired_ood(&bytes);
     assert!(matches!(
         verify(&expected, &request, evidence.borrowed(), &repaired),
         Err(Error::Formation(gold::Error::Verification))
     ));
+    assert!(matches!(
+        product::verify(
+            &query_expected,
+            product_prerequisites(&evidence, &repaired, &public_arithmetic)
+        ),
+        Err(product::Error::Formation(Error::Formation(
+            gold::Error::Verification
+        )))
+    ));
     let mut trailing = bytes.clone();
     trailing.push(0);
     assert!(verify(&expected, &request, evidence.borrowed(), &trailing).is_err());
+    product_receiving_rejections(&query_expected, &evidence, &bytes, &public_arithmetic);
     eprintln!(
         "two_lane_formation phase=whole ms={:.3}",
         started.elapsed().as_secs_f64() * 1000.
     );
+}
+
+fn product_prerequisites<'a>(
+    evidence: &'a Evidence,
+    formation: &'a [u8],
+    product: &'a [u8],
+) -> product::BorrowedPrerequisites<'a> {
+    product::BorrowedPrerequisites::checked(
+        &evidence.original,
+        &evidence.source,
+        &evidence.mask,
+        formation,
+        product,
+    )
+    .unwrap()
+}
+/// Canonical PUBLIC hostile Ct3, not a produced/checked result or oracle fallback.
+fn changed_output_claim(expected: &product::Expected) -> Vec<u8> {
+    fn varint(out: &mut Vec<u8>, mut value: usize) {
+        while value >= 128 {
+            out.push((value as u8 & 127) | 128);
+            value >>= 7;
+        }
+        out.push(value as u8);
+    }
+    let mut output = Vec::new();
+    for component in 0..3 {
+        let mut rows = expected.product().output(component).clone();
+        if component == 2 {
+            rows[1][super::super::N - 1] = (rows[1][super::super::N - 1] + 1) % super::super::Q[1];
+        }
+        let mut packed = Vec::with_capacity(super::super::N * 60 / 8);
+        let mut word = 0u128;
+        let mut bits = 0;
+        for row in rows {
+            for value in row {
+                word |= u128::from(value) << bits;
+                bits += 30;
+                while bits >= 8 {
+                    packed.push(word as u8);
+                    word >>= 8;
+                    bits -= 8;
+                }
+            }
+        }
+        assert_eq!(bits, 0);
+        let mut polynomial = vec![8, 2, 16];
+        varint(&mut polynomial, super::super::N);
+        polynomial.push(26);
+        varint(&mut polynomial, packed.len());
+        polynomial.extend(packed);
+        output.push(10);
+        varint(&mut output, polynomial.len());
+        output.extend(polynomial);
+    }
+    output
+}
+fn product_receiving_rejections(
+    expected: &product::Expected,
+    evidence: &Evidence,
+    formation: &[u8],
+    frame: &[u8],
+) {
+    // These caps reject BEFORE touching invalid prerequisite proof bytes.
+    for product in [&[][..], &frame[..frame.len() - 1]] {
+        assert!(matches!(
+            product::BorrowedPrerequisites::checked(&[1], &[1], &[1], &[1], product),
+            Err(product::Error::ResourceLimit)
+        ));
+    }
+    assert!(matches!(
+        product::BorrowedPrerequisites::checked(&[1], &[1], &[1], &[], frame),
+        Err(product::Error::ResourceLimit)
+    ));
+    // Same authentic input/Formation, different complete canonical output claim.
+    let foreign = product::Expected::checked(
+        expected.formation().request(),
+        expected.formation().source(),
+        expected.formation().private_mask(),
+        changed_output_claim(expected),
+    )
+    .unwrap();
+    assert!(foreign.product().output_wire() != expected.product().output_wire());
+    assert!(matches!(
+        product::verify(&foreign, product_prerequisites(evidence, formation, frame)),
+        Err(product::Error::Arithmetic(arithmetic::Error::Binding))
+    ));
+    // A canonical last reduction quotient is still not the proven output relation.
+    let mut changed = frame.to_vec();
+    *changed.last_mut().unwrap() ^= 1;
+    assert!(matches!(
+        product::verify(
+            expected,
+            product_prerequisites(evidence, formation, &changed)
+        ),
+        Err(product::Error::Arithmetic(arithmetic::Error::Arithmetic))
+    ));
 }

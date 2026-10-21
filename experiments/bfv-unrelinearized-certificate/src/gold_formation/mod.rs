@@ -6,17 +6,14 @@ mod program;
 #[cfg(test)]
 mod tests;
 
-use crate::{
-    Error, Result,
-    geometry::{N, Q, T, validate_polynomials},
-    statement::Statement,
-};
+use crate::{Error, Result};
+use bfv_unrelinearized_product::{Expected, N, Q, T};
 use sha2::{Digest, Sha512};
 use zeroize::Zeroizing;
 
 /// Geometry/symbolic planning only. No Source, Formation, key or SQL proof is made.
 pub(super) fn inspect_unverified_air(
-    statement: &Statement,
+    statement: &Expected,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let assessment = program::inspect(statement, None)?;
     assessment.log();
@@ -53,16 +50,14 @@ struct Inputs<'a> {
     components: [[&'a [u64]; 2]; 4],
 }
 impl<'a> Inputs<'a> {
-    fn new(statement: &'a Statement) -> Result<Self> {
-        for component in 0..4 {
-            validate_polynomials(statement.input(component), &Q)?;
-        }
+    fn new(statement: &'a Expected) -> Result<Self> {
+        // Expected owns full canonical endpoint arrays from its closed constructor.
         let mut identity = Sha512::new();
         identity.update(b"DCS/GOLD-FORMATION/owner-private-original-request/v1");
         identity.update((statement.request_wire().len() as u64).to_le_bytes());
         identity.update(statement.request_wire());
         Ok(Self {
-            nonce: statement.binding(),
+            nonce: statement.nonce(),
             identity: identity.finalize().into(),
             components: core::array::from_fn(|c| {
                 core::array::from_fn(|b| statement.input(c)[b].as_slice())
@@ -136,7 +131,7 @@ pub(super) struct Witness {
 }
 impl Witness {
     pub(super) fn from_sdk_key(
-        statement: &Statement,
+        statement: &Expected,
         raw: [&[u64]; 2],
         key: Zeroizing<Vec<u8>>,
     ) -> Result<Self> {
@@ -195,13 +190,13 @@ impl Witness {
         }
         Ok(witness)
     }
-    pub(super) fn check(&self, statement: &Statement, raw: [&[u64]; 2]) -> Result<()> {
+    pub(super) fn check(&self, statement: &Expected, raw: [&[u64]; 2]) -> Result<()> {
         self.check_inputs(Inputs::new(statement)?, raw)
     }
     /// Separate owner-only graph diagnostic. Existing check/protocol remain unchanged.
     pub(super) fn audit_graph(
         &self,
-        statement: &Statement,
+        statement: &Expected,
         raw: [&[u64]; 2],
     ) -> Result<GraphObservation> {
         let start = std::time::Instant::now();

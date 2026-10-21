@@ -168,3 +168,14 @@ verification before returning a move-only mathematical result. The
 real full chain and hostile native arguments under the unchanged resource fuses.
 It supplies no installed-key, current-head, SQL or finality grant. Fresh receiving
 took1800.541ms in that run; the complete-query500ms target remains unmet.
+
+
+The additive `two_lane_encoding::product` consumer now binds the same raw
+Formation inputs and nonce to a genuine unrelinearized encrypted product.
+Complete arithmetic checking and fresh Source/children/cold Formation checking
+are mandatory in the same call. Its sealed result grants conditional arithmetic
+only. The [executed product validation](../bfv-unrelinearized-product/VALIDATION.md)
+covers the actual full chain, four privacy examples, hostile receiving cases
+and the extracted library/experiment consumers. Fresh receiving took
+1730.017 ms, so the 500 ms complete-query goal remains unmet. No installed-key,
+SQL, current-head or network-finality grant follows from this candidate.

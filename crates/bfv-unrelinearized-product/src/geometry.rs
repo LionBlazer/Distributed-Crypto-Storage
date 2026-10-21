@@ -1,10 +1,10 @@
 //! Closed public N4096/Q2/P2 geometry for an experimental un-relinearized product.
 use crate::{Error, Result};
-pub(crate) const N: usize = 4096;
-pub(crate) const Q: [u64; 2] = [1073692673, 1073668097];
-pub(crate) const P: [u64; 2] = [4611686018427322369, 4611686018427289601];
-pub(crate) const QP: [u64; 4] = [Q[0], Q[1], P[0], P[1]];
-pub(crate) const T: u64 = 65537;
+pub const N: usize = 4096;
+pub const Q: [u64; 2] = [1073692673, 1073668097];
+pub const P: [u64; 2] = [4611686018427322369, 4611686018427289601];
+pub const QP: [u64; 4] = [Q[0], Q[1], P[0], P[1]];
+pub const T: u64 = 65537;
 
 /// Checks every natural PowerBasis coefficient; no omitted high or final coefficient.
 pub(crate) fn validate_polynomials(values: &[Vec<u64>], moduli: &[u64]) -> Result<()> {

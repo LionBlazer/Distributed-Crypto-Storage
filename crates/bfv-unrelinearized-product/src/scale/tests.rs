@@ -103,6 +103,30 @@ fn both_complete_scalers_match_actual_sdk_on_all4096_coefficients_including_cent
     }
 }
 #[test]
+fn sdk_scaler_certificate_does_not_claim_ideal_rounding_for_arbitrary_qp_midpoints() {
+    let r = request(Role::Scale4To2, 3);
+    let native = sdk_output(&r, &sdk_scaler(Role::Scale4To2));
+    let evaluated = evaluate(&r).unwrap();
+    assert_eq!(evaluated.output.rows(), native);
+    verify_certificate(&r, &evaluated.output, &evaluated.certificate).unwrap();
+
+    // Index1 is x=(QP-1)/2. The directed fixed-precision SDK algorithm is
+    // faithfully certified, but this arbitrary QP midpoint is outside the
+    // centered depth-one tensor bound supplied by the complete product relation.
+    let modulus: BigUint = crate::QP.iter().map(|&p| BigUint::from(p)).product();
+    let q: BigUint = Q.iter().map(|&p| BigUint::from(p)).product();
+    let half = modulus >> 1usize;
+    for (row, &p) in r.rows().iter().zip(&crate::QP) {
+        assert_eq!(row[1], (&half % p).to_u64().unwrap());
+    }
+    let ideal = (BigUint::from(T) * half + (&q >> 1usize)) / q;
+    let ideal_residues = Q.map(|p| (&ideal % p).to_u64().unwrap());
+    let actual = [native[0][1], native[1][1]];
+    assert_eq!(actual, [1_072_594_946, 513_385_678]);
+    assert_eq!(ideal_residues, [1_097_726, 560_282_418]);
+    assert_ne!(actual, ideal_residues);
+}
+#[test]
 fn full_frame_decoder_rejects_profile_role_reserved_highbits_short_and_trailing_bytes() {
     for role in [Role::Extend2To4, Role::Scale4To2] {
         let e = evaluate(&request(role, 0)).unwrap();

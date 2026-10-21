@@ -1,9 +1,6 @@
 //! Explicit PUBLIC NONSECRET example. No peer service or production consumer.
-use crate::{
-    Error, Result,
-    geometry::{N, Q, T},
-    statement::Statement,
-};
+use crate::{Error, Result};
+use bfv_unrelinearized_product::{Expected, N, Q, T};
 use fhe::bfv::{BfvParameters, BfvParametersBuilder, Ciphertext, Encoding, Plaintext, SecretKey};
 use fhe_traits::{
     DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
@@ -13,7 +10,7 @@ use std::{sync::Arc, time::Instant};
 use zeroize::Zeroizing;
 
 pub(crate) struct Example {
-    pub(crate) statement: Statement,
+    pub(crate) statement: Expected,
     pub(crate) preparation_ms: f64,
     pub(crate) product_ms: f64,
     parameters: Arc<BfvParameters>,
@@ -102,7 +99,7 @@ pub(crate) fn example() -> Result<Example> {
     }
     let mut binding = [0; 32];
     rand::rng().fill_bytes(&mut binding);
-    let statement = Statement::new(
+    let statement = Expected::checked(
         binding,
         [operands[0].to_bytes(), operands[1].to_bytes()],
         product.to_bytes(),

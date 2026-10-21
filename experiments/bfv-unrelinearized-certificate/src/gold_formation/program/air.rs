@@ -1,8 +1,8 @@
 //! The complete immutable relation. No caller-selected gates, AIRs or bus layouts.
 use super::pp::*;
 use super::*;
-use crate::geometry::Q;
 use bfv_hiding_stark::{Val, poseidon};
+use bfv_unrelinearized_product::Q;
 use p3_air::{Air, AirBuilder, BaseAir, WindowAccess};
 use p3_field::PrimeCharacteristicRing;
 use p3_lookup::{Count, InteractionBuilder};

@@ -230,3 +230,72 @@ and fresh receiving. Empty or oversized Formation frames reject before any
 prerequisite proof verification. Unexpected native panic is Backend, so the
 repaired OOD case's exact Verification assertion excludes panic. No complete-query,
 BFV-security, composed-protocol, SQL or freshness guarantee follows from this gate.
+
+
+## Math-only encrypted product composition
+
+The additive `product` namespace closes the exact public association between
+the actual Source/encoding/CoreGold Formation and the separately extracted
+`bfv-unrelinearized-product` arithmetic certificate. It does not change the
+existing Formation or original eighteen-point UNASSESSED product profiles/codecs.
+Its distinct composition digest is metadata, not an assessed cryptographic,
+SQL, authorization, current-head or consensus grant.
+
+`product::Expected::checked` independently retains the full Formation Expected
+and the complete claimed public-product Expected. It creates both from the
+original canonical Gold Request, independent Source/mask Statements and claimed
+Ct3. `Request::ciphertexts()` supplies the SAME ordered literal Ct2 bytes; the
+product nonce is exactly the Gold nonce. The GFMRQ001 and UCPITQ01 envelopes/q
+are never cast or compared as identical. Claimed Ct3 remains untrusted after a
+constructor; canonical metadata parsing proves no computation.
+
+`BorrowedPrerequisites::checked` owns only borrowed UNVERIFIED frames. Its caps
+are the existing Source20MiB, each child12MiB, Formation32MiB and exactly1,737,899
+product bytes. Empty, truncated and oversize frames reject before fresh proof
+work. `product::verify` first calls the fixed complete public arithmetic checker, then freshly calls
+the actual complete `formation::verify` in the SAME synchronous call. Public
+arithmetic failures reject before expensive native Formation; both checks are
+mandatory before any result. It accepts no caller-provided verifier, boolean,
+serialized capability, preverified object or cached verdict. Lower objects drop
+inside the call. Only that function creates private-field move-only
+`ArithmeticCheckedQuery`, retaining complete PUBLIC Expected; it exposes no
+plaintext rows or SQL/locking status.
+
+The direct new normal dependency is the cohesive
+`bfv-unrelinearized-product` core library, never experiments/fixtures/CLI. The
+original product frame, all coefficient/scaler/PIT checks and eighteen-point
+profile stay intact. Product FS/oracle-budget composition, N4096 lattice/noise
+assessment and whole-operation resources remain unresolved; this module does
+not promote arithmetic to an assessed DCS proof.
+
+The SAME existing full-chain Formation test/FQN is extended instead of adding
+another heavy fixture. A keyless SDK evaluator takes only actual encrypted Ct2
+bytes and public parameters, computes one genuine unrelinearized Ct3 and returns
+its exact bytes. An owner-only test object retains the SAME SDK key/parameters
+and guarded independent full4096 ring oracle; no such object reaches the public
+evaluator/checker. It decrypts the actual checked response ONLY AFTER successful
+new receiving composition. No public oracle value supplies a peer output or
+accepted SQL answer. The original serialized secret still moves into the single
+Formation producer, and the original Formation rejection assertions remain.
+
+One actual Source, two child proofs and ONE actual full Formation proof serve
+the complete owning gate. The arithmetic frame is produced once. Canonical
+foreign-last-output claim, last reduction-quotient corruption and caps are
+receiving rejections on that SAME proof. Both the old direct Formation path and the NEW product wrapper reject the SAME
+corrupted Formation header and repaired OOD, with exact nested Binding/Verification
+errors. Omitting actual Formation in the composite cannot pass these cases; no panic/Proving/Resource path can count as honest success.
+Two compile-fail examples protect private construction and move-only ownership.
+Public numeric phase timings distinguish SDK product, arithmetic production,
+Formation, fresh receiving and post-check client decryption. No secret/private
+rows/mask/salt or proof bytes are logged.
+
+The single owning native gate passed in 19.21 s including genuine SDK product,
+all-coefficient client completion and the old/new hostile cases. Fresh complete
+receiving took 1730.017 ms; post-check client completion took 1.070 ms.
+Two new privacy examples, strict Clippy, the lower owning tests and the actual
+experiment consumer passed. The [executed product record](../../../bfv-unrelinearized-product/VALIDATION.md)
+contains phase timings and whole-process observations under the unchanged
+120-second/1792-MiB fuses. No second heavy fixture or compatibility lane was added.
+OwnerQuery input-proof removal, new registry/Result semantics, actual fresh
+weighted QC and durable SQL completion remain separate work. Full500ms SQL
+success is not claimed by this mathematical composition.

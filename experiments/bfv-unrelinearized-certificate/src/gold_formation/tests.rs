@@ -72,7 +72,7 @@ fn exact_sdk_ciphertexts_match_gold_witness_and_all4096_independent_sdk_poly_pro
         ciphertexts.push(Ciphertext::new(ct.iter().cloned().collect(), &parameters).unwrap());
     }
     let output = &ciphertexts[0] * &ciphertexts[1];
-    let statement = Statement::new(
+    let statement = Expected::checked(
         [0x71; 32],
         [ciphertexts[0].to_bytes(), ciphertexts[1].to_bytes()],
         output.to_bytes(),
@@ -187,7 +187,7 @@ fn exact_sdk_ciphertexts_match_gold_witness_and_all4096_independent_sdk_poly_pro
     assert!(witness.check(&statement, refs).is_err());
     witness.quotients[1][1][at] = k;
     // The full original request identity, not merely nonce, is independently pinned.
-    let replacement = Statement::new(
+    let replacement = Expected::checked(
         [0x72; 32],
         [ciphertexts[0].to_bytes(), ciphertexts[1].to_bytes()],
         output.to_bytes(),
@@ -203,8 +203,8 @@ fn exact_sdk_ciphertexts_match_gold_witness_and_all4096_independent_sdk_poly_pro
             .audit(&trace, &witness.secret),
         Err(Error::Binding)
     ));
-    let replacement = Statement::new(
-        statement.binding(),
+    let replacement = Expected::checked(
+        statement.nonce(),
         [ciphertexts[1].to_bytes(), ciphertexts[0].to_bytes()],
         output.to_bytes(),
     )

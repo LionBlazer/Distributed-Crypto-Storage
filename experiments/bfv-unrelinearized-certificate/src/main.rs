@@ -1,17 +1,14 @@
 //! Finite public-fixture certificate experiment. Never a DCS proof dispatcher.
 #![forbid(unsafe_code)]
-mod certificate;
 mod fixture;
-mod geometry;
 mod gold_formation;
-mod modular;
-mod pit;
-mod scale;
-mod statement;
 
+use bfv_unrelinearized_product::{
+    CERTIFICATE_BYTES, N, POINTS, Q, QP, check_arithmetic, produce, profile_digest,
+};
 use sha2::{Digest, Sha512};
 use std::time::Instant;
-type Polynomial = Vec<Vec<u64>>;
+
 type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug)]
 enum Error {
@@ -27,23 +24,18 @@ impl std::fmt::Display for Error {
     }
 }
 impl std::error::Error for Error {}
-
-fn profile_digest() -> [u8; 64] {
-    let mut h = Sha512::new();
-    h.update(b"DCS/UNREL-PUBLIC-CERTIFICATE-EXPERIMENT/v1/UNASSESSED/");
-    for n in [geometry::N as u64, geometry::T] {
-        h.update(n.to_le_bytes());
+impl From<bfv_unrelinearized_product::Error> for Error {
+    fn from(error: bfv_unrelinearized_product::Error) -> Self {
+        match error {
+            bfv_unrelinearized_product::Error::Shape => Self::Shape,
+            bfv_unrelinearized_product::Error::Arithmetic => Self::Arithmetic,
+            bfv_unrelinearized_product::Error::Binding => Self::Binding,
+            bfv_unrelinearized_product::Error::Resource => Self::Resource,
+            bfv_unrelinearized_product::Error::Backend => Self::Backend,
+        }
     }
-    for p in geometry::QP {
-        h.update(p.to_le_bytes());
-    }
-    h.update(scale::profile_digest(scale::Role::Extend2To4));
-    h.update(scale::profile_digest(scale::Role::Scale4To2));
-    h.update(b"unseededCT2+2/CT3;lvl0;NttTagStoredPB;nonce32;ProtoCanonicalAllResidues;Extend4ExactQCopies;RNSProducts3xQP;C0=A0B0,C1=A0B1+A1B0,C2=A1B1;ordinary2N;HlengthN-1;YlengthN;F=AB-Y-(xN+1)H;Scale3Exact;all7CompactIntegerCertificates;allDataBeforeFS;SHA512fullMessagePrefixClone;basisU32LE/sampleU32LE;OS2IP512modp;noNTTverifier;noSDKqueryreplay;fixedPackedWidths30,30,62,62;fullEOF;noProofOrSourceOrSQLOrSecurityGrant;");
-    h.update((pit::POINTS as u64).to_le_bytes());
-    h.update((certificate::FRAME_BYTES as u64).to_le_bytes());
-    h.finalize().into()
 }
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -54,8 +46,8 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             "{}",
             serde_json::json!({
                 "kind":"unassessed_public_arithmetic_certificate_profile", "profile_sha512":hex(&profile_digest()),
-                "degree":geometry::N, "ordered_qp":geometry::QP, "certificate_bytes":certificate::FRAME_BYTES,
-                "points_per_basis":pit::POINTS, "cryptographic_security_assessed":false, "sql_accepted":false
+                "degree":N, "ordered_qp":QP, "certificate_bytes":CERTIFICATE_BYTES,
+                "points_per_basis":POINTS, "cryptographic_security_assessed":false, "sql_accepted":false
             })
         );
         return Ok(());
@@ -70,9 +62,9 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         println!(
             "{}",
             serde_json::json!({
-                "kind":"owner_private_gold_formation_witness_observation","degree":geometry::N,"ordered_q":geometry::Q,
+                "kind":"owner_private_gold_formation_witness_observation","degree":N,"ordered_q":Q,
                 "phases":phases,"private_witness_checked":true,"private_witness_exported":false,
-                "coefficient_counts":{"secret":geometry::N,"shared_errors":2*geometry::N,"signed_quotients":4*geometry::N},
+                "coefficient_counts":{"secret":N,"shared_errors":2*N,"signed_quotients":4*N},
                 "logical_buffers":{"private_witness_bytes":gold_formation::PRIVATE_WITNESS_BYTES,
                 "formation_logical_vectors_upper_bound_bytes":gold_formation::LOGICAL_VECTOR_BYTES,"rss_measured":false},
                 "proof_verified":false,"cryptographic_security_assessed":false,"source_authenticated":false,
@@ -88,7 +80,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             "{}",
             serde_json::json!({
                 "kind":"owner_private_gold_formation_graph_observation",
-                "degree":geometry::N,"ordered_q":geometry::Q,
+                "degree":N,"ordered_q":Q,
                 "phases":{
                     "preparation_ms":observation.preparation_ms,
                     "sdk_product_ms":observation.sdk_product_ms,
@@ -115,7 +107,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         println!(
             "{}",
             serde_json::json!({
-                "kind":"UNVERIFIED_formation_air_symbolic_plan", "degree":geometry::N,
+                "kind":"UNVERIFIED_formation_air_symbolic_plan", "degree":N,
                 "proof_verified":false,"cryptographic_security_assessed":false,
                 "source_authenticated":false,"key_authenticated":false,
                 "sql_accepted":false,"fresh_head_verified":false,"network_measured":false,
@@ -132,10 +124,10 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let began = Instant::now();
     let example = fixture::example()?;
     let produce_start = Instant::now();
-    let frame = certificate::produce(&example.statement)?;
+    let frame = produce(&example.statement)?.into_bytes();
     let produce_ms = produce_start.elapsed().as_secs_f64() * 1000.;
     let verify_start = Instant::now();
-    certificate::check(&example.statement, &frame)?;
+    drop(check_arithmetic(&example.statement, &frame)?);
     let verify_ms = verify_start.elapsed().as_secs_f64() * 1000.;
     let complete_start = Instant::now();
     example.complete()?;

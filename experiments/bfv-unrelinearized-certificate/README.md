@@ -7,14 +7,15 @@ Fiat–Shamir/security composition, lattice parameters and full-domain noise
 correctness remain unassessed. Successful arithmetic checks are not presented as
 an accepted DCS proof or completion of the 500 ms query target.
 
-The direct dependencies are pinned `fhe`/`fhe-traits` for the actual public SDK
-fixture, `ethnum`/`num-bigint`/`num-traits` for exact integer scaling certificates,
-`sha2` for the full transcript, `rand` for fresh fixture encryption, `zeroize` for
-plaintext cleanup and `serde_json` for observations. Test-only `fhe-math` and
-`ndarray` compare the exact scaler against the upstream implementation. There
-is no library API or production consumer. Default workspace members stay core.
-
-The private boundary is split by responsibility:
+The mathematical implementation lives in the dependency-light
+[bfv-unrelinearized-product core library](../../crates/bfv-unrelinearized-product/README.md).
+This executable is its actual SDK/CLI consumer. Its direct dependencies retain
+the SDK for encryption/product/client decryption, SHA2 for observation digests,
+rand/zeroize for private fixture custody and serde_json for reports. Gold
+Formation diagnostics retain their separate hiding-STARK/registry dependencies.
+Exact integer/scaler dependencies now belong to the core arithmetic library.
+The core SDK/scaler tests are dev-only; default workspace members stay core.
+The extracted library and this executable divide responsibilities as follows:
 
 - `statement` parses complete canonical unseeded SDK endpoint bytes without an
   NTT, seed expansion or query evaluation. No witness chooses its own expected
@@ -96,3 +97,13 @@ inspection. `--unverified-formation-air-plan` inspects the full relation without
 committing preprocessing or allocating a private proof trace. It accepts no
 query and supplies no cryptographic Formation result. Its request binding is a
 separate experimental contract, not the SourceVersion version-tag contract.
+
+
+The [core extraction validation](../../crates/bfv-unrelinearized-product/VALIDATION.md)
+now covers eighteen arithmetic tests, nine remaining private diagnostics,
+the actual CLI, four privacy examples and the complete upper consumer.
+The unchanged CLI operation took 75.604 ms including preparation, SDK product,
+certificate production/checking and client completion. Historical measurements
+above retain their original scope. The exact eighteen-point UNASSESSED profile
+and frame remain intact; `ArithmeticCheckedProduct` grants conditional
+arithmetic only, without Source, SQL, key or currentness authority.

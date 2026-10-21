@@ -8,15 +8,17 @@ const MAX_CT: usize = 128 * 1024;
 const POLY_BYTES: usize = N * 60 / 8;
 const REQUEST_MAGIC: &[u8; 8] = b"UCPITQ01";
 
-pub(crate) struct Statement {
+#[derive(Clone)]
+/// Immutable public endpoint metadata; construction verifies no arithmetic or authority.
+pub struct Expected {
     inputs: [Polynomial; 4],
     outputs: [Polynomial; 3],
     request: Vec<u8>,
     output: Vec<u8>,
     binding: [u8; 32],
 }
-impl Statement {
-    pub(crate) fn new(binding: [u8; 32], inputs: [Vec<u8>; 2], output: Vec<u8>) -> Result<Self> {
+impl Expected {
+    pub fn checked(binding: [u8; 32], inputs: [Vec<u8>; 2], output: Vec<u8>) -> Result<Self> {
         if binding == [0; 32] {
             return Err(Error::Binding);
         }
@@ -42,19 +44,19 @@ impl Statement {
             binding,
         })
     }
-    pub(crate) fn input(&self, index: usize) -> &Polynomial {
+    pub fn input(&self, index: usize) -> &Polynomial {
         &self.inputs[index]
     }
-    pub(crate) fn output(&self, index: usize) -> &Polynomial {
+    pub fn output(&self, index: usize) -> &Polynomial {
         &self.outputs[index]
     }
-    pub(crate) fn request_wire(&self) -> &[u8] {
+    pub fn request_wire(&self) -> &[u8] {
         &self.request
     }
-    pub(crate) fn output_wire(&self) -> &[u8] {
+    pub fn output_wire(&self) -> &[u8] {
         &self.output
     }
-    pub(crate) fn binding(&self) -> [u8; 32] {
+    pub fn nonce(&self) -> [u8; 32] {
         self.binding
     }
 
@@ -112,7 +114,7 @@ impl Statement {
             self.request[112..112 + a_len].to_vec(),
             self.request[112 + a_len..].to_vec(),
         ];
-        Self::new(self.binding, inputs, output)
+        Self::checked(self.binding, inputs, output)
     }
 }
 

@@ -142,7 +142,7 @@ pub(crate) fn produce(inputs: &[Polynomial; 4]) -> Result<ProductCertificate> {
 }
 
 pub(crate) fn transcript_prefix(
-    statement: &crate::statement::Statement,
+    statement: &crate::statement::Expected,
     complete_frame: &[u8],
 ) -> Sha512 {
     let mut h = Sha512::new();

@@ -4,6 +4,7 @@ pub mod circuit;
 pub mod commitment;
 pub mod formation;
 pub mod layout;
+pub mod product;
 mod prover;
 pub mod statement;
 pub mod wire;

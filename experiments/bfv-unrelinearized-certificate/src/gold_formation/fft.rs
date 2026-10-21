@@ -1,5 +1,6 @@
 //! Fixed4096 Goldilocks negacyclic FFT. Owner-private scratch is always guarded.
-use crate::{Error, Result, geometry::N};
+use crate::{Error, Result};
+use bfv_unrelinearized_product::N;
 use zeroize::Zeroizing;
 
 pub(super) const GOLD: u64 = 0xffff_ffff_0000_0001;
@@ -134,7 +135,7 @@ impl Plan {
     }
     /// Public-input preprocessing only. Secret graph stages are constructed independently.
     pub(super) fn public_frequency(&self, values: &[u64], q: u64) -> Result<Vec<u64>> {
-        if values.len() != N || !crate::geometry::Q.contains(&q) {
+        if values.len() != N || !bfv_unrelinearized_product::Q.contains(&q) {
             return Err(Error::Shape);
         }
         if values.iter().any(|&v| v >= q) {
@@ -156,7 +157,7 @@ impl Plan {
         if public.iter().any(|&v| v >= q) || secret_frequency.iter().any(|&v| v >= GOLD) {
             return Err(Error::Arithmetic);
         }
-        if !crate::geometry::Q.contains(&q) {
+        if !bfv_unrelinearized_product::Q.contains(&q) {
             return Err(Error::Shape);
         }
         let mut work = Zeroizing::new(public.to_vec());

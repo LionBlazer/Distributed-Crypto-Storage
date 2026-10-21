@@ -632,13 +632,10 @@ name = "bfv-unrelinearized-certificate"
 version = "0.1.0"
 dependencies = [
  "bfv-hiding-stark",
- "ethnum",
+ "bfv-unrelinearized-product",
  "fhe",
  "fhe-math",
  "fhe-traits",
- "ndarray",
- "num-bigint 0.4.8",
- "num-traits",
  "p3-air",
  "p3-batch-stark",
  "p3-commit",
@@ -650,6 +647,22 @@ dependencies = [
  "rand 0.9.2",
  "registry200-proof",
  "serde_json",
+ "sha2",
+ "zeroize",
+]
+
+[[package]]
+name = "bfv-unrelinearized-product"
+version = "0.1.0"
+dependencies = [
+ "ethnum",
+ "fhe",
+ "fhe-math",
+ "fhe-traits",
+ "ndarray",
+ "num-bigint 0.4.8",
+ "num-traits",
+ "rand 0.9.2",
  "sha2",
  "zeroize",
 ]
@@ -4323,6 +4336,7 @@ dependencies = [
  "bfv-ciphertext-formation",
  "bfv-hiding-stark",
  "bfv-key-transform",
+ "bfv-unrelinearized-product",
  "bounded-postcard",
  "compact-store",
  "fhe",

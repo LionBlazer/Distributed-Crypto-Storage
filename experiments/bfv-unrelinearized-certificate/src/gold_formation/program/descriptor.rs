@@ -1,8 +1,8 @@
 //! Independent public metadata only; actual verify_pair remains mandatory before proving.
 use super::*;
 use crate::gold_formation::{Inputs, graph};
-use crate::statement::Statement;
 use bfv_hiding_stark::Val;
+use bfv_unrelinearized_product::Expected;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use registry200_proof::two_lane_encoding::{
     Role, statement::Statement as Encoded, wire::VerifiedPair,
@@ -21,11 +21,7 @@ pub(super) struct Descriptor {
 }
 impl Descriptor {
     /// This constructs an UNVERIFIED AIR expectation. It is not a pair/key proof.
-    pub(super) fn from_claims(
-        original: &Statement,
-        source: Encoded,
-        mask: Encoded,
-    ) -> Result<Self> {
+    pub(super) fn from_claims(original: &Expected, source: Encoded, mask: Encoded) -> Result<Self> {
         let se = &source.expected;
         let me = &mask.expected;
         if se.role() != Role::SourceAllOriginal
@@ -34,7 +30,7 @@ impl Descriptor {
             || se.source_claim().heads != me.source_claim().heads
             || se.source_claim().packets != me.source_claim().packets
             || se.key_binding().values() != me.key_binding().values()
-            || me.public_nonce() != original.binding()
+            || me.public_nonce() != original.nonce()
         {
             return Err(Error::Binding);
         }
@@ -115,7 +111,7 @@ impl Descriptor {
     /// Actual canonical SDK request geometry, with NO Source/Cw/Cs claim.
     /// The domain-separated placeholders only instantiate the public columns for
     /// symbolic inspection. This descriptor can never pass require_pair.
-    pub(super) fn unverified_geometry(original: &Statement) -> Result<Self> {
+    pub(super) fn unverified_geometry(original: &Expected) -> Result<Self> {
         let mut identity = Sha512::new();
         identity.update(b"DCS/GOLD-FORMATION/UNVERIFIED-GEOMETRY-ONLY/v1");
         identity.update((original.request_wire().len() as u64).to_le_bytes());
@@ -202,15 +198,15 @@ pub(super) fn profile() -> [u8; 32] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::N;
     use crate::gold_formation::program::{air::ProgramAir, assessment, pp};
+    use bfv_unrelinearized_product::N;
     use p3_air::BaseAir;
     use std::sync::OnceLock;
 
     // Only canonical PUBLIC ciphertext bytes survive this one actual SDK setup.
     // Its real random secret and plaintext buffers are dropped inside the fixture.
-    fn original() -> &'static Statement {
-        static ORIGINAL: OnceLock<Statement> = OnceLock::new();
+    fn original() -> &'static Expected {
+        static ORIGINAL: OnceLock<Expected> = OnceLock::new();
         ORIGINAL.get_or_init(|| crate::fixture::example().unwrap().statement)
     }
     fn id(value: Val) -> u64 {
@@ -309,12 +305,12 @@ mod tests {
         let original = original();
         let d = Descriptor::unverified_geometry(original).unwrap();
         let n = u32::from_le_bytes(original.request_wire()[104..108].try_into().unwrap()) as usize;
-        let mut nonce = original.binding();
+        let mut nonce = original.nonce();
         nonce[0] ^= 1;
         if nonce == [0; 32] {
             nonce[1] = 1;
         }
-        let rebound = Statement::new(
+        let rebound = Expected::checked(
             nonce,
             [
                 original.request_wire()[112..112 + n].to_vec(),

@@ -53,7 +53,7 @@ pub(super) const BUS: &str = "dcs/gold-formation-full-program/v1/node-value";
 /// Actual native symbolic/security/resource inspection only. It produces no proof,
 /// success token, mathematical input certificate or protocol/SQL permission.
 pub(super) fn inspect(
-    original: &crate::statement::Statement,
+    original: &bfv_unrelinearized_product::Expected,
     pair: Option<&registry200_proof::two_lane_encoding::wire::VerifiedPair>,
 ) -> Result<assessment::Assessment> {
     let descriptor = if let Some(pair) = pair {
