@@ -50,6 +50,14 @@ pub fn profile_digest() -> [u8; 32] {
     hash.update(b"fresh-StateCertificate-and-one-Role3-child;complete-State-values-heads-packets-key29-Cstate-Cw;literal-GFMDQ001-one-Ct2;Cw4112-and-DATA-Cs528;consume-SAME-final-W-once-and-salts;already-scaled-no-double-SCALE;native-cold-receiving;no-pair-no-query-q-cast");
     hash.finalize().into()
 }
+/// Explicit dense mathematical protocol; the original DATA profile is unchanged.
+pub fn dense_profile_digest() -> [u8; 32] {
+    let mut hash = Sha256::new();
+    hash.update(b"DCS/two-lane-CoreGold/consuming-DATA-Formation/v2/dense/no-SQL-no-freshness");
+    hash.update(profile_digest());
+    hash.update(data::dense_profile_digest());
+    hash.finalize().into()
+}
 fn words(digest: [u8; 32]) -> [Val; 8] {
     core::array::from_fn(|i| {
         Val::from_u32(u32::from_le_bytes(
@@ -235,6 +243,25 @@ pub fn prove(
     prerequisites: Prerequisites<'_>,
     private: PrivateInputs,
 ) -> Result<UnverifiedEvidence> {
+    prove_fixed(expected, request, prerequisites, private, false)
+}
+/// Same fresh State/Role3 prerequisites and consumed W/key, fixed H2048 backend.
+/// Returns unverified DCSGDD01 bytes, never an original-frame fallback.
+pub fn prove_dense(
+    expected: &Expected,
+    request: &data::Request,
+    prerequisites: Prerequisites<'_>,
+    private: PrivateInputs,
+) -> Result<UnverifiedEvidence> {
+    prove_fixed(expected, request, prerequisites, private, true)
+}
+fn prove_fixed(
+    expected: &Expected,
+    request: &data::Request,
+    prerequisites: Prerequisites<'_>,
+    private: PrivateInputs,
+    dense: bool,
+) -> Result<UnverifiedEvidence> {
     expected.require_request(request)?;
     private
         .source
@@ -256,7 +283,11 @@ pub fn prove(
     drop(verified);
     let prepared = data::Prepared::new(&expected.core, opening, secret)?;
     Ok(UnverifiedEvidence {
-        core: data::prove(&expected.core, prepared)?,
+        core: if dense {
+            data::prove_dense(&expected.core, prepared)?
+        } else {
+            data::prove(&expected.core, prepared)?
+        },
     })
 }
 /// Move-only fresh mathematical DATA result; PUBLIC metadata only, no SQL/head grant.
@@ -283,13 +314,41 @@ pub fn verify(
     prerequisites: Prerequisites<'_>,
     bytes: &[u8],
 ) -> Result<VerifiedDataFormation> {
-    if bytes.is_empty() || bytes.len() > data::MAX_EVIDENCE_BYTES {
+    verify_fixed(expected, request, prerequisites, bytes, false)
+}
+/// Fresh State + Role3 and cold dense native receiving on EVERY invocation.
+/// Original DATA frames are rejected; no cached or supplied verdict is accepted.
+pub fn verify_dense(
+    expected: &Expected,
+    request: &data::Request,
+    prerequisites: Prerequisites<'_>,
+    bytes: &[u8],
+) -> Result<VerifiedDataFormation> {
+    verify_fixed(expected, request, prerequisites, bytes, true)
+}
+fn verify_fixed(
+    expected: &Expected,
+    request: &data::Request,
+    prerequisites: Prerequisites<'_>,
+    bytes: &[u8],
+    dense: bool,
+) -> Result<VerifiedDataFormation> {
+    let limit = if dense {
+        data::MAX_DENSE_EVIDENCE_BYTES
+    } else {
+        data::MAX_EVIDENCE_BYTES
+    };
+    if bytes.is_empty() || bytes.len() > limit {
         return Err(Error::Formation(gold::Error::Resource));
     }
     expected.require_request(request)?;
     let verified = prerequisites.verify(expected)?;
     drop(verified);
-    let verified = data::verify(&expected.core, bytes)?;
+    let verified = if dense {
+        data::verify_dense(&expected.core, bytes)?
+    } else {
+        data::verify(&expected.core, bytes)?
+    };
     drop(verified);
     Ok(VerifiedDataFormation {
         expected: expected.clone(),

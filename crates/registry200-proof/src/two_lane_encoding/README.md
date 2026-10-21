@@ -410,3 +410,12 @@ unchanged full Pair/product gate. Fresh mathematical receiving took 1378.583ms;
 the two fixture products took 65.408/64.543ms after query encryption. These are
 local mathematical timings, without the complete SQL/finality path or a 500ms
 claim. Resource fuses and actual proof rejection remain unchanged.
+
+`data_formation::prove_dense` and `verify_dense` now explicitly select the fixed
+H2048 DATA backend while retaining the same complete Expected and mandatory fresh
+State/Role3 checks. The SAME final W/salt/key are consumed, with no private getter
+or second derivation. `dense_profile_digest` identifies this composition; the
+original profile and H8192 API remain unchanged. Neither receiver negotiates or
+falls back to the other frame. The new private Word read composition exercises
+this public API together with the exact original Stmt96/QueryCt proof and actual
+conditional product checking; it creates no SQL or current-head capability.

@@ -186,3 +186,24 @@ call reconstructs the independently retained expectation and runs native
 verification. No old-frame fallback, DATA admission, Word proof, freshness or SQL
 capability is introduced. The 13 standalone mask cases remain independently
 owned; the three composition cases exercise the public lower API from this crate.
+
+The private `read` composition independently retains the complete Word metadata,
+version-specific DATA expectation, original ordered request and claimed Ct3.
+Construction compares full Source values, both original heads and complete packets,
+then derives the same fused query and arithmetic expectations. Its bounded six
+borrowed frames are unverified. Every receive runs conditional public product
+checking, fresh State + Role3 + dense DATA verification, original Word native
+verification and fused Query native verification. Only that closed function can
+construct the move-only mathematical result exposing the checked ciphertext.
+It accepts no supplied verdict, setup, cache or private owner input.
+
+Direct dependencies are the parent Word probe and its fixed native codec,
+`two_lane_encoding::data_formation` and its prerequisite codec, the fixed Gold
+DATA/query APIs and `bfv-unrelinearized-product`. The owning PUBLIC fixture
+encrypts actual DATA compiled from that SAME immutable source and the SAME private
+Word mask under one SDK key. Public FHE multiplication gets ciphertexts and
+parameters only; owner decryption and full-ring assertions happen after receiving.
+This is conditional mathematical composition: key/lattice and product security,
+confirmed bootstrap/history, current weighted QC, durable completion, transport
+and live SQL admission remain outside its contract. The Word transition still
+relies on its independently retained OldRoot. See [read validation](READ-VALIDATION.md).

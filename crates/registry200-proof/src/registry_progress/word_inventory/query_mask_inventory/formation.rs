@@ -133,9 +133,17 @@ pub(super) fn produce(
 /// The independently prepared native verifier is mandatory on EVERY receiving call.
 /// This mathematical relation supplies no DATA/Word/freshness/SQL authority.
 pub(super) fn verify(expected: &Expected, evidence: &Evidence) -> Result<()> {
-    if evidence.formation.is_empty() || evidence.formation.len() > query::MAX_EVIDENCE_BYTES {
+    verify_bytes(expected, &evidence.formation)
+}
+pub(super) fn verify_bytes(expected: &Expected, bytes: &[u8]) -> Result<()> {
+    if bytes.is_empty() || bytes.len() > query::MAX_EVIDENCE_BYTES {
         return Err(Error::Resource);
     }
-    query::verify(&expected.fused, &evidence.formation)?;
+    query::verify(&expected.fused, bytes)?;
     Ok(())
+}
+impl Evidence {
+    pub(super) fn as_bytes(&self) -> &[u8] {
+        &self.formation
+    }
 }
