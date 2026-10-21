@@ -240,3 +240,7 @@ mod probe_wire;
 // Independent PUBLIC branch witness/proof coverage, no runtime admission.
 mod owner_cases;
 mod owner_cases_tests;
+
+// Separate complete Stmt96 -> Cw4112 math inventory; no runtime admission.
+#[cfg(test)]
+mod query_mask_inventory;
