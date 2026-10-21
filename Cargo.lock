@@ -295,6 +295,7 @@ dependencies = [
  "p3-lookup",
  "p3-matrix",
  "p3-security",
+ "p3-symmetric",
  "p3-uni-stark",
  "postcard",
  "rand 0.10.3",

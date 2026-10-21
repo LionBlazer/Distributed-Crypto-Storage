@@ -19,7 +19,7 @@ transitions remain the upper consumer's independently checked prerequisites.
 | `request` | Bounded canonical two-CT2 PB parser and distinct GFMRQ001 request; no SDK transform/seed expansion |
 | `expected` | Immutable full independent association/context/root/request binding and PV36 |
 | `witness` | Move-only guarded W/salt and SDK-secret/Cs inputs; actual complete MAIN builder |
-| `fft`, `graph` | Public A preprocessing and private complete fixed32-slot schedule with exact fanout/bit reversal/twists/inverse normalization |
+| `fft`, `graph` | Public A preprocessing and complete private graph; one typed static `graph::Schedule` owns routes/twiddles while the original Plan supplies its exact public A coefficients |
 | `program` | The one immutable AIR/PP, native full symbolic/security assessment and actual stage-liveness resource gate |
 | `setup`, `wire`, `evidence` | Separate closed backend producer/cold verifier, deterministic public-only PP, fresh private OS config and bounded new native batch frame |
 
@@ -190,3 +190,9 @@ passed, with complete original Pair/Data golden preservation. The subsequent
 private writer, genuine proofs and independent cold verification passed the
 [native proof validation](DENSE-VALIDATION.md). There is no accepting API or
 runtime registration; the deployed H8192 family above keeps its original behavior.
+
+The separate [role coefficient inventory](program/role_coefficient_inventory/README.md)
+uses that same static Schedule with a second AIR binding every public coefficient.
+Its four metadata tests, old full goldens and actual Dense proof regressions
+passed. It has no private backend, and aggregate proof security remains
+UNASSESSED with a rejecting guard. Role-only routing is not a measured speedup.

@@ -31,3 +31,6 @@ fhe = "=0.1.1"
 fhe-math = "=0.1.1"
 fhe-traits = "=0.1.1"
 rand = "=0.9.2"
+
+# Test-only independent native Poseidon permutation oracle; already locked.
+p3-symmetric = "=0.8.0"

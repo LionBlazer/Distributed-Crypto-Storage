@@ -29,3 +29,6 @@ mod data_snapshot_capture;
 #[cfg(test)]
 pub(super) mod dense_data_inventory;
 mod range_equations;
+
+#[cfg(test)]
+mod role_coefficient_inventory;

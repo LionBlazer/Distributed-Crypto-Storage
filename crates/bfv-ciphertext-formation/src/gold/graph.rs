@@ -7,6 +7,8 @@ use super::{
 use super::{fft, geometry::Inputs};
 use sha2::{Digest, Sha512};
 use zeroize::Zeroizing;
+mod schedule;
+pub(super) use schedule::{Schedule, ScheduledGate};
 
 pub(super) const SLOTS: usize = 32;
 pub(super) const STAGES: usize = 12;
@@ -72,10 +74,7 @@ pub(super) struct Plan {
     identity: [u8; 64],
     kind: super::relation::RelationKind,
     a_frequency: Vec<Vec<u64>>,
-    forward: [Vec<u64>; STAGES],
-    inverse: [Vec<u64>; STAGES],
-    twist: Vec<u64>,
-    normalize: Vec<u64>,
+    schedule: Schedule,
 }
 impl Plan {
     pub(super) fn new(inputs: Inputs<'_>) -> Result<Self> {
@@ -106,25 +105,12 @@ impl Plan {
                 fast.public_frequency(inputs.components[2 * (job / 2) + 1][job % 2], Q[job % 2])
             })
             .collect::<Result<Vec<_>>>()?;
-        let omega = fft::mul(fft::PSI, fft::PSI);
-        let inv_omega = fft::pow(omega, GOLD - 2);
-        let forward = twiddles(omega);
-        let inverse = twiddles(inv_omega);
-        let twist = powers(fft::PSI, N);
-        let inv_psi = fft::pow(fft::PSI, GOLD - 2);
-        let inv_n = fft::pow(N as u64, GOLD - 2);
-        let normalize = powers(inv_psi, N)
-            .into_iter()
-            .map(|v| fft::mul(v, inv_n))
-            .collect();
+        let schedule = Schedule::new(inputs.kind)?;
         let plan = Self {
             kind: inputs.kind,
             identity: identity.finalize().into(),
             a_frequency,
-            forward,
-            inverse,
-            twist,
-            normalize,
+            schedule,
         };
         plan.audit_inventory()?;
         Ok(plan)
@@ -145,81 +131,15 @@ impl Plan {
         Ok(Row { gates })
     }
     fn gate(&self, index: usize) -> Result<Gate> {
-        if index >= self.kind.graph_rows() * SLOTS {
-            return Err(Error::Shape);
-        }
-        if index < FORWARD_GATES {
-            return self.butterfly(None, index);
-        }
-        let index = index - FORWARD_GATES;
-        if index < self.kind.products() * N {
-            let job = index / N;
-            let at = index % N;
-            return Ok(Gate {
-                inputs: [Some(Node::new(12, at)?), None],
-                outputs: [Some(Node::new(13 + job, at)?), None],
-                linear: [[self.a_frequency[job][at], 0], [0, 0]],
+        match self.schedule.gate(index)? {
+            ScheduledGate::Butterfly(gate) => Ok(gate),
+            ScheduledGate::Pointwise(point) => Ok(Gate {
+                inputs: [Some(point.input), None],
+                outputs: [Some(point.output), None],
+                linear: [[self.a_frequency[point.job][point.coefficient], 0], [0, 0]],
                 output_uses: [1, 0],
-            });
+            }),
         }
-        let index = index - self.kind.products() * N;
-        self.butterfly(Some(index / FORWARD_GATES), index % FORWARD_GATES)
-    }
-    fn butterfly(&self, job: Option<usize>, index: usize) -> Result<Gate> {
-        let stage = index / (N / 2);
-        let at = index % (N / 2);
-        let half = 1 << stage;
-        let block = at / half;
-        let offset = at % half;
-        let a = block * 2 * half + offset;
-        let b = a + half;
-        let (input_vector, output_vector, w) = if let Some(job) = job {
-            (
-                if stage == 0 {
-                    13 + job
-                } else {
-                    13 + self.kind.products() + job * STAGES + stage - 1
-                },
-                13 + self.kind.products() + job * STAGES + stage,
-                self.inverse[stage][offset],
-            )
-        } else {
-            (stage, stage + 1, self.forward[stage][offset])
-        };
-        let input_a = if stage == 0 { reverse(a) } else { a };
-        let input_b = if stage == 0 { reverse(b) } else { b };
-        let mut linear = [[1, w], [1, neg(w)]];
-        if job.is_none() && stage == 0 {
-            for row in &mut linear {
-                row[0] = fft::mul(row[0], self.twist[input_a]);
-                row[1] = fft::mul(row[1], self.twist[input_b]);
-            }
-        }
-        if job.is_some() && stage == STAGES - 1 {
-            for value in &mut linear[0] {
-                *value = fft::mul(*value, self.normalize[a]);
-            }
-            for value in &mut linear[1] {
-                *value = fft::mul(*value, self.normalize[b]);
-            }
-        }
-        let uses = if job.is_none() && stage == STAGES - 1 {
-            self.kind.products() as u8
-        } else {
-            1
-        };
-        Ok(Gate {
-            inputs: [
-                Some(Node::new(input_vector, input_a)?),
-                Some(Node::new(input_vector, input_b)?),
-            ],
-            outputs: [
-                Some(Node::new(output_vector, a)?),
-                Some(Node::new(output_vector, b)?),
-            ],
-            linear,
-            output_uses: [uses; 2],
-        })
     }
     pub(super) fn audit_inventory(&self) -> Result<()> {
         let mut inventory = Inventory::new(self.kind);
