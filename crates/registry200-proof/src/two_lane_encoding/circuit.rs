@@ -81,29 +81,41 @@ impl Witness {
     /// Computes caller-owned mathematical W under the constructor's fixed role.
     /// No externally selected role can reinterpret a private-mask witness as Source.
     pub fn coefficients(&self) -> Zeroizing<Vec<u64>> {
-        let mut out = Zeroizing::new(vec![0; N]);
         match self.expected.role() {
-            Role::SourceAllOriginal => {
-                for i in 0..4 {
-                    let age = self.plain[3 * i] as usize;
-                    let amount =
-                        u16::from_le_bytes(self.plain[3 * i + 1..3 * i + 3].try_into().unwrap());
-                    for (f, v) in [256 + age as u64, u64::from(amount)]
-                        .into_iter()
-                        .enumerate()
-                    {
-                        out[(2 * i + f) * 512 + age] = v * SCALE % T;
-                    }
-                }
-            }
-            Role::PrivateMask => {
-                for n in 0..256 {
-                    let age = 255 - n;
-                    out[n] = u64::from((self.mask[age / 8] >> (age % 8)) & 1) * SCALE;
-                }
-            }
+            Role::SourceAllOriginal => compile_source(
+                self.plain[..12]
+                    .try_into()
+                    .expect("constructor-fixed Source rows"),
+            ),
+            Role::PrivateMask => compile_mask(&self.mask),
         }
-        out
+    }
+    /// Consumes the SAME final encoding opening; no salt/raw-W factory escapes.
+    /// The caller must already have freshly verified the actual matching pair.
+    pub(crate) fn into_formation_opening(
+        self,
+        statement: &Statement,
+    ) -> std::result::Result<bfv_ciphertext_formation::gold::ScaledOpening, super::formation::Error>
+    {
+        self.require_expected(&statement.expected)
+            .map_err(|_| super::formation::Error::Binding)?;
+        let words = self.coefficients(); // Exactly once; words are ALREADY scaled.
+        let Self {
+            expected: _,
+            plain,
+            mask,
+            opening_salt,
+            encoding_salt,
+        } = self;
+        drop(plain);
+        drop(mask);
+        drop(opening_salt);
+        Ok(bfv_ciphertext_formation::gold::ScaledOpening::checked(
+            statement.expected.encoding_context(),
+            statement.encoded,
+            words,
+            encoding_salt,
+        )?)
     }
     pub fn statement(&self) -> Statement {
         let e = &self.expected;
@@ -263,4 +275,30 @@ pub(super) fn refresh_for_test(
     words: &[u64],
 ) -> [Val; 4] {
     refresh(s, trace, words)
+}
+
+// Shared PRIVATE input compilers for the original Witness and the owning SDK
+// fixture. These encode inputs, never evaluate a selected database answer.
+pub(super) fn compile_source(rows: &[u8; 12]) -> Zeroizing<Vec<u64>> {
+    let mut out = Zeroizing::new(vec![0; N]);
+    for i in 0..4 {
+        let age = rows[3 * i] as usize;
+        let amount =
+            u16::from_le_bytes(rows[3 * i + 1..3 * i + 3].try_into().expect("fixed amount"));
+        for (field, value) in [256 + age as u64, u64::from(amount)]
+            .into_iter()
+            .enumerate()
+        {
+            out[(2 * i + field) * 512 + age] = value * SCALE % T;
+        }
+    }
+    out
+}
+pub(super) fn compile_mask(mask: &[u8; 32]) -> Zeroizing<Vec<u64>> {
+    let mut out = Zeroizing::new(vec![0; N]);
+    for (n, value) in out.iter_mut().take(256).enumerate() {
+        let age = 255 - n;
+        *value = u64::from((mask[age / 8] >> (age % 8)) & 1) * SCALE;
+    }
+    out
 }

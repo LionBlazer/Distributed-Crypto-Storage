@@ -18,7 +18,7 @@ hiding STARKs; a profile match, owner signature or public claim is insufficient.
 | --- | --- |
 | [bfv-hiding-stark](../bfv-hiding-stark/README.md) | Fixed hiding suite, actual SDK assessment/verification, Poseidon gadget and bounded canonical Postcard |
 | [bfv-key-transform](../bfv-key-transform/README.md) | Typed full Key33 context and exact coefficient-vector digest ABI |
-| [bfv-ciphertext-formation](../bfv-ciphertext-formation/README.md) | Validated caller-owned encoded opening handoff; no Key or Formation proof is inferred |
+| [bfv-ciphertext-formation](../bfv-ciphertext-formation/README.md) | Caller-owned encoded opening handoff and the separate actual CoreGold Formation prover/verifier; neither infers Key or SQL authority |
 | [compact-store](../compact-store/README.md) | Complete original encrypted image/root and fixed geometry checks |
 | [version-journal](../version-journal/README.md) | Existing Body ceiling used by the original wire reservation |
 
@@ -158,3 +158,13 @@ The all-or-nothing pair frontend verifies the common Source once before both
 children. On identical proofs, its observed 1595.910 ms compares with 2674.165 ms
 for two independent single-child calls; the 500 ms complete-query target remains
 unmet.
+
+The additive `two_lane_encoding::formation` consumer now connects the original
+Source and both encoding children to the actual lower N4096/Q2 Formation proof.
+Its producer consumes the SAME final Witnesses and salts after fresh prerequisite
+verification; its receiver repeats actual Source/pair and cold Formation
+verification before returning a move-only mathematical result. The
+[native validation](../bfv-ciphertext-formation/src/gold/VALIDATION.md) covers one
+real full chain and hostile native arguments under the unchanged resource fuses.
+It supplies no installed-key, current-head, SQL or finality grant. Fresh receiving
+took1800.541ms in that run; the complete-query500ms target remains unmet.

@@ -1,6 +1,7 @@
 //! Bounded-noise BFV ciphertext formation under exact independently supplied producer commitments.
 #![forbid(unsafe_code)]
 pub mod circuit;
+pub mod gold;
 mod evidence;
 mod statement;
 mod witness;

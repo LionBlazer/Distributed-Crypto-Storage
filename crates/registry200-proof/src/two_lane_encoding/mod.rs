@@ -2,6 +2,7 @@
 pub mod air;
 pub mod circuit;
 pub mod commitment;
+pub mod formation;
 pub mod layout;
 mod prover;
 pub mod statement;

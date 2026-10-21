@@ -154,3 +154,79 @@ records unchanged SDK parameters for these actual AIRs, the nine proof/framing
 cases passing in23.94s and the additional analytical case passing separately
 in0.70s. Joint verification in that run took1060.086ms. This remains a partial
 mathematical boundary above the complete-query target.
+
+
+## Consuming CoreGold Formation composition
+
+The additive `formation` namespace connects the genuine existing Source691 and
+both two-lane encoding proofs to the new N4096/Q2 CoreGold Formation relation.
+It preserves the existing encoding and Source profiles. The composition has its
+own profile digest and uses only the new literal `gold::Request`; it admits no
+old N8192 Key33, Formation or public-product envelope by relabeling.
+
+`formation::Expected::checked` retains complete independent public statements,
+Source heads and packets, key metadata29, request bytes, request q and mask nonce.
+The Cs528 context commits the first25 key-identity values and the new CoreGold
+profile, excluding Cs itself and the query. This key identity is metadata and
+supplies no key authorization or lattice-security assessment. C_key remains the
+independent AEAD commitment in the original Source proof.
+
+`Prerequisites` borrows unverified original Source, Source-child and mask-child
+bytes with the existing 20MiB/12MiB/12MiB caps. Both production paths first check
+the complete bounded frame claims, then freshly verify the original Source and
+both encoding children. No stored checked flag, SourceVersion capability, caller
+verifier, callback or opaque-pair factory replaces that actual verification.
+
+`PrivateInputs` consumes both final Witnesses and guarded serialized SDK secret
+and Cs salt. `formation::prove` pins the independent expectation and exact literal
+request, verifies prerequisites, and passes the SAME already-scaled W4096 words
+and encoding salts by ownership to the opaque lower openings. The crate-private
+consuming helper computes each W once, moves its existing encoding salt, then
+drops the plaintext, private mask and original opening salt. It performs no
+second SCALE multiplication. The source/mask coefficient compiler is shared with
+the fixture without exporting a new raw opening getter. Existing public
+`Witness::coefficients` and all old producer semantics remain unchanged.
+
+The concrete lower `Prepared` and `gold::prove` paths enforce complete Cw/Cs
+openings, the same secret, all four ciphertext-component equations, and native
+shape/security/resource gates before private MAIN construction. Their returned
+bytes are explicitly unverified. `formation::verify` repeats fresh Source/pair
+verification and the actual cold CoreGold verifier against the independently
+retained expectation. Only this receiving function creates the private-field
+`VerifiedFormation` mathematical result. Neither result type grants SQL
+acceptance, current-head freshness, consensus, key installation or authorization.
+
+Direct added dependencies are the existing normal `bfv-ciphertext-formation`
+library plus test-only pinned SDK encryption, native batch-proof decoding and
+bounded Postcard crates. The lower formation module owns all MAIN/PP/config
+lifecycles. No production network, Session, owner WAL or App is enabled here.
+
+The one owning test
+`formation::tests::genuine_final_witnesses_form_actual_sdk_ciphertexts_then_require_fresh_receiving_proofs`
+uses explicitly public nonsecret rows with ages [0,1,128,255] and amounts
+[65535,0,255,65534]. It constructs the mask over the public age domain, encrypts
+m=W*SCALE^-1 mod t with one actual SDK key, removes seed compression and compares
+all decrypted input coefficients as a fixture-only encryption oracle. The same
+serialized secret produces Cs528 and the lower Formation witness. Only after the
+new literal request q is known does it build final C_open, Source and both child
+proofs, then consume those SAME final Witnesses. There is no owner-row selection
+or substitute peer result computation.
+
+ONE genuine full-chain Formation proof is reused for receiving rejections.
+Cheap role/q/nonce, noncanonical tail, secret-domain and wrong Cs guards run
+before the full proof. Wrong independent Cw and frame binding reject before the
+lower native proof; a canonical decoded/reencoded OOD mutation must reach the
+actual cold native verifier and return exactly Verification. Honest resource
+failure fails the test. Internal repaired-wire false proving belongs to the
+lower owning tests and requires no new upper test hook.
+
+The [executed owning gate](../../../bfv-ciphertext-formation/src/gold/VALIDATION.md)
+passed in16.93s including mutations. Fresh successful receiving took1800.541ms;
+its Source/children were freshly verified in that call. The actual mathematical
+path still exceeds the500ms complete-query goal before product computation,
+transport or consensus. The unchanged120second/1792MiB held-PID fuses passed.
+Public numeric phases distinguish Source/children proving, consuming Formation
+and fresh receiving. Empty or oversized Formation frames reject before any
+prerequisite proof verification. Unexpected native panic is Backend, so the
+repaired OOD case's exact Verification assertion excludes panic. No complete-query,
+BFV-security, composed-protocol, SQL or freshness guarantee follows from this gate.

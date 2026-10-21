@@ -78,3 +78,23 @@ transport registration, Journal cap change, live SQL grant, evaluation-key
 same-secret consistency or agreed freshness is established. Composed security must
 sum every actual term: six individual 128-bit floors alone give 125.415 bits; a
 larger Source/Lifecycle/Encoding/Formation composition does not claim composed128.
+
+
+## CoreGold mathematical family
+
+The additive [`gold`](src/gold/README.md) namespace owns a separate N4096/Q2
+full Formation relation. It includes its exact canonical request, consumed
+private W/secret/salt inputs, all four full negacyclic equations, full Cw/Cs
+commitments, actual native analytical/resource gates, bounded new batch wire,
+producer and independent cold verifier. It depends downward on the fixed hiding
+engine, bounded codec and native Plonky3 libraries; no registry or experiment
+imports enter this library. The original N8192 APIs and profiles above retain
+their behavior.
+
+Producer bytes are explicitly unverified. Only actual native receiving
+verification creates the move-only mathematical result. The upper
+`registry200-proof::two_lane_encoding::formation` consumer separately verifies
+Source/encoding prerequisites and owns their association. The
+[executed native gates](src/gold/VALIDATION.md) establish local proof behavior,
+not key admission, lattice assurance, current-head freshness, SQL acceptance,
+network latency or the 500ms complete-query target.
