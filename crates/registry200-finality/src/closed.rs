@@ -1,4 +1,4 @@
-//! One private durable engine for the two closed FHE applications.
+//! One private durable engine for three closed proof applications.
 //! All State/Arc and floor capabilities stay private to this synchronous owner.
 use crate::joint::{Error, Hash, Result};
 use crate::public_timings::{Kind, Scope, Section, Stage};
@@ -10,7 +10,6 @@ use crate::{
 };
 use ed25519_dalek::SigningKey;
 use protocol_storage::{FileCharge, ParticipantQuota};
-use registry200_journal::Control;
 use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
@@ -23,8 +22,29 @@ use work_finality::consensus::{
 mod application;
 use application::InstalledApplication;
 pub(crate) use application::{Ingress, Installation};
+/// Distinct mathematical state families. No old control is reinterpreted as Word.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ApplicationControl {
+    Registry(registry200_journal::Control),
+    Word(registry200_joint::word::Control),
+}
+impl ApplicationControl {
+    pub(crate) fn registry(self) -> Result<registry200_journal::Control> {
+        match self {
+            Self::Registry(v) => Ok(v),
+            Self::Word(_) => Err(Error::Binding),
+        }
+    }
+    pub(crate) fn word(self) -> Result<registry200_joint::word::Control> {
+        match self {
+            Self::Word(v) => Ok(v),
+            Self::Registry(_) => Err(Error::Binding),
+        }
+    }
+}
 const _: [(); crate::DESCRIPTOR_BYTES] = [(); crate::joint::CANDIDATE_BYTES];
 const _: [(); crate::DESCRIPTOR_BYTES] = [(); crate::progress::CANDIDATE_BYTES];
+const _: [(); crate::DESCRIPTOR_BYTES] = [(); crate::word::CANDIDATE_BYTES];
 
 #[cfg(test)]
 #[path = "joint/durable_tests.rs"]
@@ -50,7 +70,7 @@ pub(crate) struct Finalized {
     head: HeadRef,
     slot: u64,
     decision: Hash,
-    control: Control,
+    control: ApplicationControl,
 }
 impl Finalized {
     pub(crate) fn head(&self) -> HeadRef {
@@ -62,7 +82,7 @@ impl Finalized {
     pub(crate) fn decision_id(&self) -> Hash {
         self.decision
     }
-    pub(crate) fn control(&self) -> Control {
+    pub(crate) fn control(&self) -> ApplicationControl {
         self.control
     }
 }
@@ -90,7 +110,7 @@ struct CheckedApplication {
     parent: HeadRef,
     floor: HeadRef,
     head: HeadRef,
-    control: Control,
+    control: ApplicationControl,
 }
 struct DriveCapture<'drive> {
     channel: &'drive DriveHandoff,
@@ -188,7 +208,7 @@ struct PreparedFinalization<'state, 'decision> {
     state: &'state mut State,
     decision: &'decision Decision,
     head: HeadRef,
-    control: Control,
+    control: ApplicationControl,
     next: Context,
 }
 impl PreparedFinalization<'_, '_> {
@@ -258,7 +278,7 @@ impl State {
             completed_application_checks: std::sync::atomic::AtomicUsize::new(0),
         }
     }
-    fn verify(&self, context: &Context, value: &[u8]) -> Result<(HeadRef, Control)> {
+    fn verify(&self, context: &Context, value: &[u8]) -> Result<(HeadRef, ApplicationControl)> {
         if context.slot()
             > u64::from(
                 self.application
@@ -389,7 +409,7 @@ impl State {
         &'state mut self,
         decision: &'decision Decision,
         head: HeadRef,
-        control: Control,
+        control: ApplicationControl,
     ) -> Result<PreparedFinalization<'state, 'decision>> {
         let next = self.current.after_decision(decision)?;
         // Initial slot plus each successor is retained for actual WAL replay.
@@ -488,6 +508,10 @@ pub(crate) struct DurableEngine {
     poison_before_advance: bool,
 }
 impl DurableEngine {
+    #[cfg(test)]
+    pub(crate) fn inject_floor_fault_for_test(&mut self, fault: crate::store::Fault) {
+        self.floor.inject(fault);
+    }
     /// NEW-only participant installation. Setup and every future proof premise
     /// use the participant's one concrete typed depot and shared ledger.
     pub(crate) fn create_participant(

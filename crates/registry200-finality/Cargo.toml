@@ -17,6 +17,7 @@ sha2 = "=0.10.9"
 ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std", "fast", "zeroize"] }
 
 [dev-dependencies]
+bfv-hiding-stark = { path = "../bfv-hiding-stark" }
 bfv-query-core = { path = "../bfv-query-core", features = ["key-proofs"] }
 compact-store = { path = "../compact-store" }
 p3-field = "=0.8.0"

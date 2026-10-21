@@ -1,5 +1,11 @@
 # Registry200 durable checkpoint finality
 
+The distinct [durable Word application](src/word/README.md) connects immutable
+SourceVersion and original EMPTY265/Control309 proofs to the actual shared durable
+weighted voter, signer WAL and floor. Its bindings, control types and storage/QC
+formats remain distinct from the earlier applications. It supplies no network
+SQL or current row-lock lease.
+
 This closed library owns the original Registry200 application's actual Journal,
 weighted multi-slot signer and certificate floor log. It implements a local
 durable protocol boundary. It is not a peer actor, a freshness barrier, an epoch

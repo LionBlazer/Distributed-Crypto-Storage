@@ -1,0 +1,12 @@
+//! Closed durable voting for original Word mathematics. No SQL/current lock grant.
+mod binding;
+mod durable;
+#[cfg(test)]
+mod tests;
+pub(crate) mod verification;
+mod wire;
+pub use crate::CandidateBlock;
+pub use crate::joint::{Error, Hash, Result};
+pub use binding::{Binding, profile_digest};
+pub use durable::{DurableFinality, VerifiedParent, participant_storage_profile_digest};
+pub use wire::{CANDIDATE_BYTES, Candidate, Checkpoint, MAX_CHECKPOINT_BYTES};

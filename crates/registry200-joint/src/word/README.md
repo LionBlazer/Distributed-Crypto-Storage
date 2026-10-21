@@ -41,6 +41,13 @@ current quorum before committing and using it for locks. `VerifiedOperation` has
 private fields, no Clone or serialization, and grants mathematics only. No public
 caller can substitute an accepting verifier callback.
 
+The fixed `TransitionVerifier` implementation supports validator-side Journal
+calls: the actual Journal checks owner authorization first, and the callback
+always performs native Word verification. Its association ID is metadata, not a
+client intent or owner capability; direct trait calls establish mathematics only.
+The [durable Word voter](../../../registry200-finality/src/word/README.md) is the
+separate owner of consensus, signer WAL, quorum and durable floor admission.
+
 Direct dependencies are [registry200-proof](../../../registry200-proof/README.md)
 for immutable Source and exact Word proof contracts, compact-store for canonical
 public commitments, SHA2, p3-field and [version-journal](../../../version-journal/README.md)

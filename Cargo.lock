@@ -4285,6 +4285,7 @@ dependencies = [
 name = "registry200-finality"
 version = "0.1.0"
 dependencies = [
+ "bfv-hiding-stark",
  "bfv-product-evidence",
  "bfv-query-core",
  "compact-store",

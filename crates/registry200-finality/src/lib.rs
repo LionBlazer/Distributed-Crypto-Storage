@@ -18,6 +18,7 @@ mod closed;
 pub mod joint;
 pub mod progress;
 mod public_timings;
+pub mod word;
 
 pub use adapter::{FinalizedHead, RegistryFinality};
 pub use binding::{Binding, DESCRIPTOR_BYTES, Descriptor, profile_digest};

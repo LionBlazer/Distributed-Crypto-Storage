@@ -74,15 +74,18 @@ impl DurableFinality {
         }
     }
     pub fn finalized_parent(&self) -> Result<Option<VerifiedParent>> {
-        Ok(self.engine.finalized_parent()?.map(|p| {
-            VerifiedParent::checked(
-                &self.binding,
-                p.head(),
-                p.slot(),
-                p.decision_id(),
-                p.control(),
-            )
-        }))
+        self.engine
+            .finalized_parent()?
+            .map(|p| {
+                Ok(VerifiedParent::checked(
+                    &self.binding,
+                    p.head(),
+                    p.slot(),
+                    p.decision_id(),
+                    p.control().registry()?,
+                ))
+            })
+            .transpose()
     }
     pub fn candidate_block(&self, id: Hash) -> Result<CandidateBlock> {
         self.engine.candidate_block(id)

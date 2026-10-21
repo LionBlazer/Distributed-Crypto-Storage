@@ -4,6 +4,7 @@ use crate::joint::history::tests::{
     Directory, certificate, fixture, genesis, keys, proof_body, proposed, work,
 };
 use registry200_joint::{Application, Manifest};
+use registry200_journal::Control;
 use registry200_proof::{lifecycle, source};
 use std::{
     fs,
@@ -306,7 +307,16 @@ fn real_signed_bootstrap_begin_kind_and_alternate_qc_reopen_then_missing_or_corr
         assert_eq!(state.current, previous);
         assert_eq!(state.journal.journal().ancestry_floor(), first.head());
         assert_eq!(state.finalized.as_ref().unwrap().head(), first.head());
-        assert_eq!(state.finalized.as_ref().unwrap().control(), first.control());
+        assert_eq!(
+            state
+                .finalized
+                .as_ref()
+                .unwrap()
+                .control()
+                .registry()
+                .unwrap(),
+            first.control()
+        );
         assert_eq!(state.history.len(), history_len);
         assert_eq!(state.journal.disk_bytes(), journal_bytes);
     }

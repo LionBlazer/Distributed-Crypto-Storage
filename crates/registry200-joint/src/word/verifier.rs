@@ -205,6 +205,16 @@ struct Adapter<'a> {
     expected: OperationId,
     result: RefCell<Option<VerifiedOperation>>,
 }
+/// Validators receive owner authorization from the actual Journal before this
+/// fixed callback. Deriving association metadata here grants no caller intent,
+/// owner, currentness or SQL capability, and still runs every native Word check.
+impl TransitionVerifier for Verifier {
+    fn verify(&self, s: TransitionStatement<'_>) -> Result<()> {
+        let r = Request::decode(s.request)?;
+        let id = OperationId::new(&self.application, &r, s.proof)?;
+        self.check(s, id).map(|_| ())
+    }
+}
 impl TransitionVerifier for Adapter<'_> {
     fn verify(&self, s: TransitionStatement<'_>) -> Result<()> {
         let checked = self.verifier.check(s, self.expected)?;

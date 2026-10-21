@@ -1,7 +1,7 @@
 //! The only installed application choices. Each binding stays paired with its
 //! actual fixed verifier; no caller-selected verifier or success flag exists.
 use super::*;
-use crate::{joint, progress};
+use crate::{joint, progress, word};
 use registry200_joint::progress::{ProgressDepot, ProgressEvidenceIngress, ProgressVerifier};
 use registry200_joint::{JointDepot, JointEvidenceIngress, JointVerifier};
 use version_journal::{Genesis, Journal, TransitionStatement, TransitionVerifier};
@@ -10,11 +10,13 @@ use work_finality::{Genesis as WorkGenesis, consensus::Rules};
 pub(crate) enum Installation {
     Joint(joint::JointBinding),
     Progress(progress::Binding),
+    Word(word::Binding),
 }
 #[derive(Clone, Copy)]
 pub(super) enum BindingRef<'a> {
     Joint(&'a joint::JointBinding),
     Progress(&'a progress::Binding),
+    Word(&'a word::Binding),
 }
 pub(super) enum InstalledApplication {
     Joint {
@@ -25,20 +27,40 @@ pub(super) enum InstalledApplication {
         binding: progress::Binding,
         verifier: Box<ProgressVerifier>,
     },
+    Word {
+        binding: word::Binding,
+        verifier: Box<registry200_joint::word::Verifier>,
+    },
 }
 pub(crate) enum Ingress {
     Joint(JointEvidenceIngress),
     Progress(ProgressEvidenceIngress),
+    Word,
 }
 impl Installation {
     pub(super) fn binding(&self) -> BindingRef<'_> {
         match self {
             Self::Joint(b) => BindingRef::Joint(b),
             Self::Progress(b) => BindingRef::Progress(b),
+            Self::Word(b) => BindingRef::Word(b),
         }
     }
     pub(super) fn open(&self, quota: &ParticipantQuota) -> Result<(InstalledApplication, Ingress)> {
         match self {
+            Self::Word(binding) => {
+                let verifier = registry200_joint::word::Verifier::new(
+                    binding.application_descriptor().clone(),
+                    binding.journal_genesis(),
+                    binding.source_bytes(),
+                )?;
+                Ok((
+                    InstalledApplication::Word {
+                        binding: binding.clone(),
+                        verifier: Box::new(verifier),
+                    },
+                    Ingress::Word,
+                ))
+            }
             Self::Joint(binding) => {
                 let depot = JointDepot::open(quota.depot_budget())?;
                 let ingress = depot.ingress();
@@ -82,52 +104,70 @@ impl<'a> BindingRef<'a> {
         match self {
             Self::Joint(b) => b.id(),
             Self::Progress(b) => b.id(),
+            Self::Word(b) => b.id(),
         }
     }
     pub(super) fn rules(self) -> &'a Rules {
         match self {
             Self::Joint(b) => b.rules(),
             Self::Progress(b) => b.rules(),
+            Self::Word(b) => b.rules(),
         }
     }
     pub(super) fn work_genesis(self) -> &'a WorkGenesis {
         match self {
             Self::Joint(b) => b.work_genesis(),
             Self::Progress(b) => b.work_genesis(),
+            Self::Word(b) => b.work_genesis(),
         }
     }
     pub(super) fn journal_genesis(self) -> &'a Genesis {
         match self {
             Self::Joint(b) => b.journal_genesis(),
             Self::Progress(b) => b.journal_genesis(),
+            Self::Word(b) => b.journal_genesis(),
         }
     }
     pub(super) fn initial_context(self) -> &'a Context {
         match self {
             Self::Joint(b) => b.initial_context(),
             Self::Progress(b) => b.initial_context(),
+            Self::Word(b) => b.initial_context(),
         }
     }
     pub(super) fn namespace(self) -> Hash {
         match self {
             Self::Joint(b) => b.namespace(),
             Self::Progress(b) => b.namespace(),
+            Self::Word(b) => b.namespace(),
         }
     }
     pub(super) fn require_durable(self) -> Result<()> {
         match self {
             Self::Joint(b) => b.require_durable(),
             Self::Progress(b) => b.require_durable(),
+            Self::Word(b) => b.require_durable(),
         }
     }
     pub(super) fn pins(self) -> Pins<'a> {
         match self {
             Self::Joint(b) => Pins::Joint(b),
             Self::Progress(b) => Pins::Progress(b),
+            Self::Word(b) => Pins::Word(b),
         }
     }
     pub(super) fn decode(self, bytes: &[u8]) -> Result<Value> {
         match self {
+            Self::Word(_) => {
+                let c = word::Candidate::decode(bytes)?;
+                Ok(Value {
+                    binding: c.binding,
+                    slot: c.slot,
+                    previous: c.previous,
+                    header: c.header,
+                    magic: *b"DCSWCV01",
+                })
+            }
             Self::Joint(_) => {
                 let c = joint::JointCandidate::decode(bytes)?;
                 Ok(Value {
@@ -154,6 +194,7 @@ impl<'a> BindingRef<'a> {
         let encoded = match self {
             Self::Joint(b) => joint::JointCandidate::for_context(b, context, header)?.encode(),
             Self::Progress(b) => progress::Candidate::for_context(b, context, header)?.encode(),
+            Self::Word(b) => word::Candidate::for_context(b, context, header)?.encode(),
         };
         self.decode(&encoded)
     }
@@ -185,16 +226,24 @@ impl<'a> BindingRef<'a> {
         match self {
             Self::Joint(b) => joint::history::parent_heads(b, journal, parent),
             Self::Progress(b) => progress::history::parent_heads(b, journal, parent),
+            Self::Word(b) => word::verification::parent_heads(b, journal, parent),
         }
     }
     pub(super) fn candidate_control(
         self,
         old: version_journal::HeadPair,
         body: &[u8],
-    ) -> Result<Control> {
+    ) -> Result<ApplicationControl> {
         match self {
-            Self::Joint(b) => joint::history::candidate_control(b, old, body),
-            Self::Progress(b) => progress::history::candidate_control(b, old, body),
+            Self::Joint(b) => {
+                joint::history::candidate_control(b, old, body).map(ApplicationControl::Registry)
+            }
+            Self::Progress(b) => {
+                progress::history::candidate_control(b, old, body).map(ApplicationControl::Registry)
+            }
+            Self::Word(b) => {
+                word::verification::candidate_control(b, old, body).map(ApplicationControl::Word)
+            }
         }
     }
 }
@@ -203,6 +252,7 @@ impl InstalledApplication {
         match self {
             Self::Joint { binding, .. } => BindingRef::Joint(binding),
             Self::Progress { binding, .. } => BindingRef::Progress(binding),
+            Self::Word { binding, .. } => BindingRef::Word(binding),
         }
     }
     pub(super) fn verify_candidate(
@@ -212,19 +262,28 @@ impl InstalledApplication {
         parent: HeadRef,
         c: &Value,
         body: &[u8],
-    ) -> Result<Control> {
+    ) -> Result<ApplicationControl> {
         match self {
             Self::Joint { binding, verifier } => {
                 let candidate = joint::JointCandidate::decode(&c.encode())?;
                 joint::history::verify_candidate(
                     binding, journal, verifier, context, parent, &candidate, body,
                 )
+                .map(ApplicationControl::Registry)
             }
             Self::Progress { binding, verifier } => {
                 let candidate = progress::Candidate::decode(&c.encode())?;
                 progress::history::verify_candidate(
                     binding, journal, verifier, context, parent, &candidate, body,
                 )
+                .map(ApplicationControl::Registry)
+            }
+            Self::Word { binding, verifier } => {
+                let candidate = word::Candidate::decode(&c.encode())?;
+                word::verification::verify_candidate(
+                    binding, journal, verifier, context, parent, &candidate, body,
+                )
+                .map(ApplicationControl::Word)
             }
         }
     }
@@ -234,6 +293,7 @@ impl TransitionVerifier for InstalledApplication {
         match self {
             Self::Joint { verifier, .. } => verifier.verify(s),
             Self::Progress { verifier, .. } => verifier.verify(s),
+            Self::Word { verifier, .. } => verifier.verify(s),
         }
     }
 }

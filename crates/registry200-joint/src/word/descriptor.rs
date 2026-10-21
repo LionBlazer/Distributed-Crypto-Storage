@@ -143,7 +143,8 @@ impl Descriptor {
         s.sort_unstable_by_key(|s| s.id);
         s
     }
-    pub(super) fn control(&self, shards: &[ShardState]) -> Result<Control> {
+    /// Decode the exact immutable-source/control shard pair; no proof or freshness.
+    pub fn control(&self, shards: &[ShardState]) -> Result<Control> {
         if shards.len() != 2 || shards[0].id >= shards[1].id {
             return Err(Error::InvalidTransition);
         }
