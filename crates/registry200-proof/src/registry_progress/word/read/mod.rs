@@ -159,13 +159,18 @@ impl QueryEvidence<'_> {
 /// ```
 pub struct ArithmeticCheckedRead<'a> {
     expected: &'a Expected,
+    product: product::ArithmeticCheckedProduct,
 }
 impl ArithmeticCheckedRead<'_> {
     pub fn expected(&self) -> &Expected {
         self.expected
     }
     pub fn output(&self) -> &[u8] {
-        self.expected.product.output_wire()
+        self.product.expected().output_wire()
+    }
+    /// Actual sealed product result from this invocation's complete verification.
+    pub fn product(&self) -> &product::ArithmeticCheckedProduct {
+        &self.product
     }
 }
 pub fn verify<'a>(
@@ -173,7 +178,8 @@ pub fn verify<'a>(
     evidence: Evidence<'_>,
 ) -> Result<ArithmeticCheckedRead<'a>> {
     evidence.require_bounds()?;
-    drop(product::check_arithmetic(&expected.product, evidence.product).map_err(Error::Product)?);
+    let product =
+        product::check_arithmetic(&expected.product, evidence.product).map_err(Error::Product)?;
     let prerequisites =
         installed::Prerequisites::checked(evidence.state, evidence.child).map_err(Error::Data)?;
     drop(
@@ -186,7 +192,7 @@ pub fn verify<'a>(
         .map_err(Error::Data)?,
     );
     verify_query_proofs(expected, &evidence.query())?;
-    Ok(ArithmeticCheckedRead { expected })
+    Ok(ArithmeticCheckedRead { expected, product })
 }
 /// Retains only an actual private State/Role3/DATA verification result. Complete
 /// DATA equality is mandatory; Word, Query and product are checked on EVERY call.
@@ -199,9 +205,10 @@ pub fn verify_retained<'a>(
     retained
         .require_expected(&expected.data)
         .map_err(Error::Data)?;
-    drop(product::check_arithmetic(&expected.product, evidence.product).map_err(Error::Product)?);
+    let product =
+        product::check_arithmetic(&expected.product, evidence.product).map_err(Error::Product)?;
     verify_query_proofs(expected, &evidence)?;
-    Ok(ArithmeticCheckedRead { expected })
+    Ok(ArithmeticCheckedRead { expected, product })
 }
 fn verify_query_proofs(expected: &Expected, evidence: &QueryEvidence<'_>) -> Result<()> {
     drop(super::verify(&expected.word, evidence.word).map_err(Error::Word)?);

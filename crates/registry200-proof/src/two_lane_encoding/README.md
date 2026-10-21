@@ -429,3 +429,13 @@ result after their full State/Role3/DATA checks. Neither proving nor metadata
 construction, a matching version tag, a serialized checked flag or the new
 comparison can mint it. This authorizes no current version or SQL operation;
 the caller must separately establish currentness of this exact complete version.
+
+`data_formation::prove_dense_prepared` accepts the existing guarded lower DATA
+preparation, allowing a protected owner to retain its key. It checks the exact
+request and freshly verifies the complete original State/Role3 prerequisites
+before the same dense producer allocates private MAIN. The lower producer also
+requires the full captured core expectation. The two proofs join at the same Cw
+commitment, original Cs and original DataCt; physical buffer identity is not a
+proof or authority. The receiver, frame, profile and all equations are unchanged.
+The Word read owning example exercises this route and its repaired native
+State/Role3 failures and foreign original DATA request rejection.

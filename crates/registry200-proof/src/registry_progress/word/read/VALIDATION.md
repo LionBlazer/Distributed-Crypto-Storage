@@ -103,3 +103,80 @@ Authenticated bootstrap/prior state, a fresh weighted quorum, durable Predicate
 completion, independently running peers, real network SQL and a reproducible
 complete-query workload still have to be joined. The live SQL and Word Journal
 Predicate guards remain closed. The goal of <=500ms full query is not achieved.
+
+## Protected owner integration (r172/r173)
+
+The same normal read case now generates an opaque Gold Owner, seals its key,
+destroys that Owner, and restores it under independently pinned metadata before
+Source/Role3/DATA/Word/Query/product composition. No raw SDK key getter,
+serialization or decryption is used by this test. The actual Source encoder's
+scaled W is unscaled once for original DATA encryption; Owner independently
+opens the SAME Cw and Cs when preparing the real dense DATA proof. The new
+`prove_dense_prepared` route freshly checks State/Role3 and the original request
+before the unchanged dense prover checks its complete captured expectation.
+Its forged canonical State and Role3 OOD examples must reach their actual native
+Verification errors at the producer too. Foreign DATA nonce/ciphertext with
+otherwise valid original prerequisites must reject the guarded preparation.
+
+The read receiver now retains its actual sealed `ArithmeticCheckedProduct`.
+After every required native proof passes, `Owner::complete_checked_product`
+requires this original query's complete nonce and literal ordered ciphertext
+pair before decrypting all4096 coefficients. Normal `complete` still freshly
+checks its supplied certificate. Additional Owner assertions use independently
+valid arithmetic theorems for a changed nonce and swapped operands; both must
+reject completion despite their valid arithmetic. Different original calls reject
+too. No prior Word/Query/product verdict is reused for a new call.
+
+The original two actual query cases, independent post-check full-ring oracle,
+all five repaired native proof failures, retained full Source/C_state/Cw/Cs/
+nonce/ciphertext failures, Control rejection and all missing-frame cases passed.
+Public fixed wrapping keys and blinding salts belong only to these explicit
+nonsecret examples. Test InputScope pins are metadata, not a production compiler,
+SQL authorization or a proof of authenticated prior state.
+
+The exact r172 registry test image is12142080 bytes, SHA256
+`975265B1378C6D77A3F982648BA7F7624B84AA282A5B11795CD05EE9ABCC8785`.
+One full owning test passed in27.55s including hostile examples. The process lived
+27558.6001ms, used37.859375 CPU seconds, reached562085888 OS peak working-set
+bytes and555761664 sampled private bytes across1350 samples. The r173 Owner
+image is5699584 bytes, SHA256
+`4E7F8C222E389D6E4F9AF9226C195204B73D961A2B8976482F57AECFE6854295`.
+All11 Gold Owner cases passed in4.03s. That process lived4047.409ms, used6.875 CPU
+seconds and reached518782976 OS peak working-set bytes. Both bounded observers
+confirmed exact source/image identities, terminal exit0, no faults and no cleanup.
+The same Rust1.99/native/release/locked/offline/Rayon2/one-harness-thread setup and
+120s/1792MiB research fuses were used; no other build/test was intentionally run
+during either observation. These are whole test processes, not complete peers.
+
+The first protected-owner setup and cold read took9913.641ms before oracle or
+hostile checks: Source2052.348ms, Role31692.877ms, DATA2307.671ms, Word309.534ms,
+Query1314.650ms, public FHE/product43.448ms, full cold receive2170.928ms and
+protected client completion0.997ms. Six frames total26926597 bytes. Independent
+immutable DATA installation took1342.336ms. The SAME query's retained receiving
+took669.613ms, which is not a new query. The second genuinely different query
+against that same immutable DATA measured:
+
+| Operation | Milliseconds |
+| --- | ---: |
+| Protected owner query preparation | 3.022 |
+| Fresh Word proof | 284.224 |
+| Fresh fused Query proof | 1307.924 |
+| Real FHE product and certificate | 46.107 |
+| Independent cold query receiving | 815.811 |
+| Protected client completion | 0.955 |
+| Preparation through checked/decrypted output | 2458.043 |
+
+Its three query frames total8044682 bytes. These sparse observations do not
+establish a latency distribution or improvement over earlier different runs.
+This local conditional mathematics still exceeds500ms before transport, agreed
+head, lock consensus, durable Predicate completion and a real SQL client.
+
+Strict release Clippy passed for all registry targets and all Owner features/
+targets. All8 Word and5 Gold compile-fail contracts passed. Default Owner
+compilation and the dependency-free requirements synchronization guard passed.
+The registry's new Owner dependency is dev-only; neither normal library imports
+the other's product policy. Original wire/profile equations, receiver proofs,
+security/resource gates, timeouts and live SQL/finality guards are unchanged.
+BFV/product composed-security assessment and the concrete owner/Word compiler,
+authenticated prior state, fresh weighted finality and real network SQL still
+remain. The complete-query <=500ms goal is active and not achieved.

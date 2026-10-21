@@ -156,6 +156,25 @@ impl Owner {
         self.require_query(query)?;
         let expected = query.request.product_expected(response.output().to_vec())?;
         let checked = product::check_arithmetic(&expected, response.certificate())?;
+        self.complete_checked_product(query, &checked)
+    }
+    /// Complete this exact original query after an actual lower arithmetic check.
+    /// The sealed result grants no Source, Word, current-head or SQL authority.
+    pub fn complete_checked_product(
+        &self,
+        query: &OriginatingQuery,
+        checked: &product::ArithmeticCheckedProduct,
+    ) -> Result<DecryptedProduct> {
+        self.require_query(query)?;
+        if checked.expected().nonce() != query.request.product_nonce()
+            || checked.expected().input_wires()
+                != [
+                    query.request.data_ciphertext(),
+                    query.request.query_ciphertext(),
+                ]
+        {
+            return Err(Error::Binding);
+        }
         let ciphertext = Ciphertext::from_bytes(checked.expected().output_wire(), &self.parameters)
             .map_err(|_| Error::Backend)?;
         let plain = Zeroizing::new(

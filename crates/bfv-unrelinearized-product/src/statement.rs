@@ -53,6 +53,12 @@ impl Expected {
     pub fn request_wire(&self) -> &[u8] {
         &self.request
     }
+    /// Original canonical ciphertext bytes, in their committed operand order.
+    pub fn input_wires(&self) -> [&[u8]; 2] {
+        let length = u32::from_le_bytes(self.request[104..108].try_into().expect("fixed header"));
+        let (left, right) = self.request[112..].split_at(length as usize);
+        [left, right]
+    }
     pub fn output_wire(&self) -> &[u8] {
         &self.output
     }

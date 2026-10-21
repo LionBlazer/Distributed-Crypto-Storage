@@ -143,3 +143,12 @@ The v3 [generation and native-preparation path](GENERATION.md) additionally uses
 an actual generated/restored owner for genuine dense DATA and fused Query proofs,
 then actual public FHE/product verification and client completion. These are
 native Formation results without Source-version/Word semantics, fresh QC or SQL.
+
+`Owner::complete_checked_product` accepts only the sealed move-only result of the
+actual lower arithmetic checker. It requires the original full request nonce
+and literal ordered DATA/query ciphertext bytes before decrypting. This lets an
+upper proof composition retain its actual checked product without running that
+same certificate twice. `complete` still performs a fresh full arithmetic check
+and delegates to that path. Neither entry point verifies Source, Word, history,
+current finality or SQL authority. The registry Word read exercises this optional
+feature through a dev-dependency only; Owner has no registry dependency.

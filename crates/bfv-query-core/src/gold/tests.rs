@@ -170,6 +170,46 @@ fn actual_ciphertext_worker_and_complete_checker_precede_full_plaintext_oracle()
         )
         .unwrap();
     assert!(owner.complete(&other, &response).is_err());
+    let expected = request
+        .product_expected(response.output().to_vec())
+        .unwrap();
+    let checked = product::check_arithmetic(&expected, response.certificate()).unwrap();
+    assert_eq!(
+        owner
+            .complete_checked_product(&query, &checked)
+            .unwrap()
+            .coefficients(),
+        actual.coefficients()
+    );
+    assert!(matches!(
+        owner.complete_checked_product(&other, &checked),
+        Err(Error::Binding)
+    ));
+    // Both are valid arithmetic theorems; neither belongs to this original call.
+    // Swapping operands leaves the real product unchanged, but changes its scope.
+    for (nonce, inputs) in [
+        (
+            [0x33; 32],
+            [request.data_ciphertext(), request.query_ciphertext()],
+        ),
+        (
+            request.product_nonce(),
+            [request.query_ciphertext(), request.data_ciphertext()],
+        ),
+    ] {
+        let foreign = product::Expected::checked(
+            nonce,
+            inputs.map(<[u8]>::to_vec),
+            response.output().to_vec(),
+        )
+        .unwrap();
+        let evidence = product::produce(&foreign).unwrap();
+        let foreign = product::check_arithmetic(&foreign, evidence.as_bytes()).unwrap();
+        assert!(matches!(
+            owner.complete_checked_product(&query, &foreign),
+            Err(Error::Binding)
+        ));
+    }
 }
 #[test]
 fn protected_cold_origin_reopens_original_bytes_and_rejects_tampering() {

@@ -18,8 +18,9 @@ public evaluator preparation; constructing metadata verifies no proof.
 binding, statement root and literal request. `query::expected` derives the sole
 fused Query expectation, preserving the original33 mask public words, exact
 Stmt96 header13, DATA Cs/context, ordered inputs and nonce. These pure operations
-are shared with the remaining test-only owner adapter. No AIR, plan, verifier,
-randomness, accepted flag or alternative suite is supplied by a caller.
+are usable by the protected owner and the test-only Word serializer. No AIR,
+plan, verifier, randomness, accepted flag or alternative suite is supplied by a
+caller.
 
 `verify` bounds six unverified borrowed frames, checks public product arithmetic,
 then performs actual independent Source/Role3/DATA, Word and fused Query native
@@ -28,14 +29,17 @@ verification. `verify_retained` accepts only an actual privately constructed
 still checks Word, Query and the product afresh. The immutable theorem replaces
 only its own prior Source/Role3/DATA verification. Neither path trusts serialized
 verification results. Only these functions can construct the move-only borrowed
-`ArithmeticCheckedRead`, which exposes the checked original Ct3 for client-side
-decryption. No new wire format, old-profile conversion or verdict cache is added.
+`ArithmeticCheckedRead`, which retains the actual sealed arithmetic result and
+exposes it by borrow through `product()` for protected client-side completion.
+It exposes the checked original Ct3 too. No new wire format, old-profile
+conversion or verdict cache is added.
 
 Owners first retain complete Source and Word expectations, prepare DATA using
 `two_lane_encoding::data_formation`, derive the query context/root and use
-`gold::{ScaledOpening,SecretOpening,data::Prepared,query::Prepared}` to produce
-the original Query proof. The public evaluator receives only ciphertexts and
-parameters, computes their real FHE product and produces its certificate using
+`bfv_query_core::gold::Owner::prepare_query` with the original private Stmt96
+to produce the fused Query proof without exporting a secret key. The guarded
+low-level opening API remains available to independent owner implementations.
+The public evaluator receives only ciphertexts and parameters, computes their real FHE product and produces its certificate using
 `bfv_unrelinearized_product`. Receivers build their own `Expected`, call one of
 the closed receiving functions, and permit owner decryption only after success.
 Freshness, authenticated prior state, key entropy/lattice assessment and finality
@@ -45,7 +49,14 @@ Direct dependencies are the [Word API](../README.md), this crate's
 [DATA composition](../../../two_lane_encoding/README.md), its bounded prerequisite
 codec, [Gold Formation](../../../../../bfv-ciphertext-formation/src/gold/README.md),
 [product certificates](../../../../../bfv-unrelinearized-product/README.md),
-`p3-field` and SHA2. Fixed public examples, SDK encryption/decryption, owner serializers and
-tamper helpers are compiled only for tests at this boundary. See
+`p3-field` and SHA2. `bfv-query-core/gold-owner` is a dev-dependency only,
+so neither normal registry code nor Owner depends on the other. The owning
+example generates, seals, destroys and restores an opaque Owner before actual
+Source/Role3/DATA/Word/Query/product receiving and protected completion. It
+reuses the same immutable DATA for a second different actual query. Public
+fixture Source/Word serializers, independent post-verification full-ring oracle
+and tamper helpers are compiled only for tests at this boundary. InputScope
+pins in that example are metadata; a production SQL compiler, authenticated
+prior state and fresh finality are still required. See
 [validation](VALIDATION.md) and the historical
 [private read measurements](../../word_inventory/query_mask_inventory/READ-VALIDATION.md).

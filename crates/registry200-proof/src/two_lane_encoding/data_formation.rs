@@ -267,6 +267,22 @@ pub fn prove_dense(
 ) -> Result<UnverifiedEvidence> {
     prove_fixed(expected, request, prerequisites, private, true)
 }
+/// Accept private preparation from an opaque owner without exporting its key.
+/// Fresh complete State/Role3 checks precede the same fixed dense native prover;
+/// that prover binds the guarded input to the full original core expectation.
+/// Equal Cw commitments join the two relations; buffer identity is not authority.
+pub fn prove_dense_prepared(
+    expected: &Expected,
+    request: &data::Request,
+    prerequisites: Prerequisites<'_>,
+    prepared: data::Prepared,
+) -> Result<UnverifiedEvidence> {
+    expected.require_request(request)?;
+    drop(prerequisites.verify(expected)?);
+    Ok(UnverifiedEvidence {
+        core: data::prove_dense(&expected.core, prepared)?,
+    })
+}
 fn prove_fixed(
     expected: &Expected,
     request: &data::Request,

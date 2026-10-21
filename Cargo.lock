@@ -4341,6 +4341,7 @@ dependencies = [
  "bfv-ciphertext-formation",
  "bfv-hiding-stark",
  "bfv-key-transform",
+ "bfv-query-core",
  "bfv-unrelinearized-product",
  "bounded-postcard",
  "compact-store",

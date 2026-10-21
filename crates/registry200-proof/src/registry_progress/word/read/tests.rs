@@ -9,16 +9,11 @@ use crate::{
     two_lane_encoding::{self as encoding, circuit::Witness, statement::KeyBinding},
 };
 use bfv_hiding_stark::{Challenge, Config, codec};
-use fhe::bfv::{BfvParameters, BfvParametersBuilder, Ciphertext, Encoding, Plaintext, SecretKey};
+use bfv_query_core::gold as protected;
 use fhe_math::zq::Modulus;
-use fhe_traits::{
-    DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
-};
 use p3_batch_stark::BatchProof;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
-use p3_goldilocks::default_goldilocks_poseidon2_12;
-use p3_symmetric::Permutation;
-use std::{sync::Arc, time::Instant};
+use std::time::Instant;
 use zeroize::Zeroizing;
 
 fn word_expected(case: &owner_cases::Case) -> word::Expected {
@@ -49,33 +44,48 @@ fn word_expected(case: &owner_cases::Case) -> word::Expected {
     )
     .unwrap()
 }
-fn produce_query(
-    expected: &fused::Expected,
-    statement: [Val; 96],
-    mask: [u8; 32],
-    salt: [Val; 4],
-    secret: gold::SecretOpening,
-) -> gold::Result<fused::UnverifiedFormationEvidence> {
-    let core = expected.core_expected();
-    let words = Zeroizing::new(
-        (0..gold::N)
-            .map(|i| {
-                if i < 256 {
-                    u64::from((mask[(255 - i) / 8] >> ((255 - i) % 8)) & 1) * gold::SCALE
-                } else {
-                    0
-                }
-            })
-            .collect(),
-    );
-    let opening = gold::ScaledOpening::checked(
-        core.contexts()[0],
-        core.roots()[0],
-        words,
-        Zeroizing::new(salt.map(|v| v.as_canonical_u64())),
-    )?;
-    let input = data::Prepared::new(core, opening, secret)?;
-    fused::prove(expected, fused::Prepared::new(expected, input, statement)?)
+// Public metadata pins for this bounded example; no compiler/rights/freshness claim.
+fn input_binding(case: &owner_cases::Case, data: &installed::Expected) -> protected::InputBinding {
+    let words = |fields: [Val; 8]| -> [u8; 32] {
+        fields
+            .into_iter()
+            .flat_map(|v| u32::try_from(v.as_canonical_u64()).unwrap().to_le_bytes())
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap()
+    };
+    let m = &case.metadata;
+    let input = &case.input;
+    let actor = input.command.actor.unwrap();
+    let principal = input.command.principal;
+    protected::InputBinding::checked(protected::InputScope {
+        database: m.source.statement().heads[0][8..24].try_into().unwrap(),
+        transaction: input.command.id,
+        call: input.walk.call,
+        principal: principal.try_into().unwrap(),
+        application: word::profile_digest(),
+        genesis: [0xa7; 32],
+        rules: word::wire_profile_digest(),
+        context: Sha256::digest(word_expected(case).binding()).into(),
+        parent: words(m.parent),
+        client: words(input.walk.client),
+        controller: words(input.controllers[principal - 1]),
+        source_version: m.source.version_id(),
+        data_admission: Sha256::digest(data.core_expected().binding()).into(),
+        snapshot: words(case.old.slots[actor].as_ref().unwrap().snapshot),
+        statement: source::statement::encode_digest(m.statement),
+        command: source::statement::encode_digest(m.command),
+        attempt: words(input.walk.invocation),
+        nonce: Sha256::digest(
+            [
+                word_expected(case).binding().as_slice(),
+                &input.walk.call.to_le_bytes(),
+            ]
+            .concat(),
+        )
+        .into(),
+    })
+    .unwrap()
 }
 fn produce_word(case: &mut owner_cases::Case) -> Vec<u8> {
     let expected = word_expected(case);
@@ -101,41 +111,6 @@ fn produce_word(case: &mut owner_cases::Case) -> Vec<u8> {
         input.salts,
     );
     word::prove(&expected, private).unwrap().into_bytes()
-}
-fn root(context: [Val; 8], salt: [Val; 4], words: &[u64]) -> [Val; 4] {
-    let mut fields = context
-        .into_iter()
-        .chain(salt)
-        .chain([Val::ZERO; 4])
-        .chain(words.iter().copied().map(Val::from_u64))
-        .collect::<Vec<_>>();
-    assert!(matches!(fields.len(), 528 | 4112));
-    let mut state = [Val::ZERO; 12];
-    let p = default_goldilocks_poseidon2_12();
-    for block in fields.as_chunks::<8>().0 {
-        state[..8].copy_from_slice(block);
-        p.permute_mut(&mut state);
-    }
-    let result = state[..4].try_into().unwrap();
-    fields.fill(Val::ZERO);
-    state.fill(Val::ZERO);
-    result
-}
-fn encrypt(key: &SecretKey, p: &Arc<BfvParameters>, words: &[u64]) -> Vec<u8> {
-    let plain = Zeroizing::new(Plaintext::try_encode(words, Encoding::poly(), p).unwrap());
-    let ct: Ciphertext = key.try_encrypt(&*plain, &mut rand::rng()).unwrap();
-    Ciphertext::new(ct.iter().cloned().collect(), p)
-        .unwrap()
-        .to_bytes()
-}
-/// Public evaluator input consists solely of original ciphertexts and parameters.
-fn evaluate(p: &Arc<BfvParameters>, request: &gold::Request) -> Vec<u8> {
-    let [left, right] = request
-        .ciphertexts()
-        .map(|b| Ciphertext::from_bytes(b, p).unwrap());
-    let output = &left * &right;
-    assert_eq!(output.len(), 3);
-    output.to_bytes()
 }
 struct Frames {
     state: Vec<u8>,
@@ -188,8 +163,7 @@ fn ring_oracle(source: &[u64], mask: &[u64]) -> Zeroizing<Vec<u64>> {
 /// A different genuine query against the SAME retained immutable DATA/key.
 /// It creates fresh Word/Query proofs and public product; no cached answer is used.
 fn different_retained_query(
-    p: &Arc<BfvParameters>,
-    key: &SecretKey,
+    owner: &protected::Owner,
     data: &installed::Expected,
     retained: &installed::VerifiedDataFormation,
     data_words: &[u64],
@@ -202,24 +176,29 @@ fn different_retained_query(
     case.metadata.blind_sql[0] += Val::ONE;
     case.input.walk.sql = case.metadata.blind_sql;
     case.rebuild();
-    let statement = owner_cases::statement(&case.metadata, &case.input, &case.old)
+    let statement: [Val; 96] = owner_cases::statement(&case.metadata, &case.input, &case.old)
         .try_into()
         .unwrap();
     let mut mask = Zeroizing::new(vec![0u64; gold::N]);
     for age in 0..256 {
         mask[255 - age] = u64::from((case.input.mask[age / 8] >> (age % 8)) & 1);
     }
-    let request = gold::Request::checked(
-        [0x4a; 32],
-        [data.request().ciphertext().to_vec(), encrypt(key, p, &mask)],
-    )
-    .unwrap();
+    let original = owner
+        .originate(
+            protected::Mask256::new(case.input.mask),
+            input_binding(&case, data),
+            data.core_expected(),
+        )
+        .unwrap();
+    let request = original.public_request().formation_request().unwrap();
     let context =
         formation::encoding_context(&request, data.core_expected(), case.metadata.statement)
             .unwrap();
-    let salt = [Val::from_u8(10); 4];
-    let scaled = Zeroizing::new(mask.iter().map(|v| v * gold::SCALE).collect::<Vec<_>>());
-    let vector = root(context, salt, &scaled);
+    let salt = [10; 4];
+    let vector = owner
+        .query_commitment(&original, context.map(|v| v.as_canonical_u64()), &salt)
+        .unwrap()
+        .map(Val::from_u64);
     let formation = formation::expected(
         &request,
         data.core_expected(),
@@ -232,26 +211,33 @@ fn different_retained_query(
     let word = produce_word(&mut case);
     let word_ms = started.elapsed().as_secs_f64() * 1000.;
     let started = Instant::now();
-    let query = produce_query(
+    let query = fused::prove(
         &formation,
-        statement,
-        case.input.mask,
-        salt,
-        gold::SecretOpening::checked(
-            data.core_expected().contexts()[1],
-            data.core_expected().roots()[1],
-            Zeroizing::new(key.to_bytes()),
-            Zeroizing::new([7; 4]),
-        )
-        .unwrap(),
+        owner
+            .prepare_query(
+                &original,
+                &formation,
+                Zeroizing::new(statement.map(|v| v.as_canonical_u64())),
+                Zeroizing::new(salt),
+            )
+            .unwrap(),
     )
     .unwrap();
     let query_ms = started.elapsed().as_secs_f64() * 1000.;
     let started = Instant::now();
-    let output = evaluate(p, &request);
-    let expected =
-        Expected::checked(&word_expected(&case), data, &request, vector, output).unwrap();
-    let product = product::produce(&expected.product).unwrap().into_bytes();
+    let response = protected::Evaluator::new()
+        .unwrap()
+        .evaluate(original.public_request())
+        .unwrap();
+    let expected = Expected::checked(
+        &word_expected(&case),
+        data,
+        &request,
+        vector,
+        response.output().to_vec(),
+    )
+    .unwrap();
+    let product = response.certificate().to_vec();
     let product_ms = started.elapsed().as_secs_f64() * 1000.;
     let evidence = || QueryEvidence {
         word: &word,
@@ -262,13 +248,13 @@ fn different_retained_query(
     let checked = verify_retained(&expected, retained, evidence()).unwrap();
     let receive_ms = started.elapsed().as_secs_f64() * 1000.;
     let started = Instant::now();
-    let ct = Ciphertext::from_bytes(checked.output(), p).unwrap();
-    let decoded: Plaintext = key.try_decrypt(&ct).unwrap();
-    let decoded = Zeroizing::new(decoded);
-    let actual = Zeroizing::new(Vec::<u64>::try_decode(&*decoded, Encoding::poly()).unwrap());
+    let completed = owner
+        .complete_checked_product(&original, checked.product())
+        .unwrap();
+    let actual = completed.coefficients();
     let client_ms = started.elapsed().as_secs_f64() * 1000.;
     let per_query_ms = began.elapsed().as_secs_f64() * 1000.;
-    assert_eq!(*actual, *ring_oracle(data_words, &mask));
+    assert_eq!(actual, ring_oracle(data_words, &mask).as_slice());
     assert_eq!(actual[6 * 512 + 255], 0);
     assert_eq!(actual[7 * 512 + 255], 0);
     for (row, age) in [0u64, 1, 128].into_iter().enumerate() {
@@ -364,16 +350,6 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
             .collect::<Vec<_>>(),
     );
     assert_eq!(plain.len(), 2348);
-    let p = BfvParametersBuilder::new()
-        .set_degree(gold::N)
-        .set_plaintext_modulus(gold::T)
-        .set_moduli(&gold::Q)
-        .set_variance(10)
-        .build_arc()
-        .unwrap();
-    let key = SecretKey::random(&p, &mut rand::rng());
-    let sdk = Zeroizing::new(key.to_bytes());
-    let cs_salt = [Val::from_u8(7); 4];
     let binding = |cs| {
         KeyBinding::new(
             claim.heads[0][8..24].try_into().unwrap(),
@@ -385,59 +361,54 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
         .unwrap()
     };
     let context = installed::secret_context(&binding([Val::ZERO; 4]));
-    let secret = Zeroizing::new(fhe::proto::bfv::SecretKey::from(&key).coeffs);
-    let packed = Zeroizing::new(
-        secret
-            .as_chunks::<8>()
-            .0
-            .iter()
-            .map(|a| {
-                a.iter()
-                    .enumerate()
-                    .fold(0u64, |v, (i, &x)| v | (((x + 20) as u64) << (6 * i)))
-            })
-            .collect::<Vec<_>>(),
-    );
+    let owner =
+        protected::Owner::generate([0x95; 32], context.map(|v| v.as_canonical_u64())).unwrap();
+    let pinned_key = owner.key_expected().clone();
+    // Explicit PUBLIC fixture wrapping key. No raw SDK key ever leaves Owner.
+    let custody = protected::CustodyKey::new(Zeroizing::new([0xd1; 32]));
+    let identity = protected::CustodyIdentity::checked([0xd2; 32]).unwrap();
+    let sealed = owner.seal_key(&identity, &custody).unwrap();
+    drop(owner);
+    let owner = protected::Owner::restore_key(pinned_key, &identity, &custody, &sealed).unwrap();
     let encoding_expected = encoding::statement::Expected::source_version(
         state_expected,
-        binding(root(context, cs_salt, &packed)),
+        binding(owner.key_expected().root_words().map(Val::from_u64)),
     )
     .unwrap();
     let witness = Witness::source_version(&encoding_expected, plain, [2; 4], [5; 4]).unwrap();
     let mut data_words = witness.coefficients();
     let modulus = Modulus::new(gold::T).unwrap();
     modulus.scalar_mul_vec(&mut data_words, modulus.inv(gold::SCALE).unwrap());
-    let data_request = data::Request::checked([0x61; 32], encrypt(&key, &p, &data_words)).unwrap();
+    let original_data = owner.originate_data(data_words.clone()).unwrap();
+    let data_request =
+        data::Request::checked([0x61; 32], original_data.ciphertext().to_vec()).unwrap();
     let data_expected = installed::Expected::checked(&data_request, &witness.statement()).unwrap();
-    let statement = owner_cases::statement(&case.metadata, &case.input, &case.old)
+    let statement: [Val; 96] = owner_cases::statement(&case.metadata, &case.input, &case.old)
         .try_into()
         .unwrap();
     let mut mask_words = Zeroizing::new(vec![0u64; gold::N]);
     for age in 0..256 {
         mask_words[255 - age] = u64::from((case.input.mask[age / 8] >> (age % 8)) & 1);
     }
-    let request = gold::Request::checked(
-        [0x49; 32],
-        [
-            data_request.ciphertext().to_vec(),
-            encrypt(&key, &p, &mask_words),
-        ],
-    )
-    .unwrap();
+    let original = owner
+        .originate(
+            protected::Mask256::new(case.input.mask),
+            input_binding(&case, &data_expected),
+            data_expected.core_expected(),
+        )
+        .unwrap();
+    let request = original.public_request().formation_request().unwrap();
     let context = formation::encoding_context(
         &request,
         data_expected.core_expected(),
         case.metadata.statement,
     )
     .unwrap();
-    let salt = [Val::from_u8(9); 4];
-    let scaled = Zeroizing::new(
-        mask_words
-            .iter()
-            .map(|v| v * gold::SCALE)
-            .collect::<Vec<_>>(),
-    );
-    let vector = root(context, salt, &scaled);
+    let salt = [9; 4];
+    let vector = owner
+        .query_commitment(&original, context.map(|v| v.as_canonical_u64()), &salt)
+        .unwrap()
+        .map(Val::from_u64);
     let query_expected = formation::expected(
         &request,
         data_expected.core_expected(),
@@ -461,11 +432,17 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
         .1;
     let child_ms = started.elapsed().as_secs_f64() * 1000.;
     let started = Instant::now();
-    let data = installed::prove_dense(
+    let data = installed::prove_dense_prepared(
         &data_expected,
         &data_request,
         installed::Prerequisites::checked(&state, &child).unwrap(),
-        installed::PrivateInputs::checked(witness, sdk.clone(), Zeroizing::new([7; 4])).unwrap(),
+        owner
+            .prepare_data(
+                &original_data,
+                data_expected.core_expected(),
+                Zeroizing::new([5; 4]),
+            )
+            .unwrap(),
     )
     .unwrap()
     .into_bytes();
@@ -474,32 +451,33 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
     let word = produce_word(&mut case);
     let word_ms = started.elapsed().as_secs_f64() * 1000.;
     let started = Instant::now();
-    let query = produce_query(
+    let query = fused::prove(
         &query_expected,
-        statement,
-        case.input.mask,
-        salt,
-        gold::SecretOpening::checked(
-            data_expected.core_expected().contexts()[1],
-            data_expected.core_expected().roots()[1],
-            sdk,
-            Zeroizing::new([7; 4]),
-        )
-        .unwrap(),
+        owner
+            .prepare_query(
+                &original,
+                &query_expected,
+                Zeroizing::new(statement.map(|v| v.as_canonical_u64())),
+                Zeroizing::new(salt),
+            )
+            .unwrap(),
     )
     .unwrap();
     let query_ms = started.elapsed().as_secs_f64() * 1000.;
     let started = Instant::now();
-    let output = evaluate(&p, &request);
+    let response = protected::Evaluator::new()
+        .unwrap()
+        .evaluate(original.public_request())
+        .unwrap();
     let expected = Expected::checked(
         &word_expected(&case),
         &data_expected,
         &request,
         vector,
-        output,
+        response.output().to_vec(),
     )
     .unwrap();
-    let product = product::produce(&expected.product).unwrap().into_bytes();
+    let product = response.certificate().to_vec();
     let product_ms = started.elapsed().as_secs_f64() * 1000.;
     let frames = Frames {
         state,
@@ -514,14 +492,14 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
         verify(&expected, frames.borrowed()).expect("all six genuine independent arguments");
     let receive_ms = started.elapsed().as_secs_f64() * 1000.;
     let started = Instant::now();
-    let ct = Ciphertext::from_bytes(checked.output(), &p).unwrap();
-    let decrypted: Plaintext = key.try_decrypt(&ct).unwrap();
-    let decrypted = Zeroizing::new(decrypted);
-    let actual = Zeroizing::new(Vec::<u64>::try_decode(&*decrypted, Encoding::poly()).unwrap());
+    let completed = owner
+        .complete_checked_product(&original, checked.product())
+        .unwrap();
+    let actual = completed.coefficients();
     let client_ms = started.elapsed().as_secs_f64() * 1000.;
     let owner_setup_and_read_ms = began.elapsed().as_secs_f64() * 1000.;
     // Full-ring oracle belongs only to this PUBLIC fixture, after all verification.
-    assert_eq!(*actual, *ring_oracle(&data_words, &mask_words));
+    assert_eq!(actual, ring_oracle(&data_words, &mask_words).as_slice());
     for (row, age) in [0u64, 1, 128, 255].into_iter().enumerate() {
         assert_eq!(actual[2 * row * 512 + 255], 256 + age);
         assert_eq!(actual[(2 * row + 1) * 512 + 255], row as u64 + 1);
@@ -558,7 +536,7 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
     eprintln!(
         "retained_math_receive SAME_query=true independent_install_ms={install_ms:.3} full_receive_ms={receive_ms:.3} retained_receive_ms={retained_receive_ms:.3} SQL=false freshness=false"
     );
-    different_retained_query(&p, &key, &data_expected, &retained, &data_words);
+    different_retained_query(&owner, &data_expected, &retained, &data_words);
 
     // Same version tag and images, but a different complete C_state must not join.
     let mut foreign = owner_cases::case(Kind::SkipBeforeOffset);
@@ -613,13 +591,35 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
     // Original installation nonce and ciphertext, Cw and original Cs are retained too.
     let other_nonce =
         data::Request::checked([0x62; 32], data_request.ciphertext().to_vec()).unwrap();
-    let other_ciphertext =
-        data::Request::checked(data_request.nonce(), encrypt(&key, &p, &data_words)).unwrap();
+    let other_ciphertext = data::Request::checked(
+        data_request.nonce(),
+        owner
+            .originate_data(data_words.clone())
+            .unwrap()
+            .ciphertext()
+            .to_vec(),
+    )
+    .unwrap();
     for different in [&other_nonce, &other_ciphertext] {
         let different = installed::Expected::checked(different, data_expected.source()).unwrap();
         assert!(matches!(
             retained.require_expected(&different),
             Err(installed::Error::Binding)
+        ));
+        assert!(matches!(
+            installed::prove_dense_prepared(
+                &different,
+                different.request(),
+                installed::Prerequisites::checked(&frames.state, &frames.child).unwrap(),
+                owner
+                    .prepare_data(
+                        &original_data,
+                        data_expected.core_expected(),
+                        Zeroizing::new([5; 4])
+                    )
+                    .unwrap(),
+            ),
+            Err(installed::Error::Formation(gold::Error::Binding))
         ));
     }
     let mut other_cw = data_expected.source().clone();
@@ -736,6 +736,23 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
     let false_state = codec::serialize(&false_state, &backend.shape, wire::MAX_SOURCE).unwrap();
     drop(backend);
     assert!(matches!(
+        installed::prove_dense_prepared(
+            &data_expected,
+            &data_request,
+            installed::Prerequisites::checked(&false_state, &frames.child).unwrap(),
+            owner
+                .prepare_data(
+                    &original_data,
+                    data_expected.core_expected(),
+                    Zeroizing::new([5; 4])
+                )
+                .unwrap(),
+        ),
+        Err(installed::Error::Prerequisite(
+            wire::Error::SourceVersionProof(crate::BackendError::Verification)
+        ))
+    ));
+    assert!(matches!(
         verify(
             &expected,
             Evidence {
@@ -762,6 +779,23 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
     false_child[144..148].copy_from_slice(&(payload.len() as u32).to_le_bytes());
     false_child.extend(payload);
     drop(backend);
+    assert!(matches!(
+        installed::prove_dense_prepared(
+            &data_expected,
+            &data_request,
+            installed::Prerequisites::checked(&frames.state, &false_child).unwrap(),
+            owner
+                .prepare_data(
+                    &original_data,
+                    data_expected.core_expected(),
+                    Zeroizing::new([5; 4])
+                )
+                .unwrap(),
+        ),
+        Err(installed::Error::Prerequisite(wire::Error::Proof(
+            crate::BackendError::Verification
+        )))
+    ));
     assert!(matches!(
         verify(
             &expected,

@@ -60,3 +60,8 @@ The subsequent producer NTT optimization retains every product/quotient
 coefficient and the same complete frame/profile. Nineteen owning cases and the
 protected Gold owner's four cases passed; the validation record distinguishes
 the observed local improvement from the still unmet complete-query target.
+
+`Expected::input_wires` borrows the exact canonical ciphertext pair from the
+existing request buffer in its original order, with no transform or copy. This
+allows protected owner completion to bind an actual checked product to its
+original inputs. Metadata getters create no checked result or SQL authority.
