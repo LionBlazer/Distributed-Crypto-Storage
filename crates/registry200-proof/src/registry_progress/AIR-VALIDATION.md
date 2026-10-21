@@ -137,3 +137,40 @@ No rejected or partial backend remains in Core. Receipts use
 hash-row space for ranges/input providers and batch policy reads; it must retain
 the identical full semantic graph and pass a new native inventory. Fit alone
 still precedes actual security/resource, honest-proof and hostile-wire gates.
+
+## Packed complete word-level layout
+
+The second temporary layout retains the same complete semantic factory. It puts
+eight range values and their 256 decomposition bits into spare hash-row cells,
+then places Input providers in the remaining ports. Twelve mode-policy queries
+share a row, each enabled by a separate verifier-owned PP flag. Short groups have
+fixed zero padding; no private route or multiplicity selector was introduced.
+
+Both complete roles measured 455 rows and fit H512. Control phases are
+`[0,161,15,0,209,9,25,32,4]`; Predicate phases are
+`[0,158,17,0,209,10,25,32,4]`, in the order of the preceding table. MAIN568,
+all values, assertions, ranges, wire reads, stream fields and hash absorbs remain
+unchanged. PP is 708. Actual SDK counts are BASE 1315/1314, EXT 37, degree 4,
+98 original messages, 34 default packed groups, eight committed chunks against
+rate 8 and AUX 175. Q192, EF5, five random codewords and four salt elements remain.
+This is measured layout fit, not a security/resource assessment or proving time.
+
+Five owning cases passed in 0.06 s. The added case compares the entire explicit
+semantic Pool byte vector before and after layout, checks all fixed placements
+and partial policy groups, then requires rejection after removing a range flag.
+Control has 282032 serialized bytes and Predicate 287395; all eight semantic Rust
+files and both Cargo images stayed RAW identical to the executed first layout.
+The same image passed the old two snapshot cases in 0.13 s with all eight hashes.
+Strict all-target Clippy passed. The 9,948,160-byte image SHA256 is
+`703ACC02BEC40BF53FCCBC940D6BB4769E9103842E3EB352D021DC4688619BFE`.
+The five-case process lasted 90.742 ms/0.078125 CPU seconds, with sampled peak
+private bytes 6,995,968 and OS peak working set 13,856,768; no fuse or cleanup kill.
+
+Receipts are `.local/word-cmd-native-r4-` and `r5-`; the exact executed 14-file
+overlay is archived at `.local/word-cmd-native-overlay-r2`. Its own temporary
+files and three guarded Core edits were removed/restored after checking. No
+accepting word backend remains in Core. No private witness, committed PP/MAIN,
+LDE, PCS or proof was allocated. A typed honest witness recipe, actual complete
+native proofs and hostile cold verification, full resource/soundness assessment
+and the independently admitted Source/DATA/Owner/current-head composition remain
+required. The complete DCS query has not met the <=500ms target.
