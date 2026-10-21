@@ -1,13 +1,12 @@
 //! Complete fixed preimages over the SAME SSA values used by semantic constraints.
+use super::public_values::{Group as PG, array as public};
 use super::recipes::{Group, SaltField};
 use super::{
-    Metadata,
     control::{BEGIN, Command, END, Effect},
     expr::{Builder, E, Ty},
     predicate::Walk,
     schema::*,
 };
-use p3_field::PrimeCharacteristicRing;
 fn header<'a>(b: &'a Builder, label: &str) -> Vec<E<'a>> {
     super::header(label).into_iter().map(|v| b.val(v)).collect()
 }
@@ -34,15 +33,11 @@ pub(super) struct Links<'a> {
 }
 pub(super) fn source_and_enrollment<'a>(
     b: &'a Builder,
-    m: &Metadata,
     s: &Source<'a>,
     controllers: [[E<'a>; 8]; 2],
 ) {
-    let mut state = crate::source::commitment::prefix(m.source.statement(), [crate::Val::ZERO; 4])
-        .into_iter()
-        .map(|v| b.val(v))
-        .collect::<Vec<_>>();
-    state[83..87].copy_from_slice(&s.salt);
+    let mut state = public::<83>(b, PG::SourcePrefix).to_vec();
+    state.extend(s.salt);
     state.extend(s.words);
     state.extend([b.c(0); 6]);
     let state = fields(b, "source", &state, 680);
@@ -50,9 +45,9 @@ pub(super) fn source_and_enrollment<'a>(
         b,
         b.c(1),
         b.hash("source", &state),
-        m.source.statement().open_commitment.map(|v| b.val(v)),
+        public::<4>(b, PG::SourceOpen),
     );
-    let mut enrollment = m.enrollment_header.map(|v| b.val(v)).to_vec();
+    let mut enrollment = public::<33>(b, PG::EnrollmentHeader).to_vec();
     enrollment.extend(s.table);
     enrollment.extend([b.c(2), b.c(1)]);
     enrollment.extend(controllers[0]);
@@ -71,12 +66,11 @@ pub(super) fn source_and_enrollment<'a>(
         b,
         b.c(1),
         b.hash("enrollment", &enrollment),
-        m.enrollment.map(|v| b.val(v)),
+        public::<4>(b, PG::Enrollment),
     );
 }
 pub(super) fn command<'a>(
     b: &'a Builder,
-    m: &Metadata,
     old: &Bank<'a>,
     c: &Command<'a>,
     controllers: [[E<'a>; 8]; 2],
@@ -84,8 +78,8 @@ pub(super) fn command<'a>(
 ) {
     let mut v = super::domain("command").map(|x| b.val(x)).to_vec();
     v.push(b.c(1));
-    v.extend(m.context.map(|x| b.val(x)));
-    v.extend(m.old.map(|x| b.val(x)));
+    v.extend(public::<100>(b, PG::Context));
+    v.extend(public::<4>(b, PG::Old));
     v.push(b.code(&c.op));
     v.extend(c.id);
     v.push(c.principal);
@@ -111,7 +105,7 @@ pub(super) fn command<'a>(
         b,
         b.c(1),
         b.hash("command", &v),
-        m.command.map(|x| b.val(x)),
+        public::<4>(b, PG::Command),
     );
 }
 fn progress<'a>(
@@ -152,16 +146,16 @@ fn progress<'a>(
 }
 pub(super) fn statement_and_progress<'a>(
     b: &'a Builder,
-    m: &Metadata,
+    predicate: bool,
     old: &Bank<'a>,
     c: &Command<'a>,
     w: &Walk<'a>,
     controllers: [[E<'a>; 8]; 2],
 ) -> Links<'a> {
-    let gate = b.c(u64::from(m.predicate));
+    let gate = b.c(u64::from(predicate));
     let mut v = header(b, "statement");
-    v.extend(m.scope.map(|x| b.val(x)));
-    v.extend(m.enrollment.map(|x| b.val(x)));
+    v.extend(public::<16>(b, PG::Scope));
+    v.extend(public::<4>(b, PG::Enrollment));
     v.extend(w.client);
     v.extend(w.call);
     v.extend(c.id);
@@ -176,7 +170,7 @@ pub(super) fn statement_and_progress<'a>(
     v.push(b.c(0));
     let v = fields(b, "statement", &v, 96);
     let statement = b.hash("statement", &v);
-    capture(b, gate, statement, m.statement.map(|x| b.val(x)));
+    capture(b, gate, statement, public::<4>(b, PG::Statement));
     let p = progress(b, statement, c, w, old, false);
     let p = fields(b, "old-progress", &p, 48);
     let old_hash = b.hash("old-progress", &p);
@@ -195,7 +189,7 @@ pub(super) fn statement_and_progress<'a>(
         new_progress,
     }
 }
-pub(super) fn bank(b: &Builder, m: &Metadata, bank: &Bank<'_>, new: bool) {
+pub(super) fn bank(b: &Builder, bank: &Bank<'_>, new: bool) {
     let name = if new { "new" } else { "old" };
     let values = fields(b, name, &bank.f, 208);
     let root = b.hash(name, &values);
@@ -203,12 +197,12 @@ pub(super) fn bank(b: &Builder, m: &Metadata, bank: &Bank<'_>, new: bool) {
         b,
         b.c(1),
         root,
-        if new { m.next } else { m.old }.map(|x| b.val(x)),
+        public::<4>(b, if new { PG::Next } else { PG::Old }),
     );
 }
 pub(super) fn result<'a>(
     b: &'a Builder,
-    m: &Metadata,
+    predicate: bool,
     old: &Bank<'a>,
     new: &Bank<'a>,
     c: &Command<'a>,
@@ -217,16 +211,16 @@ pub(super) fn result<'a>(
 ) {
     let mut v = super::domain("result").map(|x| b.val(x)).to_vec();
     v.push(b.c(1));
-    v.extend(m.context.map(|x| b.val(x)));
-    v.extend(m.old.map(|x| b.val(x)));
-    v.extend(m.next.map(|x| b.val(x)));
+    v.extend(public::<100>(b, PG::Context));
+    v.extend(public::<4>(b, PG::Old));
+    v.extend(public::<4>(b, PG::Next));
     v.extend(links.statement);
-    let action = if m.predicate {
+    let action = if predicate {
         w.resume
     } else {
         b.code(&c.op) + 2
     };
-    let status = if m.predicate {
+    let status = if predicate {
         w.status[1] + w.status[2] * 2
     } else {
         b.c(1) + c.op[END] * (c.abort + c.own.f[FAILED] - c.abort * c.own.f[FAILED]) * 2
@@ -255,7 +249,7 @@ pub(super) fn result<'a>(
     }));
     v.extend([b.c(0); 6]);
     let v = fields(b, "result", &v, 160);
-    capture(b, b.c(1), b.hash("result", &v), m.result.map(|x| b.val(x)));
+    capture(b, b.c(1), b.hash("result", &v), public::<4>(b, PG::Result));
 }
 pub(super) fn effect<'a>(w: &Walk<'a>, l: &Links<'a>) -> Effect<'a> {
     Effect {

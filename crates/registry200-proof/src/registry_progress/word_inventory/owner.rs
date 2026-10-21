@@ -233,7 +233,13 @@ fn append64(v: &mut Vec<Val>, x: u64) {
 /// Only two honest cases are generated here: Begin and Start/Done. The complete
 /// evaluator still handles every recipe, input kind, hash and fixed lookup.
 pub(super) fn public_case(predicate: bool) -> (Metadata, PrimaryInputs) {
+    public_case_variant(predicate, 0)
+}
+pub(super) fn public_case_variant(predicate: bool, variant: u8) -> (Metadata, PrimaryInputs) {
     let mut m = Metadata::sample(predicate);
+    m.parent[0] += Val::from_u8(variant);
+    m.context[16..24].copy_from_slice(&m.parent);
+    m.blind_sql[0] += Val::from_u8(variant);
     let s = m.source.statement();
     let mut plain = [0u8; 2348];
     plain[..12].copy_from_slice(&[0, 1, 0, 1, 2, 0, 128, 3, 0, 255, 4, 0]);

@@ -37,6 +37,7 @@ pub(super) struct Evaluator<'a> {
     pool: &'a Pool,
     origins: &'a Origins,
     input: &'a PrimaryInputs,
+    public: &'a super::public_values::Expected,
     out: Values,
     state: Vec<u8>,
     recipe_state: Vec<u8>,
@@ -44,7 +45,12 @@ pub(super) struct Evaluator<'a> {
     depth: usize,
 }
 impl<'a> Evaluator<'a> {
-    pub fn new(pool: &'a Pool, origins: &'a Origins, input: &'a PrimaryInputs) -> Result<Self> {
+    pub fn new(
+        pool: &'a Pool,
+        origins: &'a Origins,
+        input: &'a PrimaryInputs,
+        public: &'a super::public_values::Expected,
+    ) -> Result<Self> {
         origins.require_complete(pool).map_err(|_| Error::Origin)?;
         if pool.nodes.len() > MAX_NODES
             || pool.hashes.len() != MAX_HASHES
@@ -56,6 +62,7 @@ impl<'a> Evaluator<'a> {
             pool,
             origins,
             input,
+            public,
             out: Values {
                 values: vec![Val::ZERO; pool.nodes.len()],
                 hashes: vec![[Val::ZERO; 248]; pool.hashes.len()],
@@ -110,6 +117,7 @@ impl<'a> Evaluator<'a> {
     fn evaluate(&mut self, id: usize) -> Result<Val> {
         Ok(match self.pool.nodes[id].clone() {
             Node::Constant(v) => v,
+            Node::Public(a) => self.public.value(a),
             Node::Input(..) => {
                 if let Some(p) = self.origins.primary.get(&id) {
                     self.input.value(*p)?

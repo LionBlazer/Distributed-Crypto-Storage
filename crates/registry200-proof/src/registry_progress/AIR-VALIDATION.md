@@ -308,3 +308,80 @@ complete-system security. The complete DCS query has not met <=500ms. Rebuilding
 request-specific PUBLIC preprocessing on each side is a measured next target;
 it cannot be cached across different requests without a new constrained-input
 profile and independent native security/binding checks.
+
+## Structural public preprocessing with constrained request values
+
+The new explicit private profile
+`word208-v2-structuralPP-direct309PUBLIC` moves 309 public metadata words into
+ordinary AIR constraints. Addresses are allocated independently of their values;
+private Source openings, banks, mask/WHERE and salts stay private. All 1672 hash
+fields and 209 Poseidon2 absorbs remain. The complete role-only factory accepts
+no Metadata or sample fixture. Public setup depends only on role/profile/label.
+The existing production profiles and receiving APIs are unchanged.
+
+The first actual stage measured Control/Predicate at 462/460 rows, H512, MAIN568,
+PP714, BASE1624/1623, EXT37 and degree4. There are 98 original messages, 34 default
+packed groups, AUX175, eight committed chunks, 3024 opening powers and 404 hiding
+rows. The two full IR hashes, every PP cell and native public commitment were
+captured before proving and are now mandatory literal guards with no fallback.
+Thirteen inventory, witness and preprocessing-invariance cases passed in 0.68s.
+That stage produced no private proof; receipts use `.local/word-cmd-native-r15-`
+and the source archive is `.local/word-public-native-overlay-r1`.
+
+The subsequent proof stage independently constructs producer ProverData and
+receiver CommonData from those fixed role factories. The receiver discards
+recipes and prover-only data. Each call derives its current Expected309 and
+performs fresh native verification; private proving uses fresh OS randomness.
+Public setup holds no private input, trace, RNG or verification-status cache.
+The workspace policy explicitly charges another independent public setup and
+totals 789257618/789652334 bytes. Its ledger is not an RSS theorem.
+
+All 16 cases passed in 3.94s, including genuine Control m0 and Predicate m0/m1
+proofs. The same immutable predicate producer setup and independently constructed
+receiver accept distinct valid expectations. An m0 proof with its plain header
+repaired for valid m1 passes full canonical shape and fails exact native
+`Verification`; a genuine new m1 proof succeeds. The actual release false-wire
+proof fails `Lookup(TerminalSumNonZero)`; repairing its terminal to zero still
+fails native opening/OOD. Existing canonicality, malformed MAIN/PP/AUX/FRI,
+per-sequence/global/frontier limits and restored honest verification gates pass.
+Private v2 `DCSWCW02` rejects the old frame. Its byte, sequence, slot and external
+120s/1792MiB process caps are unchanged; MAIN2/PP2/AUX2 rotations remain intact.
+
+One CPU/Rayon2 sample recorded these milliseconds:
+
+| Phase | Control m0 | Predicate m0 | Predicate m1, prepared setup |
+| --- | ---: | ---: | ---: |
+| Producer setup, including assessment and PUBLIC PP | 112.817 | 113.052 | already prepared |
+| Private MAIN | 2.231 | 2.312 | 2.442 |
+| Native proving | 176.917 | 171.776 | 177.852 |
+| Canonical encoding | 3.152 | 3.212 | 3.248 |
+| Producer wall, including setup for m0 | 298.990 | 291.350 | 184.436 |
+| Independent receiver setup | 110.082 | 111.608 | 113.873, measured separately |
+| Canonical decoding | 5.682 | 5.769 | 5.761 |
+| Native verification | 61.619 | 62.733 | 61.152 |
+| Receiving wall, including setup for m0 | 178.822 | 181.672 | 67.525 |
+| Creation plus independent receiving | 477.811 | 473.021 | 251.961 |
+
+The warm receiver also freshly verified the genuine m0 proof in 67.484ms. Cold
+frames were 2934954/2935946 bytes; the distinct m1 frame was 2941770 bytes.
+RAII totals overlap their phases and must not be added again. Fast hostile
+rejections do not count as honest verification timings. These are diagnostic
+single samples, not a controlled comparative or complete-query benchmark.
+
+The supervised process lasted 3957.4137ms with 6.265625 CPU seconds and 194 memory
+samples. Sampled peak private bytes were 165621760; OS peak working set was
+168398848. It exited zero, without a fuse, cleanup kill or unexpected direct
+child. The optimized test image was 10573824 bytes, SHA256
+`85EF2F143D0CE833F2234BFFDEB80951255B6C07DEE4905382E6D061B8F15E5C`.
+Strict all-target release Clippy passed. Actual receipts use
+`.local/word-cmd-native-r17-`; the exact executed 28-file source is archived at
+`.local/word-public-proof-native-overlay-r1`, aggregate SHA256
+`8C7F47FA7D91FA9DEA06ACED5D0A590F8D5080629E77C9FE66F1830115B01888`.
+Only documentation/comments were changed after this native gate.
+
+This remains a test-private mathematical candidate. Honest fixtures cover Begin
+and Start/Done; other business branches require their own witness/proof cases.
+Standalone SDK security reports do not settle BFV confidentiality or full-system
+soundness. Source/DATA admission, originating FHE/product, bootstrap/history,
+fresh weighted QC, network I/O and durable owner completion are not included.
+The <=500ms complete DCS query target remains unmet.

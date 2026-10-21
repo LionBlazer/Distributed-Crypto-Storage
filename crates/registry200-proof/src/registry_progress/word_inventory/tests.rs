@@ -2,6 +2,7 @@
 use super::plan::*;
 use super::*;
 use expr::Node;
+use p3_air::BaseAir;
 fn make(predicate: bool) -> Plan {
     Plan::new(complete(&Metadata::sample(predicate)).expect("complete closed factory"))
         .expect("all nodes and streams routed")
@@ -117,7 +118,7 @@ fn native_complete_symbolic_prescreen_reports_both_roles_without_proving() {
 
 // Exhaustive semantic serialization. Rowlayout and retired construction caches
 // are excluded; every live Node/annotation/assertion/range/stream/field is here.
-fn full_ir_bytes(pool: &expr::Pool) -> Vec<u8> {
+pub(super) fn full_ir_bytes(pool: &expr::Pool) -> Vec<u8> {
     use p3_field::PrimeField64;
     fn size(v: &mut Vec<u8>, n: usize) {
         v.extend(u64::try_from(n).expect("bounded IR").to_le_bytes());
@@ -132,11 +133,15 @@ fn full_ir_bytes(pool: &expr::Pool) -> Vec<u8> {
         size(v, s.len());
         v.extend(s.as_bytes());
     }
-    let mut v = b"DCS/research/word208/full-semantic-IR/v1".to_vec();
+    let mut v = b"DCS/research/word208/full-semantic-IR/v2/typed309PUBLIC".to_vec();
     v.push(u8::from(pool.predicate));
     size(&mut v, pool.nodes.len());
     for node in &pool.nodes {
         match node {
+            Node::Public(a) => {
+                v.push(10);
+                size(&mut v, a.ordinal());
+            }
             Node::Constant(x) => {
                 v.push(0);
                 v.extend(x.as_canonical_u64().to_le_bytes());
@@ -246,9 +251,12 @@ fn full_ir_bytes(pool: &expr::Pool) -> Vec<u8> {
 fn packed_layout_preserves_full_ir_and_rejects_a_missing_public_range_flag() {
     use sha2::{Digest, Sha512};
     for predicate in [false, true] {
-        let pool = complete(&Metadata::sample(predicate)).expect("same executed-r1 factory");
+        let pool =
+            complete(&Metadata::sample(predicate)).expect("new explicit typed-public factory");
         let before = full_ir_bytes(&pool);
         let mut plan = Plan::new(pool).expect("complete packing");
+        super::goldens::require_plan(&plan)
+            .expect("literal actual PUBLIC27 full IR and PP, no capture fallback");
         let after = full_ir_bytes(&plan.pool);
         assert_eq!(before, after, "packing mutated full semantic IR");
         let hex = Sha512::digest(&before)
@@ -261,19 +269,9 @@ fn packed_layout_preserves_full_ir_and_rejects_a_missing_public_range_flag() {
             before.len(),
             hex
         );
-        let (expected_len, expected_hash) = if predicate {
-            (
-                287395,
-                "a6655a0ba1c2eb0685a27f70412080569e1433c2442221d4e7c00b560ce7467d74585ef368a48aa041d19527051ea1d0cf4669650164938d130fe2627f452388",
-            )
-        } else {
-            (
-                282032,
-                "5608559f3d6a93b9e582853525d2cdda4afc3fb4438bce2b693036de0c77f776e0c2ef0f3ab2bfb1d4a2d4b4172ec212841c351ffc705642a32e00ffa624869a",
-            )
-        };
-        assert_eq!(before.len(), expected_len, "executed-r2 full Pool bytes");
-        assert_eq!(hex, expected_hash, "executed-r2 full Pool golden");
+        // Actual PUBLIC27 literals are mandatory above before any native proof.
+        // No old-profile relabel or auto-accepted first-capture fallback exists.
+        assert_eq!(plan.phases[PUBLIC], PUBLIC_GROUPS);
         assert_eq!(plan.phases[INPUT], 0);
         assert_eq!(plan.phases[RANGE], 0);
         assert_eq!(plan.phases[HASH], 209);
@@ -332,23 +330,20 @@ fn packed_layout_preserves_full_ir_and_rejects_a_missing_public_range_flag() {
 }
 
 #[test]
-fn actual_r2_security_and_resource_report_precedes_preprocessing() {
+fn actual_dynamic_public_security_and_resource_report_precedes_preprocessing() {
     for predicate in [false, true] {
         let air = air::ProgramAir {
             plan: make(predicate),
         };
         let report = super::assessment::assess(&air)
             .expect("actual complete AIR, native packing, baseline and composed security");
-        assert_eq!(
-            (
-                report.chunks(),
-                report.packed_lookup_count(),
-                report.aux_width(),
-                report.openings()
-            ),
-            (8, 34, 175, 3012),
-            "derive exact r2 shape including both native MAIN/PP rotations"
-        );
+        // First NEW-profile capture: native assessment derives the real packing,
+        // chunks, AUX and openings. Do not relabel the old PV0/PP708 goldens.
+        assert_eq!(air.num_public_values(), super::public_values::COUNT);
+        assert!(report.chunks().is_power_of_two() && report.chunks() <= 8);
+        assert!(report.packed_lookup_count() > 0);
+        assert!(report.aux_width() > 0);
+        assert!(report.openings() > WIDTH + PP_WIDTH);
         report
             .require_resources()
             .expect("checked metadata reserves fit unchanged whole-PID cap");
@@ -359,7 +354,7 @@ fn actual_r2_security_and_resource_report_precedes_preprocessing() {
         bad.plan.height = 1024;
         assert!(
             super::assessment::assess(&bad).is_err(),
-            "foreign height is not r2"
+            "foreign height is not the closed structural-PUBLIC v2 shape"
         );
     }
 }

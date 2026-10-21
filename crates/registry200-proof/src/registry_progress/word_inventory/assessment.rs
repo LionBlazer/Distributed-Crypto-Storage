@@ -1,4 +1,4 @@
-//! Closed r2 native security/resource metadata only. No PP, MAIN or proof is built.
+//! Closed structural-PUBLIC v2 security/resource metadata. No PP, MAIN or proof is built.
 //! All reports remain nonaccepting; the future witness/owner boundary is separate.
 use super::{
     air::ProgramAir,
@@ -163,10 +163,13 @@ pub(super) fn assess(air: &ProgramAir) -> Result<Assessment> {
     if air.plan.rows.len() > HEIGHT
         || air.plan.height != HEIGHT
         || WIDTH != 568
-        || PP_WIDTH != 708
+        || PP_WIDTH != 714
         || air.width() != WIDTH
         || air.preprocessed_width() != PP_WIDTH
-        || air.num_public_values() != 0
+        || air.num_public_values() != super::public_values::COUNT
+        || super::public_values::COUNT != 309
+        || super::plan::PUBLIC_GROUPS != 5
+        || air.plan.phases[super::plan::PUBLIC] != 5
         || air.num_periodic_columns() != 0
         || !air.periodic_columns().is_empty()
         || !air.public_boundary_io().is_empty()
@@ -510,6 +513,38 @@ impl Resources {
                 mul(mul(mul(8, d)?, lde)?, bytes)?,
             ),
             ("fixed_ir_plan_and_retired_caches_reserve", ir),
+            // The owning warm gate holds ONE producer setup while independently
+            // constructing ONE receiver setup. Receiver drops prover_only after
+            // setup. Conservatively reserve a second whole PP bank/tree/IR here;
+            // this is an explicit two-setup policy, not an allocator/RSS theorem.
+            (
+                "one_extra_immutable_role_setup_public_retention",
+                [
+                    ir,
+                    pp_b,
+                    mul(mul(HEIGHT, PP_WIDTH)?, bytes)?,
+                    mul(mul(ext, PP_WIDTH)?, bytes)?,
+                    mul(mul(lde, SALT_ELEMENTS)?, bytes)?,
+                    mul(mul(lde, 8)?, bytes)?,
+                ]
+                .into_iter()
+                .try_fold(0, add)?,
+            ),
+            // Excess reserve for independent tuple/address copies in this new
+            // representation; actual Node/Plan capacities are already charged.
+            (
+                "typed_public_addresses_and_four_expected_copies",
+                mul(
+                    4,
+                    add(
+                        core::mem::size_of::<super::public_values::Expected>(),
+                        mul(
+                            super::public_values::COUNT,
+                            core::mem::size_of::<super::public_values::Address>(),
+                        )?,
+                    )?,
+                )?,
+            ),
             // Concrete future sidecar ceilings, NOT currently allocated recipes.
             (
                 "planned_recipe_max_256_bytes_per_node",

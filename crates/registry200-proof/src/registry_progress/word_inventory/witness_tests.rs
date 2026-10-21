@@ -7,9 +7,10 @@ fn public_owner_inputs_fill_complete_honest_main_for_both_roles() {
     use p3_matrix::Matrix;
     for predicate in [false, true] {
         let (m, input) = owner::public_case(predicate);
+        let public = public_values::Expected::checked(&m).unwrap();
         let (air, trace) = witness::prepare(&m, &input).expect("complete private recipes and MAIN");
         assert_eq!(trace.0.height(), 512);
-        check::all(&air, &trace).expect("actual BASE plus every original lookup balances");
+        check::all(&air, &trace, &public).expect("actual BASE plus every original lookup balances");
         let built = complete_build(&m).unwrap();
         assert!(core::mem::size_of::<recipes::Recipe>() <= 256);
         assert!(
@@ -32,8 +33,9 @@ fn public_owner_inputs_fill_complete_honest_main_for_both_roles() {
 fn repaired_add_passes_actual_base_and_fails_actual_wire_lookup() {
     use evaluate::Error;
     let (m, input) = owner::public_case(true);
+    let public = public_values::Expected::checked(&m).unwrap();
     let (air, mut trace) = witness::prepare(&m, &input).unwrap();
-    check::all(&air, &trace).unwrap();
+    check::all(&air, &trace, &public).unwrap();
     let (r, slot) = air
         .plan
         .rows
@@ -50,17 +52,22 @@ fn repaired_add_passes_actual_base_and_fails_actual_wire_lookup() {
         .expect("actual nonconstant Add");
     trace.0.values[r * WIDTH + 248 + 3 * slot] += Val::ONE;
     trace.0.values[r * WIDTH + 248 + 3 * slot + 2] += Val::ONE;
-    assert_eq!(check::base(&air, &trace), Ok(()), "local equation repaired");
-    assert_eq!(check::lookups(&air, &trace), Err(Error::Lookup));
+    assert_eq!(
+        check::base(&air, &trace, &public),
+        Ok(()),
+        "local equation repaired"
+    );
+    assert_eq!(check::lookups(&air, &trace, &public), Err(Error::Lookup));
 }
 #[test]
 fn native_diagnostics_reject_permutation_range_and_repaired_mask_frequency() {
     use evaluate::Error;
     let (m, input) = owner::public_case(true);
+    let public = public_values::Expected::checked(&m).unwrap();
     let (air, mut trace) = witness::prepare(&m, &input).unwrap();
     let hash = air.plan.rows.iter().position(|r| r.hash.is_some()).unwrap();
     trace.0.values[hash * WIDTH + 12] += Val::ONE;
-    assert_eq!(check::base(&air, &trace), Err(Error::Base));
+    assert_eq!(check::base(&air, &trace, &public), Err(Error::Base));
     trace.0.values[hash * WIDTH + 12] -= Val::ONE;
     let (r, bit) = air
         .plan
@@ -78,7 +85,7 @@ fn native_diagnostics_reject_permutation_range_and_repaired_mask_frequency() {
     let cell = r * WIDTH + 248 + PORTS + bit;
     let saved = trace.0.values[cell];
     trace.0.values[cell] = Val::ONE - saved;
-    assert_eq!(check::base(&air, &trace), Err(Error::Base));
+    assert_eq!(check::base(&air, &trace, &public), Err(Error::Base));
     trace.0.values[cell] = saved;
     // age0 has one actual physical read, age2 has none. Swap the frequencies and
     // repair their exact 3-bit decompositions; only the actual lookup may reject.
@@ -96,18 +103,19 @@ fn native_diagnostics_reject_permutation_range_and_repaired_mask_frequency() {
             trace.0.values[start + 3 * slot + bit] = Val::from_bool(slot == 2 && bit == 0);
         }
     }
-    assert_eq!(check::base(&air, &trace), Ok(()));
-    assert_eq!(check::lookups(&air, &trace), Err(Error::Lookup));
+    assert_eq!(check::base(&air, &trace, &public), Ok(()));
+    assert_eq!(check::lookups(&air, &trace, &public), Err(Error::Lookup));
 }
 #[test]
 fn missing_origins_cycles_private_overflow_and_foreign_claim_fail_closed() {
     use evaluate::{Error, Evaluator};
     let (mut m, mut input) = owner::public_case(true);
+    let public = public_values::Expected::checked(&m).unwrap();
     let mut built = complete_build(&m).unwrap();
     let target = *built.origins.targets.keys().next().unwrap();
     built.origins.targets.remove(&target);
     assert!(matches!(
-        Evaluator::new(&built.pool, &built.origins, &input),
+        Evaluator::new(&built.pool, &built.origins, &input, &public),
         Err(Error::Origin)
     ));
     let mut built = complete_build(&m).unwrap();
@@ -130,7 +138,7 @@ fn missing_origins_cycles_private_overflow_and_foreign_claim_fail_closed() {
         gate: target,
     };
     assert!(matches!(
-        Evaluator::new(&built.pool, &built.origins, &input)
+        Evaluator::new(&built.pool, &built.origins, &input, &public)
             .unwrap()
             .finish(),
         Err(Error::Cycle)

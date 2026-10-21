@@ -10,7 +10,7 @@ use p3_batch_stark::BatchProof;
 use p3_field::PrimeCharacteristicRing;
 use sha2::{Digest, Sha256};
 
-const MAGIC: &[u8; 8] = b"DCSWCW01";
+const MAGIC: &[u8; 8] = b"DCSWCW02";
 pub(super) const HEADER_BYTES: usize = 128;
 pub(super) const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
 const MAX_PAYLOAD_BYTES: usize = MAX_FRAME_BYTES - HEADER_BYTES;
@@ -21,19 +21,19 @@ const PACKED: usize = 34;
 const AUX: usize = 175;
 const ROUNDS: usize = 5;
 const INPUT_DEPTH: usize = DEGREE_BITS + LOG_BLOWUP;
-// Complete fixed topology: 352810 Gold fields (INCLUDING digest coordinates,
-// salts and PoWs),4934 EF5,9513 frontier digests. Conservative container reserve:
+// Complete fixed topology: 353962 Gold fields (INCLUDING digest coordinates,
+// salts and PoWs),4946 EF5,9513 frontier digests. Conservative container reserve:
 // every Gold <=9 bounded-serde slots, EF5<=48; remaining containers <=32768 slots.
-// Fixed fields cost3019840 bytes, plus <=3 bytes per reserved container/control.
+// Six additional PP columns add1152 query fields and12 EF openings; fixed fields cost3029536 bytes, plus <=3 bytes per reserved container/control.
 // These are codec bounds, not a whole-process memory/security theorem.
-const HONEST_SLOTS: usize = 352_810 * 9 + 4_934 * 48 + 32_768;
-const HONEST_PAYLOAD_BYTES: usize = 352_810 * 8 + 4_934 * 40 + 3 * 32_768;
+const HONEST_SLOTS: usize = 353_962 * 9 + 4_946 * 48 + 32_768;
+const HONEST_PAYLOAD_BYTES: usize = 353_962 * 8 + 4_946 * 40 + 3 * 32_768;
 
 pub(super) fn profile() -> [u8; 32] {
     let mut h = Sha256::new();
-    h.update(b"DCS/research/word208/native-probe/canonical-frame/v1\0");
+    h.update(b"DCS/research/word208/native-probe/canonical-frame/v2\0");
     h.update(super::profile());
-    h.update(b"oneH512/MAIN568/PP708/PV0;extended10;default34/AUX175/chunks8;GoldEF5-Q192-blowup3-random5-salt4;MAIN2-PP2-AUX2/openings3012/hiding404;5rounds-random-main-quotient-PP-AUX;binaryFRI10;sole-terminal0+actualnative;PUBLIC-PP-only;freshOS-private;boundedPostcard-reencode-EOF;math-probe-NO-Source-DATA-head-SQL");
+    h.update(b"oneH512/MAIN568/PP714/PV309;extended10;default34/AUX175/chunks8;GoldEF5-Q192-blowup3-random5-salt4;MAIN2-PP2-AUX2/openings3024/hiding404;5rounds-random-main-quotient-PP-AUX;binaryFRI10;sole-terminal0+actualnative;role-profile-only-PUBLIC-PP;independent-Expected309;freshOS-private;boundedPostcard-reencode-EOF;math-probe-NO-Source-DATA-head-SQL");
     for n in [
         HEADER_BYTES,
         MAX_FRAME_BYTES,
@@ -49,14 +49,15 @@ pub(super) fn profile() -> [u8; 32] {
 }
 pub(super) fn require_assessment(report: &Assessment) -> Result<()> {
     if WIDTH != 568
-        || PP_WIDTH != 708
+        || PP_WIDTH != 714
         || DEGREE_BITS != 10
         || LOG_BLOWUP != 3
         || QUERIES != 192
         || report.chunks() != CHUNKS
         || report.packed_lookup_count() != PACKED
         || report.aux_width() != AUX
-        || report.openings() != 3012
+        || super::public_values::COUNT != 309
+        || report.openings() != 3024
         || HONEST_SLOTS > MAX_SLOTS
         || HONEST_PAYLOAD_BYTES > MAX_PAYLOAD_BYTES
     {

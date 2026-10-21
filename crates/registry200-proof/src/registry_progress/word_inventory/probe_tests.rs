@@ -12,16 +12,30 @@ fn real_hiding_batch_proof_cold_roundtrip_both_roles_and_hostile_wire() {
     for predicate in [false, true] {
         let (m, input) = owner::public_case(predicate);
         let started = Instant::now();
-        let frame = probe::produce(&m, &input).expect("actual native hiding producer");
+        // Both cold producer walls include its own real role PP. Predicate keeps
+        // that public-only setup for a DISTINCT next expectation below.
+        let setup = if predicate {
+            Some(probe::ProverSetup::new(true).unwrap())
+        } else {
+            None
+        };
+        let frame = if let Some(setup) = &setup {
+            setup.produce(&m, &input)
+        } else {
+            probe::produce(&m, &input)
+        }
+        .expect("actual native hiding producer");
         let produced = started.elapsed();
         assert!(frame.len() <= wire::MAX_FRAME_BYTES);
         let receive = Instant::now();
         probe::verify(&m, &frame).expect("independently rebuilt trusted PP and cold native verify");
+        let received = receive.elapsed();
         eprintln!(
-            "word_native_probe role={} produce_ms={} cold_receive_ms={} frame_bytes={} math_only=true Source=false DATA=false fresh_head=false SQL=false system_security=false",
+            "word_native_probe role={} produce_ms={:.3} cold_receive_ms={:.3} cold_roundtrip_ms={:.3} frame_bytes={} math_only=true Source=false DATA=false fresh_head=false SQL=false system_security=false",
             if predicate { "predicate" } else { "control" },
-            produced.as_millis(),
-            receive.elapsed().as_millis(),
+            produced.as_secs_f64() * 1000.0,
+            received.as_secs_f64() * 1000.0,
+            (produced + received).as_secs_f64() * 1000.0,
             frame.len()
         );
         if !predicate {
@@ -39,7 +53,51 @@ fn real_hiding_batch_proof_cold_roundtrip_both_roles_and_hostile_wire() {
         assert_eq!(probe::verify(&foreign, &frame), Err(probe::Error::Binding));
         let (opposite, _) = owner::public_case(false);
         assert_eq!(probe::verify(&opposite, &frame), Err(probe::Error::Binding));
+        // Independent receiving setup: never producer-supplied PP/CommonData.
+        let setup_started = Instant::now();
+        let receiver = probe::VerifierSetup::new(true).unwrap();
+        let receiver_setup = setup_started.elapsed();
+        let warm_m0 = Instant::now();
+        receiver.verify(&m, &frame).unwrap();
+        let warm_receive_m0 = warm_m0.elapsed();
+        let (m1, input1) = owner::public_case_variant(true, 1);
+        let p0 = super::public_values::Expected::checked(&m).unwrap();
+        let p1 = super::public_values::Expected::checked(&m1).unwrap();
+        assert_ne!(p0.values(), p1.values());
+        let payload0 = wire::payload(&m, &frame).unwrap();
+        let repaired = wire::frame(&m1, payload0).unwrap();
+        assert!(
+            wire::payload(&m1, &repaired).is_ok(),
+            "full independent header repaired"
+        );
         let (_, report) = probe::prescreen(&m).unwrap();
+        wire::decode(wire::payload(&m1, &repaired).unwrap(), &report).unwrap();
+        assert_eq!(
+            receiver.verify(&m1, &repaired),
+            Err(probe::Error::Verification),
+            "valid full shape + foreign PUBLIC must reach actual native failure"
+        );
+        let warm_started = Instant::now();
+        let frame1 = setup
+            .as_ref()
+            .unwrap()
+            .produce(&m1, &input1)
+            .expect("same public-only producer setup, new native proof and OS coins");
+        let warm_produced = warm_started.elapsed();
+        let warm_receive = Instant::now();
+        receiver
+            .verify(&m1, &frame1)
+            .expect("independent same receiver setup verifies DISTINCT current Expected309");
+        let warm_received = warm_receive.elapsed();
+        eprintln!(
+            "word_native_setup_reuse role=predicate receiver_setup_ms={:.3} warm_m0_receive_ms={:.3} warm_m1_produce_ms={:.3} warm_m1_receive_ms={:.3} warm_m1_roundtrip_ms={:.3} frame_bytes={} distinct_public=true fresh_native_proofs=true Source=false DATA=false SQL=false",
+            receiver_setup.as_secs_f64() * 1000.0,
+            warm_receive_m0.as_secs_f64() * 1000.0,
+            warm_produced.as_secs_f64() * 1000.0,
+            warm_received.as_secs_f64() * 1000.0,
+            (warm_produced + warm_received).as_secs_f64() * 1000.0,
+            frame1.len()
+        );
         let payload = wire::payload(&m, &frame).unwrap();
         let mut trailing = payload.to_vec();
         trailing.push(0);
@@ -144,13 +202,14 @@ fn real_hiding_batch_proof_cold_roundtrip_both_roles_and_hostile_wire() {
 fn actual_repaired_add_false_wire_is_native_terminal_failure_then_ood_when_repaired() {
     let (m, input) = owner::public_case(true);
     let (public_air, report) = probe::prescreen(&m).unwrap();
-    let data = probe::public_data(&m, &public_air, &report).unwrap();
+    let data = probe::public_data(&public_air, &report).unwrap();
     let (air, mut trace) = witness::prepare(&m, &input).unwrap();
     for r in 0..512 {
         assert_eq!(public_air.plan.pp_row(r), air.plan.pp_row(r));
     }
     drop(public_air);
-    check::all(&air, &trace).unwrap();
+    let public = super::public_values::Expected::checked(&m).unwrap();
+    check::all(&air, &trace, &public).unwrap();
     let (row, slot) = air
         .plan
         .rows
@@ -168,17 +227,17 @@ fn actual_repaired_add_false_wire_is_native_terminal_failure_then_ood_when_repai
     trace.0.values[row * WIDTH + 248 + 3 * slot] += Val::ONE;
     trace.0.values[row * WIDTH + 248 + 3 * slot + 2] += Val::ONE;
     assert_eq!(
-        check::base(&air, &trace),
+        check::base(&air, &trace, &public),
         Ok(()),
         "ALL local business equations remain true"
     );
     assert_eq!(
-        check::lookups(&air, &trace),
+        check::lookups(&air, &trace, &public),
         Err(super::evaluate::Error::Lookup)
     );
 
     let began = Instant::now();
-    let attempted = probe::prove_trace(&air, &trace.0, &data);
+    let attempted = probe::prove_trace(&air, &trace.0, &data, &public);
     drop(trace);
     if cfg!(debug_assertions) {
         // Official debug proving may replay buses early. ONLY RELEASE below
@@ -195,7 +254,7 @@ fn actual_repaired_add_false_wire_is_native_terminal_failure_then_ood_when_repai
         &probe::private_config().unwrap(),
         core::slice::from_ref(&air),
         &proof,
-        &[vec![]],
+        &[public.values().to_vec()],
         &data.common,
     )
     .unwrap_err();
@@ -211,7 +270,7 @@ fn actual_repaired_add_false_wire_is_native_terminal_failure_then_ood_when_repai
         &probe::private_config().unwrap(),
         core::slice::from_ref(&air),
         &proof,
-        &[vec![]],
+        &[public.values().to_vec()],
         &data.common,
     )
     .unwrap_err();

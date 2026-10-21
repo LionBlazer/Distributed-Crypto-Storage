@@ -1,30 +1,25 @@
-//! Closed test-private hiding proof probe; no Source, head, SQL or state grant.
-use super::probe_wire as wire;
+//! Closed test-private native proofs with immutable ROLE-only public setup.
+//! Setup retains no private input, RNG, trace or verification verdict.
 use super::{
     Metadata,
     air::ProgramAir,
     assessment::{self, Assessment},
-    complete,
+    complete_role,
     owner::PrimaryInputs,
     plan::{PP_WIDTH, Plan},
-    witness,
+    probe_wire as wire,
+    public_values::Expected,
+    recipes::Origins,
+    structural_setup, witness,
 };
-use bfv_hiding_stark::{
-    Challenge, ChallengeMmcs, Challenger, Compress, Config, Hash, LOG_BLOWUP, Mmcs, Pcs, QUERIES,
-    RANDOM_CODEWORDS, Val,
-};
+use bfv_hiding_stark::{Challenge, Config, Val};
 use p3_batch_stark::{
     BatchProof, CommonData, ProverData, StarkInstance, prove_batch, verify_batch,
 };
-use p3_dft::Radix2DitParallel;
 use p3_field::PrimeField64;
-use p3_fri::FriParameters;
-use p3_goldilocks::default_goldilocks_poseidon2_12;
 use p3_lookup::{Kind, Lookups};
-use rand_public_pp::{SeedableRng, rngs::StdRng};
 use sha2::{Digest, Sha512};
 use std::panic::{AssertUnwindSafe, catch_unwind};
-
 #[cfg(test)]
 struct PhaseTiming {
     predicate: bool,
@@ -84,7 +79,7 @@ pub(super) type Result<T> = core::result::Result<T, Error>;
 /// Length framing and the full original images prevent a reduced-tag association.
 pub(super) fn binding(m: &Metadata) -> [u8; 64] {
     let mut h = Sha512::new();
-    h.update(b"DCS/research/word208/native-probe/complete-public-expectation/v1\0");
+    h.update(b"DCS/research/word208/native-probe/complete-public-expectation/v2\0");
     h.update(super::profile());
     h.update(wire::profile());
     h.update([u8::from(m.predicate)]);
@@ -122,68 +117,28 @@ pub(super) fn binding(m: &Metadata) -> [u8; 64] {
     h.finalize().into()
 }
 
-/// The complete real security/resource assessment precedes PP and MAIN allocation.
-pub(super) fn prescreen(m: &Metadata) -> Result<(ProgramAir, Assessment)> {
-    m.source.statement().reaudit().map_err(|_| Error::Shape)?;
+/// No Metadata/sample fixture can choose the role AIR or preprocessing.
+fn prescreen_role(predicate: bool) -> Result<(ProgramAir, Origins, Assessment)> {
+    let built = complete_role(predicate).map_err(|_| Error::Shape)?;
     let air = ProgramAir {
-        plan: Plan::new(complete(m).map_err(|_| Error::Shape)?).map_err(|_| Error::Shape)?,
+        plan: Plan::new(built.pool).map_err(|_| Error::Shape)?,
     };
+    super::goldens::require_plan(&air.plan).map_err(|_| Error::Binding)?;
     let report = assessment::assess(&air).map_err(|_| Error::Security)?;
     report.require_resources().map_err(|_| Error::Resource)?;
     wire::require_assessment(&report)?;
+    Ok((air, built.origins, report))
+}
+pub(super) fn prescreen(m: &Metadata) -> Result<(ProgramAir, Assessment)> {
+    let _ = Expected::checked(m).map_err(|_| Error::Shape)?;
+    let (air, _origins, report) = prescreen_role(m.predicate)?;
     Ok((air, report))
 }
-fn public_stream(m: &Metadata, label: u8) -> StdRng {
-    let mut h = Sha512::new();
-    h.update(b"DCS/research/word208/native-probe/PUBLIC-PP-ONLY/v1\0");
-    h.update(binding(m));
-    h.update([label]);
-    let digest = h.finalize();
-    let mut seed = [0; 32];
-    seed.copy_from_slice(&digest[..32]);
-    StdRng::from_seed(seed)
-}
-fn public_mmcs(m: &Metadata, label: u8) -> Mmcs {
-    let p = default_goldilocks_poseidon2_12();
-    Mmcs::new(
-        Hash::new(p.clone()),
-        Compress::new(p),
-        0,
-        public_stream(m, label),
-    )
-}
-/// Sole PUBLIC PP factory. Only ProverData escapes; the seeded config/RNG dies
-/// before any MAIN/AUX/quotient/randomization commitment. No caller PP is adopted.
-pub(super) fn public_data(
-    m: &Metadata,
-    air: &ProgramAir,
-    report: &Assessment,
-) -> Result<ProverData<Config>> {
-    report.require_resources().map_err(|_| Error::Resource)?;
+/// Seeded public config dies in structural_setup; only independently derived
+/// public ProverData escapes. No private commitment is made by that factory.
+pub(super) fn public_data(air: &ProgramAir, report: &Assessment) -> Result<ProverData<Config>> {
     wire::require_assessment(report)?;
-    let fri = FriParameters {
-        log_blowup: LOG_BLOWUP,
-        log_final_poly_len: 0,
-        max_log_arity: 1,
-        num_queries: QUERIES,
-        batch_proof_of_work_bits: 0,
-        commit_proof_of_work_bits: 0,
-        query_proof_of_work_bits: 0,
-        mmcs: ChallengeMmcs::new(public_mmcs(m, 1)),
-    };
-    let pcs = Pcs::new(
-        Radix2DitParallel::default(),
-        public_mmcs(m, 0),
-        fri,
-        RANDOM_CODEWORDS,
-        public_stream(m, 2),
-    );
-    let config = Config::new(pcs, Challenger::new(default_goldilocks_poseidon2_12()));
-    let result =
-        ProverData::from_airs_and_degrees(&config, core::slice::from_ref(air), &[DEGREE_BITS])
-            .map_err(|_| Error::Setup);
-    drop(config);
-    let data = result?;
+    let data = structural_setup::public_data(air, report).map_err(|_| Error::Setup)?;
     require_common(&data.common, air, report)?;
     Ok(data)
 }
@@ -245,106 +200,145 @@ fn require_common(
 pub(super) fn private_config() -> Result<Config> {
     bfv_hiding_stark::config().map_err(|_| Error::Backend)
 }
+/// Fresh OS randomness for EACH native proof; public values are independently
+/// derived from the actual full current expectation, never from the frame.
 pub(super) fn prove_trace(
     air: &ProgramAir,
     trace: &p3_matrix::dense::RowMajorMatrix<Val>,
     data: &ProverData<Config>,
+    public: &Expected,
 ) -> Result<BatchProof<Config>> {
     let config = private_config()?;
     let instances = [StarkInstance {
         air,
         trace,
-        public_values: vec![],
+        public_values: public.values().to_vec(),
     }];
     catch_unwind(AssertUnwindSafe(|| prove_batch(&config, &instances, data)))
         .map_err(|_| Error::Proving)?
         .map_err(|_| Error::Proving)
 }
-
-/// Returns only UNVERIFIED bytes. Same closed factory, resources first, ONE
-/// guarded private SSA execution, and actual native proving; no self-verdict.
-pub(super) fn produce(m: &Metadata, input: &PrimaryInputs) -> Result<Vec<u8>> {
-    #[cfg(test)]
-    let _total = PhaseTiming::new(m.predicate, "produce", "total");
-    catch_unwind(AssertUnwindSafe(|| {
-        let (public_air, report) = {
-            #[cfg(test)]
-            let _phase = PhaseTiming::new(m.predicate, "produce", "assessment");
-            prescreen(m)?
+/// Immutable producer preprocessing and recipe IDs. No private witness, RNG or
+/// result status is retained. This is not Source/DATA/oldRoot/SQL authority.
+pub(super) struct ProverSetup {
+    air: ProgramAir,
+    origins: Origins,
+    report: Assessment,
+    data: ProverData<Config>,
+}
+impl ProverSetup {
+    pub(super) fn new(predicate: bool) -> Result<Self> {
+        let _total = PhaseTiming::new(predicate, "prover_setup", "total");
+        let (air, origins, report) = {
+            let _phase = PhaseTiming::new(predicate, "prover_setup", "assessment");
+            prescreen_role(predicate)?
         };
         let data = {
-            #[cfg(test)]
-            let _phase = PhaseTiming::new(m.predicate, "produce", "public_PP");
-            public_data(m, &public_air, &report)?
+            let _phase = PhaseTiming::new(predicate, "prover_setup", "public_PP");
+            public_data(&air, &report)?
         };
-        let (air, trace) = {
-            #[cfg(test)]
-            let _phase = PhaseTiming::new(m.predicate, "produce", "MAIN_prepare");
-            witness::prepare(m, input).map_err(|_| Error::Proving)?
-        };
-        // The writer must produce the SAME complete verifier-owned schedule.
-        if air.plan.height != public_air.plan.height
-            || air.plan.max_fanout != public_air.plan.max_fanout
-            || air.plan.policy_queries != public_air.plan.policy_queries
-            || (0..512).any(|r| air.plan.pp_row(r) != public_air.plan.pp_row(r))
-        {
+        Ok(Self {
+            air,
+            origins,
+            report,
+            data,
+        })
+    }
+    /// UNVERIFIED bytes only; no self-verification or per-query accepted flag.
+    pub(super) fn produce(&self, m: &Metadata, input: &PrimaryInputs) -> Result<Vec<u8>> {
+        let _total = PhaseTiming::new(m.predicate, "produce", "total");
+        if m.predicate != self.air.plan.pool.predicate {
             return Err(Error::Binding);
         }
-        drop(public_air);
-        let proof = {
-            #[cfg(test)]
-            let _phase = PhaseTiming::new(m.predicate, "produce", "native_prove");
-            prove_trace(&air, &trace.0, &data)?
-        };
-        drop(trace);
-        drop(data);
-        drop(air);
-        {
-            #[cfg(test)]
+        let public = Expected::checked(m).map_err(|_| Error::Shape)?;
+        self.report
+            .require_resources()
+            .map_err(|_| Error::Resource)?;
+        catch_unwind(AssertUnwindSafe(|| {
+            let trace = {
+                let _phase = PhaseTiming::new(m.predicate, "produce", "MAIN_prepare");
+                witness::from_plan(&self.air, &self.origins, &public, input)
+                    .map_err(|_| Error::Proving)?
+            };
+            let proof = {
+                let _phase = PhaseTiming::new(m.predicate, "produce", "native_prove");
+                prove_trace(&self.air, &trace.0, &self.data, &public)?
+            };
+            drop(trace);
             let _phase = PhaseTiming::new(m.predicate, "produce", "canonical_encode");
-            wire::encode(m, &proof, &report)
-        }
-    }))
-    .map_err(|_| Error::Proving)?
+            wire::encode(m, &proof, &self.report)
+        }))
+        .map_err(|_| Error::Backend)?
+    }
 }
-
-/// Cold independent receiver: header before allocation, complete own expectation,
-/// actual assessment/default factory, canonical decode and actual native verify.
-/// Result<()> is diagnostic math only; no token can be persisted or installed.
-pub(super) fn verify(m: &Metadata, frame: &[u8]) -> Result<()> {
-    #[cfg(test)]
-    let _total = PhaseTiming::new(m.predicate, "cold_verify", "total");
-    let payload = wire::payload(m, frame)?;
-    catch_unwind(AssertUnwindSafe(|| {
-        let (air, report) = {
-            #[cfg(test)]
-            let _phase = PhaseTiming::new(m.predicate, "cold_verify", "assessment");
-            prescreen(m)?
+/// Receiver factory independently constructs its OWN role PP, then discards all
+/// prover-only data/recipe storage. No producer-supplied CommonData is accepted.
+pub(super) struct VerifierSetup {
+    air: ProgramAir,
+    report: Assessment,
+    common: CommonData<Config>,
+}
+impl VerifierSetup {
+    pub(super) fn new(predicate: bool) -> Result<Self> {
+        let _total = PhaseTiming::new(predicate, "verifier_setup", "total");
+        let (air, origins, report) = {
+            let _phase = PhaseTiming::new(predicate, "verifier_setup", "assessment");
+            prescreen_role(predicate)?
         };
-        let proof = {
-            #[cfg(test)]
-            let _phase = PhaseTiming::new(m.predicate, "cold_verify", "decode");
-            wire::decode(payload, &report)?
-        };
+        drop(origins);
         let data = {
-            #[cfg(test)]
-            let _phase = PhaseTiming::new(m.predicate, "cold_verify", "public_PP");
-            public_data(m, &air, &report)?
+            let _phase = PhaseTiming::new(predicate, "verifier_setup", "public_PP");
+            public_data(&air, &report)?
         };
         let common = data.common;
         drop(data.prover_only);
-        {
-            #[cfg(test)]
-            let _phase = PhaseTiming::new(m.predicate, "cold_verify", "native_verify");
+        Ok(Self {
+            air,
+            report,
+            common,
+        })
+    }
+    /// Every invocation rechecks full original metadata/header, canonical bytes and
+    /// actual native proof against fresh Expected309. Setup is not a proof cache.
+    pub(super) fn verify(&self, m: &Metadata, frame: &[u8]) -> Result<()> {
+        let _total = PhaseTiming::new(m.predicate, "verify", "total");
+        let payload = wire::payload(m, frame)?;
+        if m.predicate != self.air.plan.pool.predicate {
+            return Err(Error::Binding);
+        }
+        let public = Expected::checked(m).map_err(|_| Error::Shape)?;
+        self.report
+            .require_resources()
+            .map_err(|_| Error::Resource)?;
+        catch_unwind(AssertUnwindSafe(|| {
+            let proof = {
+                let _phase = PhaseTiming::new(m.predicate, "verify", "decode");
+                wire::decode(payload, &self.report)?
+            };
+            let _phase = PhaseTiming::new(m.predicate, "verify", "native_verify");
             verify_batch(
                 &private_config()?,
-                core::slice::from_ref(&air),
+                core::slice::from_ref(&self.air),
                 &proof,
-                &[vec![]],
-                &common,
+                &[public.values().to_vec()],
+                &self.common,
             )
             .map_err(|_| Error::Verification)
-        }
-    }))
-    .map_err(|_| Error::Backend)?
+        }))
+        .map_err(|_| Error::Backend)?
+    }
+}
+/// Complete cold producer wrapper, with genuine new role-only PUBLIC setup.
+pub(super) fn produce(m: &Metadata, input: &PrimaryInputs) -> Result<Vec<u8>> {
+    let _total = PhaseTiming::new(m.predicate, "cold_produce", "total");
+    let _ = Expected::checked(m).map_err(|_| Error::Shape)?;
+    ProverSetup::new(m.predicate)?.produce(m, input)
+}
+/// Complete cold receiving wrapper: original header checked before PP allocation,
+/// then fresh independent receiver PP and mandatory full native verification.
+pub(super) fn verify(m: &Metadata, frame: &[u8]) -> Result<()> {
+    let _total = PhaseTiming::new(m.predicate, "cold_verify", "total");
+    let _ = wire::payload(m, frame)?;
+    let _ = Expected::checked(m).map_err(|_| Error::Shape)?;
+    VerifierSetup::new(m.predicate)?.verify(m, frame)
 }

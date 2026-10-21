@@ -34,4 +34,4 @@ p3-lookup = "=0.8.0"
 p3-commit = "=0.8.0"
 p3-security = "=0.8.0"
 p3-dft = "=0.8.0"
-rand_public_pp = { package = "rand", version = "=0.10.3" }
+rand_public_pp = { package = "rand", version = "=0.10.3", default-features = false, features = ["std_rng"] }

@@ -25,6 +25,7 @@ pub(super) enum Op {
 #[derive(Clone, Debug)]
 pub(super) enum Node {
     Constant(Val),
+    Public(super::public_values::Address),
     Input(String, Ty),
     Arith(Op, usize, usize),
     Hash(usize, usize),
@@ -97,6 +98,10 @@ impl Builder {
             }),
         };
         b.c(0);
+        for i in 0..super::public_values::COUNT {
+            let e = b.node(Node::Public(super::public_values::Address::from_ordinal(i)));
+            assert_eq!(e.id, i + 1, "deterministic public provider IDs");
+        }
         b
     }
     fn node(&self, n: Node) -> E<'_> {
@@ -129,6 +134,13 @@ impl Builder {
             Node::Constant(v) => Some(v),
             _ => None,
         }
+    }
+    pub fn public(&self, a: super::public_values::Address) -> E<'_> {
+        let id = a.ordinal() + 1;
+        assert!(
+            matches!(self.pool.borrow().nodes.get(id),Some(Node::Public(actual)) if *actual==a)
+        );
+        self.e(id)
     }
     pub fn fresh(&self, label: &str, ty: Ty) -> E<'_> {
         let n = {

@@ -23,10 +23,14 @@ fn shape(air: &ProgramAir, trace: &PrivateTrace) -> Result<()> {
     }
     air.plan.inventory().map_err(|_| Error::Shape)
 }
-pub(super) fn base(air: &ProgramAir, trace: &PrivateTrace) -> Result<()> {
+pub(super) fn base(
+    air: &ProgramAir,
+    trace: &PrivateTrace,
+    public: &super::public_values::Expected,
+) -> Result<()> {
     shape(air, trace)?;
     // Public SDK nonpanicking failure collection; never print a private row/value.
-    let report = check_all_constraints(air, &trace.0, &[], Some(1));
+    let report = check_all_constraints(air, &trace.0, public.values(), Some(1));
     if !report.is_ok() {
         return Err(Error::Base);
     }
@@ -51,7 +55,11 @@ impl Drop for Totals {
         }
     }
 }
-pub(super) fn lookups(air: &ProgramAir, trace: &PrivateTrace) -> Result<()> {
+pub(super) fn lookups(
+    air: &ProgramAir,
+    trace: &PrivateTrace,
+    public: &super::public_values::Expected,
+) -> Result<()> {
     shape(air, trace)?;
     let pp = air.preprocessed_trace().ok_or(Error::Shape)?;
     let original = Lookups::<Val>::from_air::<Challenge, ProgramAir>(air);
@@ -75,7 +83,7 @@ pub(super) fn lookups(air: &ProgramAir, trace: &PrivateTrace) -> Result<()> {
                 RowMajorMatrixView::new_row(&pl),
                 RowMajorMatrixView::new_row(&pn),
             ),
-            &[],
+            public.values(),
             Val::from_bool(row == 0),
             Val::from_bool(row == 511),
             Val::from_bool(row != 511),
@@ -127,7 +135,11 @@ pub(super) fn lookups(air: &ProgramAir, trace: &PrivateTrace) -> Result<()> {
     }
     Ok(())
 }
-pub(super) fn all(air: &ProgramAir, trace: &PrivateTrace) -> Result<()> {
-    base(air, trace)?;
-    lookups(air, trace)
+pub(super) fn all(
+    air: &ProgramAir,
+    trace: &PrivateTrace,
+    public: &super::public_values::Expected,
+) -> Result<()> {
+    base(air, trace, public)?;
+    lookups(air, trace, public)
 }

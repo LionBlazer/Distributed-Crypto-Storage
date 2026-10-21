@@ -20,10 +20,25 @@ impl Drop for PrivateTrace {
 /// PrimaryInputs stays owner-custodied; it is never a peer/validator argument.
 pub(super) fn prepare(m: &Metadata, input: &PrimaryInputs) -> Result<(ProgramAir, PrivateTrace)> {
     let built = complete_build(m).map_err(|_| Error::Origin)?;
-    // ONE full SSA evaluation, including genuine 209 P2 permutations. Recipes and
-    // hash outputs are memoized; no second graph execution or model callback.
-    let values = Evaluator::new(&built.pool, &built.origins, input)?.finish()?;
-    let plan = Plan::new(built.pool).map_err(|_| Error::Shape)?;
+    let public = super::public_values::Expected::checked(m).map_err(|_| Error::Shape)?;
+    let air = ProgramAir {
+        plan: Plan::new(built.pool).map_err(|_| Error::Shape)?,
+    };
+    let trace = from_plan(&air, &built.origins, &public, input)?;
+    Ok((air, trace))
+}
+/// Same closed writer for independently prepared immutable role setup. No private
+/// trace, inputs, randomness or verdict is retained by that setup.
+pub(super) fn from_plan(
+    air: &ProgramAir,
+    origins: &super::recipes::Origins,
+    public: &super::public_values::Expected,
+    input: &PrimaryInputs,
+) -> Result<PrivateTrace> {
+    let plan = &air.plan;
+    plan.inventory().map_err(|_| Error::Shape)?;
+    // ONE complete SSA execution, genuine 209 P2, SAME recipes and all MAIN cells.
+    let values = Evaluator::new(&plan.pool, origins, input, public)?.finish()?;
     if plan.height != 512 || plan.rows.len() > 512 {
         return Err(Error::Resource);
     }
@@ -59,5 +74,5 @@ pub(super) fn prepare(m: &Metadata, input: &PrimaryInputs) -> Result<(ProgramAir
             }
         }
     }
-    Ok((ProgramAir { plan }, trace))
+    Ok(trace)
 }

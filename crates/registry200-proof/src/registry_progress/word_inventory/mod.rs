@@ -1,5 +1,5 @@
-//! Test-private complete Cmd160/StateVersion word family and native proof probe.
-//! No accepted state, cached verdict, SQL result or network admission is created.
+//! Test-private complete word relation with constrained PUBLIC309 and native proofs.
+//! Independently owned public setup grants no SQL or accepted-state capability.
 mod air;
 mod canonical;
 mod check;
@@ -9,9 +9,12 @@ mod expr;
 mod owner;
 mod plan;
 mod predicate;
+mod public_tests;
+mod public_values;
 mod recipes;
 mod schema;
 mod streams;
+mod structural_setup;
 #[cfg(test)]
 mod tests;
 mod witness;
@@ -25,7 +28,7 @@ use p3_field::PrimeCharacteristicRing;
 use schema::*;
 use sha2::{Digest, Sha256, Sha512};
 const TARGET_HEIGHT: usize = 512;
-const PROFILE_DOMAIN:&[u8]=b"DCS/research/word208/StateVersion-Cmd160-Stmt96/H512/v1/fullSource680/fullP2/typed-u32/fixedPolicy25/Mask256-four-duplicates/relativeOldRoot-no-proof";
+const PROFILE_DOMAIN:&[u8]=b"DCS/research/word208/StateVersion-Cmd160-Stmt96/H512/v2/structuralPP/direct309PUBLIC/no-value-fold/fullSource680/fullP2/typed-u32/fixedPolicy25/Mask256-four-duplicates/relativeOldRoot-no-proof";
 fn profile() -> [u8; 32] {
     Sha256::digest(PROFILE_DOMAIN).into()
 }
@@ -162,32 +165,42 @@ impl Metadata {
 /// SINGLE closed factory. E IDs and Builder are never supplied by any caller.
 /// Every semantic/serializer/hash/lookup use below comes from this ONE owner.
 fn complete_build(m: &Metadata) -> Result<recipes::Built, String> {
-    let b = Builder::new(m.predicate);
+    complete_role(m.predicate)
+}
+/// Role alone fixes the structural graph; no fixture or request values enter PP.
+fn complete_role(predicate: bool) -> Result<recipes::Built, String> {
+    let b = Builder::new(predicate);
     {
         let s = Source::new(&b);
         let controllers = controllers(&b);
         for controller in controllers {
             b.nonzero(&controller, b.c(1));
         }
-        let prefix = m.registry_header.map(|v| b.val(v));
-        let enrollment = m.enrollment.map(|v| b.val(v));
+        let prefix = public_values::array::<33>(&b, public_values::Group::RegistryHeader);
+        let enrollment = public_values::array::<4>(&b, public_values::Group::Enrollment);
         let old = Bank::new(&b, "old", prefix, enrollment, &s);
         let new = Bank::new(&b, "new", prefix, enrollment, &s);
         canonical::bank(&b, &old, controllers);
         canonical::bank(&b, &new, controllers);
-        let c = control::Command::new(&b, &old, m.predicate);
+        let c = control::Command::new(&b, &old, predicate);
         let matches = s.ages.map(|age| b.mask_read(age));
         let w = predicate::Walk::new(
             &b,
             &old,
             &c,
             matches,
-            m.blind_sql.map(|v| b.val(v)),
-            m.predicate,
+            public_values::array::<8>(&b, public_values::Group::BlindSql),
+            predicate,
         );
-        streams::source_and_enrollment(&b, m, &s, controllers);
-        streams::command(&b, m, &old, &c, controllers, m.parent.map(|v| b.val(v)));
-        let links = streams::statement_and_progress(&b, m, &old, &c, &w, controllers);
+        streams::source_and_enrollment(&b, &s, controllers);
+        streams::command(
+            &b,
+            &old,
+            &c,
+            controllers,
+            public_values::array::<8>(&b, public_values::Group::Parent),
+        );
+        let links = streams::statement_and_progress(&b, predicate, &old, &c, &w, controllers);
         let effect = streams::effect(&w, &links);
         control::apply(
             &b,
@@ -195,12 +208,12 @@ fn complete_build(m: &Metadata) -> Result<recipes::Built, String> {
             &new,
             &c,
             &effect,
-            m.parent.map(|v| b.val(v)),
+            public_values::array::<8>(&b, public_values::Group::Parent),
             controllers,
         );
-        streams::bank(&b, m, &old, false);
-        streams::bank(&b, m, &new, true);
-        streams::result(&b, m, &old, &new, &c, &w, &links);
+        streams::bank(&b, &old, false);
+        streams::bank(&b, &new, true);
+        streams::result(&b, predicate, &old, &new, &c, &w, &links);
         b.close();
     }
     let built = b.take();
@@ -219,6 +232,7 @@ fn complete(m: &Metadata) -> Result<Pool, String> {
 mod assessment;
 
 // Actual private native hiding math probe; no production acceptance API.
+mod goldens;
 mod probe;
 mod probe_tests;
 mod probe_wire;

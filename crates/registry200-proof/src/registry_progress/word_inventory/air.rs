@@ -1,5 +1,5 @@
-//! Complete Poseidon2 + typed global LogUp AIR for the private native probe.
-//! Its deterministic public graph supplies no network admission or SQL result.
+//! Complete Poseidon2 + typed global LogUp AIR with ordinary PUBLIC constraints.
+//! Native mathematical proofs create no receiving or SQL authority here.
 use super::plan::*;
 use crate::Val;
 use bfv_hiding_stark::{Challenge, poseidon};
@@ -17,6 +17,9 @@ pub(super) struct ProgramAir {
 impl BaseAir<Val> for ProgramAir {
     fn width(&self) -> usize {
         WIDTH
+    }
+    fn num_public_values(&self) -> usize {
+        super::public_values::COUNT
     }
     fn preprocessed_width(&self) -> usize {
         PP_WIDTH
@@ -38,6 +41,15 @@ impl<AB: InteractionBuilder<F = Val>> Air<AB> for ProgramAir {
         let f: [AB::Expr; PHASES] = core::array::from_fn(|i| p[i].into());
         let v: [AB::Expr; PORTS] = core::array::from_fn(|i| row[248 + i].into());
         let bits: [AB::Expr; BITS] = core::array::from_fn(|i| row[248 + PORTS + i].into());
+        let public: [AB::Expr; super::public_values::COUNT] =
+            core::array::from_fn(|j| b.public_values()[j].into());
+        for j in 0..super::public_values::COUNT {
+            // Ordinary constraints bind even an otherwise unused public word.
+            // Selectors are immutable PP flags, never prover/private routing.
+            b.assert_zero(
+                p[PUBLIC_ACTIVE + j / PORTS] * (v[j % PORTS].clone() - public[j].clone()),
+            );
+        }
         for (i, value) in v.iter().enumerate() {
             let at = PORT_META + 5 * i;
             let active: AB::Expr = p[at].into();

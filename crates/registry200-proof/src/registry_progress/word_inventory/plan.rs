@@ -7,7 +7,7 @@ pub(super) const PORTS: usize = 64;
 pub(super) const BITS: usize = 256;
 pub(super) const GATES: usize = 20;
 pub(super) const WIDTH: usize = 248 + PORTS + BITS;
-pub(super) const PHASES: usize = 9;
+pub(super) const PHASES: usize = 10;
 pub(super) const INPUT: usize = 0;
 pub(super) const ARITH: usize = 1;
 pub(super) const ASSERT: usize = 2;
@@ -17,6 +17,7 @@ pub(super) const POLICY_READ: usize = 5;
 pub(super) const POLICY_TABLE: usize = 6;
 pub(super) const MASK_TABLE: usize = 7;
 pub(super) const MASK_READ: usize = 8;
+pub(super) const PUBLIC: usize = 9;
 pub(super) const PORT_META: usize = PHASES; // active, constant, fixed, wire, signed count
 pub(super) const OPS: usize = PORT_META + 5 * PORTS;
 pub(super) const RANGE_BITS: usize = OPS + 4 * GATES;
@@ -26,7 +27,9 @@ pub(super) const MASK_INDEX: usize = POLICY_VALUES + 5;
 pub(super) const RANGE_ON_HASH: usize = MASK_INDEX + 1;
 pub(super) const POLICY_ACTIVE: usize = RANGE_ON_HASH + 1;
 pub(super) const POLICY_SLOTS: usize = 12;
-pub(super) const PP_WIDTH: usize = POLICY_ACTIVE + POLICY_SLOTS;
+pub(super) const PUBLIC_ACTIVE: usize = POLICY_ACTIVE + POLICY_SLOTS;
+pub(super) const PUBLIC_GROUPS: usize = super::public_values::COUNT.div_ceil(PORTS);
+pub(super) const PP_WIDTH: usize = PUBLIC_ACTIVE + PUBLIC_GROUPS;
 #[derive(Clone)]
 pub(super) struct Port {
     pub id: usize,
@@ -46,6 +49,7 @@ pub(super) struct Row {
     pub labels: Vec<String>,
     pub range: bool,
     pub policies: Vec<usize>,
+    pub public_group: Option<usize>,
 }
 impl Row {
     fn new(phase: usize) -> Self {
@@ -61,6 +65,7 @@ impl Row {
             labels: Vec::new(),
             range: false,
             policies: Vec::new(),
+            public_group: None,
         }
     }
 }
@@ -107,6 +112,14 @@ impl Plan {
             .filter_map(|(i, n)| matches!(n, Node::Input(..)).then_some(i))
             .collect::<Vec<_>>();
 
+        for group in 0..PUBLIC_GROUPS {
+            let mut row = Row::new(PUBLIC);
+            for ordinal in group * PORTS..((group + 1) * PORTS).min(super::public_values::COUNT) {
+                this.port(&mut row, ordinal + 1, true)?;
+            }
+            row.public_group = Some(group);
+            this.push(row)?;
+        }
         let gates = this
             .pool
             .nodes
@@ -305,6 +318,7 @@ impl Plan {
             }
             let bound = match node {
                 Node::Constant(_) | Node::Arith(..) => true,
+                Node::Public(a) => i == a.ordinal() + 1,
                 Node::Input(label, ty) => {
                     !label.is_empty()
                         && match ty {
@@ -378,8 +392,34 @@ impl Plan {
         }
         // Exact typed layout coverage, independent of aggregate wire balance.
         let mut ranged = BTreeMap::new();
+        let mut public_seen = [false; super::public_values::COUNT];
         let mut policy_seen = vec![false; self.pool.policies.len()];
         for row in &self.rows {
+            if row.phase == PUBLIC {
+                let group = row.public_group.ok_or("missing-public-group")?;
+                if group >= PUBLIC_GROUPS {
+                    return Err("public-group".into());
+                }
+                let first = group * PORTS;
+                let end = ((group + 1) * PORTS).min(public_seen.len());
+                if row.ports.len() != end - first {
+                    return Err("public-slots".into());
+                }
+                for (slot, ordinal) in (first..end).enumerate() {
+                    let port = &row.ports[slot];
+                    if !port.provider
+                        || port.constant.is_some()
+                        || port.id != ordinal + 1
+                        || public_seen[ordinal]
+                        || !matches!(self.pool.nodes[port.id],Node::Public(a)if a.ordinal()==ordinal)
+                    {
+                        return Err("foreign-public-provider".into());
+                    }
+                    public_seen[ordinal] = true;
+                }
+            } else if row.public_group.is_some() {
+                return Err("public-phase".into());
+            }
             if row.range && row.phase != HASH {
                 return Err("range-phase".into());
             }
@@ -457,6 +497,9 @@ impl Plan {
                 return Err("policy-phase".into());
             }
         }
+        if public_seen.iter().any(|v| !*v) || self.phases[PUBLIC] != PUBLIC_GROUPS {
+            return Err("public-coverage".into());
+        }
         if ranged != self.pool.ranges
             || policy_seen.iter().any(|v| !*v)
             || self.phases[INPUT] != 0
@@ -487,6 +530,9 @@ impl Plan {
             return p;
         };
         p[row.phase] = Val::ONE;
+        if let Some(group) = row.public_group {
+            p[PUBLIC_ACTIVE + group] = Val::ONE;
+        }
         p[RANGE_ON_HASH] = Val::from_bool(row.range);
         for slot in 0..row.policies.len() {
             p[POLICY_ACTIVE + slot] = Val::ONE;
