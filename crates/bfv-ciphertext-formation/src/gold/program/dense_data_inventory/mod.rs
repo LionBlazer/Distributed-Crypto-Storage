@@ -1,4 +1,4 @@
-//! Test-private complete DATA packing inventory; NO trace, proof or accepting API.
+//! Test-private complete DATA packing and native proof candidate; no accepting API.
 mod air;
 mod assessment;
 mod layout;
@@ -36,3 +36,21 @@ fn hex(bytes: impl AsRef<[u8]>) -> String {
     }
     out
 }
+
+// Separate PRIVATE proof probe only; no old Data/Query admission/result is minted.
+mod native;
+mod native_setup;
+mod native_tests;
+mod native_wire;
+pub(in crate::gold) const WRITER_LAYOUT: [usize; 10] = [
+    H,
+    W,
+    GRAPH_ROWS,
+    CW_FIRST,
+    CS_FIRST,
+    RANGE_VALUES,
+    BITS,
+    CHECKPOINT,
+    ACCUMULATOR,
+    SLOTS,
+];

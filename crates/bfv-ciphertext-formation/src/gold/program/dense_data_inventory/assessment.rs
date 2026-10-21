@@ -45,6 +45,10 @@ pub(in crate::gold) struct Assessment {
 }
 
 impl Assessment {
+    pub(super) fn workspace_bytes(&self) -> usize {
+        self.resources.estimated_workspace_bytes
+    }
+
     pub(in crate::gold) fn chunks(&self) -> usize {
         self.chunks
     }

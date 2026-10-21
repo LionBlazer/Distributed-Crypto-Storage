@@ -251,3 +251,8 @@ pub fn verify(expected: &Expected, bytes: &[u8]) -> Result<VerifiedDataFormation
         expected: expected.clone(),
     })
 }
+
+#[cfg(test)]
+pub(super) fn dense_native_fixture() -> (Expected, Prepared, Prepared) {
+    tests::dense_native_fixture()
+}

@@ -27,5 +27,5 @@ pub(super) const BUS: &str = "dcs/gold-formation-full-program/v1/node-value";
 mod data_snapshot_capture;
 
 #[cfg(test)]
-mod dense_data_inventory;
+pub(super) mod dense_data_inventory;
 mod range_equations;

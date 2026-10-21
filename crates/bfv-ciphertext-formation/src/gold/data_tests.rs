@@ -433,3 +433,14 @@ fn genuine_single_data_native_proof_and_local_valid_false_wire_have_distinct_out
         e.values()
     );
 }
+
+// One existing actual SDK fixture, two consumed guarded preparations; no proof,
+// Source admission, result fixture or private raw getter crosses this boundary.
+pub(super) fn dense_native_fixture() -> (Expected, Prepared, Prepared) {
+    let fixture = Fixture::new();
+    (
+        fixture.expected.clone(),
+        fixture.prepared(),
+        fixture.prepared(),
+    )
+}

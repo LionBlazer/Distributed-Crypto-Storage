@@ -424,3 +424,7 @@ impl Drop for PrivateTrace {
         self.0.values.fill(Val::ZERO);
     }
 }
+
+#[cfg(test)]
+#[path = "witness_dense.rs"]
+mod dense;

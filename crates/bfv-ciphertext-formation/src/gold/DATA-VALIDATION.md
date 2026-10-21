@@ -227,11 +227,12 @@ The full streamed PP SHA256 is
 `6f4bdb87a034d70a662a9948098c5c6aefb1d69f67b0c8aedee50f3e1e465170`.
 Both hashes include the distinct research domain; neither relabels an old proof.
 
-There is no MAIN writer, complete PP factory/commitment, native setup, producer,
-verifier, codec, installation or SQL acceptance in this child. PP still depends
-on the exact request; cross-request reuse is invalid. Genuine proofs and hostile
-native verification, full resource observation, query-mask/Stmt96 association,
-installed DATA provenance and fresh quorum composition remain required. A
+At this metadata stage there was no private writer, PP factory, native setup,
+producer, verifier or codec. The subsequent private candidate passed genuine
+proofs, hostile native verification and full resource observation in the
+[native validation](DENSE-VALIDATION.md). PP still depends on the exact request;
+cross-request reuse is invalid. Query-mask/Stmt96 association, installed DATA
+provenance, fresh quorum composition and SQL acceptance remain required. A
 smaller height or workspace estimate does not establish a speedup or the 500 ms
 complete-query target. Module ownership and focused commands are in the
 [inventory README](program/dense_data_inventory/README.md).

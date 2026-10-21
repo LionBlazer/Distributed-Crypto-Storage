@@ -1,67 +1,63 @@
-# Dense Data metadata inventory
+# Private dense DATA proof candidate
 
-This test-private research child proposes a new 56-gate row layout for ONE Data
-ciphertext Formation relation. It has no MAIN writer, full-PP factory, native
-setup, prover, verifier, wire, admission token, or production registration.
-MetadataAir only exposes the actual symbolic relation for native assessment.
+This test-private child implements a compact layout for the complete single-DATA
+Formation relation. Genuine proving, independent cold verification and hostile
+native proof tests passed. It creates no DATA/Query admission token or runtime API.
+The production H8192 family retains its original behavior.
 
-The plan streams unchanged graph::Plan::row32 and supplies every original gate,
-node ID, coefficient and signed occurrence. Per-slot active/pointwise/fanout flags
-handle unaligned stage boundaries. The last graph row has 48 active and 8 zero
-slots. 1463 graph rows + 514 Cw + 66 Cs + 5 range-only rows fill H2048 exactly.
-All physical rows carry two full coefficient range groups: all4096 shared S/E,
-twoK, W, AS0/1 and nonzero-biased-K inverses remain. Cs emits all512 words.
-The DATA layout uses the same private range_equations emitter as old Pair/Data.
+| Module | Responsibility |
+| --- | --- |
+| `layout`, `plan` | Closed H2048 schedule over the original graph; complete public routing and inventory |
+| `air` | Immutable equations with no complete PP factory |
+| `assessment` | Actual native symbolic, packing, analytical security and resource gates |
+| `snapshot`, `tests` | Unconditional full relation/PP goldens and original semantic comparisons |
+| `native`, `native_setup` | Same-AIR full-PP wrapper, sealed PUBLIC preprocessing, fresh private proving and independent cold verification |
+| `native_wire` | Distinct bounded canonical frame and complete native topology checks |
+| `native_tests` | Actual SDK fixture, genuine proofs and strict hostile verification |
 
-MAIN512: graph uses0..223, hash uses0..247 in exclusive phases; range values248..266,
-196 bits267..462, zeros463..495, hash checkpoints496..507, secret accumulator508,
-zeros509..511. There are 224 graph/hash and 19 range ports. PP668 is fixed by this
-candidate. Global lookup occurrences use verifier-owned counts, including fanout2.
-A hash consumes its rate cells directly instead of a duplicated payload buffer.
-Poseidon equations and complete514/66 context/salt/payload schedules are unchanged.
+The sibling `gold::witness::dense` writer consumes the same guarded equation banks
+as the original writer. It derives them once, writes every gate/range/hash and
+retains no private getters. Dependencies are the original Gold graph, exact private
+range emitter, fixed Poseidon/hiding engine, pinned P3 batch/lookup/security APIs,
+bounded Postcard, SHA2 and zeroize. The FHE SDK remains a dev dependency.
 
-Tests compare complete streamed original-vs-dense graph semantics, range/c0/
-secret-word schedules and all hash preimages. They check every node balance and
-producer multiplicity, all coefficient/phase boundaries and zero inactive slots.
-The actual pinned SDK symbolic, default-packing, security and resource checks
-passed on 2026-10-21. This result covers metadata; no private proof exists here.
+The layout has 1463 rows of 56 graph slots, 514 Cw rows, 66 Cs rows and five
+range-only rows. All 2048 rows carry two complete coefficient range groups.
+Per-slot flags preserve unaligned stage boundaries and the last 48 active/eight
+zero graph slots. All 81,920 original gates, 4096 range coefficients, 512 Cs words
+and 580 full hash absorptions remain. MAIN512 contains graph/hash cells 0..247,
+range values 248..266, bits 267..462, checkpoint 496..507 and accumulator 508;
+all other cells are constrained zero. Actual PP668/PUBLIC32/default81/AUX410,
+degree4/eight chunks and 2622 openings are assessed before PP or private MAIN.
 
-| Native metadata | Value |
-| --- | ---: |
-| Height / MAIN / PP / public values | 2048 / 512 / 668 / 32 |
-| BASE / EXT constraints | 1248 / 84 |
-| Degree / committed quotient chunks | 4 / 8 |
-| Original / packed lookups / AUX | 243 / 81 / 410 |
-| Batched openings | 2622 |
-| Modeled workspace bytes | 669,417,472 |
-| Individual UDR / LDR floor | 128 / 128 bits |
-| LogUp analytical term | 297.075187496394 bits |
+The native workspace model is 669,417,472 bytes. The proof probe additionally
+checks a 16 MiB private-bank reserve against the same 1792 MiB limit. This is an
+analytical prescreen; actual held-process observation remains mandatory. The
+individual native proof-model floor remains 128 bits for all finite UDR/LDR terms.
+It is not a lattice or composed-system security assertion.
 
-Three owning tests cover full semantic preservation, every phase boundary, and
-the complete ordered native BASE/EXT/original/packed tuple. The latter is 571,450
-bytes, captured before any MAIN writer and then pinned unconditionally alongside
-every field of the streamed PP. The separate original Pair/Data golden tests
-also pass after extracting the shared range equations. Their original ordered
-relations, complete PP, profiles, requests and public bindings remain unchanged.
-
-Run the two focused filters serially in the repository's release configuration:
+`DCSGDD01` is a distinct 128-byte-header frame with 4 MiB frame, 4 Mi element and
+4096 sequence limits. It binds the full independently retained Expected, validates
+all five PCS rounds and terminal zero, and enforces canonical fields, reencoding
+and EOF before native verification. A valid header or zero terminal is insufficient.
+The deterministic seeded config handles PUBLIC PP only and dies before fresh OS
+randomness is created for private commitments. Receiving derives its own PP.
+Current PP still depends on the exact request and cannot be reused across queries.
 
 ```sh
 cargo test --release --offline --locked -p bfv-ciphertext-formation --lib constraints_lookups_and_full_preprocessing_snapshot -- --nocapture --test-threads=1
 cargo test --release --offline --locked -p bfv-ciphertext-formation --lib gold::program::dense_data_inventory:: -- --nocapture --test-threads=1
 ```
 
-Assessment retains the original checked SDK default-packing, hiding, full
-baseline/composed UDR/LDR and LogUp checks under the same128 floor, EF5/Q192/rate8/
-5random-codeword/4salt policy. Its stage-specific resource formulas are preserved
-with actual new widths/height. The estimate is NOT whole-process RSS and cannot
-authorize proof execution. A later writer/backend requires independent lifecycle,
-memory, full proof/hostile native verifier and codec gates under the1792MiB cap.
-This analytical floor does not assess lattice confidentiality or composed-system
-security. Smaller height and modeled workspace establish no latency improvement.
+Both original literal regressions and all six dense tests passed. Full native
+ordered constraints/lookups and every PP cell retain their pre-writer goldens.
+The real false-wire proof must fail native terminal verification; repairing only
+its terminal must still fail the actual opening/OOD check. No simulated answer,
+accepted fixture or verifier callback is used.
 
-The new research domain/BUS is separate from old Data/Pair profiles. No old proof,
-QC, Source/Data admission, owner-query binding, current head or SQL result is cast.
-Expected PUBLIC32, c0 and frequency coefficients still depend on the exact request:
-this is NOT cross-request PP caching. A new query Stmt96/encoding association and
-actual FHE/product/fresh-quorum composition remain separate future obligations.
+The [executed validation](../../DENSE-VALIDATION.md) records timings, memory,
+larger proof bytes and limitations. On 16 threads, one measured local production
+plus independent cold receiving took 570.975 ms. It excludes SQL, FHE query
+execution and network/finality, so it does not meet the 500 ms complete-query goal.
+Query Stmt96/encoding/formation composition, installed DATA authority and fresh
+agreed heads remain separate requirements.

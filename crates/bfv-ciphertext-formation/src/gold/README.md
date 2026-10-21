@@ -186,7 +186,7 @@ result.
 The test-private [dense DATA inventory](program/dense_data_inventory/README.md)
 reuses the original graph and private range equation emitter in a new H2048
 layout. Actual metadata, default packing, analytical security and resource gates
-passed, with complete original Pair/Data golden preservation. It has no private
-writer, proof, accepting API or runtime registration; the deployed H8192 family
-above keeps its original behavior. See the [validation record](DATA-VALIDATION.md#dense-data-metadata)
-for the precise boundary and remaining proof measurements.
+passed, with complete original Pair/Data golden preservation. The subsequent
+private writer, genuine proofs and independent cold verification passed the
+[native proof validation](DENSE-VALIDATION.md). There is no accepting API or
+runtime registration; the deployed H8192 family above keeps its original behavior.
