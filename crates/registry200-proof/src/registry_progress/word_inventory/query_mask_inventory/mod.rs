@@ -74,3 +74,6 @@ impl Expected {
         values
     }
 }
+
+// Conditional no-LogUp native security metadata; no private proof or grant.
+mod security;

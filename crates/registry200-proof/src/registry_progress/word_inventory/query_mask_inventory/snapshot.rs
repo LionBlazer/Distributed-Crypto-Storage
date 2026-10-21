@@ -16,15 +16,13 @@ fn hex(bytes: impl AsRef<[u8]>) -> String {
     out
 }
 
-#[test]
-fn full_ordered_native_air_and_every_public_routing_field_snapshot() {
-    let air = QueryMaskAir::closed().unwrap();
-    let lookups = Lookups::<Val>::from_air::<Challenge, _>(&air);
+pub(super) fn require_closed(air: &QueryMaskAir) {
+    let lookups = Lookups::<Val>::from_air::<Challenge, _>(air);
     assert!(lookups.is_empty());
     const { assert!(<Pcs as UnivariateStarkPcs<Challenge, Challenger>>::ZK) };
     let (base, extension) = get_symbolic_constraints::<Val, Challenge, _, _>(
-        &air,
-        AirLayout::from_air(&air),
+        air,
+        AirLayout::from_air(air),
         &lookups,
         &LogUpGadget::new(),
     );
@@ -64,4 +62,9 @@ fn full_ordered_native_air_and_every_public_routing_field_snapshot() {
         pins[2],
         HEIGHT * PP_WIDTH
     );
+}
+
+#[test]
+fn full_ordered_native_air_and_every_public_routing_field_snapshot() {
+    require_closed(&QueryMaskAir::closed().unwrap());
 }

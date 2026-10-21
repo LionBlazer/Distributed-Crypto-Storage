@@ -1,15 +1,16 @@
 # Private complete QueryMaskEncoding inventory candidate
 
-Test-private mathematical inventory beneath `word_inventory`. Its five focused
-native metadata tests passed on 2026-10-21. There is no owner
+Test-private mathematical inventory beneath `word_inventory`. Its seven focused
+native metadata and conditional security tests passed on 2026-10-21. There is no owner
 witness, MAIN writer, native proof, receiving result, encoding wire format,
 Source/DATA admission, accepted head, runtime entry point or measured speed.
 
 `layout` owns the sole fixed schedule, full field inventory and immutable public
 routes. `air` uses the existing native-equivalent Poseidon2 gadget directly.
 `assessment` obtains actual SDK symbolic geometry and explicit workspace-policy
-charges without committing PP or allocating a private MAIN. `tests` cover that
-metadata boundary; no fixture hash or evaluation is presented as a proof.
+charges without committing PP or allocating a private MAIN. `security` independently
+derives the complete actual native security report. `tests` cover the metadata
+boundary; no fixture hash or evaluation is presented as a proof.
 
 Direct dependencies are the existing private Word profile/header, this crate's
 Gold type, [bfv-hiding-stark](../../../../../bfv-hiding-stark/README.md) for the
@@ -70,9 +71,21 @@ goldens pin the complete tuple, full PP and distinct outer profile. This catches
 constraint or routing drift without accepting a supplied witness or proof. The
 new source and all36 original files were also independently reviewed.
 
-This gate commits no PP, executes no private witness and establishes no security.
-The 1792MiB workspace threshold is a local prescreen, not a peer-memory guarantee;
-fixed runtime/codec/owner reserves are explicit policy charges. Full independent
-security/resource review, honest/hostile native proofs, canonical bounded wire,
-freshness and the compiler/formation/runtime join are later work. All security,
-admission and complete-query500ms claims remain false.
+The separate security gate first enforces those complete original pins, then
+independently derives the actual native parameters. Baseline and composed reports
+coincide for this no-LogUp AIR: both use the same native calculation with no extra
+terms. Every actual term and the full UDR/LDR totals must be finite and reach128
+bits. Both regimes reported five terms: AIR composition, DEEP, low-degree testing,
+batch combination and commitment collision. Both totals and native integer
+summaries reached128; no LogUp term or caller-selected term count is introduced.
+Missing LDR or a downgraded native summary is rejected. All seven tests, including
+the existing full goldens, passed in0.05s; the held process lived73.2192ms with
+9,834,496 OS-peak working-set bytes and no fuse or forced cleanup.
+
+This is conditional STARK-model metadata. It commits no PP and executes no private
+witness or proof. The 1792MiB threshold remains a local workspace prescreen,
+not a peer-memory guarantee; runtime, codec and owner reserves are explicit
+policy charges. Actual honest/hostile proofs, observed proving resources,
+canonical bounded wire, BFV/key assessment, freshness and the compiler/formation/
+runtime join remain later work. No SQL admission, composed-system security or
+complete-query500ms result is established.
