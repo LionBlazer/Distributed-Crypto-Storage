@@ -90,6 +90,7 @@ impl Preparation {
         if (layout.stride, layout.bits) != (9, 98) {
             return Err(Error::Shape);
         }
+        let coefficient_bits = if statement.is_some() { 64 } else { layout.bits };
         let mut main = PrivateTrace(RowMajorMatrix::new(Val::zero_vec(height * width), width));
         for (gate, values) in graph.values.iter().enumerate() {
             let at = (gate / slots) * width + 4 * (gate % slots);
@@ -106,13 +107,13 @@ impl Preparation {
             let row = &mut main.0.values[row_index * width..(row_index + 1) * width];
             row[acc_cell] = Val::from_u64(accumulator);
             if statement.is_some() && row_index < 128 {
-                row[509] = Val::from_u64(mask_accumulator);
+                row[acc_cell + 1] = Val::from_u64(mask_accumulator);
                 let bit0 = self.openings[0].words[2 * row_index] / super::super::geometry::SCALE;
                 let bit1 =
                     self.openings[0].words[2 * row_index + 1] / super::super::geometry::SCALE;
                 let word = mask_accumulator + ((2 * bit0 + bit1) << (30 - 2 * (row_index % 16)));
                 if row_index % 16 == 15 {
-                    row[510] = Val::from_u64(word);
+                    row[acc_cell + 2] = Val::from_u64(word);
                     mask_accumulator = 0;
                 } else {
                     mask_accumulator = word;
@@ -121,7 +122,7 @@ impl Preparation {
             for k in 0..2 {
                 let at = 2 * row_index + k;
                 let base = range_values + layout.stride * k;
-                let mut bit = bits + layout.bits * k;
+                let mut bit = bits + coefficient_bits * k;
                 for bank in 0..2 {
                     let value = if bank == 0 {
                         self.key.secret[at]
@@ -146,13 +147,15 @@ impl Preparation {
                 }
                 let word = self.openings[0].words[at];
                 row[base + layout.w] = Val::from_u64(word);
-                write_bits(&mut row[bit..bit + 17], word);
-                write_bits(&mut row[bit + 17..bit + 34], T - 1 - word);
-                bit += 34;
+                if statement.is_none() {
+                    write_bits(&mut row[bit..bit + 17], word);
+                    write_bits(&mut row[bit + 17..bit + 34], T - 1 - word);
+                    bit += 34;
+                }
                 for job in 0..2 {
                     row[base + layout.product + job] = signed(products[job][at])
                 }
-                if bit != bits + layout.bits * (k + 1) {
+                if bit != bits + coefficient_bits * (k + 1) {
                     return Err(Error::Shape);
                 }
             }
@@ -174,6 +177,7 @@ impl Preparation {
         // after the Cs hash rows physically, without any circular commitment/witness.
         dense_hash(
             &mut main.0,
+            checkpoint,
             cw_first,
             self.openings[0].context,
             &self.openings[0].salt,
@@ -182,6 +186,7 @@ impl Preparation {
         )?;
         dense_hash(
             &mut main.0,
+            checkpoint,
             cs_first,
             self.key.context,
             &self.key.salt,
@@ -206,13 +211,14 @@ impl Preparation {
 }
 fn dense_hash(
     main: &mut RowMajorMatrix<Val>,
+    checkpoint: usize,
     start: usize,
     context: [Val; 8],
     salt: &[u64; 4],
     words: &[u64],
     root: [Val; 4],
 ) -> Result<()> {
-    let [_, width, _, _, _, _, _, checkpoint, _, _] = WRITER_LAYOUT;
+    let width = main.width;
     let mut state = PrivateFields([Val::ZERO; 12]);
     for block in 0..2 + words.len() / 8 {
         let row = &mut main.values[(start + block) * width..(start + block + 1) * width];

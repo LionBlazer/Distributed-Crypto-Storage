@@ -6,7 +6,7 @@ use p3_batch_stark::symbolic::{get_log_num_quotient_chunks_for_domain, get_symbo
 use p3_commit::PolynomialSpace;
 use p3_field::coset::TwoAdicMultiplicativeCoset;
 use p3_lookup::{LogUpGadget, Lookups};
-fn metadata() -> Expected {
+pub(super) fn metadata() -> Expected {
     let request = data::Request::checked(
         [0xa9; 32],
         super::super::super::tests::pair_snapshot_ciphertext(0),
@@ -102,23 +102,23 @@ fn complete_inventory_symbolics_and_every_public_field_are_captured_before_priva
     }
     assert_eq!((fixed, masks), (14, 8));
     let pp = pp.finalize();
-    // Literal first native metadata capture r93 precedes ALL new private proofs.
-    assert_eq!(bytes.len(), 572381);
+    // Literal v2 capture r189 follows exact projection/old-PP checks, before native proving.
+    assert_eq!(bytes.len(), 564835);
     assert_eq!(
         format!("{:x}", Sha256::digest(&bytes)),
-        "8195b92cafa2121eb7da4232d18b6a90ed9868a57136a297bd3424882b8065f1"
+        "c134fc6a96e685ef0a0db909020de6ee08954dae2ddbdda7c0cfaa3fbb59a96b"
     );
     assert_eq!(
         format!("{pp:x}"),
-        "d37135fbf16749c8cb08669b109fec4af772cf5fe6906c5ae4394c6fb3bd1932"
+        "c37659509244a5efd78996007d6ad60e9d7e96a0ce5093f0797af85c0c0f4406"
     );
     assert_eq!(
         format!("{:x}", Sha256::digest(profile())),
-        "ec46bf5679719336a842e4790887f1c8c3eb88fcee1ebf69ca893dfd4492737e"
+        "c3ca285d0da35b3036dc1482fc1f453490da3e1d07da4c1af6dfec8341649bcd"
     );
     assert_eq!(
         format!("{:x}", Sha256::digest(native_wire::profile())),
-        "6a59432b675bda962f240a1c5a5447f2f4e850c62ebb5913b2e79161ae37e354"
+        "7349f4d8f2864e980cb46702511cbe864fcfa163557c1b1ed61d1c58d26cc125"
     );
     eprintln!(
         "fused_query_metadata ordered={:x} symbolic_bytes={} full_pp={:x} profile={:x} frame_profile={:x} PP_fields={} workspace={} MAIN=false proof=false SQL=false",
@@ -155,6 +155,13 @@ fn real_fused_proof_cold_verifies_and_damaged_native_argument_fails() {
     let begin = std::time::Instant::now();
     receiver.verify(&frame).unwrap();
     let warm = begin.elapsed();
+    let mut legacy = frame.clone();
+    legacy[..8].copy_from_slice(b"DCSGQF01");
+    assert!(matches!(receiver.verify(&legacy), Err(Error::Encoding)));
+    assert!(matches!(
+        crate::gold::query::verify(&e, &legacy),
+        Err(Error::Encoding)
+    ));
     eprintln!(
         "fused_query_prepared setup_ms={:.3} receive_ms={:.3} total_receiver_ms={:.3} setup_in_budget=true SQL=false",
         setup.as_secs_f64() * 1000.,

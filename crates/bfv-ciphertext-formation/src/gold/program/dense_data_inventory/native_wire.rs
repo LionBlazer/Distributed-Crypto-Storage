@@ -50,19 +50,20 @@ pub(in crate::gold) fn profile() -> [u8; 32] {
 }
 pub(super) fn require_assessment(assessment: &Assessment) -> Result<()> {
     let closed_shape = (MAGIC == b"DCSGDD01"
+        && WIDTH == 512
         && PP_WIDTH == 668
         && PACKED == 81
         && AUX == 410
         && GOLD_BOUND == 350_000
         && EXT_BOUND == 5_100)
-        || (MAGIC == b"DCSGQF01"
+        || (MAGIC == b"DCSGQF02"
+            && WIDTH == 416
             && PP_WIDTH == 708
             && PACKED == 83
             && AUX == 420
             && GOLD_BOUND == 360_000
             && EXT_BOUND == 5_200);
-    if WIDTH != 512
-        || !closed_shape
+    if !closed_shape
         || DEGREE_BITS != 12
         || LOG_BLOWUP != 3
         || QUERIES != 192
@@ -273,7 +274,7 @@ mod tests {
         if MAGIC == b"DCSGDD01" {
             assert_eq!((HONEST_SLOTS, HONEST_PAYLOAD_BYTES), (3_982_568, 3_582_304));
         } else {
-            assert_eq!(MAGIC, b"DCSGQF01");
+            assert_eq!(MAGIC, b"DCSGQF02");
             assert_eq!((HONEST_SLOTS, HONEST_PAYLOAD_BYTES), (4_077_368, 3_666_304));
         }
         const {

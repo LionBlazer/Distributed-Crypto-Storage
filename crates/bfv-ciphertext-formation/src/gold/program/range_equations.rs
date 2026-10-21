@@ -17,6 +17,18 @@ pub(super) struct Inputs<'a, AB: InteractionBuilder<F = Val>> {
     pub(super) next_accumulator: AB::Var,
 }
 pub(super) fn evaluate<AB: InteractionBuilder<F = Val>>(b: &mut AB, input: Inputs<'_, AB>) {
+    evaluate_inner::<AB, false>(b, input)
+}
+/// Query's independent scaled-bit/high-zero constraints imply the full W range.
+/// S/E/K bounds, inverses, exact equations and secret packing stay identical.
+pub(super) fn evaluate_query<AB: InteractionBuilder<F = Val>>(b: &mut AB, input: Inputs<'_, AB>) {
+    assert!(input.kind == RelationKind::Data);
+    evaluate_inner::<AB, true>(b, input)
+}
+fn evaluate_inner<AB: InteractionBuilder<F = Val>, const STRUCTURED: bool>(
+    b: &mut AB,
+    input: Inputs<'_, AB>,
+) {
     let kind = input.kind;
     let range_layout = kind.range();
     let row = input.bits;
@@ -26,7 +38,8 @@ pub(super) fn evaluate<AB: InteractionBuilder<F = Val>>(b: &mut AB, input: Input
     let r = f[RANGE].clone();
     for k in 0..2 {
         let base = range_layout.stride * k;
-        let mut bit = range_layout.bits * k;
+        let word_bits = if STRUCTURED { 0 } else { 34 * kind.operands() };
+        let mut bit = (12 * (1 + kind.operands()) + 20 * kind.products() + word_bits) * k;
         for bank in 0..1 + kind.operands() {
             let x = packed::<AB>(&row[bit..bit + 6]);
             let slack = packed::<AB>(&row[bit + 6..bit + 12]);
@@ -47,7 +60,7 @@ pub(super) fn evaluate<AB: InteractionBuilder<F = Val>>(b: &mut AB, input: Input
                 r.clone() * (biased * v[base + range_layout.inverse + job].clone() - AB::Expr::ONE),
             );
         }
-        for operand in 0..kind.operands() {
+        for operand in 0..if STRUCTURED { 0 } else { kind.operands() } {
             let w = packed::<AB>(&row[bit..bit + 17]);
             let slack = packed::<AB>(&row[bit + 17..bit + 34]);
             bit += 34;

@@ -11,7 +11,7 @@ pub fn profile_digest() -> [u8; 32] {
     h.update(backend::DOMAIN);
     h.update(backend::wire_profile());
     h.update(data::profile_digest());
-    h.update(b"all96-Stmt/header13/zero95/packedMask78..85;W[i]=16389*bit255-i/low256/high3840zero;originalCw4112/Cs528;all4096/same-S/E+-20/exact-K;no-Word-Source-admission");
+    h.update(b"all96-Stmt/header13/zero95/packedMask78..85;W[i]=16389*bit255-i/low256/high3840zero/implied-range-projection-v2;originalCw4112/Cs528;all4096/same-S/E+-20/exact-K;no-Word-Source-admission");
     h.finalize().into()
 }
 

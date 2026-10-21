@@ -180,3 +180,16 @@ security/resource gates, timeouts and live SQL/finality guards are unchanged.
 BFV/product composed-security assessment and the concrete owner/Word compiler,
 authenticated prior state, fresh weighted finality and real network SQL still
 remain. The complete-query <=500ms goal is active and not achieved.
+
+
+## Structured Query v2
+
+The later [exact range projection](../../../../../bfv-ciphertext-formation/src/gold/program/query_formation/PROJECTION.md)
+keeps all original masks, hashes, coefficients and S/E/K equations while removing
+only the W/slack bits already implied by the mask. Normal receiving now requires
+DCSGQF02, with no v1 fallback. The old full constraint extension and unchanged PP
+pin precede actual native proofs. All35 lower Gold, this complete read and all16
+mask/Formation-adapter cases passed, together with14 compile-fail contracts,
+strict Clippy and requirements synchronization. The new local query interval is
+2666.541ms including setup; no latency improvement or complete SQL500ms result
+is established. The linked record includes complete scope, resources and hashes.

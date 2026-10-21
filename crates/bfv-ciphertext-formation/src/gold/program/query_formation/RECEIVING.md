@@ -1,5 +1,8 @@
 # Query receiving preparation and measured cost
 
+Historical v1 record. The current structured-W v2 relation and executed gates
+are recorded in [the range projection](PROJECTION.md).
+
 The fixed Query relation, full public preprocessing and all literal profile/
 ordered-symbolic/full-PP pins are unchanged. The new `gold::query::Verifier`
 independently derives public receiving preparation for ONE captured complete

@@ -17,9 +17,9 @@ preparation owns the SAME final scaled W, actual SDK-secret opening and full
 statement preimage, without private getters. A successful native receive proves
 only these mathematical relations; no acceptance capability is serialized.
 
-The layout remains H2048/MAIN512. It repacks all81920 original graph gates into
+The v2 layout is H2048/MAIN416. It repacks all81920 original graph gates into
 57 slots per row, then hashes Cw4112, Cs528 and Stmt96 in514+66+12 rows. All4096
-complete original range groups still occupy every physical row. There are18
+complete S/E/K range groups still occupy every physical row. There are18
 range-only tail rows. The full Cw stream is hashed once instead of twice, while
 both roots and every original coefficient remain claimed. No crypto algorithm,
 integer/noise bound or required coefficient is omitted.
@@ -38,10 +38,10 @@ P3/hiding/bounded-codec libraries. The native assessment, public setup, prover,
 canonical frame and receiver source is instantiated against two concrete closed
 families by `program::dense_backend`; no runtime AIR/config callback is exposed.
 Existing dense APIs keep their exact protocol/profile. This candidate has the
-distinct DCSGQF01 namespace and closed PP708/PUBLIC32/original248/default83/AUX420
-geometry, with eight quotient chunks and2682 actual batched openings.
+distinct DCSGQF02 namespace and closed PP708/PUBLIC32/original248/default83/AUX420
+geometry, with eight quotient chunks and2490 actual batched openings.
 
-Before its first private proof, the metadata gate captured the complete572381-byte
+For historical v1, before its first private proof the metadata gate captured the complete572381-byte
 ordered BASE/EXT/original/packed tuple and every1449984 PP field. Unconditional
 goldens pin both, the mathematical profile hash and frame-profile hash. The
 native model reports BASE1266/EXT86/degree4 and128-bit per-component UDR/LDR
@@ -88,3 +88,8 @@ Preparation cost still belongs to each new query's total latency.
 The [receiving cost record](RECEIVING.md) separates public preparation, successful
 native verification and failed-proof rejection, and includes the complete local
 Word read interval with actual overlap and its CPU-contention limitation.
+
+The [exact range projection](PROJECTION.md) records why the structured mask
+already implies the removed W range, the full old-constraint extension oracle,
+unchanged original PP pin, v2 profile and native metadata capture. Earlier
+validation/receiving measurements describe v1 and retain their historical scope.

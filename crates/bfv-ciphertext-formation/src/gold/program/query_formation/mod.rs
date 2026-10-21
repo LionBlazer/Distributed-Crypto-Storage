@@ -2,6 +2,8 @@
 mod air;
 mod layout;
 mod plan;
+#[cfg(test)]
+mod projection_tests;
 mod receiving;
 #[cfg(test)]
 mod tests;

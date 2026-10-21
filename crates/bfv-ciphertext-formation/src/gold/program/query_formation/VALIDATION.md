@@ -1,5 +1,8 @@
 # Fused query Formation validation
 
+Historical v1 record. The current structured-W v2 relation and executed gates
+are recorded in [the range projection](PROJECTION.md).
+
 The first metadata-only gate ran on2026-10-21 before any new private proof. It
 passed in0.04s; the held process lived62.5741ms and reported9740288 OS-peak
 working-set bytes, without faults or cleanup under the120s/1792MiB fuses.
