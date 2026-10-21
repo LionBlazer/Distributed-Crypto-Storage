@@ -1,5 +1,11 @@
 # Registry200 Joint kernel
 
+The distinct [immutable SourceVersion/Word journal](src/word/README.md) composes
+genuine EMPTY265/Control309 proofs with owner-authorized journal transitions. It
+retains actual verified immutable Source mathematics across commands and performs
+native Word verification on every operation. It does not admit Predicate, FHE SQL
+results, current-head assertions or lock grants.
+
 The [Registry208 progress namespace](src/progress/README.md) is a separate
 application kernel with a passed local full-FHE
 [validation](../../docs/progress-application-validation.md). Its descriptor, Genesis,

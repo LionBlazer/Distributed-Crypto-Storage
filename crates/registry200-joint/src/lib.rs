@@ -9,6 +9,7 @@ mod manifest;
 pub mod progress;
 mod request;
 mod verifier;
+pub mod word;
 
 pub use acquire::{AcquireExpected, CheckedAcquire};
 pub use depot::{

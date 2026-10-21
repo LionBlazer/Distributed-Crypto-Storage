@@ -79,6 +79,8 @@ fn public_metadata_derivation_preserves_every_complete_original_binding() {
         );
     }
     assert_eq!(api::profile_digest(), super::profile());
+    assert_eq!(&api::command_header()[..4], &super::domain("command"));
+    assert_eq!(&api::result_header()[..4], &super::domain("result"));
     assert_eq!(api::wire_profile_digest(), super::probe_wire::profile());
 }
 #[test]

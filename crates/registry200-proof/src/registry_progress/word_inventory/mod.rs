@@ -39,7 +39,7 @@ pub(super) const PROFILE_DOMAIN:&[u8]=b"DCS/research/word208/StateVersion-Cmd160
 pub(super) fn profile() -> [u8; 32] {
     Sha256::digest(PROFILE_DOMAIN).into()
 }
-fn domain(label: &str) -> [Val; 4] {
+pub(super) fn domain(label: &str) -> [Val; 4] {
     let mut h = Sha256::new();
     h.update(PROFILE_DOMAIN);
     h.update((label.len() as u64).to_le_bytes());

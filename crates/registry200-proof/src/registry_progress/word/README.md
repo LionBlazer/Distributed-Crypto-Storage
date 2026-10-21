@@ -49,3 +49,8 @@ Word registry against an actual SourceVersion certificate and fixed enrollment.
 It does not authorize that enrollment or establish a current network head. Its
 distinct frame/profile cannot be substituted for a Word transition or the old
 Bootstrap803 role.
+
+`command_header` and `result_header` expose the exact original five-field
+Cmd160/Result160 prefixes for independent owner serializers. They add no generic
+hash namespace or alternate profile. `statement_header` remains the original
+thirteen-field Stmt96 prefix. The actual graph, field order and all pins are unchanged.

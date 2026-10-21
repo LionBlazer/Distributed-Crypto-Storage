@@ -64,6 +64,18 @@ pub fn statement_header() -> [crate::Val; 13] {
         .try_into()
         .expect("fixed header13")
 }
+/// Original fixed Cmd160 prefix for independent owner serialization.
+pub fn command_header() -> [crate::Val; 5] {
+    use p3_field::PrimeCharacteristicRing;
+    let d = super::word_inventory::domain("command");
+    [d[0], d[1], d[2], d[3], crate::Val::ONE]
+}
+/// Original fixed Result160 prefix for independent owner serialization.
+pub fn result_header() -> [crate::Val; 5] {
+    use p3_field::PrimeCharacteristicRing;
+    let d = super::word_inventory::domain("result");
+    [d[0], d[1], d[2], d[3], crate::Val::ONE]
+}
 /// Fresh producer bytes are UNVERIFIED. No checked/current/accepted flag is serialized.
 pub struct UnverifiedWordEvidence {
     bytes: Vec<u8>,
