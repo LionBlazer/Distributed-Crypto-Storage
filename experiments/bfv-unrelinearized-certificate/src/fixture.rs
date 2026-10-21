@@ -19,6 +19,8 @@ pub(crate) struct Example {
     parameters: Arc<BfvParameters>,
     key: SecretKey,
     expected_public_coefficients: Zeroizing<Vec<u64>>,
+    // The SAME buffers actually supplied to SDK encryption, client-owned only.
+    private_inputs: [Zeroizing<Vec<u64>>; 2],
 }
 impl Example {
     /// Client-only decryption of the actual completed ciphertext. The explicit
@@ -112,5 +114,42 @@ pub(crate) fn example() -> Result<Example> {
         parameters,
         key,
         expected_public_coefficients,
+        private_inputs: [source, mask],
+    })
+}
+
+pub(crate) struct PrivateWitnessObservation {
+    pub(crate) preparation_ms: f64,
+    pub(crate) sdk_product_ms: f64,
+    pub(crate) witness_build_ms: f64,
+    pub(crate) witness_check_ms: f64,
+    pub(crate) whole_local_ms: f64,
+}
+/// Explicit owner-local diagnostic only. Key bytes/witness never leave this frame.
+/// Reusing example includes its actual SDK product in the total observation.
+pub(crate) fn audit_private_witness() -> Result<PrivateWitnessObservation> {
+    let began = Instant::now();
+    let example = example()?;
+    let raw = [
+        example.private_inputs[0].as_slice(),
+        example.private_inputs[1].as_slice(),
+    ];
+    let key_bytes = Zeroizing::new(example.key.to_bytes());
+    let build = Instant::now();
+    let witness = crate::gold_formation::Witness::from_sdk_key(&example.statement, raw, key_bytes)?;
+    let witness_build_ms = build.elapsed().as_secs_f64() * 1000.;
+    let check = Instant::now();
+    witness.check(&example.statement, raw)?;
+    let witness_check_ms = check.elapsed().as_secs_f64() * 1000.;
+    let preparation_ms = example.preparation_ms;
+    let sdk_product_ms = example.product_ms;
+    drop(witness);
+    drop(example);
+    Ok(PrivateWitnessObservation {
+        preparation_ms,
+        sdk_product_ms,
+        witness_build_ms,
+        witness_check_ms,
+        whole_local_ms: began.elapsed().as_secs_f64() * 1000.,
     })
 }

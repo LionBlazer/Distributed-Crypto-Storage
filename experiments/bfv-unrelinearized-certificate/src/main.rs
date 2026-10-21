@@ -3,6 +3,7 @@
 mod certificate;
 mod fixture;
 mod geometry;
+mod gold_formation;
 mod modular;
 mod pit;
 mod scale;
@@ -55,6 +56,27 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 "kind":"unassessed_public_arithmetic_certificate_profile", "profile_sha512":hex(&profile_digest()),
                 "degree":geometry::N, "ordered_qp":geometry::QP, "certificate_bytes":certificate::FRAME_BYTES,
                 "points_per_basis":pit::POINTS, "cryptographic_security_assessed":false, "sql_accepted":false
+            })
+        );
+        return Ok(());
+    }
+    if args == ["--private-formation-fixture"] {
+        let observation = fixture::audit_private_witness()?;
+        let phases = serde_json::json!({
+            "preparation_ms":observation.preparation_ms,"sdk_product_ms":observation.sdk_product_ms,
+            "witness_build_ms":observation.witness_build_ms,"witness_check_ms":observation.witness_check_ms,
+            "whole_local_including_sdk_product_ms":observation.whole_local_ms
+        });
+        println!(
+            "{}",
+            serde_json::json!({
+                "kind":"owner_private_gold_formation_witness_observation","degree":geometry::N,"ordered_q":geometry::Q,
+                "phases":phases,"private_witness_checked":true,"private_witness_exported":false,
+                "coefficient_counts":{"secret":geometry::N,"shared_errors":2*geometry::N,"signed_quotients":4*geometry::N},
+                "logical_buffers":{"private_witness_bytes":gold_formation::PRIVATE_WITNESS_BYTES,
+                "formation_logical_vectors_upper_bound_bytes":gold_formation::LOGICAL_VECTOR_BYTES,"rss_measured":false},
+                "proof_verified":false,"cryptographic_security_assessed":false,"source_authenticated":false,
+                "sql_accepted":false,"fresh_head_verified":false,"network_measured":false
             })
         );
         return Ok(());
