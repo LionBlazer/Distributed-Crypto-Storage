@@ -49,8 +49,8 @@ Direct dependencies are the [Word API](../README.md), this crate's
 [DATA composition](../../../two_lane_encoding/README.md), its bounded prerequisite
 codec, [Gold Formation](../../../../../bfv-ciphertext-formation/src/gold/README.md),
 [product certificates](../../../../../bfv-unrelinearized-product/README.md),
-`p3-field` and SHA2. `bfv-query-core/gold-owner` is a dev-dependency only,
-so neither normal registry code nor Owner depends on the other. The owning
+`p3-field` and SHA2. The optional `owner-read` feature additionally depends on
+`bfv-query-core/gold-owner`; Owner itself has no registry dependency. The owning
 example generates, seals, destroys and restores an opaque Owner before actual
 Source/Role3/DATA/Word/Query/product receiving and protected completion. It
 reuses the same immutable DATA for a second different actual query. Public
@@ -68,6 +68,11 @@ three per-query proofs. It cannot accept a different read expectation or importe
 setup. This lets a receiver start public preparation before the proofs arrive;
 construction checks no proof or head. The owning new-query interval includes
 all preparation, proof production, actual receiving and protected completion.
+
+The separate optional [`owner` receiver](OWNER.md) consumes an opaque originating
+owner's checked private input. It still verifies actual immutable DATA, fresh
+Word and product arguments. Its distinct result makes no public Query-proof claim
+and cannot replace public receiving or peer predicate/lock admission.
 Moving public preparation earlier does not remove its cost or establish500ms.
 
 The actual local receiving/production overlap, sequential control and remaining

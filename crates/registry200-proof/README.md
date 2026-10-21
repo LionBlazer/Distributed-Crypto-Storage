@@ -224,6 +224,11 @@ normal builds. It accepts unverified frames or an actual retained immutable DATA
 theorem with fresh per-query arguments. Its move-only result grants no assessed
 BFV/product security, authenticated prior root, current weighted head or SQL admission.
 
+Optional `owner-read` adds a distinct [originating-owner composition](src/registry_progress/word/read/OWNER.md).
+It replaces proof-to-self of the owner's known input with actual private equation
+checks and retains independent DATA/Word/product verification. Its result is
+non-transferable; existing public proof and journal/finality requirements remain.
+
 The distinct [Word EMPTY208 bootstrap](src/registry_progress/word/bootstrap/README.md)
 now proves the initial original Word root against a genuine immutable SourceVersion
 and enrollment. Both producer and receiver independently verify the Source native

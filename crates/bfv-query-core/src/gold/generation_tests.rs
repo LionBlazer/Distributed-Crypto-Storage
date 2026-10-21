@@ -261,3 +261,98 @@ fn original_data_query_key_mask_salt_and_nonce_are_mandatory_for_preparation() {
         .prepare_query(&original, &query, honest, qsalt)
         .unwrap();
 }
+
+#[test]
+fn originating_statement_requires_the_original_full_statement_mask_and_input_equations() {
+    let owner = owner();
+    let original_data = owner.originate_data(words()).unwrap();
+    let data = data_expected(&owner, &original_data, &[13; 4]);
+    let bits = [0x99; 32];
+    let honest = statement(&bits);
+    let mut scope = super::tests::scope();
+    for (bytes, word) in scope
+        .statement
+        .as_chunks_mut::<8>()
+        .0
+        .iter_mut()
+        .zip(statement_root(&honest))
+    {
+        *bytes = word.as_canonical_u64().to_le_bytes();
+    }
+    let original = owner
+        .originate(
+            Mask256::new(bits),
+            InputBinding::checked(scope).unwrap(),
+            &data,
+        )
+        .unwrap();
+
+    let checked = owner.bind_statement(&original, honest.clone()).unwrap();
+    assert_eq!(
+        checked.root(),
+        statement_root(&honest).map(|v| v.as_canonical_u64())
+    );
+    assert_eq!(
+        checked.public_request().as_bytes(),
+        original.public_request().as_bytes()
+    );
+    assert_eq!(checked.data_expected().binding(), data.binding());
+    assert_eq!(checked.header(), core::array::from_fn(|i| honest[i]));
+    // Same mask is insufficient: changing any other committed statement word fails too.
+    for at in [0, 13, 77, 78, 85, 86, 94, 95] {
+        let mut changed = honest.clone();
+        changed[at] ^= 1;
+        assert!(
+            owner.bind_statement(&original, changed).is_err(),
+            "word {at}"
+        );
+    }
+    for (at, value) in [(78, 1u64 << 32), (94, Val::ORDER_U64)] {
+        let mut changed = honest.clone();
+        changed[at] = value;
+        assert!(matches!(
+            owner.bind_statement(&original, changed),
+            Err(Error::Shape)
+        ));
+    }
+    let foreign = Owner::generate([0xb9; 32], [19; 8]).unwrap();
+    assert!(matches!(
+        foreign.bind_statement(&original, honest.clone()),
+        Err(Error::Binding)
+    ));
+
+    // Deliberate internal hostile construction: a well-formed ciphertext for a
+    // different private mask, with the original public binding repaired. The
+    // concrete input equations must reject it despite the correct Stmt96 root.
+    let mut other = owner
+        .originate(
+            Mask256::new([0x66; 32]),
+            original.request.binding().clone(),
+            &data,
+        )
+        .unwrap();
+    other.mask = Mask256::new(bits);
+    assert!(matches!(
+        owner.bind_statement(&other, honest),
+        Err(Error::Arithmetic)
+    ));
+    // Actual certificate verification and original pair checks still precede completion.
+    let response = Evaluator::new()
+        .unwrap()
+        .evaluate(checked.public_request())
+        .unwrap();
+    let expected = checked
+        .public_request()
+        .product_expected(response.output().to_vec())
+        .unwrap();
+    let product = product::check_arithmetic(&expected, response.certificate()).unwrap();
+    let actual = checked.complete_checked_product(&owner, &product).unwrap();
+    assert_eq!(
+        actual.coefficients(),
+        super::tests::oracle(&words(), &Mask256::new(bits)).as_slice()
+    );
+    assert!(matches!(
+        checked.complete_checked_product(&foreign, &product),
+        Err(Error::Binding)
+    ));
+}

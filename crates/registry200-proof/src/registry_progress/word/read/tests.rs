@@ -89,6 +89,12 @@ fn input_binding(case: &owner_cases::Case, data: &installed::Expected) -> protec
 }
 fn produce_word(case: &mut owner_cases::Case) -> Vec<u8> {
     let expected = word_expected(case);
+    word::prove(&expected, word_inputs(case))
+        .unwrap()
+        .into_bytes()
+}
+fn word_inputs(case: &mut owner_cases::Case) -> word::PrivateInputs {
+    let expected = word_expected(case);
     assert_eq!(expected.binding(), probe::binding(&case.metadata));
     let input = &mut case.input;
     let source = word::SourceOpening::checked(
@@ -102,15 +108,14 @@ fn produce_word(case: &mut owner_cases::Case) -> Vec<u8> {
         Zeroizing::new(input.source_salt.map(|v| v.as_canonical_u64())),
     )
     .unwrap();
-    let private = word::PrivateInputs::new(
+    word::PrivateInputs::new(
         source,
         word::RegistryOpening::new(input.controllers, input.banks),
         core::mem::take(&mut input.command),
         core::mem::take(&mut input.walk),
         Zeroizing::new(input.mask),
         input.salts,
-    );
-    word::prove(&expected, private).unwrap().into_bytes()
+    )
 }
 struct Frames {
     state: Vec<u8>,
@@ -367,6 +372,248 @@ fn different_retained_query(
     }
 }
 
+#[cfg(feature = "owner-read")]
+fn originating_owner_query(
+    owner: &protected::Owner,
+    data: &installed::Expected,
+    retained: &installed::VerifiedDataFormation,
+    data_words: &[u64],
+    previous: &Frames,
+) {
+    use super::owner::{self as local, Evidence as OwnerEvidence};
+    // Only immutable role-public setup and the already verified DATA version
+    // survive across calls. Disclose their initialization separately.
+    let started = Instant::now();
+    let producer = word::Prover::new(Role::Predicate).unwrap();
+    let receiver = local::Verifier::new().unwrap();
+    let setup_ms = started.elapsed().as_secs_f64() * 1000.;
+    for sequence in 2..4 {
+        let began = Instant::now();
+        let mut case = owner_cases::case(Kind::SkipBeforeOffset);
+        // Age127 is absent; age255 is present. Both differ from the earlier
+        // all-ones query; the second call additionally clears absent age126.
+        case.input.mask[31] &= 0x7f;
+        case.input.mask[15] &= if sequence == 2 { 0x7f } else { 0x3f };
+        case.input.walk.call += sequence;
+        case.input.walk.invocation[0] += Val::from_u64(sequence);
+        case.metadata.blind_sql[0] += Val::from_u64(sequence);
+        case.input.walk.sql = case.metadata.blind_sql;
+        case.rebuild();
+        let expected = word_expected(&case);
+        let statement: [Val; 96] = owner_cases::statement(&case.metadata, &case.input, &case.old)
+            .try_into()
+            .unwrap();
+        let mask_bytes = case.input.mask;
+        let original = owner
+            .originate(
+                protected::Mask256::new(mask_bytes),
+                input_binding(&case, data),
+                data.core_expected(),
+            )
+            .unwrap();
+        let bind_started = Instant::now();
+        let input = owner
+            .bind_statement(
+                &original,
+                Zeroizing::new(statement.map(|v| v.as_canonical_u64())),
+            )
+            .unwrap();
+        let bind_ms = bind_started.elapsed().as_secs_f64() * 1000.;
+        let started = Instant::now();
+        let response = protected::Evaluator::new()
+            .unwrap()
+            .evaluate(input.public_request())
+            .unwrap();
+        let product_ms = started.elapsed().as_secs_f64() * 1000.;
+        let started = Instant::now();
+        let word = producer
+            .produce(&expected, word_inputs(&mut case))
+            .unwrap()
+            .into_bytes();
+        let word_ms = started.elapsed().as_secs_f64() * 1000.;
+        let evidence = || OwnerEvidence {
+            word: &word,
+            output: response.output(),
+            product: response.certificate(),
+        };
+        let started = Instant::now();
+        let checked = receiver
+            .verify(&input, &expected, data, retained, evidence())
+            .unwrap();
+        let receive_ms = started.elapsed().as_secs_f64() * 1000.;
+        let started = Instant::now();
+        let completed = checked.complete(owner).unwrap();
+        let client_ms = started.elapsed().as_secs_f64() * 1000.;
+        let per_query_ms = began.elapsed().as_secs_f64() * 1000.;
+        // The independent full-ring answer is used ONLY after all actual checks.
+        let mut mask = Zeroizing::new(vec![0u64; gold::N]);
+        for age in 0..256 {
+            mask[255 - age] = u64::from((mask_bytes[age / 8] >> (age % 8)) & 1);
+        }
+        assert_eq!(
+            completed.coefficients(),
+            ring_oracle(data_words, &mask).as_slice()
+        );
+        assert_eq!(completed.coefficients()[6 * 512 + 255], 0);
+        assert_eq!(completed.coefficients()[7 * 512 + 255], 0);
+        eprintln!(
+            "originating_owner_read sequence={sequence} role_public_setup_ms={setup_ms:.3} private_input_check_ms={bind_ms:.3} word_prove_ms={word_ms:.3} fhe_product_and_certificate_ms={product_ms:.3} fresh_receive_ms={receive_ms:.3} client_ms={client_ms:.3} local_query_ms={per_query_ms:.3} query_frames_bytes={} installed_DATA=true role_public_setup_reused=true public_Query_proof=false input_equations=true SQL=false freshness=false network=false locks=false security_assessed=false",
+            word.len() + response.output().len() + response.certificate().len()
+        );
+
+        let bad = damage_batch(&word);
+        assert!(matches!(
+            receiver.verify(
+                &input,
+                &expected,
+                data,
+                retained,
+                OwnerEvidence {
+                    word: &bad,
+                    ..evidence()
+                }
+            ),
+            Err(local::Error::Word(word::Error::Verification))
+        ));
+        let mut bad = response.certificate().to_vec();
+        bad[8] ^= 1;
+        assert!(matches!(
+            receiver.verify(
+                &input,
+                &expected,
+                data,
+                retained,
+                OwnerEvidence {
+                    product: &bad,
+                    ..evidence()
+                }
+            ),
+            Err(local::Error::Product(product::Error::Binding))
+        ));
+        assert!(
+            receiver
+                .verify(
+                    &input,
+                    &expected,
+                    data,
+                    retained,
+                    OwnerEvidence {
+                        word: &previous.word,
+                        ..evidence()
+                    }
+                )
+                .is_err()
+        );
+        assert!(
+            receiver
+                .verify(
+                    &input,
+                    &expected,
+                    data,
+                    retained,
+                    OwnerEvidence {
+                        product: &previous.product,
+                        ..evidence()
+                    }
+                )
+                .is_err()
+        );
+        let mut bad_output = response.output().to_vec();
+        *bad_output.last_mut().unwrap() ^= 1;
+        assert!(
+            receiver
+                .verify(
+                    &input,
+                    &expected,
+                    data,
+                    retained,
+                    OwnerEvidence {
+                        output: &bad_output,
+                        ..evidence()
+                    }
+                )
+                .is_err()
+        );
+        let bad_request =
+            data::Request::checked([0x69; 32], data.request().ciphertext().to_vec()).unwrap();
+        let bad_data = installed::Expected::checked(&bad_request, data.source()).unwrap();
+        assert!(matches!(
+            receiver.verify(&input, &expected, &bad_data, retained, evidence()),
+            Err(local::Error::Binding)
+        ));
+        let wrong_word = word_expected(&owner_cases::case(Kind::SkipBeforeOffset));
+        assert!(matches!(
+            receiver.verify(&input, &wrong_word, data, retained, evidence()),
+            Err(local::Error::Binding)
+        ));
+        // Keep the exact same Stmt96 root and Source: the independently pinned
+        // full Word context must also prevent substitution of another result.
+        let mut wrong_claims = expected.claims();
+        wrong_claims.next[0] += Val::ONE;
+        let wrong_context = word::Expected::checked(
+            expected.source(),
+            Role::Predicate,
+            [0xa7; 32],
+            case.metadata
+                .parent
+                .into_iter()
+                .flat_map(|v| u32::try_from(v.as_canonical_u64()).unwrap().to_le_bytes())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            case.metadata.enrollment,
+            wrong_claims,
+        )
+        .unwrap();
+        assert_eq!(
+            wrong_context.claims().statement,
+            expected.claims().statement
+        );
+        assert!(matches!(
+            receiver.verify(&input, &wrong_context, data, retained, evidence()),
+            Err(local::Error::Binding)
+        ));
+        let control = word_expected(&owner_cases::case(Kind::EndCompact));
+        assert!(matches!(
+            receiver.verify(&input, &control, data, retained, evidence()),
+            Err(local::Error::Binding)
+        ));
+        for which in 0..3 {
+            let mut missing = evidence();
+            match which {
+                0 => missing.word = &[],
+                1 => missing.output = &[],
+                _ => missing.product = &[],
+            }
+            assert!(matches!(
+                receiver.verify(&input, &expected, data, retained, missing),
+                Err(local::Error::Resource)
+            ));
+        }
+        let oversized = vec![0; 128 * 1024 + 1];
+        assert!(matches!(
+            receiver.verify(
+                &input,
+                &expected,
+                data,
+                retained,
+                OwnerEvidence {
+                    output: &oversized,
+                    ..evidence()
+                }
+            ),
+            Err(local::Error::Resource)
+        ));
+        // Failed evidence must never poison the role-only setup or cache success.
+        let again = receiver
+            .verify(&input, &expected, data, retained, evidence())
+            .unwrap()
+            .complete(owner)
+            .unwrap();
+        assert_eq!(again.coefficients(), completed.coefficients());
+    }
+}
+
 #[test]
 fn original_version_word_data_query_and_real_product_are_all_required_before_client_completion() {
     let began = Instant::now();
@@ -581,6 +828,8 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
         &data_words,
         frames.borrowed().query(),
     );
+    #[cfg(feature = "owner-read")]
+    originating_owner_query(&owner, &data_expected, &retained, &data_words, &frames);
 
     // Same version tag and images, but a different complete C_state must not join.
     let mut foreign = owner_cases::case(Kind::SkipBeforeOffset);

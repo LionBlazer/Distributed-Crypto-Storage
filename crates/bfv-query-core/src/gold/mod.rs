@@ -10,6 +10,7 @@ mod key_custody;
 mod origin;
 mod owner;
 mod preparation;
+mod statement;
 #[cfg(test)]
 mod tests;
 use bfv_ciphertext_formation::gold as lower;
@@ -28,6 +29,7 @@ pub use owner::Owner;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 pub use preparation::OriginatingData;
 use sha2::{Digest, Sha256, Sha512};
+pub use statement::OriginatingStatement;
 use zeroize::Zeroizing;
 pub const N: usize = 4096;
 pub const Q: [u64; 2] = [1073692673, 1073668097];

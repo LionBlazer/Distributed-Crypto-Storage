@@ -105,6 +105,8 @@ pub struct InputScope {
 #[derive(Clone, PartialEq, Eq)]
 pub struct InputBinding {
     bytes: Vec<u8>,
+    statement: [u8; 32],
+    context: [u8; 32],
 }
 impl InputBinding {
     pub fn checked(scope: InputScope) -> Result<Self> {
@@ -146,10 +148,21 @@ impl InputBinding {
         if bytes.len() != BINDING_BYTES {
             return Err(Error::Shape);
         }
-        Ok(Self { bytes })
+        Ok(Self {
+            bytes,
+            statement: scope.statement,
+            context: scope.context,
+        })
     }
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
+    }
+    pub(super) fn statement(&self) -> [u8; 32] {
+        self.statement
+    }
+    /// Independently selected public context pin; this authenticates no caller.
+    pub fn context(&self) -> [u8; 32] {
+        self.context
     }
     pub(super) fn decode(bytes: &[u8]) -> Result<Self> {
         if bytes.len() != BINDING_BYTES {

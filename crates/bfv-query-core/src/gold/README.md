@@ -47,6 +47,13 @@ Result and current weighted QC before exposing a SQL response or mutation.
 - `PublicRequest` is untrusted bounded public wire; decode mints no private
   scope. `Evaluator` receives ONLY public ciphertexts and performs genuine SDK
   multiplication without RK, followed by a complete public arithmetic certificate.
+- `Owner::bind_statement` checks the complete canonical Stmt96 root against the
+  original InputBinding, its exact private mask and zero padding, then runs the
+  actual private input equations with the original QueryCt and same S/Cs. Its
+  borrowed `OriginatingStatement` is an owner-private premise, without a public
+  Query proof. It exposes public endpoints/header/root only. The optional upper
+  [owner read](../../../registry200-proof/src/registry_progress/word/read/OWNER.md)
+  joins that premise to independently checked DATA, Word and product arguments.
 - `Owner::complete` independently checks that certificate against the ORIGINAL
   pair and full request-derived nonce BEFORE SDK decryption of all4096 values.
   `DecryptedProduct` is conditional mathematical plaintext, not SQL-selected rows,

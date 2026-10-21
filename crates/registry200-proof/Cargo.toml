@@ -5,7 +5,11 @@ edition = "2024"
 rust-version = "1.99"
 publish = false
 
+[features]
+owner-read = ["dep:bfv-query-core"]
+
 [dependencies]
+bfv-query-core = { path = "../bfv-query-core", features = ["gold-owner"], optional = true }
 bfv-ciphertext-formation = { path = "../bfv-ciphertext-formation" }
 bfv-unrelinearized-product = { path = "../bfv-unrelinearized-product" }
 bfv-key-transform = { path = "../bfv-key-transform" }
