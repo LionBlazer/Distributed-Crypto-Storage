@@ -19,3 +19,6 @@ p3-symmetric = "=0.8.0"
 p3-uni-stark = "=0.8.0"
 sha2 = "=0.10.9"
 zeroize = "=1.9.1"
+
+[dev-dependencies]
+fhe-math = { version = "=0.1.1", default-features = false }

@@ -126,3 +126,21 @@ ownership examples passed; see the [native record](src/control_kind/README.md#ex
 It changes no old AIR/profile/opcode/cap, Journal allowlist or SQL capability.
 A future composite Control application must actually require this link rather
 than trust a caller-supplied lane tag.
+
+
+## Separate two-lane encoding mathematical candidate
+
+The new [two-lane module](src/two_lane_encoding/README.md) owns distinct all-4096
+Source/mask AIRs for N=4096 with two ciphertext moduli and plaintext modulus65537,
+two lanes per original row and the exact SDK lift multiplier16389. It genuinely
+verifies the original Source691 proof before
+every new child prove/verify call; Source bytes are supplied separately and are
+never duplicated into the child frame. The new 29-field candidate key binding is
+public metadata only, without Key33, CsHat, a same-secret Formation proof or a
+security grant. It changes no old profile, SQL/runtime admission, protocol/G,
+proof-consumer or current-head policy. Its fixed backend branch uses the same
+actual hiding suite and mandatory individual assessment. Seven genuine owning
+tests passed in 17.18 s, plus nine existing boundary tests and strict all-target
+Clippy; see the [executed validation](src/two_lane_encoding/VALIDATION.md).
+Source-first verification alone took about one second in this observation, so
+the 500 ms complete-query target remains unmet.

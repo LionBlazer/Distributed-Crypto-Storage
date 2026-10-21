@@ -1,4 +1,6 @@
-use crate::{coefficient_encoding, control_kind, lifecycle, predicate_acquire, source};
+use crate::{
+    coefficient_encoding, control_kind, lifecycle, predicate_acquire, source, two_lane_encoding,
+};
 use bfv_hiding_stark::{self as engine, Config, Error, SecurityReport, Val};
 use engine::codec::Topology;
 use p3_air::{Air, AirBuilder, BaseAir};
@@ -6,6 +8,7 @@ use p3_matrix::dense::RowMajorMatrix;
 use p3_uni_stark::{Proof, StarkSecurityParams};
 use std::borrow::Cow;
 enum FixedAir {
+    TwoLaneEncoding(Box<two_lane_encoding::air::EncodingAir>),
     Source(Box<source::air::OpeningAir>),
     Bootstrap(Box<lifecycle::bootstrap::BootstrapAir>),
     Lifecycle(Box<lifecycle::air::LifecycleAir>),
@@ -13,7 +16,7 @@ enum FixedAir {
     PredicateAcquire(Box<predicate_acquire::air::PredicateAcquireAir>),
     ControlKind(Box<control_kind::air::ControlKindAir>),
 }
-macro_rules! dispatch { ($s:expr,$m:ident $(,$a:expr)*)=>{match $s {FixedAir::Source(a)=>a.$m($($a),*),FixedAir::Bootstrap(a)=>a.$m($($a),*),FixedAir::Lifecycle(a)=>a.$m($($a),*),FixedAir::Encoding(a)=>a.$m($($a),*),FixedAir::PredicateAcquire(a)=>a.$m($($a),*),FixedAir::ControlKind(a)=>a.$m($($a),*)}}; }
+macro_rules! dispatch { ($s:expr,$m:ident $(,$a:expr)*)=>{match $s {FixedAir::TwoLaneEncoding(a)=>a.$m($($a),*),FixedAir::Source(a)=>a.$m($($a),*),FixedAir::Bootstrap(a)=>a.$m($($a),*),FixedAir::Lifecycle(a)=>a.$m($($a),*),FixedAir::Encoding(a)=>a.$m($($a),*),FixedAir::PredicateAcquire(a)=>a.$m($($a),*),FixedAir::ControlKind(a)=>a.$m($($a),*)}}; }
 impl BaseAir<Val> for FixedAir {
     fn width(&self) -> usize {
         dispatch!(self, width)
@@ -113,6 +116,14 @@ impl Backend {
         let role = s.expected.role();
         Self::new(
             FixedAir::Encoding(Box::new(coefficient_encoding::air::EncodingAir::new(s))),
+            s.values(),
+            (role.width(), role.public_values()),
+        )
+    }
+    pub fn two_lane_encoding(s: &two_lane_encoding::statement::Statement) -> Result<Self, Error> {
+        let role = s.expected.role();
+        Self::new(
+            FixedAir::TwoLaneEncoding(Box::new(two_lane_encoding::air::EncodingAir::new(s))),
             s.values(),
             (role.width(), role.public_values()),
         )

@@ -7,6 +7,7 @@ pub mod lifecycle;
 pub mod predicate_acquire;
 pub mod registry_progress;
 pub mod source;
+pub mod two_lane_encoding;
 pub mod wire;
 pub mod write;
 use bfv_hiding_stark::poseidon;

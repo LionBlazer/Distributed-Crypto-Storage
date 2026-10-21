@@ -4283,6 +4283,7 @@ dependencies = [
  "bfv-hiding-stark",
  "bfv-key-transform",
  "compact-store",
+ "fhe-math",
  "p3-air",
  "p3-field",
  "p3-goldilocks",
