@@ -70,3 +70,10 @@ passed. Reusing a bounded public test prerequisite is not a production success
 cache. Any future process restart must perform real verification again; file
 existence, hash/AEAD checks,
 public claims and old receipts cannot mint this mathematical result.
+
+
+The actual [immutable DATA encoding consumer](../../two_lane_encoding/README.md#request-independent-immutable-version-data-encoding)
+now freshly checks this certificate before proving or receiving its distinct
+all-4096 encoding child. It uses the original State C_state opening and never
+casts the version tag into the old canonical query q. That consumer still grants
+no BFV ciphertext Formation, installed key, currentness or SQL capability.

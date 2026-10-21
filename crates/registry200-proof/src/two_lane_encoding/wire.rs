@@ -20,6 +20,7 @@ pub enum Error {
     Shape,
     Verification,
     Proof(BackendError),
+    SourceVersionProof(BackendError),
 }
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -29,6 +30,7 @@ impl core::fmt::Display for Error {
             Self::Shape => f.write_str("Two-lane evidence shape mismatch"),
             Self::Verification => f.write_str("Two-lane prerequisite verification failed"),
             Self::Proof(e) => write!(f, "Two-lane proof rejected: {e}"),
+            Self::SourceVersionProof(e) => write!(f, "Source version proof rejected: {e}"),
         }
     }
 }
@@ -119,6 +121,16 @@ impl<'a> BorrowedFrame<'a> {
     }
 }
 /// Actual fixed Source-first mathematical verification. No success cache or callback.
+/// No consumer can fabricate the private result field:
+/// ```compile_fail
+/// use registry200_proof::two_lane_encoding::{statement::Statement, wire::VerifiedEncoding};
+/// fn forge(statement: Statement) -> VerifiedEncoding { VerifiedEncoding { statement } }
+/// ```
+/// The result is move-only:
+/// ```compile_fail
+/// use registry200_proof::two_lane_encoding::wire::VerifiedEncoding;
+/// fn duplicate(value: &VerifiedEncoding) -> VerifiedEncoding { value.clone() }
+/// ```
 pub struct VerifiedEncoding {
     statement: Statement,
 }
@@ -134,7 +146,7 @@ pub fn verify(
 ) -> Result<VerifiedEncoding, Error> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let frame = BorrowedFrame::parse(e, bytes)?;
-        source::verification::verify(e.source_claim(), original_source)?;
+        e.verify_source(original_source)?;
         verify_child(frame)
     }))
     .map_err(|_| Error::Verification)?

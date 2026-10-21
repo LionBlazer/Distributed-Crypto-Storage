@@ -38,6 +38,26 @@ impl Witness {
         if e.role() != Role::SourceAllOriginal || plain.len() != 2348 {
             return Err(Error::Shape);
         }
+        Self::source_opening(e, plain, opening_salt, encoding_salt)
+    }
+    /// Owner-side opening of exactly the new State C_state, never a q-cast.
+    pub fn source_version(
+        e: &Expected,
+        plain: Zeroizing<Vec<u8>>,
+        opening_salt: [u64; 4],
+        encoding_salt: [u64; 4],
+    ) -> Result<Self, Error> {
+        if e.role() != Role::VersionSourceAllOriginal || plain.len() != 2348 {
+            return Err(Error::Shape);
+        }
+        Self::source_opening(e, plain, opening_salt, encoding_salt)
+    }
+    fn source_opening(
+        e: &Expected,
+        plain: Zeroizing<Vec<u8>>,
+        opening_salt: [u64; 4],
+        encoding_salt: [u64; 4],
+    ) -> Result<Self, Error> {
         let salt = vals(opening_salt)?;
         let _ = vals(encoding_salt)?;
         if crate::source::commitment::digest(&crate::source::commitment::opening_fields(
@@ -82,7 +102,7 @@ impl Witness {
     /// No externally selected role can reinterpret a private-mask witness as Source.
     pub fn coefficients(&self) -> Zeroizing<Vec<u64>> {
         match self.expected.role() {
-            Role::SourceAllOriginal => compile_source(
+            Role::SourceAllOriginal | Role::VersionSourceAllOriginal => compile_source(
                 self.plain[..12]
                     .try_into()
                     .expect("constructor-fixed Source rows"),
@@ -140,7 +160,7 @@ impl Witness {
         let role = s.expected.role();
         let width = role.width();
         let mut values = Val::zero_vec(width * TRACE_HEIGHT);
-        if role == Role::SourceAllOriginal {
+        if role.is_source() {
             for (r, row) in values.chunks_exact_mut(width).enumerate() {
                 for byte in 0..12 {
                     bits(
@@ -231,7 +251,7 @@ fn refresh(s: &Statement, trace: &mut RowMajorMatrix<Val>, words: &[u64]) -> [Va
     let role = s.expected.role();
     let width = role.width();
     let context = s.expected.encoding_context();
-    let salt = if role == Role::SourceAllOriginal {
+    let salt = if role.is_source() {
         SOURCE_ENC_SALT
     } else {
         QUERY_ENC_SALT
@@ -252,11 +272,7 @@ fn refresh(s: &Statement, trace: &mut RowMajorMatrix<Val>, words: &[u64]) -> [Va
             root = digest;
         }
         row[2 * P2..3 * P2].fill(Val::ZERO);
-        if r < (if role == Role::SourceAllOriginal {
-            85
-        } else {
-            6
-        }) {
+        if r < (if role.is_source() { 85 } else { 6 }) {
             let mut input = [Val::ZERO; 12];
             for (word, v) in input[..8].iter_mut().enumerate() {
                 *v = air.opening_field::<Val, _>(row, 8 * r + word, word);

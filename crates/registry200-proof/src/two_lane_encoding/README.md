@@ -299,3 +299,51 @@ contains phase timings and whole-process observations under the unchanged
 OwnerQuery input-proof removal, new registry/Result semantics, actual fresh
 weighted QC and durable SQL completion remain separate work. Full500ms SQL
 success is not claimed by this mathematical composition.
+
+## Request-independent immutable-version DATA encoding
+
+Earlier Source/mask API descriptions above refer to the unchanged roles1/2.
+The new role below has a separate prerequisite dispatch.
+
+`Role::VersionSourceAllOriginal` (tag3) and the closed
+`Expected::source_version(&SourceVersionExpected, KeyBinding)` constructor bind
+all4096 DATA coefficients to the actual StateCertificate C_state opening. The
+private prerequisite enum retains the complete independently supplied version
+expectation: original images/heads/packets, AEAD C_key, version tag and C_state.
+The static version tag is never cast to the canonical query q. KeyBinding remains
+public BFV metadata; AEAD C_key is a distinct commitment, not BFV Cs authority.
+
+The source-like AIR and owner-side `Witness::source_version` use the actual State
+opening prefix/680fields, same eight data lanes, canonical scale16389 and complete
+Cw4112 commitment. Constructor checks the State opening before building a trace.
+The new role has a separate profile/tag while the existing Source1, mask2,
+Formation and product profiles remain byte-exact. Old `verify_pair` and Formation
+still require exactly Source1 plus mask2; the new role is not a query or Formation
+compatibility path. It supplies no ciphertext Formation, source-version freshness,
+BFV key authorization, hidden-mask query composition or accepted SQL result.
+
+Both production `prove` and receiving `wire::verify` freshly dispatch to the
+actual `source::version::verify` according to the private constructor-sealed
+prerequisite family. The canonical family continues to use its original concrete
+verifier. There is no caller flag, callback, raw-Statement version constructor,
+serialized success or retained proof-verification cache. Producer Evidence is
+UNVERIFIED; only the new role omits redundant child self-verification. Every
+receiving call constructs the fixed backend and actually verifies the child.
+All old Source1/mask2 producer self-verification and per-frame caps stay unchanged.
+
+The existing public source fixture supplies original images/plaintext, with one
+separate genuine StateCertificate proof and one genuine Role3 child reused by
+new tests. They cover fresh receiving, missing/corrupt/foreign-family prerequisite
+bytes at producer and receiver, repaired C_state/key-epoch/family headers, exact
+old profile digests and a repaired lastW coefficient with an actual false child
+proving attempt. Two compile-fail examples protect private VerifiedEncoding
+construction and move-only ownership. All fourteen owning tests passed in
+33.32 s, followed by the unchanged full Formation/product gate in 18.91 s, two
+privacy examples and strict Clippy. [Executed version validation](VERSION-VALIDATION.md)
+records the actual source/child production and fresh receiving phases, the
+unchanged resource fuses and the four preserved native profile digests.
+Fresh State plus child receiving took 712.602 ms; it is not a complete query.
+The static proof does not establish the 500 ms target or the remaining
+single-DATA Formation/query/fresh-head composition. New SourceVersion native
+failures retain `SourceVersionProof(BackendError)`; repaired OOD tests require
+exact cryptographic Verification rather than accepting a wrapper panic.

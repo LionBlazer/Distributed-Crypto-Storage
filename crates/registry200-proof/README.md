@@ -179,3 +179,13 @@ covers the actual full chain, four privacy examples, hostile receiving cases
 and the extracted library/experiment consumers. Fresh receiving took
 1730.017 ms, so the 500 ms complete-query goal remains unmet. No installed-key,
 SQL, current-head or network-finality grant follows from this candidate.
+
+
+The new `two_lane_encoding::Role::VersionSourceAllOriginal` binds all 4096 DATA
+coefficients to a genuine request-independent StateCertificate. Its constructor
+retains the full immutable SourceVersion expectation; both producer and receiver
+freshly verify that actual prerequisite. Old Source/mask, pair and Formation
+contracts remain separate. [Executed version encoding validation](src/two_lane_encoding/VERSION-VALIDATION.md)
+covers fourteen owning cases, the unchanged full product consumer and two
+privacy examples. This is an input-encoding proof, without DATA ciphertext
+Formation, current-head authorization or SQL admission.

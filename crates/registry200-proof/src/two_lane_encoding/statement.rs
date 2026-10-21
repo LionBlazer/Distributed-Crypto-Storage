@@ -44,10 +44,42 @@ impl KeyBinding {
         values
     }
 }
+// The constructor seals the prerequisite family. A public source::Statement or
+// caller-selected verification flag cannot turn a State certificate into Source1.
+#[derive(Clone)]
+enum SourceExpectation {
+    Canonical(CanonicalSource),
+    Version(source::version::SourceVersionExpected),
+}
+impl SourceExpectation {
+    fn claim(&self) -> &source::Statement {
+        match self {
+            Self::Canonical(expected) => expected.claim(),
+            Self::Version(expected) => expected.statement(),
+        }
+    }
+    fn verify(&self, bytes: &[u8]) -> Result<(), super::wire::Error> {
+        match self {
+            Self::Canonical(expected) => {
+                source::verification::verify(expected.claim(), bytes)
+                    .map_err(super::wire::Error::from)?;
+            }
+            Self::Version(expected) => {
+                source::version::verify(expected, bytes).map_err(|error| match error {
+                    crate::wire::Error::Proof(error) => {
+                        super::wire::Error::SourceVersionProof(error)
+                    }
+                    other => super::wire::Error::from(other),
+                })?;
+            }
+        }
+        Ok(())
+    }
+}
 #[derive(Clone)]
 pub struct Expected {
     role: Role,
-    source: CanonicalSource,
+    source: SourceExpectation,
     key: KeyBinding,
     sql_identity: [u8; 32],
     public_nonce: [u8; 32],
@@ -66,7 +98,26 @@ impl Expected {
         }
         Ok(Self {
             role: Role::SourceAllOriginal,
-            source,
+            source: SourceExpectation::Canonical(source),
+            key,
+            sql_identity: [0; 32],
+            public_nonce: [0; 32],
+            command: [Val::default(); 4],
+        })
+    }
+    /// Independent immutable-version DATA claim. This is metadata, not a proof,
+    /// a BFV key authorization, a current-head lease or an old canonical Source.
+    pub fn source_version(
+        source: &source::version::SourceVersionExpected,
+        key: KeyBinding,
+    ) -> Result<Self, Error> {
+        source.statement().reaudit()?;
+        if key.database.as_slice() != &source.statement().heads[0][8..24] {
+            return Err(Error::Shape);
+        }
+        Ok(Self {
+            role: Role::VersionSourceAllOriginal,
+            source: SourceExpectation::Version(source.clone()),
             key,
             sql_identity: [0; 32],
             public_nonce: [0; 32],
@@ -92,6 +143,9 @@ impl Expected {
     }
     pub fn source_claim(&self) -> &source::Statement {
         self.source.claim()
+    }
+    pub(super) fn verify_source(&self, bytes: &[u8]) -> Result<(), super::wire::Error> {
+        self.source.verify(bytes)
     }
     pub fn key_binding(&self) -> &KeyBinding {
         &self.key

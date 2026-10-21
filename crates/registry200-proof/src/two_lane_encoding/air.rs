@@ -45,7 +45,7 @@ impl EncodingAir {
         word: usize,
     ) -> E {
         match self.role {
-            Role::SourceAllOriginal => {
+            Role::SourceAllOriginal | Role::VersionSourceAllOriginal => {
                 opening::source_field(&self.source_prefix, row, WORDS, SOURCE_SALT, f, word)
             }
             Role::PrivateMask => match f {
@@ -99,7 +99,7 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for EncodingAir {
         let row = main.current_slice();
         let next = main.next_slice();
         let w: [AB::Expr; 8] = match self.role {
-            Role::SourceAllOriginal => {
+            Role::SourceAllOriginal | Role::VersionSourceAllOriginal => {
                 for c in DATA..EQUALITY {
                     b.when_transition().assert_eq(next[c], row[c]);
                 }
@@ -223,7 +223,7 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for EncodingAir {
                 })
             }
         };
-        let salt = if self.role == Role::SourceAllOriginal {
+        let salt = if self.role.is_source() {
             SOURCE_ENC_SALT
         } else {
             QUERY_ENC_SALT
@@ -241,11 +241,7 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for EncodingAir {
                 root: self.values[ENCODED..ENCODED + 4].try_into().unwrap(),
             },
         );
-        let blocks = if self.role == Role::SourceAllOriginal {
-            85
-        } else {
-            6
-        };
+        let blocks = if self.role.is_source() { 85 } else { 6 };
         let active: AB::Expr = selectors[..blocks].iter().cloned().sum();
         let out = poseidon::evaluate(&mut b.when(active.clone()), &row[2 * P2..3 * P2]);
         for v in &row[2 * P2..3 * P2] {
@@ -273,7 +269,7 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for EncodingAir {
                 active.clone() * v.clone() + (AB::Expr::ONE - active.clone()) * row[OPEN_CP + i],
             );
         }
-        let target = if self.role == Role::SourceAllOriginal {
+        let target = if self.role.is_source() {
             SOURCE_PV + source::statement::OPEN_COMMITMENT
         } else {
             COMMAND

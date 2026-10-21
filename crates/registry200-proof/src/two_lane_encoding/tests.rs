@@ -722,3 +722,326 @@ fn full_expected_guarded_opening_and_bounded_new_frame_reject_without_acceptance
     );
     assert!(wire::BorrowedFrame::parse(e, &vec![0; wire::MAX_CHILD + 1]).is_err());
 }
+
+// Version DATA uses the existing explicitly PUBLIC fixture images/plaintext,
+// but its own actual StateCertificate proof and new child. No old proof is cast.
+struct VersionCase {
+    source: source::version::SourceVersionExpected,
+    original: Vec<u8>,
+    evidence: Evidence,
+}
+fn version_expected(state: [u8; 32]) -> source::version::SourceVersionExpected {
+    let claim = fixture().source.claim();
+    let images: [Vec<u8>; 2] = core::array::from_fn(|i| {
+        claim.heads[i]
+            .iter()
+            .chain(&claim.packets[i])
+            .copied()
+            .collect()
+    });
+    let heads = claim
+        .heads
+        .map(|head| compact_store::Commitment::decode(&head, source::statement::limits()).unwrap());
+    source::version::SourceVersionExpected::checked(
+        [&images[0], &images[1]],
+        [&heads[0], &heads[1]],
+        source::statement::encode_digest(claim.key_commitment),
+        state,
+    )
+    .unwrap()
+}
+fn version_case() -> &'static VersionCase {
+    static PUBLIC: OnceLock<VersionCase> = OnceLock::new();
+    PUBLIC.get_or_init(|| {
+        let provisional = version_expected([0; 32]);
+        let state = source::commitment::digest(&source::commitment::opening_fields(
+            provisional.statement(),
+            [Val::TWO; 4],
+            &fixture().plain,
+        ));
+        let source = version_expected(source::statement::encode_digest(state));
+        assert_eq!(source.version_id(), provisional.version_id());
+        assert_ne!(
+            source.statement().values(),
+            fixture().source.claim().values()
+        );
+        let began = Instant::now();
+        let original = source::version::prove(
+            &source,
+            &source::circuit::Witness::new(
+                [0x71; 32],
+                [Val::ONE; 4],
+                [Val::TWO; 4],
+                [0, 1, 128, 255],
+            ),
+        )
+        .unwrap()
+        .into_bytes();
+        eprintln!(
+            "version_encoding_test phase=state_prove elapsed_ms={:.3} bytes={}",
+            began.elapsed().as_secs_f64() * 1000.,
+            original.len()
+        );
+        let expected = Expected::source_version(&source, binding(7)).unwrap();
+        let witness = circuit::Witness::source_version(
+            &expected,
+            Zeroizing::new(fixture().plain.to_vec()),
+            [2; 4],
+            [5; 4],
+        )
+        .unwrap();
+        assert!(*witness.coefficients() == *source_witness(&source_expected()).coefficients());
+        let began = Instant::now();
+        let evidence = prove(&expected, &witness, &original).unwrap();
+        eprintln!(
+            "version_encoding_test phase=unverified_child_prove elapsed_ms={:.3} bytes={}",
+            began.elapsed().as_secs_f64() * 1000.,
+            evidence.as_bytes().len()
+        );
+        VersionCase {
+            source,
+            original,
+            evidence,
+        }
+    })
+}
+fn decode_version_child(case: &VersionCase) -> Proof<Config> {
+    let frame = wire::BorrowedFrame::parse(
+        &case.evidence.statement().expected,
+        case.evidence.as_bytes(),
+    )
+    .unwrap();
+    let backend = Backend::two_lane_encoding(frame.statement()).unwrap();
+    codec::decode(
+        frame.child(),
+        &backend.shape,
+        wire::SEQUENCE,
+        wire::CHILD_SLOTS,
+    )
+    .unwrap()
+}
+fn expected_hex(text: &str) -> [u8; 32] {
+    assert_eq!(text.len(), 64);
+    core::array::from_fn(|i| u8::from_str_radix(&text[2 * i..2 * i + 2], 16).unwrap())
+}
+#[test]
+fn version_role_keeps_all_four_existing_mathematical_profiles_exact() {
+    assert_eq!(
+        profile_digest(Role::SourceAllOriginal),
+        expected_hex("88f04bd948a257f14ceeea90a6fcc42a436185b79b6434daf9ec6479296d1559")
+    );
+    assert_eq!(
+        profile_digest(Role::PrivateMask),
+        expected_hex("768dba52df9b1b7152e3f2e6d01278ef76f539e5f12467c468dada5ecd206fae")
+    );
+    assert_eq!(
+        formation::profile_digest(),
+        expected_hex("58700a7fed5cf870a5832773e2861449c8c478986a26235208f3429fa7e19d33")
+    );
+    assert_eq!(
+        product::profile_digest(),
+        expected_hex("254bd27df4562d70cb96981eafc1dd6cbea24a561b0350f275f00f99c0b33438")
+    );
+    assert_eq!(Role::VersionSourceAllOriginal.tag(), 3);
+    assert_ne!(
+        profile_digest(Role::VersionSourceAllOriginal),
+        profile_digest(Role::SourceAllOriginal)
+    );
+    assert_ne!(
+        profile_digest(Role::VersionSourceAllOriginal),
+        profile_digest(Role::PrivateMask)
+    );
+}
+#[test]
+fn genuine_state_version_and_full4096_data_encoding_require_fresh_receiving_proofs() {
+    let case = version_case();
+    let evidence = &case.evidence;
+    let expected = &evidence.statement().expected;
+    let began = Instant::now();
+    let checked = wire::verify(expected, &case.original, evidence.as_bytes()).unwrap();
+    eprintln!(
+        "version_encoding_test phase=fresh_receive elapsed_ms={:.3} state_bytes={} child_bytes={}",
+        began.elapsed().as_secs_f64() * 1000.,
+        case.original.len(),
+        evidence.as_bytes().len()
+    );
+    assert_eq!(checked.statement().values(), evidence.statement().values());
+    assert_eq!(expected.role(), Role::VersionSourceAllOriginal);
+    assert_eq!(expected.source_claim().request, case.source.version_id());
+    assert_eq!(
+        expected.source_claim().relation,
+        source::Relation::StateCertificate
+    );
+    assert_eq!(checked.statement().values().len(), 740);
+    assert!(case.original.len() <= wire::MAX_SOURCE);
+    assert!(evidence.as_bytes().len() <= wire::MAX_CHILD);
+
+    // Missing/foreign source bytes fail both the producer and receiver. The
+    // producer's output remains UNVERIFIED even after this prerequisite check.
+    let witness = circuit::Witness::source_version(
+        expected,
+        Zeroizing::new(fixture().plain.to_vec()),
+        [2; 4],
+        [5; 4],
+    )
+    .unwrap();
+    assert!(matches!(
+        prove(expected, &witness, &[]),
+        Err(wire::Error::ResourceLimit)
+    ));
+    assert!(matches!(
+        wire::verify(expected, &[], evidence.as_bytes()),
+        Err(wire::Error::ResourceLimit)
+    ));
+    assert!(wire::verify(expected, source_bytes(), evidence.as_bytes()).is_err());
+    assert!(CanonicalSource::checked_claim(case.source.statement()).is_err());
+    assert!(expected.require_pair(&mask_expected(truth_mask())).is_err());
+    assert!(wire::verify_pair(expected, &mask_expected(truth_mask()), &[], &[], &[]).is_err());
+    assert!(
+        circuit::Witness::source(
+            expected,
+            Zeroizing::new(fixture().plain.to_vec()),
+            [2; 4],
+            [5; 4]
+        )
+        .is_err()
+    );
+    assert!(
+        circuit::Witness::source_version(
+            &source_expected(),
+            Zeroizing::new(fixture().plain.to_vec()),
+            [2; 4],
+            [5; 4]
+        )
+        .is_err()
+    );
+    assert!(
+        circuit::Witness::private_mask(expected, Zeroizing::new(truth_mask()), [4; 4], [6; 4])
+            .is_err()
+    );
+}
+#[test]
+fn repaired_version_cstate_key_and_source_family_headers_cannot_reuse_genuine_child() {
+    let case = version_case();
+    let evidence = &case.evidence;
+    let proof = decode_version_child(case);
+    let expected = &evidence.statement().expected;
+    let mut state = case.source.statement().open_commitment;
+    state[0] += Val::ONE;
+    let other_state = version_expected(source::statement::encode_digest(state));
+    assert_eq!(other_state.version_id(), case.source.version_id());
+    let changed_state = Expected::source_version(&other_state, binding(7)).unwrap();
+    assert!(
+        circuit::Witness::source_version(
+            &changed_state,
+            Zeroizing::new(fixture().plain.to_vec()),
+            [2; 4],
+            [5; 4]
+        )
+        .is_err()
+    );
+    for replacement in [
+        changed_state,
+        Expected::source_version(&case.source, binding(8)).unwrap(),
+        source_expected(),
+    ] {
+        let statement = Statement {
+            expected: replacement.clone(),
+            encoded: evidence.statement().encoded,
+        };
+        let repaired = wire::encode(&replacement, &statement, &proof).unwrap();
+        assert!(wire::BorrowedFrame::parse(&replacement, &repaired).is_ok());
+        let original: &[u8] = if replacement.role() == Role::SourceAllOriginal {
+            source_bytes()
+        } else {
+            &case.original
+        };
+        assert!(wire::verify(&replacement, original, &repaired).is_err());
+    }
+    assert!(wire::BorrowedFrame::parse(&source_expected(), evidence.as_bytes()).is_err());
+    let mut damaged_child = evidence.as_bytes().to_vec();
+    *damaged_child.last_mut().unwrap() ^= 1;
+    assert!(wire::verify(expected, &case.original, &damaged_child).is_err());
+
+    // Canonical source proof syntax with a damaged genuine OOD opening still
+    // reaches the actual StateCertificate verifier, rather than an EOF guard.
+    let backend = Backend::source_version(&case.source).unwrap();
+    let mut source_proof: Proof<Config> = codec::decode(
+        &case.original,
+        &backend.shape,
+        crate::wire::MAX_SEQUENCE_ELEMENTS,
+        crate::wire::SOURCE_SLOTS,
+    )
+    .unwrap();
+    source_proof.opened_values.trace_local[0] += bfv_hiding_stark::Challenge::ONE;
+    let bad_source = codec::serialize(&source_proof, &backend.shape, wire::MAX_SOURCE).unwrap();
+    drop(source_proof);
+    drop(backend);
+    assert!(matches!(
+        wire::verify(expected, &bad_source, evidence.as_bytes()),
+        Err(wire::Error::SourceVersionProof(
+            crate::BackendError::Verification
+        ))
+    ));
+    let witness = circuit::Witness::source_version(
+        expected,
+        Zeroizing::new(fixture().plain.to_vec()),
+        [2; 4],
+        [5; 4],
+    )
+    .unwrap();
+    assert!(matches!(
+        prove(expected, &witness, &bad_source),
+        Err(wire::Error::SourceVersionProof(
+            crate::BackendError::Verification
+        ))
+    ));
+    assert_eq!(
+        wire::verify(expected, &case.original, evidence.as_bytes())
+            .unwrap()
+            .statement()
+            .values(),
+        evidence.statement().values()
+    );
+}
+#[test]
+fn repaired_last_version_data_word_fails_actual_air_and_native_proof() {
+    let case = version_case();
+    let witness = circuit::Witness::source_version(
+        &case.evidence.statement().expected,
+        Zeroizing::new(fixture().plain.to_vec()),
+        [2; 4],
+        [5; 4],
+    )
+    .unwrap();
+    let mut statement = witness.statement();
+    let mut trace = witness.trace(&statement).unwrap();
+    let mut words = witness.coefficients();
+    assert_eq!(words[N - 1], 0);
+    words[N - 1] = 1;
+    statement.encoded = circuit::refresh_for_test(&statement, &mut trace, &words);
+    assert!(
+        !check_all_constraints(
+            &air::EncodingAir::new(&statement),
+            &trace,
+            &statement.values(),
+            Some(1)
+        )
+        .is_ok()
+    );
+    let backend = Backend::two_lane_encoding(&statement).unwrap();
+    let attempted = catch_unwind(AssertUnwindSafe(|| backend.prove(trace)));
+    let proof = match attempted {
+        Ok(Ok(proof)) => proof,
+        Ok(Err(crate::BackendError::Proving)) | Err(_) if cfg!(debug_assertions) => return,
+        Ok(Err(error)) => panic!("false DATA trace failed before real native proving: {error:?}"),
+        Err(_) => panic!("release false DATA prover panicked"),
+    };
+    let repaired = wire::encode(&statement.expected, &statement, &proof).unwrap();
+    drop(proof);
+    drop(backend);
+    assert!(matches!(
+        wire::verify(&statement.expected, &case.original, &repaired),
+        Err(wire::Error::Proof(crate::BackendError::Verification))
+    ));
+}
