@@ -92,3 +92,47 @@ Kernel absence and server shutdown were confirmed. Partial progress is not a
 numeric minimum, and waited-child CPU/RSS is not aggregate process-tree usage.
 Further profiling/bounded execution of the remaining full attacks is needed;
 neither parameter security nor the <=500ms complete SQL goal is established.
+
+## Complete classical numerical gate and exact dual rounding
+
+The [fixed public driver](estimate_n4096.py) now records the original sequential
+attack starts/returns before requiring the complete eight-result map. Seven
+hermetic observer tests cover exact argument/object preservation, ordered maps,
+missing/extra/substituted results, original exceptions, absent results, unexpected
+inputs/exception swallowing and exact function restoration. All16 local tests
+(9 coefficient/sign cases and7 observer cases) passed in0.427s under CPython3.11.
+The dependency-free release requirements_sync test also passed. No Rust behavior,
+Cargo dependency, product parameter, SQL timeout or production admission changed.
+
+R9's larger explicit offline600s wall/CPU budget completed all8 MATZOV attacks,
+but its ADPS16 child died by SIGSEGV during BKW. R10 removed asynchronous stack
+sampling and completed ADPS16; its later MATZOV child failed at the original
+dual-hybrid scalar conversion with a Sage infinity SignError. Both paired jobs
+were rejected, retaining completed individual maps and original failed evidence.
+The native SIGSEGV cause is still unknown. No failure became an infinite cost.
+
+The [exact dual-scalar rounding proof](DUAL-ROUNDING.md) certifies the original
+30-bit scalar as1 on a strictly checked RR domain, with original lazy evaluation
+outside it. The pinned original classmethod AST changes exactly one expression.
+In each actual r11 Sage child,17 original scalar/type and directed-interval
+comparisons,2 fallback cases and8 complete Cost/type/order/metadata comparisons
+passed before installation. The existing exact-GB74-case/2047-coefficient gate
+also passed unchanged in both children. These are genuine Sage gates, separate
+from the hermetic observer test markers.
+
+R11 completed both8-attack maps with exit0 and empty stderr, using the original
+full factory, all attacks/options and the explicit two in-memory overrides.
+ADPS16's minimum was2^227.76 operations and MATZOV's2^250.68787454. Local review
+checked both complete maps field-for-field against the earlier successful
+original maps, including dominated/infinite results and full-precision costs.
+All records matched exactly; source identities, byte hashes and resource receipts
+matched, kernel absence and server shutdown were confirmed. Both models ran in
+one245.955s research job. No latency-distribution or whole-process-tree memory
+claim follows from these individual observations.
+
+The complete [estimate/provenance record](ESTIMATE.md) identifies the published
+r11 driver SHA256, official sources, all attack costs/times, original failures,
+unchanged limits, reproduction and unresolved cryptographic obligations. This
+completes the classical numerical gate only. It neither establishes a BFV
+confidentiality theorem, quantum security, assessed Fiat–Shamir composition,
+network SQL/locks nor the <=500ms complete-query target. The goal remains open.

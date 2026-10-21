@@ -26,6 +26,42 @@ runner's time, address-space, physical memory and cleanup guards; this module
 neither installs a runtime nor launches a network job. Sage equivalence and full
 eight-attack/two-model execution are separate, non-hermetic gates.
 
+`estimate_n4096.py` is the fixed public Linux/Sage10.10 CLI for that separate
+numerical gate. It checks all63 official archive files/11 directories before
+and after evaluation, installs the explicit exact-GB adapter only after its
+Sage equivalence gate, then calls the original full `LWE.estimate` with all8
+attacks, GSA, one job, no deny/add list and no swallowed exceptions. The temporary
+`install_attack_progress` observer forwards every original call argument and
+returns the original result object; it records individual starts/returns before
+the final complete map. Missing, extra, reordered or substituted results reject.
+The original batch function is restored even on an attack failure. This CLI is
+an offline research consumer of `exact_gb_cost`, not a DCS library dependency.
+
+A second explicit adapter, `install_exact_dual_rounding`, handles one bounded
+30-bit scalar in the original dual-hybrid Cost. The [rounding proof](DUAL-ROUNDING.md)
+certifies its exact value and original-expression fallback outside the proved
+domain. Seventeen real Sage interval/scalar comparisons and8 full Cost/type/
+order/metadata comparisons must pass before that classmethod is changed in
+memory. The full original parameter search and all8 attacks remain required.
+
+Prepare the exact official revision above in an otherwise untouched source tree.
+Run each model in a fresh Linux supervisor with a600s GNU SIGKILL wall deadline,
+CPU600s, address-space2147483648 bytes, core0 and per-file16777216 bytes; the
+operator must separately enforce an aggregate physical-memory2GiB cgroup. With
+those external guards in place, the child commands are:
+
+```sh
+sage -python experiments/lattice-cost-prefix/estimate_n4096.py --estimator-root /path/to/exact-official-tree --model adps16-classical --max-seconds-per-model 600
+sage -python experiments/lattice-cost-prefix/estimate_n4096.py --estimator-root /path/to/exact-official-tree --model matzov-classical --max-seconds-per-model 600
+```
+
+The CLI's Python alarm alone cannot enforce those OS limits. Both complete
+eight-attack maps, successful terminal receipts and unchanged source identities
+are required for a two-model numerical conclusion. Partial records are diagnostic
+evidence only. Research limits do not change the DCS peer or full-query targets.
+The hermetic `test_estimate_progress.py` checks observer behavior with explicit
+public test markers; it supplies no Sage runtime or estimated attack costs.
+
 For distinct active degrees set Q(z)=prod(1-z^d), P(z)=(1-z)*Q(z), and
 R(z)=n*Q(z)-(1-z)*sum(m*d*z^(d-1)*prod_other(1-z^other)). Then P*H'=R*H and P(0)=1,
 so, writing H=sum A[k]z^k:
@@ -55,5 +91,7 @@ for the explicit adapter. There is no dependency on DCS application modules,
 secret keys, owner data or fixtures. Previous actual public-runtime evidence and
 remaining security obligations are in the
 [product model](../../crates/bfv-unrelinearized-product/MODEL.md).
-Executed local/Sage checks and the incomplete full sweep are recorded in
+The [classical numerical record](ESTIMATE.md) contains every attack, source pins,
+the native failures and the scope of the accepted maps.
+Executed local/Sage checks and the numerical sweep status are recorded in
 [VALIDATION.md](VALIDATION.md).

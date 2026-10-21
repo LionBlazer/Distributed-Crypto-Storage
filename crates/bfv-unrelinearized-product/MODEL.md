@@ -183,95 +183,60 @@ between ROM proof and concrete hashing;
 [Don–Fehr–Majenz–Schaffner](https://arxiv.org/abs/1902.07556) for separate QROM reductions.
 The implementation-specific derivations above are not theorems of those papers.
 
-A faithful lattice/confidentiality estimate for n4096,q=Q,CBD(20) is pending.
-On 2026-10-21 the numerical runner reached genuine Linux Sage 10.10/Python 3.12.3
-with a 2 GiB operator cgroup and GNU timeout 9.4. After the Git prerequisite was
-removed, the [official exact-commit archive](https://codeload.github.com/malb/lattice-estimator/tar.gz/53da5982597709ba0fdf94ea37a84d822310fd84)
-was staged without changing any estimator byte. All 63 files/11 directories and
-the six original RAW pins were independently checked before and after the run.
-The saved 101555-byte archive SHA256 is
-`4236adc38031c139c8a2721804d8962d6cacd015fae37f6f5215d2ac7f011060`;
-archive provenance reports `git_clean=null`, never a fabricated Git checkout.
+The complete classical independent-LWE numerical gate now has both eight-attack
+MATZOV and ADPS16 maps for n4096,q=1152789568982753281,CBD(20) secret/error and
+m=infinity. Actual Sage10.10/Python3.12.3 returned minimum predicted costs of
+approximately2^250.688 operations (MATZOV BDD) and2^227.76 (ADPS16 uSVP).
+These are heuristic attack costs, not security lower bounds or a completed BFV
+confidentiality assessment. Ring rotations are not treated as independent random
+rows, and the P extension primes are not included in the encryption modulus.
 
-A startup diagnostic measured Sage virtual size 1602277376 bytes and
-RSS 204087296 bytes before NumPy. The original 1536 MiB address-space fuse left
-8335360 bytes and NumPy mapping failed. The offline research child now has an
-explicit 2048 MiB virtual limit; the aggregate physical 2 GiB cgroup, GNU 120s,
-CPU 120s and file 16 MiB guards are unchanged. This does not change a DCS peer cap.
-Actual MATZOV evaluation then started, but independent GNU timeout stopped it
-after 120.05s before any attack-result or model-completion record. ADPS16 was
-not launched. Setup and source checks passed, and kernel/server cleanup was
-acknowledged; `.local/lattice-runtime-archive-run-r3` retains the raw evidence.
-Waited-child CPU/RSS after this group SIGKILL does not account for all Sage
-descendants and must not be presented as whole-estimator resource usage.
+The [full numerical record](../../experiments/lattice-cost-prefix/ESTIMATE.md)
+preserves every returned attack, including dominated hybrids and BKW's actual
+infinity result, source/driver identities, limits, timings and the failed r9
+ADPS16/r10 MATZOV repetitions. That native Sage SIGSEGV was rejected; the later complete ADPS16
+map was computed afresh without asynchronous stack sampling. Its underlying
+cause has not been established. Missing or killed attacks never supply a cost.
 
-The ordinary estimator remains pinned at
-`53da5982597709ba0fdf94ea37a84d822310fd84`, with exact CBD20 secret/error,
-full Q, m=infinity, all eight attacks and separate classical MATZOV/ADPS16 models.
-No sweep or minimum cost has been established. All eight attacks remain required
-for a numerical claim. Full confidentiality assessment remains an explicit
-receiving blocker.
+The original official estimator archive at revision
+`53da5982597709ba0fdf94ea37a84d822310fd84` is101555 bytes, SHA256
+`4236adc38031c139c8a2721804d8962d6cacd015fae37f6f5215d2ac7f011060`.
+All63 files/11 directories and the six original RAW pins were checked before and
+after each calculation; provenance is an archive, with `git_clean=null`.
+The [published fixed-input driver](../../experiments/lattice-cost-prefix/estimate_n4096.py)
+calls the original full LWE.estimate with all8 attacks, GSA, one job, empty deny/add
+lists and no swallowed exceptions. It observes actual per-attack returns before
+requiring the full original result map. OS guards are600s/CPU600s/2GiB-AS/file16MiB
+plus the operator's separate physical2GiB cgroup. These offline research budgets
+change no DCS peer or full-query target.
 
-The later r4b diagnostic located a failed FLINT allocation in the official dense
-Hilbert-series construction and exited nonzero before any attack result. A
-separately reviewed exact-prefix implementation avoids forming the entire dense
-power series: for H(z)=prod(1-z^d)^m/(1-z)^n, it uses
-`k*A[k] = sum((n-sum(m*d for d|j))*A[k-j], j=1..k)`, with exact Sage integers,
-zero-remainder division, the same first strictly negative coefficient and
-unchanged cost/metadata. Unsupported domains call the original official function.
-The original archive bytes remain unchanged; this is an explicit in-memory
-`gb_cost` override, not a vanilla official execution or an omitted attack.
+This uses explicit in-memory implementation overrides, not vanilla official
+execution. The [exact sparse recurrence](../../experiments/lattice-cost-prefix/README.md)
+and [nonnegative-prefix criterion](../../experiments/lattice-cost-prefix/POSITIVE-PREFIX.md)
+replace the dense Hilbert series while preserving its exact coefficients,
+strict first-negative rule, Cost and metadata. Before each actual installation,
+the genuine Sage oracle passed74 cases/2047 QQ coefficients, complete Cost/type/
+order/metadata, both original-function fallbacks and the42-coefficient public
+baseline. All other estimator source bytes remain unchanged. The previous
+incomplete runs and the independent integer tests are recorded in the
+[validation history](../../experiments/lattice-cost-prefix/VALIDATION.md).
 
-The authorized public r6 run actually exercised that implementation under Sage
-10.10/Python3.12.3. Before installing the override,57 cases checked711 exact QQ
-coefficients and full Cost/metadata equivalence against the original function;
-two fallback cases and the42-coefficient bounded public prefix also passed
-(first negative at41). The controller rechecked the complete official source
-archive and retained the full source map, script hashes and terminal receipts in
-`.local/lattice-runtime-archive-run-r6`. The optimization module SHA256 is
-`cd69034d8d5888c5e86ea4d9fad359055d35970e0aaaefb448956e986e8e45ff`.
+The second [exact dual-scalar adapter](../../experiments/lattice-cost-prefix/DUAL-ROUNDING.md)
+preserves the original30-bit rounded scalar with a proved1 on its bounded
+RR domain, and evaluates the original expression elsewhere. It clones the pinned
+original classmethod with exactly one checked expression substitution. A separate
+actual Sage gate requires17 directed-interval/original-scalar comparisons,
+2 fallbacks and8 complete Cost/type/order/metadata comparisons before installation.
+It changes no other cost expression, attack or parameter search. This addresses
+the failed r10 symbolic infinity subtraction, not the unrelated r9 native fault.
 
-MATZOV then entered the required Gaussian-like Arora–GB branch and remained in
-the exact coefficient recurrence in repeated30s stack snapshots. Independent
-GNU SIGKILL terminated it at120.044s. There was no attack-result record, completed
-model, estimated minimum or ADPS16 execution. This diagnoses a remaining research
-runtime cost; it supplies no attack-cost lower bound. The120s/2GiB research guards
-were preserved, and kernel absence/server shutdown were confirmed. Waited-child
-CPU/RSS again does not account for the full Sage process tree. All security and
-SQL admission flags remain false. The next numerical step must handle this
-Gaussian-like prefix without dropping attacks or replacing resource failure by
-an infinite attack cost.
+Full confidentiality assessment remains an explicit receiving blocker: these
+independent-LWE models do not assess ring-specific attacks, entropy/PRNG quality,
+side channels, chosen-ciphertext/protocol composition, concrete Fiat-Shamir
+hashing or quantum attacks. All security and live SQL admission flags remain
+false. The numerical gate itself no longer needs an incomplete partial minimum
+or another optimization of the research estimator.
 
-The new [exact sparse-prefix research source](../../experiments/lattice-cost-prefix/README.md)
-uses P*H'=R*H instead of convolution with every earlier coefficient. Here
-P=(1-z)*prod_distinct(1-z^d) and
-R=n*prod_distinct(1-z^d)-(1-z)*sum(m*d*z^(d-1)*prod_other(1-z^other)). Since P(0)=1,
-`k*A[k]=sum((R[i-1]-(k-i)*P[i])*A[k-i], i=1..k)`. All arithmetic and divisions are
-exact. Zero multiplicities and degrees beyond precision are algebraic identities;
-repeated degrees combine exponents. This changes no first-negative rule, cost,
-attack selection or parameter. For the actual two-degree branch only a few
-nonzero shifts are needed, avoiding the previous quadratic coefficient loop.
-All6 local tests passed, including346 independent finite-binomial series and
-full8192-coefficient zero-sample coverage. Eighteen additional full prefixes
-were generated locally. These are algebraic checks, not an estimator result.
-The actual authorized r7 run passed the v2 Sage gate:68 cases/1183 coefficients,
-full Cost metadata, two original fallbacks and the42-coefficient public baseline.
-The complete Gaussian-like loop still exceeded120s (GNU SIGKILL at120.049s),
-without any attack-result or model completion; ADPS16 did not start. Source pins
-and cleanup checks passed. No numerical security minimum was established. See
-[validation and remaining gates](../../experiments/lattice-cost-prefix/VALIDATION.md).
-
-The subsequent v3 [exact nonnegative-prefix derivation](../../experiments/lattice-cost-prefix/POSITIVE-PREFIX.md)
-proves whole prefixes using integer inequalities rather than expanding them.
-All other cases keep the same sparse coefficients and first-negative search.
-Nine local tests passed; the negative control at6615 remains required. Actual
-Sage r8 passed74 complete oracle/Cost cases and2047 coefficients, plus both
-fallbacks and the42-coefficient baseline, before the explicit v3 override.
-The full model then advanced through Arora–GB to BKW and primal-hybrid routines
-in30/60/90s stack samples. GNU SIGKILL at120.063s still prevented a completed
-eight-attack map or numeric minimum; ADPS16 did not start. Source/cleanup checks
-passed. This is progress in the offline assessment tool, not cryptographic
-approval or a complete-query speed measurement. No receiving flag changes.
 Smallness does not prove sampler entropy. The certificate does not establish
 same-secret Formation, authenticated Source/hidden-program completeness,
 authorization, current agreed head/QC, durable locks or SQL admission.

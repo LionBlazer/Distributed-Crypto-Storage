@@ -56,9 +56,11 @@ may live here as isolated experiments; they are not core dependencies.
   encoding and every upstream encryption residue with public fixtures and seven
   native tests. It implements no cryptographic proof or accepting SQL API.
 - [Exact lattice-cost prefixes](lattice-cost-prefix/README.md) replaces dense
-  Hilbert-series work with exact sparse differential coefficients for a pinned
-  research estimator. Independent integer tests are hermetic; genuine Sage and
-  complete lattice attack-cost assessment remain separate gates.
+  Hilbert-series work with exact sparse differential coefficients and proves one
+  bounded dual-cost scalar's exact rounding for a pinned research estimator.
+  Independent integer/observer tests are hermetic; the separate fixed-input Sage
+  CLI records [classical attack-cost estimates](lattice-cost-prefix/ESTIMATE.md)
+  without a confidentiality or SQL admission grant.
 - Other directories keep their own manifests, reproduction scripts and README
   files. Some deliberately export pinned historical source revisions into an
   isolated local workspace; these are research candidates, not core imports.
