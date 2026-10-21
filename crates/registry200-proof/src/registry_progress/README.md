@@ -262,3 +262,17 @@ alias reuses a genuine proof, without another Source/Encoding/FHE proof. Existin
 genuine predicate proofs also exercise role rejection. Two new compile-fail
 examples protect private construction/ownership. Neither opener changes proof
 relations, profiles, result builders, wire bytes or security/resource policy.
+
+### Shared private predicate equations
+
+`transition_air` owns the existing complete H512 layout, hashing and row carry.
+The private `equations::predicate` module owns its unchanged lock scan, window,
+WAIT/resume, NOWAIT and progress equations. Its SQL identity is supplied by the
+same independently constructed public statement. This is a private factoring;
+the public transition APIs and proof profiles are unchanged.
+
+Two metadata-only tests freeze the actual ordered constraints, every periodic
+cell and full public statement for both old roles. Their
+[validation record](AIR-VALIDATION.md) also reports the rejected mechanical
+lowering experiment. No experimental compiler or partial accepting relation is
+retained in this module.

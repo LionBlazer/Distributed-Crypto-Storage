@@ -3,6 +3,7 @@ pub mod bootstrap;
 mod bootstrap_air;
 pub mod circuit;
 pub mod control_result_opening;
+mod equations;
 mod fields;
 pub mod result_opening;
 pub mod statement;
@@ -61,3 +62,6 @@ pub fn progress_profile_digest() -> [u8; 32] {
 
 #[cfg(test)]
 mod model_tests;
+
+#[cfg(test)]
+mod air_snapshot_tests;
