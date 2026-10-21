@@ -1,8 +1,8 @@
 //! Complete MAIN writer for the fixed plan, guarded through success and errors.
+#[cfg(test)]
+use super::Metadata;
 use super::{
-    Metadata,
     air::ProgramAir,
-    complete_build,
     evaluate::{Error, Evaluator, Result},
     owner::PrimaryInputs,
     plan::*,
@@ -18,8 +18,9 @@ impl Drop for PrivateTrace {
 }
 /// No PP/PCS/proof, accepting token or reusable verdict is constructed here.
 /// PrimaryInputs stays owner-custodied; it is never a peer/validator argument.
+#[cfg(test)]
 pub(super) fn prepare(m: &Metadata, input: &PrimaryInputs) -> Result<(ProgramAir, PrivateTrace)> {
-    let built = complete_build(m).map_err(|_| Error::Origin)?;
+    let built = super::complete_build(m).map_err(|_| Error::Origin)?;
     let public = super::public_values::Expected::checked(m).map_err(|_| Error::Shape)?;
     let air = ProgramAir {
         plan: Plan::new(built.pool).map_err(|_| Error::Shape)?,

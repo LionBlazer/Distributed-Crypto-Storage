@@ -1,4 +1,4 @@
-//! Closed test-private native proofs with immutable ROLE-only public setup.
+//! Closed native mathematics with immutable ROLE-only public setup.
 //! Setup retains no private input, RNG, trace or verification verdict.
 use super::{
     Metadata,
@@ -60,9 +60,18 @@ impl Drop for PhaseTiming {
     }
 }
 
+#[cfg(not(test))]
+struct PhaseTiming;
+#[cfg(not(test))]
+impl PhaseTiming {
+    fn new(_predicate: bool, _operation: &'static str, _phase: &'static str) -> Self {
+        Self
+    }
+}
+
 pub(super) const DEGREE_BITS: usize = 10;
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum Error {
+pub(in crate::registry_progress) enum Error {
     Shape,
     Resource,
     Security,
@@ -73,11 +82,11 @@ pub(super) enum Error {
     Backend,
     Verification,
 }
-pub(super) type Result<T> = core::result::Result<T, Error>;
+pub(in crate::registry_progress) type Result<T> = core::result::Result<T, Error>;
 
 /// All independently retained PUBLIC metadata, not a verdict or private opening.
 /// Length framing and the full original images prevent a reduced-tag association.
-pub(super) fn binding(m: &Metadata) -> [u8; 64] {
+pub(in crate::registry_progress) fn binding(m: &Metadata) -> [u8; 64] {
     let mut h = Sha512::new();
     h.update(b"DCS/research/word208/native-probe/complete-public-expectation/v2\0");
     h.update(super::profile());
@@ -129,6 +138,7 @@ fn prescreen_role(predicate: bool) -> Result<(ProgramAir, Origins, Assessment)> 
     wire::require_assessment(&report)?;
     Ok((air, built.origins, report))
 }
+#[cfg(test)]
 pub(super) fn prescreen(m: &Metadata) -> Result<(ProgramAir, Assessment)> {
     let _ = Expected::checked(m).map_err(|_| Error::Shape)?;
     let (air, _origins, report) = prescreen_role(m.predicate)?;
@@ -220,14 +230,14 @@ pub(super) fn prove_trace(
 }
 /// Immutable producer preprocessing and recipe IDs. No private witness, RNG or
 /// result status is retained. This is not Source/DATA/oldRoot/SQL authority.
-pub(super) struct ProverSetup {
+pub(in crate::registry_progress) struct ProverSetup {
     air: ProgramAir,
     origins: Origins,
     report: Assessment,
     data: ProverData<Config>,
 }
 impl ProverSetup {
-    pub(super) fn new(predicate: bool) -> Result<Self> {
+    pub(in crate::registry_progress) fn new(predicate: bool) -> Result<Self> {
         let _total = PhaseTiming::new(predicate, "prover_setup", "total");
         let (air, origins, report) = {
             let _phase = PhaseTiming::new(predicate, "prover_setup", "assessment");
@@ -245,7 +255,11 @@ impl ProverSetup {
         })
     }
     /// UNVERIFIED bytes only; no self-verification or per-query accepted flag.
-    pub(super) fn produce(&self, m: &Metadata, input: &PrimaryInputs) -> Result<Vec<u8>> {
+    pub(in crate::registry_progress) fn produce(
+        &self,
+        m: &Metadata,
+        input: &PrimaryInputs,
+    ) -> Result<Vec<u8>> {
         let _total = PhaseTiming::new(m.predicate, "produce", "total");
         if m.predicate != self.air.plan.pool.predicate {
             return Err(Error::Binding);
@@ -273,13 +287,13 @@ impl ProverSetup {
 }
 /// Receiver factory independently constructs its OWN role PP, then discards all
 /// prover-only data/recipe storage. No producer-supplied CommonData is accepted.
-pub(super) struct VerifierSetup {
+pub(in crate::registry_progress) struct VerifierSetup {
     air: ProgramAir,
     report: Assessment,
     common: CommonData<Config>,
 }
 impl VerifierSetup {
-    pub(super) fn new(predicate: bool) -> Result<Self> {
+    pub(in crate::registry_progress) fn new(predicate: bool) -> Result<Self> {
         let _total = PhaseTiming::new(predicate, "verifier_setup", "total");
         let (air, origins, report) = {
             let _phase = PhaseTiming::new(predicate, "verifier_setup", "assessment");
@@ -300,7 +314,7 @@ impl VerifierSetup {
     }
     /// Every invocation rechecks full original metadata/header, canonical bytes and
     /// actual native proof against fresh Expected309. Setup is not a proof cache.
-    pub(super) fn verify(&self, m: &Metadata, frame: &[u8]) -> Result<()> {
+    pub(in crate::registry_progress) fn verify(&self, m: &Metadata, frame: &[u8]) -> Result<()> {
         let _total = PhaseTiming::new(m.predicate, "verify", "total");
         let payload = wire::payload(m, frame)?;
         if m.predicate != self.air.plan.pool.predicate {
@@ -328,7 +342,13 @@ impl VerifierSetup {
         .map_err(|_| Error::Backend)?
     }
 }
+pub(in crate::registry_progress) fn require_frame(m: &Metadata, frame: &[u8]) -> Result<()> {
+    wire::payload(m, frame)?;
+    Expected::checked(m).map_err(|_| Error::Shape)?;
+    Ok(())
+}
 /// Complete cold producer wrapper, with genuine new role-only PUBLIC setup.
+#[cfg(test)]
 pub(super) fn produce(m: &Metadata, input: &PrimaryInputs) -> Result<Vec<u8>> {
     let _total = PhaseTiming::new(m.predicate, "cold_produce", "total");
     let _ = Expected::checked(m).map_err(|_| Error::Shape)?;
@@ -336,6 +356,7 @@ pub(super) fn produce(m: &Metadata, input: &PrimaryInputs) -> Result<Vec<u8>> {
 }
 /// Complete cold receiving wrapper: original header checked before PP allocation,
 /// then fresh independent receiver PP and mandatory full native verification.
+#[cfg(test)]
 pub(super) fn verify(m: &Metadata, frame: &[u8]) -> Result<()> {
     let _total = PhaseTiming::new(m.predicate, "cold_verify", "total");
     let _ = wire::payload(m, frame)?;

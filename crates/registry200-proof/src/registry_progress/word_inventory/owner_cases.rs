@@ -2,8 +2,9 @@
 //! Typed old/next banks and explicit outcomes are retained BEFORE evaluator/proof.
 use super::{
     Metadata, Val, domain, header,
-    owner::{self, CommandInput, PrimaryInputs, WalkInput},
+    owner::{self, PrimaryInputs},
 };
+use crate::registry_progress::word::{CommandInput, WalkInput};
 use p3_field::PrimeCharacteristicRing;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Kind {

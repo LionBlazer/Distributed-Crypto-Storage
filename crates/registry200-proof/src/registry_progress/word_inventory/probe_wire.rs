@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 
 const MAGIC: &[u8; 8] = b"DCSWCW02";
 pub(super) const HEADER_BYTES: usize = 128;
-pub(super) const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
+pub(in crate::registry_progress) const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
 const MAX_PAYLOAD_BYTES: usize = MAX_FRAME_BYTES - HEADER_BYTES;
 const MAX_SEQUENCE: usize = 4096;
 const MAX_SLOTS: usize = 4 * 1024 * 1024;
@@ -29,7 +29,7 @@ const INPUT_DEPTH: usize = DEGREE_BITS + LOG_BLOWUP;
 const HONEST_SLOTS: usize = 353_962 * 9 + 4_946 * 48 + 32_768;
 const HONEST_PAYLOAD_BYTES: usize = 353_962 * 8 + 4_946 * 40 + 3 * 32_768;
 
-pub(super) fn profile() -> [u8; 32] {
+pub(in crate::registry_progress) fn profile() -> [u8; 32] {
     let mut h = Sha256::new();
     h.update(b"DCS/research/word208/native-probe/canonical-frame/v2\0");
     h.update(super::profile());

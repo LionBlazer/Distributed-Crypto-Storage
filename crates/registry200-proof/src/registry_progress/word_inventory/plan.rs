@@ -521,6 +521,7 @@ impl Plan {
         }
         Ok(())
     }
+    #[cfg(test)]
     pub fn admissible_rows(&self) -> bool {
         self.rows.len() <= super::TARGET_HEIGHT
     }
@@ -589,6 +590,7 @@ impl Plan {
         }
         p
     }
+    #[cfg(test)]
     pub fn summary(&self) -> String {
         format!(
             "complete=true fits_H512={} target_height={} actual_rows={} padded_height={} main_width={} pp_width={} values={} wire_reads={} max_fanout={} assertions={} ranges={} hash_absorbs={} policy_queries={} policy_table=25 mask_bytes=32 mask_reads=4 stream_fields={} phases={:?}",
@@ -609,6 +611,7 @@ impl Plan {
             self.phases
         )
     }
+    #[cfg(test)]
     pub fn coverage(&self) -> BTreeMap<String, usize> {
         let mut map = BTreeMap::new();
         for name in self.pool.fields.keys() {

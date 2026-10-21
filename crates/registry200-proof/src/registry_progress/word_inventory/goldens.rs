@@ -1,5 +1,5 @@
 //! Mandatory literal regression pins from actual PUBLIC27, not proof authority.
-use super::{plan::Plan, tests::full_ir_bytes};
+use super::{inventory_encoding::full_ir_bytes, plan::Plan};
 use bfv_hiding_stark::Config;
 use p3_batch_stark::ProverData;
 use p3_field::PrimeField64;

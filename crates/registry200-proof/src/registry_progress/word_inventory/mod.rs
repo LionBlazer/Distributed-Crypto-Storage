@@ -1,14 +1,16 @@
-//! Test-private complete word relation with constrained PUBLIC309 and native proofs.
+//! Internal complete word relation with constrained PUBLIC309 and native proofs.
 //! Independently owned public setup grants no SQL or accepted-state capability.
 mod air;
 mod canonical;
+#[cfg(test)]
 mod check;
 mod control;
 mod evaluate;
 mod expr;
-mod owner;
+pub(super) mod owner;
 mod plan;
 mod predicate;
+#[cfg(test)]
 mod public_tests;
 mod public_values;
 mod recipes;
@@ -18,18 +20,23 @@ mod structural_setup;
 #[cfg(test)]
 mod tests;
 mod witness;
+#[cfg(test)]
 mod witness_tests;
 use crate::{
     Val,
     source::{self, version::SourceVersionExpected},
 };
-use expr::{Builder, Pool};
+use expr::Builder;
+#[cfg(test)]
+use expr::Pool;
 use p3_field::PrimeCharacteristicRing;
 use schema::*;
-use sha2::{Digest, Sha256, Sha512};
+#[cfg(test)]
+use sha2::Sha512;
+use sha2::{Digest, Sha256};
 const TARGET_HEIGHT: usize = 512;
-const PROFILE_DOMAIN:&[u8]=b"DCS/research/word208/StateVersion-Cmd160-Stmt96/H512/v2/structuralPP/direct309PUBLIC/no-value-fold/fullSource680/fullP2/typed-u32/fixedPolicy25/Mask256-four-duplicates/relativeOldRoot-no-proof";
-fn profile() -> [u8; 32] {
+pub(super) const PROFILE_DOMAIN:&[u8]=b"DCS/research/word208/StateVersion-Cmd160-Stmt96/H512/v2/structuralPP/direct309PUBLIC/no-value-fold/fullSource680/fullP2/typed-u32/fixedPolicy25/Mask256-four-duplicates/relativeOldRoot-no-proof";
+pub(super) fn profile() -> [u8; 32] {
     Sha256::digest(PROFILE_DOMAIN).into()
 }
 fn domain(label: &str) -> [Val; 4] {
@@ -43,7 +50,7 @@ fn domain(label: &str) -> [Val; 4] {
         .try_into()
         .expect("domain4")
 }
-fn header(label: &str) -> Vec<Val> {
+pub(super) fn header(label: &str) -> Vec<Val> {
     domain(label)
         .into_iter()
         .chain([Val::ONE])
@@ -53,23 +60,25 @@ fn header(label: &str) -> Vec<Val> {
 /// Metadata is private and unproved. A future receiving boundary must obtain the
 /// entire SourceVersion + independently confirmed OldRoot/bootstrap association.
 /// This inspector cannot install metadata or turn it into a proof capability.
-struct Metadata {
-    source: SourceVersionExpected,
-    predicate: bool,
-    registry_header: [Val; 33],
-    enrollment_header: [Val; 33],
-    context: [Val; 100],
-    scope: [Val; 16],
-    parent: [Val; 8],
-    enrollment: [Val; 4],
-    old: [Val; 4],
-    command: [Val; 4],
-    statement: [Val; 4],
-    next: [Val; 4],
-    result: [Val; 4],
-    blind_sql: [Val; 8],
+#[derive(Clone)]
+pub(super) struct Metadata {
+    pub(super) source: SourceVersionExpected,
+    pub(super) predicate: bool,
+    pub(super) registry_header: [Val; 33],
+    pub(super) enrollment_header: [Val; 33],
+    pub(super) context: [Val; 100],
+    pub(super) scope: [Val; 16],
+    pub(super) parent: [Val; 8],
+    pub(super) enrollment: [Val; 4],
+    pub(super) old: [Val; 4],
+    pub(super) command: [Val; 4],
+    pub(super) statement: [Val; 4],
+    pub(super) next: [Val; 4],
+    pub(super) result: [Val; 4],
+    pub(super) blind_sql: [Val; 8],
 }
 impl Metadata {
+    #[cfg(test)]
     fn sample(predicate: bool) -> Self {
         // Only a bounded PUBLIC metadata example, without Source proving, SDK FHE,
         // a private witness or an assertion that these arbitrary roots open.
@@ -164,6 +173,7 @@ impl Metadata {
 }
 /// SINGLE closed factory. E IDs and Builder are never supplied by any caller.
 /// Every semantic/serializer/hash/lookup use below comes from this ONE owner.
+#[cfg(test)]
 fn complete_build(m: &Metadata) -> Result<recipes::Built, String> {
     complete_role(m.predicate)
 }
@@ -224,21 +234,28 @@ fn complete_role(predicate: bool) -> Result<recipes::Built, String> {
     }
     Ok(built)
 }
+#[cfg(test)]
 fn complete(m: &Metadata) -> Result<Pool, String> {
     Ok(complete_build(m)?.pool)
 }
 
-// Metadata-only native assessment; the entire owning module is cfg(test).
+// Actual native security/resource assessment before private proving.
 mod assessment;
 
-// Actual private native hiding math probe; no production acceptance API.
+// Fixed native implementation; no SQL or finality admission.
+#[cfg(test)]
+mod api_tests;
 mod goldens;
-mod probe;
+mod inventory_encoding;
+pub(super) mod probe;
+#[cfg(test)]
 mod probe_tests;
-mod probe_wire;
+pub(super) mod probe_wire;
 
 // Independent PUBLIC branch witness/proof coverage, no runtime admission.
+#[cfg(test)]
 mod owner_cases;
+#[cfg(test)]
 mod owner_cases_tests;
 
 // Separate complete Stmt96 -> Cw4112 math inventory; no runtime admission.

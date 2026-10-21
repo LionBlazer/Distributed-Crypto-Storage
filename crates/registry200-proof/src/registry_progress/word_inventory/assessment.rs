@@ -39,18 +39,27 @@ const BUS_MASK: &str = "DCS/research/word208/v1/mask256";
 
 /// Derived numeric metadata, not a checked state, mathematical proof or grant.
 pub(super) struct Assessment {
+    #[cfg(test)]
     role: &'static str,
+    #[cfg(test)]
     base: usize,
+    #[cfg(test)]
     extension: usize,
+    #[cfg(test)]
     degree: usize,
+    #[cfg(test)]
     original: usize,
+    #[cfg(test)]
     widest: usize,
+    #[cfg(test)]
     weight: u64,
+    #[cfg(test)]
     weighted_height: u64,
     packed: usize,
     chunks: usize,
     aux: usize,
     openings: usize,
+    #[cfg(test)]
     hiding_rows: usize,
     baseline: ProvenSecurity,
     baseline_report: SecurityReport,
@@ -93,6 +102,7 @@ impl Assessment {
         }
         Ok(())
     }
+    #[cfg(test)]
     fn log(&self) {
         eprintln!(
             "word_assessment role={} H={} MAIN={} PP={} main_next={} pp_next={} BASE={} EXT={} degree={} original={} widest={} count_weight={} weighted_height={} packed={} chunks={} AUX={} openings={} hiding_rows={} baseline_udr={} baseline_ldr={} udr_bits={:.12} ldr_bits={:.12} logup_bits={:.12} workspace_bytes={} external_cap={} admitted=false proof=false owner_budget_unproven=true",
@@ -212,6 +222,13 @@ pub(super) fn assess(air: &ProgramAir) -> Result<Assessment> {
     let gadget = LogUpGadget::new();
     let original = Lookups::<Val>::from_air::<Challenge, ProgramAir>(air);
     let messages = Messages::original(air, &original)?;
+    // The independently counted original inventory must match the SDK's count
+    // accounting used below; retaining diagnostics must not hide that relation.
+    if original.total_count_weight() != messages.weight
+        || messages.weight.checked_mul(HEIGHT as u64) != Some(messages.weighted_height)
+    {
+        return Err("word-assessment:original-weight-accounting".into());
+    }
     p3_lookup::check_bus_widths(core::slice::from_ref(&original)).map_err(|_| "bus-width")?;
     p3_lookup::check_multiplicity_height_bound(core::slice::from_ref(&original), &[HEIGHT])
         .map_err(|_| "multiplicity-height")?;
@@ -324,22 +341,31 @@ pub(super) fn assess(air: &ProgramAir) -> Result<Assessment> {
     let report = proven_security_report(&fri, &air_shape, &instance, &[extra], &grinding);
     let resources = Resources::derive(air, aux, chunks, dimension, committed_log)?;
     let assessment = Assessment {
+        #[cfg(test)]
         role: if air.plan.pool.predicate {
             "predicate"
         } else {
             "control"
         },
+        #[cfg(test)]
         base: n_base,
+        #[cfg(test)]
         extension: n_ext,
+        #[cfg(test)]
         degree,
+        #[cfg(test)]
         original: messages.count,
+        #[cfg(test)]
         widest: messages.width,
+        #[cfg(test)]
         weight: messages.weight,
+        #[cfg(test)]
         weighted_height: messages.weighted_height,
         packed: packed.len(),
         chunks,
         aux,
         openings,
+        #[cfg(test)]
         hiding_rows,
         baseline,
         baseline_report,
@@ -348,6 +374,7 @@ pub(super) fn assess(air: &ProgramAir) -> Result<Assessment> {
         resources,
     };
     // Complete numeric report precedes any security/resource refusal.
+    #[cfg(test)]
     assessment.log();
     assessment.require_security()?;
     Ok(assessment)
@@ -445,7 +472,9 @@ impl Messages {
 /// Future recipes/owner code MUST bound its own allocations; the held-PID cap remains.
 struct Resources {
     total: usize,
+    #[cfg(test)]
     charges: Vec<(&'static str, usize)>,
+    #[cfg(test)]
     stages: [usize; 6],
 }
 impl Resources {
@@ -564,7 +593,9 @@ impl Resources {
         let total = charges.iter().try_fold(0usize, |n, (_, v)| add(n, *v))?;
         Ok(Self {
             total,
+            #[cfg(test)]
             charges,
+            #[cfg(test)]
             stages,
         })
     }

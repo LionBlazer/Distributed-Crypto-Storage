@@ -1,18 +1,23 @@
 //! Typed private primary ownership and bounded PUBLIC honest examples.
 //! Neither a model state, a hash nor this constructor establishes admission.
+#[cfg(test)]
+use super::{Metadata, domain, header};
 use super::{
-    Metadata, Val, domain,
+    Val,
     evaluate::{Error, Result},
-    header,
     recipes::{CmdField, Group, Primary, SaltField, WalkField},
 };
+use crate::registry_progress::word::{CommandInput, WalkInput};
+#[cfg(test)]
 use crate::source::{self, version::SourceVersionExpected};
+#[cfg(test)]
 use bfv_hiding_stark::poseidon;
 use p3_field::PrimeCharacteristicRing;
+#[cfg(test)]
 use sha2::{Digest, Sha512};
 /// Fixed primary fields, never an external string map or arbitrary callback.
 /// All values are private except the explicitly NONSECRET test fixture below.
-pub(super) struct PrimaryInputs {
+pub(in crate::registry_progress) struct PrimaryInputs {
     pub source: [Val; 587],
     pub source_salt: [Val; 4],
     pub source_bytes: [u8; 12],
@@ -22,37 +27,6 @@ pub(super) struct PrimaryInputs {
     pub walk: WalkInput,
     pub mask: [u8; 32],
     pub salts: [[Val; 4]; 3],
-}
-#[derive(Default)]
-pub(super) struct CommandInput {
-    pub op: usize,
-    pub actor: Option<usize>,
-    pub principal: usize,
-    pub id: u64,
-    pub name: [u32; 8],
-    pub mode: u8,
-    pub wait: u8,
-    pub offset: u8,
-    pub limit: u8,
-    pub projection: u8,
-    pub abort: bool,
-}
-#[derive(Default)]
-pub(super) struct WalkInput {
-    pub client: [Val; 8],
-    pub call: u64,
-    pub invocation: [Val; 8],
-    pub sql: [Val; 8],
-    pub cursor: u8,
-    pub micro: u64,
-    pub holder: u64,
-    pub mode: u8,
-    pub revision: u64,
-    pub old_salt: [Val; 4],
-    pub new_salt: [Val; 4],
-    pub statement_salt: [Val; 4],
-    pub visited: [bool; 4],
-    pub selected: [bool; 4],
 }
 fn limb(x: u64, i: usize) -> Result<Val> {
     if i >= 2 {
@@ -70,7 +44,7 @@ fn at(a: &[Val], i: usize) -> Result<Val> {
     a.get(i).copied().ok_or(Error::Shape)
 }
 impl PrimaryInputs {
-    pub fn value(&self, p: Primary) -> Result<Val> {
+    pub(super) fn value(&self, p: Primary) -> Result<Val> {
         let i = p.index;
         let c = &self.command;
         let w = &self.walk;
@@ -177,40 +151,8 @@ impl Drop for PrimaryInputs {
         self.salts.iter_mut().for_each(|v| v.fill(Val::ZERO));
     }
 }
-impl Drop for CommandInput {
-    fn drop(&mut self) {
-        self.op = 0;
-        self.actor = None;
-        self.principal = 0;
-        self.id = 0;
-        self.name.fill(0);
-        self.mode = 0;
-        self.wait = 0;
-        self.offset = 0;
-        self.limit = 0;
-        self.projection = 0;
-        self.abort = false;
-    }
-}
-impl Drop for WalkInput {
-    fn drop(&mut self) {
-        self.client.fill(Val::ZERO);
-        self.call = 0;
-        self.invocation.fill(Val::ZERO);
-        self.sql.fill(Val::ZERO);
-        self.cursor = 0;
-        self.micro = 0;
-        self.holder = 0;
-        self.mode = 0;
-        self.revision = 0;
-        self.old_salt.fill(Val::ZERO);
-        self.new_salt.fill(Val::ZERO);
-        self.statement_salt.fill(Val::ZERO);
-        self.visited.fill(false);
-        self.selected.fill(false);
-    }
-}
 /// Exact absorb rule, with guarded scratch, never a proof or a serialized status.
+#[cfg(test)]
 pub(super) fn hash(v: &[Val]) -> [Val; 4] {
     assert!(!v.is_empty() && v.len().is_multiple_of(8));
     let mut state = [Val::ZERO; 12];
@@ -222,9 +164,11 @@ pub(super) fn hash(v: &[Val]) -> [Val; 4] {
     scratch.fill(Val::ZERO);
     state[..4].try_into().expect("root4")
 }
+#[cfg(test)]
 pub(super) fn words(bytes: &[u8]) -> Vec<Val> {
     source::statement::words(bytes).collect()
 }
+#[cfg(test)]
 pub(super) fn append64(v: &mut Vec<Val>, x: u64) {
     v.extend([Val::from_u32(x as u32), Val::from_u32((x >> 32) as u32)]);
 }
@@ -232,9 +176,11 @@ pub(super) fn append64(v: &mut Vec<Val>, x: u64) {
 /// generator, FHE evaluator, Data admission, accepted bank or SQL answer is used.
 /// Only two honest cases are generated here: Begin and Start/Done. The complete
 /// evaluator still handles every recipe, input kind, hash and fixed lookup.
+#[cfg(test)]
 pub(super) fn public_case(predicate: bool) -> (Metadata, PrimaryInputs) {
     public_case_variant(predicate, 0)
 }
+#[cfg(test)]
 pub(super) fn public_case_variant(predicate: bool, variant: u8) -> (Metadata, PrimaryInputs) {
     let mut m = Metadata::sample(predicate);
     m.parent[0] += Val::from_u8(variant);

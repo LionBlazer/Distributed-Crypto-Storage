@@ -2,12 +2,12 @@
 use super::{
     Metadata, Val,
     air::ProgramAir,
-    assessment, check, complete, owner,
+    assessment, check, complete,
+    inventory_encoding::full_ir_bytes,
+    owner,
     plan::*,
     public_values::{self, Address, Expected, Group},
-    structural_setup,
-    tests::full_ir_bytes,
-    witness,
+    structural_setup, witness,
 };
 use p3_air::BaseAir;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};

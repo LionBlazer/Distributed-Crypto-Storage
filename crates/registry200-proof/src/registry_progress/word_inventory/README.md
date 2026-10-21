@@ -1,10 +1,12 @@
-# Private complete word proof candidate
+# Internal complete Word proof backend
 
-This module is compiled only for this library's tests. It owns a separate
+This private implementation is compiled in ordinary library builds behind the
+[public Word mathematical API](../word/README.md). It owns a separate
 State208/Cmd160/Statement96 mathematical relation, typed witness writer and
 actual hiding-STARK probe. It grants no Source/DATA admission, verified prior
-state, current head, SQL result or finality authority. Production receiving
-profiles and APIs are unchanged.
+state, current head, SQL result or finality authority. The public facade exposes
+this exact mathematical backend; existing runtime/finality admission profiles
+are unchanged. Fixtures, owner cases and diagnostic/attack helpers remain test-only.
 
 ## Responsibilities and dependencies
 
@@ -15,8 +17,9 @@ profiles and APIs are unchanged.
   and multiplicities. `air` lowers the graph to Poseidon2 and native LogUp.
 - `public_values` derives the 309 constrained public words from full metadata.
   `goldens` pins the complete graph, every PP cell and native public commitment.
-- `owner`, `evaluate` and `witness` construct bounded public examples and guarded
-  private MAIN traces. `check` evaluates actual SDK constraints and original
+- `owner`, `evaluate` and `witness` own guarded private MAIN construction. Public
+  command/walk input ownership and clearing live in `word/inputs.rs`. Bounded
+  owner examples are test-only. `check` evaluates actual SDK constraints and original
   lookups for diagnostics; it is not a proof verifier.
 - `owner_cases` independently serializes typed public branch examples and
   retains their explicit expected outcomes before creating any trace or proof.
@@ -24,8 +27,11 @@ profiles and APIs are unchanged.
   workspace policy before allocating PP or MAIN.
 - `structural_setup` constructs immutable public preprocessing. `probe` owns
   producer and independently constructed receiving setups; `probe_wire` owns
-  bounded canonical encoding. Receiving returns diagnostic `Result<()>`, with
-  no installable capability.
+  bounded canonical encoding. Internal receiving returns `Result<()>`; only the
+  facade constructs its privately owned move-only mathematical result afterwards.
+- `inventory_encoding` owns the unchanged exhaustive semantic byte stream used
+  by mandatory literal IR/PP/commitment pins. It is normal code; it no longer
+  imports a serializer from the test module.
 
 The module uses this crate's SourceVersion metadata and encodings,
 [bfv-hiding-stark](../../../../bfv-hiding-stark/README.md) for the actual hiding

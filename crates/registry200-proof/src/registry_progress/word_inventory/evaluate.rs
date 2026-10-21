@@ -15,7 +15,9 @@ pub(super) enum Error {
     Resource,
     Arithmetic,
     Binding,
+    #[cfg(test)]
     Base,
+    #[cfg(test)]
     Lookup,
 }
 pub(super) type Result<T> = core::result::Result<T, Error>;

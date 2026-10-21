@@ -2,10 +2,18 @@
 //! Native mathematical proofs create no receiving or SQL authority here.
 use super::plan::*;
 use crate::Val;
-use bfv_hiding_stark::{Challenge, poseidon};
-use p3_air::{Air, BaseAir, WindowAccess, symbolic::AirLayout};
-use p3_field::{PrimeCharacteristicRing, coset::TwoAdicMultiplicativeCoset};
-use p3_lookup::{Count, InteractionBuilder, LogUpGadget, Lookups};
+#[cfg(test)]
+use bfv_hiding_stark::Challenge;
+use bfv_hiding_stark::poseidon;
+#[cfg(test)]
+use p3_air::symbolic::AirLayout;
+use p3_air::{Air, BaseAir, WindowAccess};
+use p3_field::PrimeCharacteristicRing;
+#[cfg(test)]
+use p3_field::coset::TwoAdicMultiplicativeCoset;
+use p3_lookup::{Count, InteractionBuilder};
+#[cfg(test)]
+use p3_lookup::{LogUpGadget, Lookups};
 use p3_matrix::dense::RowMajorMatrix;
 const WIRE: &str = "DCS/research/word208/v1/ssa";
 const POLICY: &str = "DCS/research/word208/v1/policy25";
@@ -168,6 +176,7 @@ impl<AB: InteractionBuilder<F = Val>> Air<AB> for ProgramAir {
 /// Actual SDK automatic LogUp packing and ordered BASE/EXT count/degree. This
 /// allocates symbolic DAGs only, never PP/Main/LDE/PCS/proofs. H may exceed512
 /// solely to report the COMPLETE overflowed candidate; it is NOT an admitted H.
+#[cfg(test)]
 pub(super) fn symbolic_report(air: &ProgramAir) -> Result<String, String> {
     use p3_batch_stark::symbolic::{
         get_log_num_quotient_chunks_for_domain, get_max_constraint_degree, get_symbolic_constraints,

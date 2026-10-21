@@ -66,6 +66,6 @@ mod model_tests;
 #[cfg(test)]
 mod air_snapshot_tests;
 
-// Complete private word-family math gates; no production receiving capability.
-#[cfg(test)]
+// Fixed internal Word mathematics behind the explicit public facade.
+pub mod word;
 mod word_inventory;

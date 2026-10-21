@@ -10,10 +10,12 @@ The v2 step profile uses width 8266 and the distinct v2 Statement96 profile; no
 old proof profile is reinterpreted. This module does not activate SQL or finality;
 existing profiles and admission remain unchanged.
 
-The test-private [complete word proof candidate](src/registry_progress/word_inventory/README.md)
-uses a separate bounded H512 relation and actual hiding proof/cold verification.
-Its 13 owning cases passed in 2.32 s. It remains outside production admission;
-its subsecond mathematical samples exclude the complete DCS query composition.
+The [public Word mathematical API](src/registry_progress/word/README.md) uses the
+separate bounded H512 backend and actual hiding proof/cold verification. Its
+original literal graph/PP/commitment pins remain mandatory in ordinary builds.
+Fixtures and attack helpers remain test-only. It grants no Source/OldRoot,
+freshness, finality or SQL admission; component timings exclude the complete DCS
+query composition.
 
 This library owns the single fixed Source-opening and Registry200 lifecycle
 circuits previously owned by the hiding-FRI experiment. It verifies actual
@@ -204,3 +206,14 @@ records one genuine collection, strict cryptographic rejections, two encrypted
 products reusing the same checked DATA ciphertext, and the preserved Pair path.
 It grants mathematical association only; SQL/current-head/key authorization
 and network lock finality are not supplied by this new result.
+## Word mathematical API
+
+The [registry_progress::word](src/registry_progress/word/README.md) facade now
+exposes the fixed State208/Cmd160/Stmt96 Word relation in ordinary library builds.
+Public expectations derive their original headers and complete Source context;
+guarded move-only owner inputs feed the existing closed native prover. Independently
+constructed public receiving setup always runs bounded canonical/native checking
+before returning the privately constructed mathematical result. Role-only public
+preprocessing can be retained; private inputs, randomness and verdicts cannot.
+The exact original profiles, full graph/PP pins and codecs are preserved. This is
+not Source/OldRoot authentication, current weighted finality or SQL/lock admission.
