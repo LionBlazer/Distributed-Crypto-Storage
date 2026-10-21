@@ -167,6 +167,67 @@ struct Cases {
     source: Evidence,
     mask: Evidence,
 }
+/// Independent pinned-SDK oracle for the actual owning AIR, without proving.
+fn compare_actual_assessment<A>(name: &str, air: &A)
+where
+    A: p3_air::Air<p3_air::symbolic::SymbolicAirBuilder<Val, bfv_hiding_stark::Challenge>>,
+{
+    use bfv_hiding_stark as engine;
+    use p3_field::coset::TwoAdicMultiplicativeCoset;
+    use p3_uni_stark::{AirLayout, OpeningShape, StarkSecurityParams};
+    let started = Instant::now();
+    let (actual, report) = engine::analyze(air).unwrap();
+    let collected_ms = started.elapsed().as_secs_f64() * 1000.;
+    let fri = p3_fri::FriParameters {
+        log_blowup: engine::LOG_BLOWUP,
+        log_final_poly_len: 0,
+        max_log_arity: 1,
+        num_queries: engine::QUERIES,
+        batch_proof_of_work_bits: 0,
+        commit_proof_of_work_bits: 0,
+        query_proof_of_work_bits: 0,
+        mmcs: (),
+    };
+    let started = Instant::now();
+    let expected = StarkSecurityParams::from_air::<Val, engine::Challenge, _>(
+        fri.security_regime(),
+        air,
+        AirLayout::from_air::<Val>(air),
+        TwoAdicMultiplicativeCoset::new(Val::ONE, engine::TRACE_LOG_HEIGHT).unwrap(),
+        engine::MODULUS_BITS,
+        engine::SECURITY_BITS,
+        2,
+        OpeningShape::hiding(engine::RANDOM_CODEWORDS),
+        fri.grinding_sites(),
+    );
+    let direct_sdk_ms = started.elapsed().as_secs_f64() * 1000.;
+    // Debug covers every SDK parameter, including all grinding sites. The
+    // independent direct-SDK route builds its own complete actual equations.
+    assert_eq!(format!("{actual:?}"), format!("{expected:?}"));
+    report.require_target().unwrap();
+    eprintln!(
+        "two_lane_assessment role={name} collected_ms={collected_ms:.3} direct_sdk_ms={direct_sdk_ms:.3} constraints={} degree={} chunks={} unique_bits={} list_bits={}",
+        report.constraints,
+        report.degree,
+        report.quotient_chunks,
+        report.unique_decoding_bits,
+        report.list_decoding_bits
+    );
+}
+#[test]
+fn actual_source_and_both_encoding_assessments_match_direct_sdk_parameters() {
+    // Public fixture setup and AIR construction are outside the analytical
+    // timers. Both routes below inspect the SAME immutable concrete AIR.
+    compare_actual_assessment(
+        "source",
+        &source::air::OpeningAir::new(fixture().source.claim()),
+    );
+    let source = source_witness(&source_expected()).statement();
+    compare_actual_assessment("source_encoding", &air::EncodingAir::new(&source));
+    let mask = truth_mask();
+    let mask = mask_witness(&mask_expected(mask), mask).statement();
+    compare_actual_assessment("mask_encoding", &air::EncodingAir::new(&mask));
+}
 fn cases() -> &'static Cases {
     static PROOFS: OnceLock<Cases> = OnceLock::new();
     PROOFS.get_or_init(|| {

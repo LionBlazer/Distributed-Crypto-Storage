@@ -4286,6 +4286,7 @@ dependencies = [
  "fhe-math",
  "p3-air",
  "p3-field",
+ "p3-fri",
  "p3-goldilocks",
  "p3-matrix",
  "p3-symmetric",

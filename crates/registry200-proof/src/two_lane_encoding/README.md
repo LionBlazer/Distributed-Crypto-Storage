@@ -2,7 +2,7 @@
 
 This new namespace owns two distinct fixed hiding AIRs: SourceAllOriginal and
 PrivateMask. It changes no old coefficient/Key/Formation/progress proof profile,
-wire, current application, SQL admission or consensus rule. Nine owning tests
+wire, current application, SQL admission or consensus rule. Ten owning tests
 passed with genuine Source/child proofs and observed resources; see the
 [executed validation](VALIDATION.md). This supplies one mathematical input
 boundary for an experimental N4096 unrelinearized product. Same-secret
@@ -114,13 +114,14 @@ Direct module dependencies are Source/admission/lifecycle opening/range helpers,
 the existing bfv-hiding-stark engine/Poseidon/bounded codec, pinned P3 AIR/matrix/
 field/symmetric/STARK types, SHA256/SHA512 and zeroize. The new fixed::Backend
 branch dispatches this exact typed AIR and preserves all old branches/profiles.
-The sole additional Cargo edge is test-only fhe-math0.1.1 with default features
-disabled, for the actual Modulus::scalar_mul_vec primitive used by SDK plaintext
-lifting. No product, peer runtime or consumer dependency is added.
+Test-only fhe-math0.1.1 (default features disabled) supplies the actual
+Modulus::scalar_mul_vec primitive used by SDK plaintext lifting. Test-only
+p3-fri0.8.0 supplies the independent direct-SDK assessment oracle; its version
+was already resolved. No production or peer runtime dependency is added.
 
 ## Owning tests
 
-Nine tests passed. Cheap checks independently build all4096 raw
+Ten cases are covered. Cheap checks independently build all4096 raw
 plaintext coefficients and apply the ACTUAL SDK modular scaling primitive,
 compare zero/all/threshold masks, and compare the streamed commitment against
 an independent full sequential digest. Genuine cases share one actual public
@@ -147,3 +148,9 @@ two single calls took 2674.165 ms and the joint call took 1595.910 ms on identic
 proof bytes. This remains above the 500 ms complete-query target before Formation,
 FHE product, consensus or transport. The validation record preserves the commands,
 evidence identities and scope of these component observations.
+
+The subsequent [single-collection assessment validation](../../../bfv-hiding-stark/ANALYSIS-VALIDATION.md)
+records unchanged SDK parameters for these actual AIRs, the nine proof/framing
+cases passing in23.94s and the additional analytical case passing separately
+in0.70s. Joint verification in that run took1060.086ms. This remains a partial
+mathematical boundary above the complete-query target.

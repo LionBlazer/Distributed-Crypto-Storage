@@ -21,6 +21,14 @@ parameters. They check shape and the actual proof-derived bound, but do not cert
 that a caller-supplied configuration/assessment belongs to an AIR. They are not
 admission tokens or a plugin policy.
 
+Within one `analyze` call, a private symbolic-only view collects the actual base
+and extension equations once and passes those same expressions to the SDK's
+count and periodic-degree passes. It forwards the original AIR metadata and
+degree hint. The view dies with that assessment; actual proving/verification
+still evaluates the original immutable AIR. No proof result or cross-call
+authority is cached. The [executed analysis validation](ANALYSIS-VALIDATION.md)
+records full SDK-parameter parity and the measured component costs.
+
 `poseidon::{write,evaluate}` owns the exact native-equivalent 248-column gadget.
 `codec` owns the canonical bounded typed-proof mechanism and the existing fixed
 next-row hiding proof topology. A caller constructs its topology from a trusted
