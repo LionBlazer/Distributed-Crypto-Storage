@@ -108,3 +108,68 @@ finality, locks, WAL, decryption of the completed peer product and SQL completio
 still need their own real joined implementation. Ordinary SQL capability guards
 remain closed. No composed-system/lattice security or complete-query500ms claim
 follows from these measurements.
+
+## Original QueryCt Formation join
+
+The added closed `formation` component reuses the original mask AIR/backend and
+the existing complete single-Ct Formation prover/verifier. One protected mask
+opening constructs both inputs. The exact original pair, nonce, retained DATA
+binding and complete original Stmt96 root derive an acyclic Cw context; the Cw
+root is excluded from its own context. The lower Formation expectation uses
+that same Cw, the literal original QueryCt and the DATA expectation's exact Cs
+context/root. Retained DATA metadata is not an accepted Source or key token.
+
+On 2026-10-21 all 16 owning tests passed in 9.27 seconds on the final release
+image, including the unchanged 13 mask tests and three new join cases. Strict
+all-target release Clippy and the dependency-free requirements-sync test passed;
+the four changed Rust files passed rustfmt. The final release test build took
+58.843 seconds. Earlier compilation had a missing explicit fixture array type;
+only the corrected final image supplies the results here.
+
+| Measured joined component | Milliseconds |
+| --- | ---: |
+| Opening checks, both cold public preparations, real private proving and canonical frames | 4814.279 |
+| Independent cold preparations, bounded decoding and both native verifications | 1066.115 |
+| Sum | 5880.394 |
+
+This uses the existing two-thread Rayon configuration and CPU/native release
+flags. Fixture SDK key generation, original input encryption, DATA/Word admission,
+product computation/certificate, client completion, freshness, quorum, network,
+durable locks and SQL are outside the interval. It is one component observation,
+not a full-query measurement or latency bound. No speedup is claimed. The honest
+mask and Formation frames were 1,736,400 and 2,521,395 bytes respectively.
+
+Each native argument is independently corrupted at an OOD opening while keeping
+its canonical shape and repairing frame lengths. The joined receiver must return
+the corresponding native `Verification` error; a valid argument on the other
+side cannot substitute for it. A changed original nonce is rejected, and swapping
+the pair fails binding. Changes to the complete DATA expectation or Stmt root
+change the derived context. A canonical, genuinely SDK-encrypted QueryCt under
+the SAME key but with nonzero high plaintext coefficient 256 is rejected by the
+complete Formation equations with `Arithmetic`, despite its honest mask proof.
+
+The held test process lived 9276.1045 ms and consumed 16.984375 CPU-seconds.
+Sampled peak private bytes were 1,333,276,672 and OS peak working set was
+1,344,495,616 bytes. The original 120-second/1792 MiB fuses, 20 ms sampling,
+held image/creation identity, terminal exit-zero and no-direct-child checks all
+passed without faults or forced cleanup. This is one standalone test process,
+not a concurrent peer memory bound.
+
+Local build/held receipt r73 retains the exact source hashes, complete stdout/
+stderr and memory samples. Its release image had 11,153,408 bytes, SHA256
+9AAB7047D6531ACE88424F7368FE5144AAC0ACCB00203F76A71F154DE63509A2.
+Generated artifacts and private proofs remain ignored, not checked-in fixtures.
+The source snapshot precedes this documentation-only validation update.
+
+```sh
+cargo test --release --locked -p registry200-proof registry_progress::word_inventory::query_mask_inventory:: -- --nocapture --test-threads=1
+cargo clippy --release --locked -p registry200-proof --all-targets -- -D warnings
+cargo test --release --locked -p repository-contracts --test requirements_sync
+```
+
+The new relation remains test-private with no runtime registration, admission
+token, shared proof challenge or composite wire codec. Independent proof calls
+do not themselves establish composed cryptographic or lattice security. The
+full-query target is still unmet. The measured Formation cost must be reduced
+while preserving its all-coefficient, same-secret and bounded-error constraints;
+removing this proof or relying on successful decryption would violate admission.

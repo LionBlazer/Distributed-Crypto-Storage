@@ -57,13 +57,9 @@ impl Opening {
         fields.0.extend(expected.context);
         fields.0.extend(self.salt);
         fields.0.extend([Val::ZERO; 4]);
-        fields.0.extend((0..4096).map(|index| {
-            if index < 256 {
-                self.bit(255 - index) * Val::from_u64(SCALE)
-            } else {
-                Val::ZERO
-            }
-        }));
+        fields
+            .0
+            .extend((0..4096).map(|index| self.scaled_word(index)));
         if digest(&fields.0)? != expected.vector {
             return Err(Error::Binding);
         }
@@ -71,6 +67,33 @@ impl Opening {
     }
     fn bit(&self, bit: usize) -> Val {
         Val::from_u8((self.mask[bit / 8] >> (bit % 8)) & 1)
+    }
+    fn scaled_word(&self, coefficient: usize) -> Val {
+        if coefficient < 256 {
+            self.bit(255 - coefficient) * Val::from_u64(SCALE)
+        } else {
+            Val::ZERO
+        }
+    }
+    /// The same protected opening feeds both relations; no raw mask/salt escapes.
+    pub(super) fn formation_opening(
+        &self,
+        expected: &Expected,
+    ) -> Result<bfv_ciphertext_formation::gold::ScaledOpening> {
+        use p3_field::PrimeField64;
+        self.require(expected)?;
+        let words = zeroize::Zeroizing::new(
+            (0..4096)
+                .map(|index| self.scaled_word(index).as_canonical_u64())
+                .collect(),
+        );
+        bfv_ciphertext_formation::gold::ScaledOpening::checked(
+            expected.context,
+            expected.vector,
+            words,
+            zeroize::Zeroizing::new(self.salt.map(|v| v.as_canonical_u64())),
+        )
+        .map_err(|_| Error::Binding)
     }
 }
 struct PrivateFields(Vec<Val>);

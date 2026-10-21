@@ -81,6 +81,7 @@ mod security;
 // Closed private writer/native backend; no production receiving capability.
 mod backend;
 mod backend_tests;
+mod formation;
 mod public_setup;
 mod wire;
 mod writer;
