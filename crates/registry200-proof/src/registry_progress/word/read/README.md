@@ -60,3 +60,15 @@ pins in that example are metadata; a production SQL compiler, authenticated
 prior state and fresh finality are still required. See
 [validation](VALIDATION.md) and the historical
 [private read measurements](../../word_inventory/query_mask_inventory/READ-VALIDATION.md).
+
+`read::Verifier::new(&Expected)` independently prepares Word and Query receiving
+for one complete captured read. Its `verify_retained` still requires the actual
+immutable DATA result, compares its full expectation and freshly checks all
+three per-query proofs. It cannot accept a different read expectation or imported
+setup. This lets a receiver start public preparation before the proofs arrive;
+construction checks no proof or head. The owning new-query interval includes
+all preparation, proof production, actual receiving and protected completion.
+Moving public preparation earlier does not remove its cost or establish500ms.
+
+The actual local receiving/production overlap, sequential control and remaining
+costs are recorded in the [Query receiving measurements](../../../../../bfv-ciphertext-formation/src/gold/program/query_formation/RECEIVING.md).

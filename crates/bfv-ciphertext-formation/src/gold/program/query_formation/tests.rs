@@ -148,6 +148,19 @@ fn real_fused_proof_cold_verifies_and_damaged_native_argument_fails() {
         (produced + received).as_secs_f64() * 1000.,
         frame.len()
     );
+    let begin = std::time::Instant::now();
+    let receiver = crate::gold::query::Verifier::new(&e).unwrap();
+    let setup = begin.elapsed();
+    assert_eq!(receiver.expected().binding(), e.binding());
+    let begin = std::time::Instant::now();
+    receiver.verify(&frame).unwrap();
+    let warm = begin.elapsed();
+    eprintln!(
+        "fused_query_prepared setup_ms={:.3} receive_ms={:.3} total_receiver_ms={:.3} setup_in_budget=true SQL=false",
+        setup.as_secs_f64() * 1000.,
+        warm.as_secs_f64() * 1000.,
+        (setup + warm).as_secs_f64() * 1000.
+    );
     let (_, report) = native::prescreen(&e).unwrap();
     let mut proof =
         native_wire::decode(native_wire::payload(&e, &frame).unwrap(), &report).unwrap();
@@ -159,6 +172,9 @@ fn real_fused_proof_cold_verifies_and_damaged_native_argument_fails() {
         native::receive(&e, &bad),
         Err(Error::Verification)
     ));
+    assert!(matches!(receiver.verify(&bad), Err(Error::Verification)));
+    // Neither a successful nor a failed call is a reusable verification verdict.
+    receiver.verify(&frame).unwrap();
     assert!(matches!(
         data::verify_dense(&e.core, &frame),
         Err(Error::Encoding)
@@ -169,6 +185,7 @@ fn real_fused_proof_cold_verifies_and_damaged_native_argument_fails() {
     let foreign = Expected::checked(&foreign.core, foreign.statement, foreign.header).unwrap();
     let mut repaired = frame.clone();
     repaired[40..104].copy_from_slice(&foreign.binding());
+    assert!(matches!(receiver.verify(&repaired), Err(Error::Binding)));
     assert!(matches!(
         native::receive(&foreign, &repaired),
         Err(Error::Verification)
@@ -278,6 +295,12 @@ fn repaired_statement_mask_word_fails_global_lookup_and_terminal_repair_fails_na
     drop(public);
     drop(air);
     assert!(matches!(
+        crate::gold::query::Verifier::new(&foreign)
+            .unwrap()
+            .verify(&frame),
+        Err(Error::Verification)
+    ));
+    assert!(matches!(
         native::receive(&foreign, &frame),
         Err(Error::Verification)
     ));
@@ -304,6 +327,12 @@ fn genuine_false_high_w_proof_fails_native_verification_after_all_hashes_are_hon
     drop(trace);
     drop(public);
     drop(air);
+    assert!(matches!(
+        crate::gold::query::Verifier::new(&e)
+            .unwrap()
+            .verify(&frame),
+        Err(Error::Verification)
+    ));
     assert!(matches!(
         native::receive(&e, &frame),
         Err(Error::Verification)

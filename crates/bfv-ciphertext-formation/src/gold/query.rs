@@ -160,6 +160,28 @@ pub fn verify(expected: &Expected, bytes: &[u8]) -> Result<VerifiedFormation> {
         expected: expected.clone(),
     })
 }
+/// Independent public preparation for one original complete query, before its
+/// proof arrives. Every verify still decodes and checks the actual native proof.
+/// No setup import, verdict cache or current-head/Word/SQL authority is provided.
+pub struct Verifier {
+    inner: backend::ReceivingSetup,
+}
+impl Verifier {
+    pub fn new(expected: &Expected) -> Result<Self> {
+        Ok(Self {
+            inner: backend::ReceivingSetup::new(expected)?,
+        })
+    }
+    pub fn expected(&self) -> &Expected {
+        self.inner.expected()
+    }
+    pub fn verify(&self, bytes: &[u8]) -> Result<VerifiedFormation> {
+        self.inner.receive(bytes)?;
+        Ok(VerifiedFormation {
+            expected: self.expected().clone(),
+        })
+    }
+}
 pub(super) fn statement_root(words: &[Val; 96]) -> [Val; 4] {
     let mut state = [Val::ZERO; 12];
     for block in words.as_chunks::<8>().0 {

@@ -167,6 +167,7 @@ fn different_retained_query(
     data: &installed::Expected,
     retained: &installed::VerifiedDataFormation,
     data_words: &[u64],
+    previous: QueryEvidence<'_>,
 ) {
     let began = Instant::now();
     let mut case = owner_cases::case(Kind::SkipBeforeOffset);
@@ -208,23 +209,6 @@ fn different_retained_query(
     .unwrap();
     let prepared_ms = began.elapsed().as_secs_f64() * 1000.;
     let started = Instant::now();
-    let word = produce_word(&mut case);
-    let word_ms = started.elapsed().as_secs_f64() * 1000.;
-    let started = Instant::now();
-    let query = fused::prove(
-        &formation,
-        owner
-            .prepare_query(
-                &original,
-                &formation,
-                Zeroizing::new(statement.map(|v| v.as_canonical_u64())),
-                Zeroizing::new(salt),
-            )
-            .unwrap(),
-    )
-    .unwrap();
-    let query_ms = started.elapsed().as_secs_f64() * 1000.;
-    let started = Instant::now();
     let response = protected::Evaluator::new()
         .unwrap()
         .evaluate(original.public_request())
@@ -239,14 +223,60 @@ fn different_retained_query(
     .unwrap();
     let product = response.certificate().to_vec();
     let product_ms = started.elapsed().as_secs_f64() * 1000.;
+    // Public receiving starts before proof production on a separate thread.
+    // This is a local component pipeline, not peer I/O or a complete SQL query.
+    let ((checked, receiving_setup_ms, receive_ms, word, query), word_ms, query_ms) =
+        std::thread::scope(|scope| {
+            let (send, receive) = std::sync::mpsc::sync_channel::<(Vec<u8>, Vec<u8>)>(1);
+            let expected = &expected;
+            let product = &product;
+            let receiving = scope.spawn(move || {
+                let started = Instant::now();
+                let receiver = Verifier::new(expected).unwrap();
+                let setup_ms = started.elapsed().as_secs_f64() * 1000.;
+                let (word, query) = receive.recv().unwrap();
+                let started = Instant::now();
+                let checked = receiver
+                    .verify_retained(
+                        retained,
+                        QueryEvidence {
+                            word: &word,
+                            query: &query,
+                            product,
+                        },
+                    )
+                    .unwrap();
+                let receive_ms = started.elapsed().as_secs_f64() * 1000.;
+                (checked, setup_ms, receive_ms, word, query)
+            });
+            // Only public endpoints and proof bytes reach the receiving thread.
+            // The opaque Owner and all private Word/Query inputs remain here.
+            let started = Instant::now();
+            let word = produce_word(&mut case);
+            let word_ms = started.elapsed().as_secs_f64() * 1000.;
+            let started = Instant::now();
+            let query = fused::prove(
+                &formation,
+                owner
+                    .prepare_query(
+                        &original,
+                        &formation,
+                        Zeroizing::new(statement.map(|v| v.as_canonical_u64())),
+                        Zeroizing::new(salt),
+                    )
+                    .unwrap(),
+            )
+            .unwrap()
+            .into_bytes();
+            let query_ms = started.elapsed().as_secs_f64() * 1000.;
+            send.send((word, query)).unwrap();
+            (receiving.join().unwrap(), word_ms, query_ms)
+        });
     let evidence = || QueryEvidence {
         word: &word,
-        query: query.as_bytes(),
+        query: &query,
         product: &product,
     };
-    let started = Instant::now();
-    let checked = verify_retained(&expected, retained, evidence()).unwrap();
-    let receive_ms = started.elapsed().as_secs_f64() * 1000.;
     let started = Instant::now();
     let completed = owner
         .complete_checked_product(&original, checked.product())
@@ -262,10 +292,21 @@ fn different_retained_query(
         assert_eq!(actual[(2 * row + 1) * 512 + 255], row as u64 + 1);
     }
     eprintln!(
-        "retained_math_read different_query=true prepared_ms={prepared_ms:.3} word_prove_ms={word_ms:.3} query_fused_prove_ms={query_ms:.3} fhe_product_and_certificate_ms={product_ms:.3} cold_receive_ms={receive_ms:.3} client_ms={client_ms:.3} per_query_ms={per_query_ms:.3} query_frames_bytes={} SAME_DATA=true SQL=false freshness=false network=false security_assessed=false",
-        word.len() + query.as_bytes().len() + product.len()
+        "retained_math_read different_query=true prepared_ms={prepared_ms:.3} word_prove_ms={word_ms:.3} query_fused_prove_ms={query_ms:.3} fhe_product_and_certificate_ms={product_ms:.3} receiving_setup_ms={receiving_setup_ms:.3} prepared_receive_ms={receive_ms:.3} client_ms={client_ms:.3} per_query_ms={per_query_ms:.3} query_frames_bytes={} SAME_DATA=true receiving_setup_in_budget=true local_receiver_thread=true shared_rayon_pool=true SQL=false freshness=false network=false security_assessed=false",
+        word.len() + query.len() + product.len()
     );
-    // All hostile examples are outside the measured per-query interval.
+    // All hostile examples and their separate receiving setup are outside the measured interval.
+    let receiver = Verifier::new(&expected).unwrap();
+    assert!(matches!(
+        receiver.verify_retained(
+            retained,
+            QueryEvidence {
+                query: previous.query,
+                ..evidence()
+            }
+        ),
+        Err(Error::Formation(gold::Error::Binding))
+    ));
     let control = word_expected(&owner_cases::case(Kind::EndCompact));
     assert!(matches!(
         Expected::checked(
@@ -278,10 +319,9 @@ fn different_retained_query(
         Err(Error::Binding)
     ));
     // Prior success may not cache either per-query proof's acceptance.
-    let bad = damage_batch(query.as_bytes());
+    let bad = damage_batch(&query);
     assert!(matches!(
-        verify_retained(
-            &expected,
+        receiver.verify_retained(
             retained,
             QueryEvidence {
                 query: &bad,
@@ -292,8 +332,7 @@ fn different_retained_query(
     ));
     let bad = damage_batch(&word);
     assert!(matches!(
-        verify_retained(
-            &expected,
+        receiver.verify_retained(
             retained,
             QueryEvidence {
                 word: &bad,
@@ -305,8 +344,7 @@ fn different_retained_query(
     let mut bad = product.clone();
     bad[8] ^= 1;
     assert!(matches!(
-        verify_retained(
-            &expected,
+        receiver.verify_retained(
             retained,
             QueryEvidence {
                 product: &bad,
@@ -323,7 +361,7 @@ fn different_retained_query(
             _ => missing.product = &[],
         }
         assert!(matches!(
-            verify_retained(&expected, retained, missing),
+            receiver.verify_retained(retained, missing),
             Err(Error::Resource)
         ));
     }
@@ -536,7 +574,13 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
     eprintln!(
         "retained_math_receive SAME_query=true independent_install_ms={install_ms:.3} full_receive_ms={receive_ms:.3} retained_receive_ms={retained_receive_ms:.3} SQL=false freshness=false"
     );
-    different_retained_query(&owner, &data_expected, &retained, &data_words);
+    different_retained_query(
+        &owner,
+        &data_expected,
+        &retained,
+        &data_words,
+        frames.borrowed().query(),
+    );
 
     // Same version tag and images, but a different complete C_state must not join.
     let mut foreign = owner_cases::case(Kind::SkipBeforeOffset);

@@ -2,6 +2,7 @@
 mod air;
 mod layout;
 mod plan;
+mod receiving;
 #[cfg(test)]
 mod tests;
 use super::{descriptor::Descriptor, pp as old_pp};
@@ -22,6 +23,7 @@ super::dense_backend::instantiate_fixed_dense_backend!();
 pub(in crate::gold) use layout::DOMAIN;
 pub(in crate::gold) use native::{produce, receive};
 pub(in crate::gold) use native_wire::MAX_FRAME_BYTES;
+pub(in crate::gold) use receiving::ReceivingSetup;
 pub(in crate::gold) fn wire_profile() -> [u8; 32] {
     native_wire::profile()
 }

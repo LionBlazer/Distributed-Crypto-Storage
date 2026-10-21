@@ -215,3 +215,48 @@ fn verify_query_proofs(expected: &Expected, evidence: &QueryEvidence<'_>) -> Res
     drop(fused::verify(&expected.query, evidence.query).map_err(Error::Formation)?);
     Ok(())
 }
+/// Independent public preparation for ONE complete retained-DATA read. Preparing
+/// this object checks no proof; its cost belongs to the current query's budget.
+/// The caller can start it before per-query proofs arrive. No setup is imported.
+pub struct Verifier<'a> {
+    expected: &'a Expected,
+    word: super::Verifier,
+    query: fused::Verifier,
+}
+impl<'a> Verifier<'a> {
+    pub fn new(expected: &'a Expected) -> Result<Self> {
+        Ok(Self {
+            expected,
+            word: super::Verifier::new(Role::Predicate).map_err(Error::Word)?,
+            query: fused::Verifier::new(&expected.query).map_err(Error::Formation)?,
+        })
+    }
+    /// Full original immutable DATA equality and actual fresh Word/Query/product
+    /// checks on EVERY invocation, including after an earlier success or failure.
+    pub fn verify_retained(
+        &self,
+        retained: &installed::VerifiedDataFormation,
+        evidence: QueryEvidence<'_>,
+    ) -> Result<ArithmeticCheckedRead<'a>> {
+        evidence.require_bounds()?;
+        retained
+            .require_expected(&self.expected.data)
+            .map_err(Error::Data)?;
+        let product = product::check_arithmetic(&self.expected.product, evidence.product)
+            .map_err(Error::Product)?;
+        drop(
+            self.word
+                .verify(&self.expected.word, evidence.word)
+                .map_err(Error::Word)?,
+        );
+        drop(
+            self.query
+                .verify(evidence.query)
+                .map_err(Error::Formation)?,
+        );
+        Ok(ArithmeticCheckedRead {
+            expected: self.expected,
+            product,
+        })
+    }
+}

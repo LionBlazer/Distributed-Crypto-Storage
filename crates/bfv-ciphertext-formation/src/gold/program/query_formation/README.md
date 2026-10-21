@@ -70,3 +70,21 @@ attack trace writers and diagnostic snapshots remain test-only.
 ```sh
 cargo test --release --locked -p bfv-ciphertext-formation gold::program::query_formation:: -- --nocapture --test-threads=1
 ```
+
+`gold::query::Verifier::new` independently derives public setup for one complete
+original query before its proof arrives. It retains the immutable Expected/AIR,
+resource/security assessment and verifier CommonData, then drops producer-only
+PP storage and every setup configuration/RNG. `verify(bytes)` has no replacement
+Expected/setup argument: every invocation binds the original frame, performs
+bounded canonical decoding and executes the actual native verifier. Neither a
+previous success nor failure is cached. Construction verifies no proof and grants
+no Word/Source/current-head/SQL capability. The ordinary cold `verify` retains
+its original header, prescreen and decode-before-PP rejection order. Its profile,
+preprocessing pins and full equations are unchanged. The Query-owned internal
+`receiving` module depends only on this fixed backend's prescreen/setup/codec;
+no generic AIR, caller-supplied CommonData or cross-query cache is introduced.
+Preparation cost still belongs to each new query's total latency.
+
+The [receiving cost record](RECEIVING.md) separates public preparation, successful
+native verification and failed-proof rejection, and includes the complete local
+Word read interval with actual overlap and its CPU-contention limitation.
