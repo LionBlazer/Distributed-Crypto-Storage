@@ -1,9 +1,11 @@
-# Private complete QueryMaskEncoding inventory candidate
+# Private complete QueryMaskEncoding candidate
 
-Test-private mathematical inventory beneath `word_inventory`. Its seven focused
-native metadata and conditional security tests passed on 2026-10-21. There is no owner
-witness, MAIN writer, native proof, receiving result, encoding wire format,
-Source/DATA admission, accepted head, runtime entry point or measured speed.
+Test-private QueryMaskEncoding mathematics beneath `word_inventory`. Its complete
+writer, independent public setups, native prover/verifier and bounded frame
+passed all13 owning tests on2026-10-21, including three genuine private proofs.
+The [validation record](VALIDATION.md) reports timings and hostile/resource gates.
+Source/DATA admission, accepted head, runtime entry point, QueryCt/Cs association,
+SQL result and complete-query500ms remain unfinished.
 
 `layout` owns the sole fixed schedule, full field inventory and immutable public
 routes. `air` uses the existing native-equivalent Poseidon2 gadget directly.
@@ -17,9 +19,10 @@ Gold type, [bfv-hiding-stark](../../../../../bfv-hiding-stark/README.md) for the
 existing width12 gadget and hiding-suite constants, and the already pinned P3
 AIR/matrix/batch/lookup/commit/field/security metadata interfaces. Cargo is
 unchanged. This child has no public API and is registered only beneath the
-existing test-only `word_inventory` module. All earlier Word source and tests
-are byte-for-byte preserved, apart from the separate child declaration appended
-to its module file.
+existing test-only `word_inventory` module. Existing Word behavior, frames,
+math and tests are preserved. The new SOURCE grants only private visibility to
+the unchanged NONSECRET `owner_cases::statement` serializer, so the new tests
+reuse its exact Stmt96 format instead of introducing another serializer.
 
 The exact original salted Word Stmt96 preimage is opened, including its existing
 13-field header, all metadata and roots, eight packed mask words at78..85,
@@ -82,10 +85,69 @@ Missing LDR or a downgraded native summary is rejected. All seven tests, includi
 the existing full goldens, passed in0.05s; the held process lived73.2192ms with
 9,834,496 OS-peak working-set bytes and no fuse or forced cleanup.
 
-This is conditional STARK-model metadata. It commits no PP and executes no private
-witness or proof. The 1792MiB threshold remains a local workspace prescreen,
+That executed stage is conditional STARK-model metadata: it committed no PP and
+executed no private witness or proof. The 1792MiB threshold remains a local workspace prescreen,
 not a peer-memory guarantee; runtime, codec and owner reserves are explicit
-policy charges. Actual honest/hostile proofs, observed proving resources,
-canonical bounded wire, BFV/key assessment, freshness and the compiler/formation/
-runtime join remain later work. No SQL admission, composed-system security or
-complete-query500ms result is established.
+policy charges. The later executed backend stage below adds actual private
+proofs and canonical wire. BFV/key assessment, freshness and the complete
+compiler/formation/runtime join remain unfinished. No SQL admission,
+composed-system security or complete-query500ms result is established.
+
+## Private writer/backend
+
+The `writer` consumes complete Stmt96, the same32-byte mask and the
+existing Cw salt4. It checks the original header/padding, all eight packed mask
+words, and both full roots before allocating MAIN. A native Poseidon2 permutation
+checks the complete96/4112-field hashes independently of gadget witness writing.
+The writer then uses the existing `poseidon::write` for every active absorb and
+both checkpoint resets. All649 columns of rows526..1023 remain zero. It creates
+no private key and generates no opening salts; a future owner must supply its
+original properly blinded openings. Owned input/vector/MAIN buffers are cleared
+best effort; this is not a stack/compiler/allocator erasure claim.
+
+`backend::ProverSetup::new` constructs the sole closed AIR and calls the unchanged
+full pin/security gate before any PCS commitment. `public_setup` uses a sealed
+profile+role-only public seed; the seeded config dies before private proving.
+Only public preprocessing is reusable. Each `produce` uses a fresh OS-seeded
+private config and returns unverified bytes. No private witness, RNG or verdict
+is retained in setup. `VerifierSetup::new` independently builds its own closed
+public preprocessing and discards prover-only data. Receiving binds the whole
+current Expected33, decodes and validates shape, then always calls native
+`verify_batch`. Cold `verify` includes independent receiver construction.
+
+The new private `DCSQME01` frame has128 header bytes, a4MiB ceiling, per-sequence
+limit4096 and shared4Mi decoded-slot budget. It reuses
+[bounded-postcard](../../../../../bounded-postcard/README.md), exact EOF and exact
+re-encoding; it does not add a decoder implementation. Gold/EF5 values use their
+existing canonical SDK serialization. Four PCS rounds are random, MAIN, eight
+quotient chunks and PP. MAIN opens at two points, PP at one; there is no AUX,
+permutation commitment, lookup terminal or lookup PoW. Binary FRI has11 folds.
+The static envelope is210346 Gold fields plus3560 EF5 values, including at most
+10281 frontier digests, with32768 additional container/control slots. Those are
+topology bounds, not measured proof size or RSS. Old Word frames stay unchanged.
+
+Direct backend dependencies already exist in Cargo: bounded-postcard/Postcard,
+P3 batch/FRI/DFT, the matching deterministic PUBLIC-only RNG and SHA2. The private
+unit examples reuse the existing NONSECRET Word statement serializer; there is
+no fixture dependency in the normal writer or receiving code. Examples assert
+encoding equations and never produce an SQL answer or Source/DATA capability.
+
+Six backend tests cover all96 fields and4096 coefficient positions (including a
+nonuniform reverse mask), malformed openings, repaired mask packing, non-Boolean
+bits, private bank reset, missing last absorb, independent public setup, genuine
+fresh proofs and cold receiving. A distinct nonce requires its own new proof:
+repairing only the old header must reach actual native Verification failure.
+Opening tampering likewise must pass canonical shape and fail native verification.
+EOF, legacy magic, per-sequence and shared decode-budget failures reuse an honest
+proof. A final negative repairs every hash/checkpoint/root/PUBLIC value while
+setting W256=1; the actual AIR diagnostic rejects and the release prover creates
+a fresh false-input proof for rejection by an independent native verifier. Its
+explicit negative-only bypass cannot select an AIR and has no production API.
+
+All13 tests passed in1.36s after strict all-target Clippy. A separate16-thread
+observation of the same honest test measured212.910ms cold and166.239ms with
+independently retained public setups. Both calls create fresh private proofs;
+these are standalone encoding-component timings, not SQL latency. Full receipts,
+frame sizes, resource observations and limits are in [VALIDATION.md](VALIDATION.md).
+QueryCt formation, full original request/Cs/nonce context association,
+Word/Source/DATA/current-head joins and the real DCS path remain future work.

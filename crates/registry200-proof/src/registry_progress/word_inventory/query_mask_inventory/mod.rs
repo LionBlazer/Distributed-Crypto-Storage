@@ -1,5 +1,5 @@
 //! Test-private complete Stmt96 -> salted Cw4112 mathematical inventory.
-//! No owner witness, proof producer, receiving capability or runtime API exists.
+//! Private mathematical proofs grant no runtime, Source/DATA or SQL authority.
 mod air;
 mod assessment;
 mod layout;
@@ -77,3 +77,10 @@ impl Expected {
 
 // Conditional no-LogUp native security metadata; no private proof or grant.
 mod security;
+
+// Closed private writer/native backend; no production receiving capability.
+mod backend;
+mod backend_tests;
+mod public_setup;
+mod wire;
+mod writer;

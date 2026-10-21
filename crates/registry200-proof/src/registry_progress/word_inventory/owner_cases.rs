@@ -158,7 +158,7 @@ fn own<'a>(bank: &'a Bank, p: &PrimaryInputs) -> &'a Slot {
         .as_ref()
         .expect("present actor")
 }
-fn statement(m: &Metadata, p: &PrimaryInputs, old: &Bank) -> Vec<Val> {
+pub(super) fn statement(m: &Metadata, p: &PrimaryInputs, old: &Bank) -> Vec<Val> {
     let c = &p.command;
     let w = &p.walk;
     let mut v = header("statement");
