@@ -419,3 +419,13 @@ original profile and H8192 API remain unchanged. Neither receiver negotiates or
 falls back to the other frame. The new private Word read composition exercises
 this public API together with the exact original Stmt96/QueryCt proof and actual
 conditional product checking; it creates no SQL or current-head capability.
+
+The existing move-only `VerifiedDataFormation` can now be retained for immutable
+mathematics. `require_expected(&Expected)` compares the complete original
+request/nonce/ciphertext, Source values and both original images, key binding,
+contexts and Cw/Cs roots. It creates no new result and performs no new native
+verification. Only `verify`/`verify_dense` can construct the original private
+result after their full State/Role3/DATA checks. Neither proving nor metadata
+construction, a matching version tag, a serialized checked flag or the new
+comparison can mint it. This authorizes no current version or SQL operation;
+the caller must separately establish currentness of this exact complete version.

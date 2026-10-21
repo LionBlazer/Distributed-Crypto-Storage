@@ -148,3 +148,135 @@ constructed, bound result from actual verification of that exact complete
 version; a serialized flag, matching version tag alone or unverified DATA
 metadata cannot replace any proof. It must still reject a different C_state,
 image, key, operand pair, query or current agreed head.
+
+## Retaining verified immutable DATA
+
+The next stage uses the already existing move-only `VerifiedDataFormation`, whose
+only constructors are actual full State/Role3/DATA receiving. The additive
+public `require_expected` method compares complete Source metadata/images, the
+literal original DATA request/nonce/ciphertext and full Cw/Cs/key contexts/roots.
+It cannot verify a new proof, produce a result from raw metadata or assert
+currentness. Existing H8192 and dense verification functions and their proof
+requirements are unchanged.
+
+The new private `verify_retained` requires that actual bound result plus three
+unverified per-query frames. Only the earlier immutable theorem is retained:
+conditional product checking, original Word native receiving and fused Query
+native receiving still run on every call with independently retained complete
+expectations and cold public setups. No per-query verdict is reused. Retention
+has no serialized representation, accepting flag or new native frame. The old
+six-frame cold receiver still checks all its proofs on every invocation.
+
+The owning case installs DATA with a fresh independent native verification and
+compares cold six-frame and retained three-frame receiving on the SAME original
+query/proof bytes. It then produces an actual different query against that SAME
+DATA/key: age255 no longer matches; call, invocation, SQL identity, QueryCt and
+query nonce also change. Fresh complete Word and fused Query arguments and an
+actual public FHE product/certificate are produced. Only successful receiving
+allows owner decryption, and a separate full-ring oracle checks all4096 values.
+The age255 row becomes zero while the first three row endpoints remain correct.
+The oracle never supplies an answer to either evaluator or receiver.
+
+After successful receiving, canonical OOD mutations of the new Word/Query proof
+must still fail their actual native verifiers; product binding and all three
+missing per-query frames must reject. Full DATA installation with a damaged
+native argument must fail too. Retained comparison rejects a new C_state under
+the SAME version tag/images, a changed installation nonce, actual re-encryption
+of the SAME data, changed Cw or changed original Cs. A complete read expectation
+with the foreign C_state also fails at retained DATA binding. The original
+six-frame hostile cases are kept. Original H8192 receiving additionally exercises
+the same public retained-comparison method.
+
+The initial r113 two-thread case passed before documentation edits. Final
+execution, comparison timings and exact boundaries follow after the stage gates.
+
+### Executed retention gates and observations
+
+The exact joined owning case passed at both16 and2 threads on the final release
+image after build/Clippy/documentation gates completed. It covers original cold
+receiving, independent DATA installation, paired receiving of the same query,
+a genuinely different query and all retained/raw hostile checks above. The
+unchanged H8192 owning case also passed in14.52s, including the new method on its
+actual verified result. Two compile-fail private-construction/clone checks,
+strict all-target release Clippy and requirements_sync passed. Other native
+equations, profiles, security parameters and unchanged standalone mask cases
+were not modified or claimed as newly executed coverage.
+
+Runs were sequential at16 then2 threads on the SAME final image. There was no
+overlapping task build or native test during these exact observations. Each
+process uses its own fresh SDK key/ciphertexts/proof randomness; schema and
+scenario are unchanged. Within a process the paired cold/retained receiver uses
+the SAME original query and proof bytes. Cold receiving runs first. Background
+load and cache effects are uncontrolled; one observation is not a latency bound
+or statistical benchmark. Public Word setups remain cold and independent on
+every receiving call; production thread policy is unchanged.
+
+| Same original query | 2 threads, ms | 16 threads, ms |
+| --- | ---: | ---: |
+| Complete six-frame cold receiving |2045.190|1289.531|
+| Separate independent DATA verification/retention |1361.705|915.042|
+| Three-frame receiving with bound retained DATA |825.823|340.069|
+
+The16-thread paired receiving observation is73.6% shorter; the2-thread one is
+59.6% shorter. This comparison concerns receiving only. Installation includes
+actual independent State/Role3/dense DATA verification, rather than a supplied
+acceptance flag. Its proof generation and initial source/key/DATA preparation
+are paid separately in the original complete owner cycle below; no part of them
+is hidden inside a claimed full-query500ms result.
+
+| Actual different query, SAME installed DATA | 2 threads, ms | 16 threads, ms |
+| --- | ---: | ---: |
+| Owner Word/statement/mask/QueryCt/opening/expectation preparation |2.708|2.797|
+| Complete cold Word proving |403.806|130.752|
+| Complete fused Query proving |1639.742|397.948|
+| Actual FHE product and certificate |32.020|30.596|
+| Cold retained-DATA receiving, all per-query checks |825.035|338.005|
+| Client decryption/decoding |0.701|0.735|
+| Whole new-query local cycle |2904.013|900.834|
+| Three per-query frame bytes |8032778|8029450|
+
+The new-query timer starts before the second owner Word fixture/statement and
+actual mask encryption. It ends immediately after owner decryption/decoding,
+before the public full-ring oracle and before hostile tests. It includes every
+new per-query proof, actual ciphertext multiplication, certificate, independent
+Word/Query setups and native receiving. It excludes initial source/DATA/key
+preparation and the independent DATA installation, which are version work.
+No Word proof, Query proof, FHE computation or per-query verdict is reused.
+The retained object contains public metadata only, not proof buffers, keys,
+setup, a current head or an unbounded cache.
+
+For context the same processes' original complete owner setup through six-frame
+read/decryption took9933.347/4979.493ms at2/16 threads and generated
+26921541/26920229 proof-frame bytes. That boundary includes initial
+key/parameter/source preparation, DATA/Query encryption and all immutable and
+per-query proofs. Moving immutable verification out of each query does not make
+that first setup free. Three new-query frames still total about8.03MB, a real
+network cost not measured here. Even the900.834ms local query cycle exceeds500ms.
+
+Both exact processes retained the120s/1792MiB whole-PID fuses,20ms samples,
+held image/creation identity, exit0/no-direct-child checks and no faults or forced
+cleanup. The16/2-thread complete test processes lived13532.9756/24465.2919ms,
+used51.015625/37.265625 CPU-seconds and peaked at593555456/561508352 OS working-set
+bytes and587927552/568209408 sampled private bytes. These processes include both
+query scenarios, full original verification/installation, all hostile checks and
+oracle assertions. They are not individual-operation or concurrent-peer memory
+bounds. The original H8192 regression peaked at1371275264 OS working-set bytes.
+
+Final release test image:11773952 bytes, SHA256
+F6E40FBBA674519137E151AA7609538FB1B19088C67CCC859E7970D9FC5B90E7.
+Ignored local records r114-r116 retain exact source hashes, commands, output and
+memory samples; the r113 run is preliminary. The result update follows those
+snapshots and changes no executable code. Private material and generated
+proof/ciphertext outputs remain ignored. The exact reproduction command above
+still runs this strengthened owning case with one harness thread and the
+selected Rayon setting.
+
+This is still test-private mathematical composition. The only new normal public
+API is `VerifiedDataFormation::require_expected`. Full source/Word/key/product
+cryptographic assessment, authoritative bootstrap/history/OldRoot, independently
+fresh weighted QC, real peer transport, SQL projection and durable lock/result
+completion remain required. In particular, the historical
+`registry200_finality::progress::VerifiedParent` explicitly does not establish
+a current lock lease and is not adopted here as freshness. No production
+storage-client/runtime admission or refusal guard changed. The complete-query
+<=500ms goal remains unmet.

@@ -172,6 +172,18 @@ impl Expected {
         }
         Ok(())
     }
+    fn require_same(&self, other: &Self) -> Result<()> {
+        self.require_statement(&other.source)?;
+        if self.core.request().bytes() != other.core.request().bytes()
+            || self.core.binding() != other.core.binding()
+            || self.core.values() != other.core.values()
+            || self.core.contexts() != other.core.contexts()
+            || self.core.roots() != other.core.roots()
+        {
+            return Err(Error::Binding);
+        }
+        Ok(())
+    }
 }
 /// Bounded borrowed UNVERIFIED State and one child; no supplied verification token.
 pub struct Prerequisites<'a> {
@@ -305,6 +317,13 @@ pub struct VerifiedDataFormation {
 impl VerifiedDataFormation {
     pub fn expected(&self) -> &Expected {
         &self.expected
+    }
+    /// Bind this already native-verified immutable result to a complete claim.
+    /// Checks original request/nonce/Ct, full Source images/values, key and Cw/Cs.
+    /// It verifies no new proof and supplies no current-head or SQL authority.
+    /// The caller must independently establish that this exact version is current.
+    pub fn require_expected(&self, expected: &Expected) -> Result<()> {
+        self.expected.require_same(expected)
     }
 }
 /// Fresh State+Role3 and actual cold DATA native verification on every invocation.

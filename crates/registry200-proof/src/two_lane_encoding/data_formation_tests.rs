@@ -463,6 +463,7 @@ fn one_actual_state_data_formation_is_freshly_checked_before_two_fixture_query_p
     );
     let began = Instant::now();
     let verified = verify(&expected, &request, evidence.borrowed(), &bytes).unwrap();
+    verified.require_expected(&expected).unwrap();
     assert!(verified.expected().request().bytes() == request.bytes());
     assert!(verified.expected().source().values() == expected.source.values());
     eprintln!(

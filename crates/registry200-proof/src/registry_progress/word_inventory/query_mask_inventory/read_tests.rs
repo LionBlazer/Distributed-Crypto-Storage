@@ -85,6 +85,171 @@ fn damage_batch(bytes: &[u8]) -> Vec<u8> {
     out.extend(payload);
     out
 }
+fn ring_oracle(source: &[u64], mask: &[u64]) -> Zeroizing<Vec<u64>> {
+    let mut oracle = Zeroizing::new(vec![0; gold::N]);
+    for (i, &x) in source.iter().enumerate().filter(|(_, v)| **v != 0) {
+        for (j, &y) in mask.iter().enumerate().filter(|(_, v)| **v != 0) {
+            let at = (i + j) % gold::N;
+            let term = x * y % gold::T;
+            oracle[at] = (oracle[at]
+                + if i + j < gold::N {
+                    term
+                } else {
+                    gold::T - term
+                })
+                % gold::T;
+        }
+    }
+    oracle
+}
+/// A different genuine query against the SAME retained immutable DATA/key.
+/// It creates fresh Word/Query proofs and public product; no cached answer is used.
+fn different_retained_query(
+    p: &Arc<BfvParameters>,
+    key: &SecretKey,
+    data: &installed::Expected,
+    retained: &installed::VerifiedDataFormation,
+    data_words: &[u64],
+) {
+    let began = Instant::now();
+    let mut case = owner_cases::case(Kind::SkipBeforeOffset);
+    case.input.mask[31] &= 0x7f; // Age255 is excluded; earlier locked/offset rows are unchanged.
+    case.input.walk.call += 1;
+    case.input.walk.invocation[0] += Val::ONE;
+    case.metadata.blind_sql[0] += Val::ONE;
+    case.input.walk.sql = case.metadata.blind_sql;
+    case.rebuild();
+    let statement = owner_cases::statement(&case.metadata, &case.input, &case.old)
+        .try_into()
+        .unwrap();
+    let mut mask = Zeroizing::new(vec![0u64; gold::N]);
+    for age in 0..256 {
+        mask[255 - age] = u64::from((case.input.mask[age / 8] >> (age % 8)) & 1);
+    }
+    let request = gold::Request::checked(
+        [0x4a; 32],
+        [data.request().ciphertext().to_vec(), encrypt(key, p, &mask)],
+    )
+    .unwrap();
+    let context =
+        formation::encoding_context(&request, data.core_expected(), case.metadata.statement)
+            .unwrap();
+    let salt = [Val::from_u8(10); 4];
+    let scaled = Zeroizing::new(mask.iter().map(|v| v * gold::SCALE).collect::<Vec<_>>());
+    let vector = root(context, salt, &scaled);
+    let mask_expected =
+        super::super::Expected::checked(case.metadata.statement, vector, context, request.nonce())
+            .unwrap();
+    let formation = formation::Expected::checked(
+        &request,
+        data.core_expected(),
+        case.metadata.statement,
+        vector,
+    )
+    .unwrap();
+    let prepared_ms = began.elapsed().as_secs_f64() * 1000.;
+    let started = Instant::now();
+    let word = probe::produce(&case.metadata, &case.input).unwrap();
+    let word_ms = started.elapsed().as_secs_f64() * 1000.;
+    let started = Instant::now();
+    let query = super::formation::produce(
+        &formation,
+        super::super::writer::Opening::checked(&mask_expected, statement, case.input.mask, salt)
+            .unwrap(),
+        gold::SecretOpening::checked(
+            data.core_expected().contexts()[1],
+            data.core_expected().roots()[1],
+            Zeroizing::new(key.to_bytes()),
+            Zeroizing::new([7; 4]),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let query_ms = started.elapsed().as_secs_f64() * 1000.;
+    let started = Instant::now();
+    let output = evaluate(p, &request);
+    let expected = Expected::checked(&case.metadata, data, &request, vector, output).unwrap();
+    let product = product::produce(&expected.product).unwrap().into_bytes();
+    let product_ms = started.elapsed().as_secs_f64() * 1000.;
+    let evidence = || QueryEvidence {
+        word: &word,
+        query: query.as_bytes(),
+        product: &product,
+    };
+    let started = Instant::now();
+    let checked = verify_retained(&expected, retained, evidence()).unwrap();
+    let receive_ms = started.elapsed().as_secs_f64() * 1000.;
+    let started = Instant::now();
+    let ct = Ciphertext::from_bytes(checked.output(), p).unwrap();
+    let decoded: Plaintext = key.try_decrypt(&ct).unwrap();
+    let decoded = Zeroizing::new(decoded);
+    let actual = Zeroizing::new(Vec::<u64>::try_decode(&*decoded, Encoding::poly()).unwrap());
+    let client_ms = started.elapsed().as_secs_f64() * 1000.;
+    let per_query_ms = began.elapsed().as_secs_f64() * 1000.;
+    assert_eq!(*actual, *ring_oracle(data_words, &mask));
+    assert_eq!(actual[6 * 512 + 255], 0);
+    assert_eq!(actual[7 * 512 + 255], 0);
+    for (row, age) in [0u64, 1, 128].into_iter().enumerate() {
+        assert_eq!(actual[2 * row * 512 + 255], 256 + age);
+        assert_eq!(actual[(2 * row + 1) * 512 + 255], row as u64 + 1);
+    }
+    eprintln!(
+        "retained_math_read different_query=true prepared_ms={prepared_ms:.3} word_prove_ms={word_ms:.3} query_fused_prove_ms={query_ms:.3} fhe_product_and_certificate_ms={product_ms:.3} cold_receive_ms={receive_ms:.3} client_ms={client_ms:.3} per_query_ms={per_query_ms:.3} query_frames_bytes={} SAME_DATA=true SQL=false freshness=false network=false security_assessed=false",
+        word.len() + query.as_bytes().len() + product.len()
+    );
+    // Prior success may not cache either per-query proof's acceptance.
+    let bad = damage_batch(query.as_bytes());
+    assert!(matches!(
+        verify_retained(
+            &expected,
+            retained,
+            QueryEvidence {
+                query: &bad,
+                ..evidence()
+            }
+        ),
+        Err(Error::Query(formation::Error::Formation(
+            gold::Error::Verification
+        )))
+    ));
+    let bad = damage_batch(&word);
+    assert!(matches!(
+        verify_retained(
+            &expected,
+            retained,
+            QueryEvidence {
+                word: &bad,
+                ..evidence()
+            }
+        ),
+        Err(Error::Word(probe::Error::Verification))
+    ));
+    let mut bad = product.clone();
+    bad[8] ^= 1;
+    assert!(matches!(
+        verify_retained(
+            &expected,
+            retained,
+            QueryEvidence {
+                product: &bad,
+                ..evidence()
+            }
+        ),
+        Err(Error::Product(product::Error::Binding))
+    ));
+    for index in 0..3 {
+        let mut missing = evidence();
+        match index {
+            0 => missing.word = &[],
+            1 => missing.query = &[],
+            _ => missing.product = &[],
+        }
+        assert!(matches!(
+            verify_retained(&expected, retained, missing),
+            Err(Error::Resource)
+        ));
+    }
+}
 
 #[test]
 fn original_version_word_data_query_and_real_product_are_all_required_before_client_completion() {
@@ -259,21 +424,7 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
     let client_ms = started.elapsed().as_secs_f64() * 1000.;
     let owner_setup_and_read_ms = began.elapsed().as_secs_f64() * 1000.;
     // Full-ring oracle belongs only to this PUBLIC fixture, after all verification.
-    let mut oracle = Zeroizing::new(vec![0u64; gold::N]);
-    for (i, &x) in data_words.iter().enumerate().filter(|(_, v)| **v != 0) {
-        for (j, &y) in mask_words.iter().enumerate().filter(|(_, v)| **v != 0) {
-            let at = (i + j) % gold::N;
-            let term = x * y % gold::T;
-            oracle[at] = (oracle[at]
-                + if i + j < gold::N {
-                    term
-                } else {
-                    gold::T - term
-                })
-                % gold::T;
-        }
-    }
-    assert_eq!(*actual, *oracle);
+    assert_eq!(*actual, *ring_oracle(&data_words, &mask_words));
     for (row, age) in [0u64, 1, 128, 255].into_iter().enumerate() {
         assert_eq!(actual[2 * row * 512 + 255], 256 + age);
         assert_eq!(actual[(2 * row + 1) * 512 + 255], row as u64 + 1);
@@ -292,6 +443,25 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
         .map(|f| f.len())
         .sum::<usize>()
     );
+
+    let started = Instant::now();
+    let retained = installed::verify_dense(
+        &data_expected,
+        &data_request,
+        installed::Prerequisites::checked(&frames.state, &frames.child).unwrap(),
+        &frames.data,
+    )
+    .unwrap();
+    let install_ms = started.elapsed().as_secs_f64() * 1000.;
+    retained.require_expected(&data_expected).unwrap();
+    let started = Instant::now();
+    let again = verify_retained(&expected, &retained, frames.borrowed().query()).unwrap();
+    let retained_receive_ms = started.elapsed().as_secs_f64() * 1000.;
+    assert_eq!(again.output(), checked.output());
+    eprintln!(
+        "retained_math_receive SAME_query=true independent_install_ms={install_ms:.3} full_receive_ms={receive_ms:.3} retained_receive_ms={retained_receive_ms:.3} SQL=false freshness=false"
+    );
+    different_retained_query(&p, &key, &data_expected, &retained, &data_words);
 
     // Same version tag and images, but a different complete C_state must not join.
     let mut foreign = owner_cases::case(Kind::SkipBeforeOffset);
@@ -318,6 +488,62 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
         foreign.metadata.source.version_id(),
         state_expected.version_id()
     );
+    let foreign_source = encoding::statement::Statement {
+        expected: encoding::statement::Expected::source_version(
+            &foreign.metadata.source,
+            data_expected.source().expected.key_binding().clone(),
+        )
+        .unwrap(),
+        encoded: data_expected.source().encoded,
+    };
+    let foreign_data = installed::Expected::checked(&data_request, &foreign_source).unwrap();
+    assert!(matches!(
+        retained.require_expected(&foreign_data),
+        Err(installed::Error::Binding)
+    ));
+    let foreign_read = Expected::checked(
+        &foreign.metadata,
+        &foreign_data,
+        &request,
+        vector,
+        expected.product.output_wire().to_vec(),
+    )
+    .unwrap();
+    assert!(matches!(
+        verify_retained(&foreign_read, &retained, frames.borrowed().query()),
+        Err(Error::Data(installed::Error::Binding))
+    ));
+    // Original installation nonce and ciphertext, Cw and original Cs are retained too.
+    let other_nonce =
+        data::Request::checked([0x62; 32], data_request.ciphertext().to_vec()).unwrap();
+    let other_ciphertext =
+        data::Request::checked(data_request.nonce(), encrypt(&key, &p, &data_words)).unwrap();
+    for different in [&other_nonce, &other_ciphertext] {
+        let different = installed::Expected::checked(different, data_expected.source()).unwrap();
+        assert!(matches!(
+            retained.require_expected(&different),
+            Err(installed::Error::Binding)
+        ));
+    }
+    let mut other_cw = data_expected.source().clone();
+    other_cw.encoded[0] += Val::ONE;
+    let other_cw = installed::Expected::checked(&data_request, &other_cw).unwrap();
+    assert!(matches!(
+        retained.require_expected(&other_cw),
+        Err(installed::Error::Binding)
+    ));
+    let mut other_cs = data_expected.core_expected().roots()[1];
+    other_cs[0] += Val::ONE;
+    let other_cs = encoding::statement::Statement {
+        expected: encoding::statement::Expected::source_version(state_expected, binding(other_cs))
+            .unwrap(),
+        encoded: data_expected.source().encoded,
+    };
+    let other_cs = installed::Expected::checked(&data_request, &other_cs).unwrap();
+    assert!(matches!(
+        retained.require_expected(&other_cs),
+        Err(installed::Error::Binding)
+    ));
     assert!(matches!(
         Expected::checked(
             &foreign.metadata,
@@ -358,6 +584,15 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
     ));
 
     let bad_data = damage_batch(&frames.data);
+    assert!(matches!(
+        installed::verify_dense(
+            &data_expected,
+            &data_request,
+            installed::Prerequisites::checked(&frames.state, &frames.child).unwrap(),
+            &bad_data
+        ),
+        Err(installed::Error::Formation(gold::Error::Verification))
+    ));
     assert!(matches!(
         verify(
             &expected,

@@ -190,12 +190,17 @@ owned; the three composition cases exercise the public lower API from this crate
 The private `read` composition independently retains the complete Word metadata,
 version-specific DATA expectation, original ordered request and claimed Ct3.
 Construction compares full Source values, both original heads and complete packets,
-then derives the same fused query and arithmetic expectations. Its bounded six
-borrowed frames are unverified. Every receive runs conditional public product
-checking, fresh State + Role3 + dense DATA verification, original Word native
-verification and fused Query native verification. Only that closed function can
-construct the move-only mathematical result exposing the checked ciphertext.
-It accepts no supplied verdict, setup, cache or private owner input.
+then derives the same fused query and arithmetic expectations. Its original
+`verify` accepts six unverified borrowed frames and always checks conditional
+public product arithmetic plus fresh State/Role3/DATA/Word/Query native proofs.
+The additive `verify_retained` accepts only a privately constructed actual
+`VerifiedDataFormation` and three unverified per-query frames. It compares the
+complete retained DATA claim, then freshly checks product/Word/Query on EVERY
+invocation. The preserved immutable theorem substitutes only its own earlier
+successful State/Role3/DATA verification. Word and Query verdicts/setups are not
+cached. Neither path accepts producer checked flags or private owner inputs.
+Only these closed receiving functions construct the move-only mathematical
+result exposing the checked ciphertext. The new path adds no wire format.
 
 Direct dependencies are the parent Word probe and its fixed native codec,
 `two_lane_encoding::data_formation` and its prerequisite codec, the fixed Gold
@@ -207,3 +212,9 @@ This is conditional mathematical composition: key/lattice and product security,
 confirmed bootstrap/history, current weighted QC, durable completion, transport
 and live SQL admission remain outside its contract. The Word transition still
 relies on its independently retained OldRoot. See [read validation](READ-VALIDATION.md).
+
+Immutable verification is independent of currentness. The existing finality
+`VerifiedParent` explicitly represents historical lineage, not a current lock
+lease. This module does not accept a raw head, version tag or that historical
+type as a fresh weighted quorum. No storage-client/runtime route or production
+SQL guard is changed by mathematical retention.

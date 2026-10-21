@@ -103,6 +103,33 @@ impl Evidence<'_> {
         }
         Ok(())
     }
+    fn query(&self) -> QueryEvidence<'_> {
+        QueryEvidence {
+            word: self.word,
+            query: self.query,
+            product: self.product,
+        }
+    }
+}
+/// Per-query unverified arguments after retaining independently verified DATA.
+/// This type contains no DATA proof bytes, setup, accepted flag or current head.
+pub(super) struct QueryEvidence<'a> {
+    pub(super) word: &'a [u8],
+    pub(super) query: &'a [u8],
+    pub(super) product: &'a [u8],
+}
+impl QueryEvidence<'_> {
+    fn require_bounds(&self) -> Result<()> {
+        if self.word.is_empty()
+            || self.word.len() > probe_wire::MAX_FRAME_BYTES
+            || self.query.is_empty()
+            || self.query.len() > query::MAX_EVIDENCE_BYTES
+            || self.product.len() != product::CERTIFICATE_BYTES
+        {
+            return Err(Error::Resource);
+        }
+        Ok(())
+    }
 }
 /// Move-only result borrowing public metadata. No SQL, freshness or security grant.
 /// Only the closed receiving function in this module can construct this type.
@@ -133,7 +160,27 @@ pub(super) fn verify<'a>(
         )
         .map_err(Error::Data)?,
     );
+    verify_query_proofs(expected, &evidence.query())?;
+    Ok(ArithmeticCheckedRead { expected })
+}
+
+/// Reuse only a privately constructed actual State/Role3/DATA verification result.
+/// Full currentness/finality remains the independent caller's responsibility.
+pub(super) fn verify_retained<'a>(
+    expected: &'a Expected<'a>,
+    retained: &installed::VerifiedDataFormation,
+    evidence: QueryEvidence<'_>,
+) -> Result<ArithmeticCheckedRead<'a>> {
+    evidence.require_bounds()?;
+    retained
+        .require_expected(&expected.data)
+        .map_err(Error::Data)?;
+    drop(product::check_arithmetic(&expected.product, evidence.product).map_err(Error::Product)?);
+    verify_query_proofs(expected, &evidence)?;
+    Ok(ArithmeticCheckedRead { expected })
+}
+fn verify_query_proofs(expected: &Expected<'_>, evidence: &QueryEvidence<'_>) -> Result<()> {
     probe::verify(expected.word, evidence.word).map_err(Error::Word)?;
     formation::verify_bytes(&expected.query, evidence.query).map_err(Error::Query)?;
-    Ok(ArithmeticCheckedRead { expected })
+    Ok(())
 }
