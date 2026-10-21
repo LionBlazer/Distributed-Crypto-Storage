@@ -141,6 +141,11 @@ impl Expected {
     pub fn source(&self) -> &statement::Statement {
         &self.source
     }
+    /// Read-only mathematical metadata for owner-side composition; no proof or
+    /// Source/DATA admission, current head, key ownership or SQL permission.
+    pub fn core_expected(&self) -> &data::Expected {
+        &self.core
+    }
     fn require_request(&self, request: &data::Request) -> Result<()> {
         if request.bytes() != self.request().bytes() {
             return Err(Error::Binding);

@@ -469,3 +469,16 @@ tests and 35 compile-fail contracts, including actual restored Key/Basis/Formati
 after the original private objects were destroyed. It adds no durable OwnerVault,
 rollback protection, Source Ckey/pending transaction recovery, same-secret RK
 theorem, finality or SQL admission.
+
+## Protected N4096 owner inputs
+
+The optional `gold-owner` feature adds the separate [Gold owner family](src/gold/README.md).
+It imports an independently pinned guarded SDK key, opens its actual Cs, generates
+an original query ciphertext through actual SDK encryption and checks the complete
+conditional public arithmetic certificate before client decryption. Protected AEAD
+origination restore rechecks the original input equations; it never re-encrypts or
+adopts a stored success flag. The supplied DATA expectation is mathematical metadata,
+not Source/current-head admission. Old N8192 Owner/public profiles remain separate.
+No production SQL, finality, lattice/noise or composed-security assurance is added.
+The [executed validation](src/gold/VALIDATION.md) covers four actual SDK/custody
+cases, three compile-fail contracts and separate default/all-feature compilation.

@@ -7,11 +7,13 @@ publish = false
 
 
 [features]
+gold-owner = ["dep:bfv-ciphertext-formation", "dep:bfv-unrelinearized-product", "dep:bfv-hiding-stark", "dep:p3-field", "dep:chacha20poly1305"]
 formation-proofs = ["basis-proofs", "dep:bfv-ciphertext-formation"]
 basis-proofs = ["key-proofs", "dep:bfv-basis-convolution"]
 key-proofs = ["dep:bfv-key-transform", "dep:bfv-hiding-stark", "dep:p3-field", "dep:chacha20poly1305", "dep:prost"]
 
 [dependencies]
+bfv-unrelinearized-product = { path = "../bfv-unrelinearized-product", optional = true }
 chacha20poly1305 = { version = "=0.10.1", optional = true }
 prost = { version = "=0.14.4", optional = true }
 bfv-ciphertext-formation = { path = "../bfv-ciphertext-formation", optional = true }
