@@ -1,0 +1,15 @@
+[package]
+name = "bfv-unrelinearized-selection"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+bfv-fixed-geometry = { path = "../../crates/bfv-fixed-geometry" }
+fhe = "=0.1.1"
+fhe-traits = "=0.1.1"
+rand = "=0.9.2"
+serde_json.workspace = true
+sha2 = "=0.10.9"
+zeroize = "1"

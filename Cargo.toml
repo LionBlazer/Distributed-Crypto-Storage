@@ -52,6 +52,7 @@ members = [
     "playground",
     "experiments/fhe-prototype",
     "experiments/core-workloads",
+    "experiments/bfv-unrelinearized-selection",
 ]
 default-members = [
     "crates/bfv-hiding-stark",
