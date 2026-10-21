@@ -164,6 +164,15 @@ pub(super) struct Preparation {
     openings: Vec<ScaledOpening>,
     key: SecretOpening,
 }
+/// Operation-local auxiliary banks. Every private vector keeps its existing guard.
+/// This is not a proof, acceptance result or externally supplied capability.
+struct EquationWitness {
+    plan: graph::Plan,
+    graph: graph::Trace,
+    products: Vec<Zeroizing<Vec<i64>>>,
+    errors: Vec<Zeroizing<Vec<i64>>>,
+    quotients: Vec<Zeroizing<Vec<i64>>>,
+}
 impl Preparation {
     pub(super) fn new(
         expected: ExpectedRef<'_>,
@@ -193,12 +202,11 @@ impl Preparation {
     pub(super) fn require_expected(&self, expected: ExpectedRef<'_>) -> Result<()> {
         self.expected.require_same(expected)
     }
-    /// Called only by the closed backend AFTER actual assessment/resource gates.
-    /// All auxiliary secret graph/product banks drop before native MAIN commitment.
-    pub(super) fn trace(self, expected: ExpectedRef<'_>) -> Result<PrivateTrace> {
+    /// One genuine graph computation and the complete private input equations.
+    /// No PP, MAIN, native proof or mathematical acceptance token is created here.
+    fn derive_equations(&self, expected: ExpectedRef<'_>) -> Result<EquationWitness> {
         self.require_expected(expected)?;
         let kind = expected.kind();
-        let layout = kind.range();
         let plan = graph::Plan::new(expected.inputs()?)?;
         let graph = plan.build(&self.key.secret)?;
         let products: Vec<Zeroizing<Vec<i64>>> = (0..kind.products())
@@ -242,6 +250,32 @@ impl Preparation {
                 quotients[j][at] = k as i64;
             }
         }
+        Ok(EquationWitness {
+            plan,
+            graph,
+            products,
+            errors,
+            quotients,
+        })
+    }
+    /// Consistency only: all guarded inputs and auxiliaries die before unit success.
+    pub(super) fn check_private_consistency(self, expected: ExpectedRef<'_>) -> Result<()> {
+        let equations = self.derive_equations(expected)?;
+        drop(equations);
+        Ok(())
+    }
+    /// Called only by the closed backend AFTER actual assessment/resource gates.
+    /// All auxiliary secret graph/product banks drop before native MAIN commitment.
+    pub(super) fn trace(self, expected: ExpectedRef<'_>) -> Result<PrivateTrace> {
+        let EquationWitness {
+            plan,
+            graph,
+            products,
+            errors,
+            quotients,
+        } = self.derive_equations(expected)?;
+        let kind = expected.kind();
+        let layout = kind.range();
         let mut main = PrivateTrace(RowMajorMatrix::new(Val::zero_vec(HEIGHT * WIDTH), WIDTH));
         for r in 0..kind.graph_rows() {
             let row = &mut main.0.values[r * WIDTH..(r + 1) * WIDTH];

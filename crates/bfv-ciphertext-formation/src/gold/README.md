@@ -153,3 +153,32 @@ The [executed DATA validation](DATA-VALIDATION.md) records native assessment,
 ordered-symbolic/full-PP golden comparisons. The 500ms complete-operation and
 whole-peer memory targets remain unestablished. Keeping H8192 implies no
 factor-two speed or memory claim.
+## Owner-private consistency before MAIN
+
+`data::Prepared::check_private_consistency(self, &Expected)` consumes the SAME
+captured request and private W/S openings. It computes the complete existing
+fixed graph once, then checks all4096 coefficients, shared E across Q0/Q1,
+exact divisibility and symmetric K bounds. Expected/W/Cs/parameters and original
+canonical ciphertext remain mandatory. This also checks the algebra of a
+one-ciphertext owner-private query input; it supplies no Source or DATA admission.
+
+The private `derive_equations` helper returns only scoped guarded graph/product/
+E/K banks. The existing full trace writer consumes those SAME banks, preserving
+one graph computation and its original MAIN population. The public consistency
+method drops all banks and original private inputs before returning unit. It
+creates no PP, MAIN, native proof, accepted token or serialized verdict. Actual
+`prove` and independent cold `verify` keep their complete existing behavior.
+This method is not an encryption-randomness assessment or an SQL/current-head
+permission and does not enable an Owner, custody or runtime query route.
+
+The extension reuses existing SDK fixtures for honest DATA and an
+honest query ciphertext, foreign complete Expected, repaired wrong secret/Cs,
+Q1-only error and repaired W tail. Errors must be concrete Binding/Arithmetic;
+no proof/PP is substituted by a model. Existing owning proof tests and Pair
+profile/ordered-symbolic/full-PP goldens remain required Root validation gates.
+The focused SDK query case passed in 0.11s and all 14 CoreGold cases passed in
+12.37s, with unchanged Pair goldens and genuine hostile proof rejection. The
+[private consistency record](DATA-VALIDATION.md#private-input-consistency) reports
+7.539ms for the local API call, its precise boundary and the whole-case resource
+observations. This establishes no whole-process erasure or 500ms complete-query
+result.

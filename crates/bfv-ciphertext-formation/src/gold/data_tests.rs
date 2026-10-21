@@ -8,7 +8,7 @@ use crate::gold::{
 };
 use bfv_hiding_stark::{Challenge, Val};
 use fhe::bfv::{BfvParameters, BfvParametersBuilder, Ciphertext, Encoding, Plaintext, SecretKey};
-use fhe_traits::{FheEncoder, FheEncrypter, Serialize};
+use fhe_traits::{DeserializeParametrized, FheEncoder, FheEncrypter, Serialize};
 use p3_air::{BaseAir, check_all_constraints};
 use p3_batch_stark::{BatchVerificationError, verify_batch};
 use p3_field::PrimeCharacteristicRing;
@@ -19,6 +19,7 @@ use std::{
 };
 use zeroize::Zeroizing;
 struct Fixture {
+    parameters: Arc<BfvParameters>,
     expected: Expected,
     words: Zeroizing<Vec<u64>>,
     secret: Zeroizing<Vec<i64>>,
@@ -68,12 +69,39 @@ impl Fixture {
         ];
         let expected = Expected::checked(request, [0x92; 64], contexts, roots).unwrap();
         Self {
+            parameters: p.clone(),
             expected,
             words,
             secret,
             sdk,
             salts,
         }
+    }
+    /// Reuse this actual key/parameters for one honest SDK query ciphertext.
+    /// No Source, peer answer, accepted product or native proof is synthesized.
+    fn query_input(&self) -> (Expected, Zeroizing<Vec<u64>>) {
+        let key = SecretKey::from_bytes(&self.sdk, &self.parameters).unwrap();
+        let mut raw = Zeroizing::new(vec![0u64; N]);
+        for age in 128..256 {
+            raw[255 - age] = 1;
+        }
+        let plain = Zeroizing::new(
+            Plaintext::try_encode(raw.as_slice(), Encoding::poly(), &self.parameters).unwrap(),
+        );
+        let ct: Ciphertext = key.try_encrypt(&*plain, &mut rand::rng()).unwrap();
+        let request = Request::checked(
+            [0x95; 32],
+            Ciphertext::new(ct.iter().cloned().collect(), &self.parameters)
+                .unwrap()
+                .to_bytes(),
+        )
+        .unwrap();
+        let words = Zeroizing::new(raw.iter().map(|&v| v * SCALE % T).collect::<Vec<_>>());
+        let mut roots = self.expected.roots();
+        roots[0] = hash_fields(self.expected.contexts()[0], &self.salts[0], &words).unwrap();
+        let expected =
+            Expected::checked(request, [0x96; 64], self.expected.contexts(), roots).unwrap();
+        (expected, words)
     }
     fn prepared(&self) -> Prepared {
         self.prepare_with(&self.expected, self.words.clone(), self.sdk.clone())
@@ -140,6 +168,12 @@ fn ciphertext(c0: &[Vec<u64>], a: &[Vec<u64>]) -> Vec<u8> {
 fn data_request_and_prepared_reject_foreign_full_bindings() {
     let f = Fixture::new();
     let e = &f.expected;
+    let began = Instant::now();
+    f.prepared().check_private_consistency(e).unwrap();
+    eprintln!(
+        "core_gold_private_consistency input=data elapsed_ms={:.3}",
+        began.elapsed().as_secs_f64() * 1000.
+    );
     assert_eq!(
         Request::decode(e.request().bytes()).unwrap().bytes(),
         e.request().bytes()
@@ -168,6 +202,10 @@ fn data_request_and_prepared_reject_foreign_full_bindings() {
         f.prepared()
             .inner
             .require_expected(ExpectedRef::Data(&other)),
+        Err(Error::Binding)
+    ));
+    assert!(matches!(
+        f.prepared().check_private_consistency(&other),
         Err(Error::Binding)
     ));
     let (pair, _) = gold::tests::fixture();
@@ -207,6 +245,15 @@ fn data_request_and_prepared_reject_foreign_full_bindings() {
 fn actual_data_equations_reject_wrong_secret_shared_error_and_repaired_tail() {
     let f = Fixture::new();
     let e = &f.expected;
+    let (query, query_words) = f.query_input();
+    let began = Instant::now();
+    f.prepare_with(&query, query_words, f.sdk.clone())
+        .check_private_consistency(&query)
+        .unwrap();
+    eprintln!(
+        "core_gold_private_consistency input=query elapsed_ms={:.3}",
+        began.elapsed().as_secs_f64() * 1000.
+    );
     // Repair Cs for a different bounded S; public A cannot absorb this in bounded E.
     assert!(
         e.request().input(1)[0]
@@ -219,6 +266,11 @@ fn actual_data_equations_reject_wrong_secret_shared_error_and_repaired_tail() {
     roots[1] = hash_fields(e.contexts()[1], &f.salts[1], &pack_secret(&s).unwrap()).unwrap();
     let other = Expected::checked(e.request().clone(), [0x92; 64], e.contexts(), roots).unwrap();
     evidence::prescreen(ExpectedRef::Data(&other)).unwrap();
+    assert!(matches!(
+        f.prepare_with(&other, f.words.clone(), encode_secret(&s))
+            .check_private_consistency(&other),
+        Err(Error::Arithmetic)
+    ));
     assert!(matches!(
         f.prepare_with(&other, f.words.clone(), encode_secret(&s))
             .inner
@@ -238,6 +290,11 @@ fn actual_data_equations_reject_wrong_secret_shared_error_and_repaired_tail() {
     evidence::prescreen(ExpectedRef::Data(&other)).unwrap();
     assert!(matches!(
         f.prepare_with(&other, f.words.clone(), f.sdk.clone())
+            .check_private_consistency(&other),
+        Err(Error::Arithmetic)
+    ));
+    assert!(matches!(
+        f.prepare_with(&other, f.words.clone(), f.sdk.clone())
             .inner
             .trace(ExpectedRef::Data(&other)),
         Err(Error::Arithmetic)
@@ -248,6 +305,11 @@ fn actual_data_equations_reject_wrong_secret_shared_error_and_repaired_tail() {
     roots[0] = hash_fields(e.contexts()[0], &f.salts[0], &w).unwrap();
     let other = Expected::checked(e.request().clone(), [0x92; 64], e.contexts(), roots).unwrap();
     evidence::prescreen(ExpectedRef::Data(&other)).unwrap();
+    assert!(matches!(
+        f.prepare_with(&other, w.clone(), f.sdk.clone())
+            .check_private_consistency(&other),
+        Err(Error::Arithmetic)
+    ));
     assert!(matches!(
         f.prepare_with(&other, w, f.sdk.clone())
             .inner

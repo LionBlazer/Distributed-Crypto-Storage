@@ -194,6 +194,16 @@ impl Prepared {
             inner: Preparation::new(ExpectedRef::Data(expected), vec![opening], key)?,
         })
     }
+    /// Consume the original private inputs and check their complete algebraic
+    /// consistency against this SAME captured expectation, without PP or MAIN.
+    ///
+    /// This also supports a one-Ct owner-private query input. Unit success is not
+    /// a proof, DATA admission, encryption-randomness assessment or SQL authority;
+    /// it cannot replace prove() or the mandatory receiving native verify().
+    pub fn check_private_consistency(self, expected: &Expected) -> Result<()> {
+        self.inner
+            .check_private_consistency(ExpectedRef::Data(expected))
+    }
 }
 /// Producer bytes are UNVERIFIED; no accepted/currentness label is serialized.
 pub struct UnverifiedDataFormationEvidence {

@@ -145,3 +145,50 @@ parameter security assessment, new Cmd/lock/finality/WAL contracts, fresh agreed
 heads and an actual peer-process integration remain necessary. Current APIs do
 not install such authority or accept SQL. The complete-query 500 ms target remains
 unmet and must be measured only after that production path exists.
+
+## Private input consistency
+
+A subsequent extraction makes the existing complete private equation derivation
+available as `data::Prepared::check_private_consistency(self, &Expected)`. The
+original full proof builder uses the same operation-local Plan, guarded graph,
+products, common E and bounded K banks. The equation loop and entire MAIN writer
+were independently checked against their complete preimages; the graph is built
+once. All buffers retain their original cleanup. Profiles, AIR, PP, codec,
+resource gates and the receiving proof verifier are unchanged.
+
+This consuming API returns only `Result<()>`. It creates no PP, MAIN, native
+proof, accepted token or serialized verdict. It can check the original ciphertext
+of an owner-private query against the independently retained mask/W and the SAME
+SDK key/Cs. It supplies no Source/DATA admission, encryption-randomness theorem,
+query provenance, authorization, freshness or SQL permission. Owner origination,
+protected custody and exact cold recovery remain separate work.
+
+The actual SDK query case passed in 0.11 s, including setup and the existing
+repaired-secret/shared-error/final-W negatives. The successful public-API call,
+including checked openings, took 7.539 ms after query encryption/metadata setup.
+Its held-PID observation recorded 124.7177 ms lifetime, 0.125 CPU seconds,
+10,182,656 peak sampled private bytes and 15,978,496 OS-peak working-set bytes.
+It allocated no private MAIN or proof; resource sampling is whole-case data,
+not an isolated allocation measurement for the API call.
+
+All 14 CoreGold tests then passed in 12.37 s on the same successful release
+artifact. Query and DATA input checks took 7.675 and 7.550 ms in that run.
+The genuine DATA proof, repaired OOD, real false-wire terminal rejection and all
+four Pair goldens still passed. Process lifetime was 12,384.6032 ms, CPU time
+23.296875 s, peak private bytes 1,345,994,752 and OS peak working set
+1,351,450,624. Both observations preserved the same 120 s / 1792 MiB fuses,
+20 ms sampling, exact source/image pins and terminal-zero/no-child checks.
+
+Executable: 5,399,552 bytes, SHA256
+`05CE0DF1B861D67E6210DC06B68F73F273AA70CFDC7998CE4A8D9FD5335B0E0B`.
+The source packet manifest was
+`A84C4F4CE399C22A1316CB14E7EBAC3581A0797C28E737A1BA6598A06BA79B52`;
+all 31 images and four sidecars were independently checked. Root added only two
+bounded test timing measurements before the successful build. Strict all-target Clippy,
+formatting, requirement consistency and documentation checks passed. No extra
+full proof fixture was introduced; existing owning proof tests were reused.
+
+The local consistency check and cold public proof verification are different
+operations. The 7.539 ms measurement cannot replace peer-verifiable evidence or
+establish a speedup for the complete SQL/locking request. Its purpose is a fast,
+shared input check for the planned protected owner recovery path.
