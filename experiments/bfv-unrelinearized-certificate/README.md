@@ -25,6 +25,10 @@ The private boundary is split by responsibility:
 - `pit` constructs ordinary degree<2N convolution quotients. Its checker tests
   all three BFV component equations in all four residue fields, using eighteen
   points per field. It evaluates polynomials; it performs no NTT or SDK product.
+- `modular` implements bounded Montgomery arithmetic for the public checker.
+  Horner accumulators and coefficients stay in the ordinary residue domain;
+  only each common evaluation point is converted. The independent prover keeps
+  its original integer-remainder convolution.
 - `certificate` owns the only complete checking path: fixed bounded codec,
   endpoint association, all seven scaler certificates and the full transcript.
   Challenges derive from those SAME complete canonical bytes before checking.

@@ -111,3 +111,62 @@ The recorded code and protocol boundaries are described in [README.md](README.md
 and [SOUNDNESS.md](SOUNDNESS.md). Independent agent source reviews found no
 concrete composition, parsing or client-completion defect; they are source review,
 not additional native evidence or approval of a cryptographic security level.
+
+## Public checker arithmetic follow-up
+
+The follow-up replaces per-coefficient u128 remainder division in the public
+Horner checker with Montgomery multiplication. It changes no coefficient,
+identity, challenge, transcript byte, profile digest, count of eighteen points,
+scalar certificate, decoder gate, accepted guarantee or production consumer.
+The independent prover's original remainder-based convolution is unchanged.
+
+For each fixed odd p<2^62, R=2^64 and a,b<p, t=a*b<p^2<2^124. With
+m=(t modR)*(-p^-1) modR, t+m*p fits u128 and is divisible by R. Its quotient is
+below p+p^2/R<2p, so one subtraction makes the result canonical. Six Newton
+steps obtain the inverse modulo R. Multiplying an ordinary accumulator by a
+point represented as point*R preserves the ordinary accumulator domain after
+reduction. Thus the complete coefficient vectors need no conversion or cache.
+These bounds rely on the closed checker's mandatory canonical-vector validation;
+the private arithmetic module does not grant authority to unvalidated values.
+
+The three added tests compare every pair of residues for p=3,5,97 with independent
+BigUint arithmetic, check all4096 coefficients and boundary evaluation points in
+all four actual fields, test powers/products at those boundaries, and reject
+unsupported moduli before setup. All sixteen owning tests passed in 0.58 s of
+test-body time, 5.328 s including compilation/wrapper. Strict all-target Clippy
+passed in 3.625 s including its wrapper. The original full-certificate SDK and
+repaired-adversary tests remain mandatory and passed. Independent source review
+found no reduction, range or domain-conversion defect; it ran no native code.
+
+One further native run used the same complete operation, public fixture schema,
+trusted build/thread policy, caps and observer method as above, with fresh keys:
+
+| Local phase | Observed milliseconds |
+| --- | ---: |
+| Preparation | 7.1727 |
+| Actual SDK product | 2.5556 |
+| Complete certificate construction | 38.2438 |
+| Complete arithmetic certificate check | 36.6900 |
+| Actual client completion and full-N comparison | 1.2524 |
+| Whole local operation | **87.4687** |
+
+The independent process lifetime was 126.6838 ms and CPU time 0.09375 s. Twenty-two
+memory samples observed at most 11,771,904 private bytes; the retained OS peak
+working set was 16,113,664 bytes. The process exited0 without faults, cleanup,
+fuse, source drift or observed child. This is another single observation, not a
+controlled repeated benchmark; the individual phase changes do not establish a
+stable speedup factor. The same 1,737,899-byte frame and unassessed profile were
+used, and every security/Source/freshness/network/SQL acceptance flag stayed false.
+The missing full-query obligations described above remain unchanged.
+
+| Additional ignored local record | SHA256 |
+| --- | --- |
+| `.local/unrel-cert-native-r3-observe/result.json` | `40113D0F3E724CEA97A12B8DCA291F929F279B086F730C2DB16B33D5ECCF068F` |
+| `.local/unrel-cert-native-r3-test/result.json` | `E6A52792E4AF6587E57CA7D3E2A8CF6856F6DF58998E73530B8A0EA48FA84662` |
+| `.local/unrel-cert-native-r5-clippy/result.json` | `AF17903B6D462B7FD2B1DA1E0024EE237A8E166FA4E2F59E0C5A3B6C4ECC3428` |
+| `.local/unrel-cert-native-r3-build/result.json` | `F1A44751A1B6B14A2107B3A6A7A82BC08ADB16EA319928F7E85E2920621B2DB6` |
+
+Follow-up executable: 1,013,760 bytes, SHA256
+`AB6DC5205F23943F4596F1E085C674C80342249D7954A0536C3D7FA903BEB180`.
+Observer: `.local/observe-unrel-cert-r3.py`, SHA256
+`5FE43141EDC87902B65C75E98C7C38130619472C027980C63E985E22A57FF492`.

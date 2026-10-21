@@ -3,6 +3,7 @@
 mod certificate;
 mod fixture;
 mod geometry;
+mod modular;
 mod pit;
 mod scale;
 mod statement;
@@ -79,10 +80,10 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             "kind":"public_arithmetic_certificate_observation", "profile_sha512":hex(&profile_digest()),
             "preparation_ms":example.preparation_ms, "sdk_product_ms":example.product_ms,
             "certificate_production_ms":produce_ms, "arithmetic_certificate_check_ms":verify_ms,
-        "client_completion_ms":completion_ms,
+            "client_completion_ms":completion_ms,
             "whole_local_experiment_ms":total_ms, "certificate_bytes":frame.len(), "frame_sha512":hex(&Sha512::digest(&frame)),
-        "wire_bytes":{"request":example.statement.request_wire().len(),"output":example.statement.output_wire().len(),"certificate":frame.len()},
-        "public_fixture_full_decrypted_coefficients_match":true,
+            "wire_bytes":{"request":example.statement.request_wire().len(),"output":example.statement.output_wire().len(),"certificate":frame.len()},
+            "public_fixture_full_decrypted_coefficients_match":true,
             "arithmetic_checks_passed":true, "proof_verified":false, "cryptographic_security_assessed":false,
             "lattice_security_assessed":false, "noise_certified":false, "source_authenticated":false,
             "sql_accepted":false, "fresh_head_verified":false, "network_measured":false

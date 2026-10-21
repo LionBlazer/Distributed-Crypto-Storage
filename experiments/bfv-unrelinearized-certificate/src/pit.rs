@@ -2,6 +2,7 @@
 use crate::{
     Error, Polynomial, Result,
     geometry::{N, QP},
+    modular::Modulus,
 };
 use sha2::{Digest, Sha512};
 
@@ -40,11 +41,6 @@ fn canonical(poly: &Polynomial, length: usize) -> Result<()> {
         return Err(Error::Shape);
     }
     Ok(())
-}
-fn eval(poly: &[u64], point: u64, p: u64) -> u64 {
-    poly.iter().rev().fold(0, |value, &coefficient| {
-        add(mul(value, point, p), coefficient, p)
-    })
 }
 fn primitive_root(p: u64) -> Result<u64> {
     // Any root of exact order2N yields the same ordinary polynomial convolution.
@@ -189,18 +185,19 @@ pub(crate) fn check(
         canonical(quotient, N - 1)?;
     }
     for (basis, p) in QP.into_iter().enumerate() {
+        let field = Modulus::new(p)?;
         for point in points(prefix, basis, p) {
-            let a: [u64; 4] = std::array::from_fn(|i| eval(&inputs[i][basis], point, p));
+            let a: [u64; 4] = std::array::from_fn(|i| field.evaluate(&inputs[i][basis], point));
             let lhs = [
-                mul(a[0], a[2], p),
-                add(mul(a[0], a[3], p), mul(a[1], a[2], p), p),
-                mul(a[1], a[3], p),
+                field.multiply(a[0], a[2]),
+                field.add(field.multiply(a[0], a[3]), field.multiply(a[1], a[2])),
+                field.multiply(a[1], a[3]),
             ];
-            let xn1 = add(pow(point, N as u64, p), 1, p);
+            let xn1 = field.add(field.power(point, N as u64), 1);
             for (component, lhs) in lhs.into_iter().enumerate() {
-                let y = eval(&certificate.products[component][basis], point, p);
-                let h = eval(&certificate.quotients[component][basis], point, p);
-                if lhs != add(y, mul(xn1, h, p), p) {
+                let y = field.evaluate(&certificate.products[component][basis], point);
+                let h = field.evaluate(&certificate.quotients[component][basis], point);
+                if lhs != field.add(y, field.multiply(xn1, h)) {
                     return Err(Error::Arithmetic);
                 }
             }
