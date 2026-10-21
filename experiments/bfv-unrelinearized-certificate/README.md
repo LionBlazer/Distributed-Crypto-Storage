@@ -51,6 +51,8 @@ quantitative security review including oracle/grinding queries; hashes alone
 are never arithmetic acceptance. The executable deliberately reports security
 and SQL flags as false. [SOUNDNESS.md](SOUNDNESS.md) separates the algebraic
 argument from the unassessed cryptographic assumptions.
+[PARAMETERS.md](PARAMETERS.md) records the conditional fixed-pair noise analysis
+and the unresolved confidentiality and SDK-rounding assessment.
 
 ```sh
 cargo clippy --release --offline --locked -p bfv-unrelinearized-certificate --all-targets -- -D warnings
