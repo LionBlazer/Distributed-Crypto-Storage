@@ -241,6 +241,25 @@ CPU/RSS again does not account for the full Sage process tree. All security and
 SQL admission flags remain false. The next numerical step must handle this
 Gaussian-like prefix without dropping attacks or replacing resource failure by
 an infinite attack cost.
+
+The new [exact sparse-prefix research source](../../experiments/lattice-cost-prefix/README.md)
+uses P*H'=R*H instead of convolution with every earlier coefficient. Here
+P=(1-z)*prod_distinct(1-z^d) and
+R=n*prod_distinct(1-z^d)-(1-z)*sum(m*d*z^(d-1)*prod_other(1-z^other)). Since P(0)=1,
+`k*A[k]=sum((R[i-1]-(k-i)*P[i])*A[k-i], i=1..k)`. All arithmetic and divisions are
+exact. Zero multiplicities and degrees beyond precision are algebraic identities;
+repeated degrees combine exponents. This changes no first-negative rule, cost,
+attack selection or parameter. For the actual two-degree branch only a few
+nonzero shifts are needed, avoiding the previous quadratic coefficient loop.
+All6 local tests passed, including346 independent finite-binomial series and
+full8192-coefficient zero-sample coverage. Eighteen additional full prefixes
+were generated locally. These are algebraic checks, not an estimator result.
+The actual authorized r7 run passed the v2 Sage gate:68 cases/1183 coefficients,
+full Cost metadata, two original fallbacks and the42-coefficient public baseline.
+The complete Gaussian-like loop still exceeded120s (GNU SIGKILL at120.049s),
+without any attack-result or model completion; ADPS16 did not start. Source pins
+and cleanup checks passed. No numerical security minimum was established. See
+[validation and remaining gates](../../experiments/lattice-cost-prefix/VALIDATION.md).
 Smallness does not prove sampler entropy. The certificate does not establish
 same-secret Formation, authenticated Source/hidden-program completeness,
 authorization, current agreed head/QC, durable locks or SQL admission.
