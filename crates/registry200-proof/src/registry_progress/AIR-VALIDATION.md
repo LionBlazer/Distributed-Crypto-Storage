@@ -204,4 +204,38 @@ built no PP/MAIN, PCS or proof. Its 10001408-byte image SHA256 is
 The complete per-term reports are in `.local/word-cmd-native-r6-`; the exact
 15-file inspector is archived at `.local/word-cmd-assessment-native-overlay-r1`.
 Only its own temporary files and guarded Core edits were removed/restored.
-The honest witness and actual native proof/rejection gates remain outstanding.
+This assessment creates neither an honest witness nor a native proof.
+
+## Complete private witness and direct diagnostics
+
+The closed factory now has a private typed origin/recipe sidecar for every Input.
+It retains operands and gates for inverses, equality, u64 borrow/carry and
+principal selectors, with cycle/depth/count guards. Evaluation memoizes the
+actual 209 Poseidon2 permutations and writes the whole MAIN, including unused
+cells and all 57 padding rows. The semantic Pool bytes and their two recorded
+SHA512 values remain exact unconditional goldens; the AIR and plan are unchanged.
+
+Both bounded public examples, Control Begin and Predicate Start/Done, produced
+honest 512-by-568 traces accepted by the SDK BASE diagnostics and every original
+native lookup expression. The Predicate example locks the OFFSET row and selects
+the next two physical rows. These owner examples supply no peer SQL answer,
+Source/DATA admission, verified prior-state history or current quorum certificate.
+
+An actual Add input/output mutation preserves its local BASE equation but fails
+the wire multiset. A repaired mask-frequency mutation similarly passes BASE and
+fails the original lookup. Damaged permutation/range cells fail BASE; missing
+origins, cycles, private u32 overflow and a foreign Result claim fail at their
+respective producer boundaries. These are direct diagnostics, not native proof
+rejections. Private buffers use best-effort fills without a total erasure claim.
+
+All ten owning cases, including the preceding parameter assessment, passed in
+0.18 s. Strict all-target Clippy passed. Process lifetime was 210.5647 ms with
+0.171875 CPU seconds, sampled peak private bytes 7962624 and OS peak working set
+17473536, without a fuse, cleanup kill or unexpected child. The 10113024-byte
+image SHA256 is
+`7677C335811F84DAAAC3C8A3D59FB9E9A91FE3E7D6FFF4A26D4CFE35C10553D9`.
+The exact 21-file overlay is archived at `.local/word-witness-native-overlay-r1`;
+receipts use `.local/word-cmd-native-r9-`. Its own temporary Core edits were
+removed/restored. AUX, PCS, proofs and SQL authority were never created. Genuine
+honest and hostile hiding proofs, bounded cold verification and complete DCS
+composition remain required; these timings do not establish a <=500ms query.

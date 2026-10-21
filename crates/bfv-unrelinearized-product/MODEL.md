@@ -184,15 +184,34 @@ between ROM proof and concrete hashing;
 The implementation-specific derivations above are not theorems of those papers.
 
 A faithful lattice/confidentiality estimate for n4096,q=Q,CBD(20) is pending.
-An actual Linux Sage 10.10/Python 3.12.3 runtime was reached on 2026-10-21 with
-an observed 2 GiB operator memory limit and GNU timeout 9.4. The reviewed numerical
-runner stopped before staging or attacks because Git was absent. No model or
-attack completed, and this observation supplies no numerical security estimate.
-The intended ordinary estimator remains pinned at
+On 2026-10-21 the numerical runner reached genuine Linux Sage 10.10/Python 3.12.3
+with a 2 GiB operator cgroup and GNU timeout 9.4. After the Git prerequisite was
+removed, the [official exact-commit archive](https://codeload.github.com/malb/lattice-estimator/tar.gz/53da5982597709ba0fdf94ea37a84d822310fd84)
+was staged without changing any estimator byte. All 63 files/11 directories and
+the six original RAW pins were independently checked before and after the run.
+The saved 101555-byte archive SHA256 is
+`4236adc38031c139c8a2721804d8962d6cacd015fae37f6f5215d2ac7f011060`;
+archive provenance reports `git_clean=null`, never a fabricated Git checkout.
+
+A startup diagnostic measured Sage virtual size 1602277376 bytes and
+RSS 204087296 bytes before NumPy. The original 1536 MiB address-space fuse left
+8335360 bytes and NumPy mapping failed. The offline research child now has an
+explicit 2048 MiB virtual limit; the aggregate physical 2 GiB cgroup, GNU 120s,
+CPU 120s and file 16 MiB guards are unchanged. This does not change a DCS peer cap.
+Actual MATZOV evaluation then started, but independent GNU timeout stopped it
+after 120.05s before any attack-result or model-completion record. ADPS16 was
+not launched. Setup and source checks passed, and kernel/server cleanup was
+acknowledged; `.local/lattice-runtime-archive-run-r3` retains the raw evidence.
+Waited-child CPU/RSS after this group SIGKILL does not account for all Sage
+descendants and must not be presented as whole-estimator resource usage.
+
+The ordinary estimator remains pinned at
 `53da5982597709ba0fdf94ea37a84d822310fd84`, with exact CBD20 secret/error,
-full Q, m=infinity, all eight attacks and separate classical MATZOV/ADPS16
-models. Faithful source/runtime preparation remains an explicit blocker;
-an approximation, Git shim or omitted attack is not an equivalent assessment.
+full Q, m=infinity, all eight attacks and separate classical MATZOV/ADPS16 models.
+No sweep or minimum cost has been established. The next diagnostic samples the
+Python stack under the same deadline to locate the slow stage. All eight attacks
+remain required for a numerical claim. Full confidentiality assessment remains
+an explicit receiving blocker.
 Smallness does not prove sampler entropy. The certificate does not establish
 same-secret Formation, authenticated Source/hidden-program completeness,
 authorization, current agreed head/QC, durable locks or SQL admission.
