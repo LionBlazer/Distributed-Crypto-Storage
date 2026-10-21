@@ -10,7 +10,7 @@ struct Fixture {
     data: lower::data::Expected,
     plain: Zeroizing<Vec<u64>>,
 }
-fn scope() -> InputScope {
+pub(super) fn scope() -> InputScope {
     InputScope {
         database: [1; 16],
         transaction: 7,
@@ -107,7 +107,7 @@ impl Fixture {
         Owner::from_sdk(self.key.clone(), self.sdk.clone(), self.salt.clone()).unwrap()
     }
 }
-fn oracle(data: &[u64], mask: &Mask256) -> Zeroizing<Vec<u64>> {
+pub(super) fn oracle(data: &[u64], mask: &Mask256) -> Zeroizing<Vec<u64>> {
     let mask = mask.raw_words();
     let mut out = Zeroizing::new(vec![0; N]);
     for (i, &a) in data.iter().enumerate().filter(|(_, v)| **v != 0) {

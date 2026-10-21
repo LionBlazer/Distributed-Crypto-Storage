@@ -8,22 +8,36 @@ use rand_chacha::ChaCha20Rng;
 use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};
 
+#[derive(Clone, Copy)]
+pub(super) enum Purpose {
+    Query,
+    Data,
+}
+
 pub(super) fn encrypt(
     key: &SecretKey,
     parameters: &Arc<BfvParameters>,
     words: &[u64],
+    purpose: Purpose,
 ) -> Result<Ciphertext> {
-    encrypt_with_entropy(key, parameters, words, || {
+    encrypt_with_entropy(key, parameters, words, purpose, || {
         ChaCha20Rng::try_from_os_rng().map_err(|_| Error::Backend)
     })
 }
 
-fn query_coins(fresh: impl FnOnce() -> Result<ChaCha20Rng>) -> Result<(ChaCha20Rng, ChaCha20Rng)> {
+fn query_coins(
+    purpose: Purpose,
+    fresh: impl FnOnce() -> Result<ChaCha20Rng>,
+) -> Result<(ChaCha20Rng, ChaCha20Rng)> {
     let mut error = fresh()?;
-    error.set_stream(0);
+    let first = match purpose {
+        Purpose::Query => 0,
+        Purpose::Data => 4,
+    };
+    error.set_stream(first);
     error.set_word_pos(0);
     let mut uniform = error.clone();
-    uniform.set_stream(1);
+    uniform.set_stream(first + 1);
     uniform.set_word_pos(0);
     Ok((error, uniform))
 }
@@ -33,12 +47,13 @@ fn encrypt_with_entropy(
     key: &SecretKey,
     parameters: &Arc<BfvParameters>,
     words: &[u64],
+    purpose: Purpose,
     fresh: impl FnOnce() -> Result<ChaCha20Rng>,
 ) -> Result<Ciphertext> {
     if words.len() != N || parameters.degree() != N {
         return Err(Error::Shape);
     }
-    let (mut error_coins, mut uniform_coins) = query_coins(fresh)?;
+    let (mut error_coins, mut uniform_coins) = query_coins(purpose, fresh)?;
     let plain = Zeroizing::new(
         Plaintext::try_encode(words, Encoding::poly(), parameters).map_err(|_| Error::Backend)?,
     );
@@ -98,7 +113,8 @@ mod tests {
     #[test]
     fn one_seed_uses_disjoint_error_and_uniform_streams_from_counter_zero() {
         // Explicit PUBLIC test seed, never exposed by the owner API.
-        let (mut error, mut uniform) = query_coins(|| Ok(ChaCha20Rng::from_seed([0; 32]))).unwrap();
+        let (mut error, mut uniform) =
+            query_coins(Purpose::Query, || Ok(ChaCha20Rng::from_seed([0; 32]))).unwrap();
 
         assert_eq!(error.get_stream(), 0);
         assert_eq!(uniform.get_stream(), 1);
@@ -114,6 +130,16 @@ mod tests {
             &[0x76, 0xb8, 0xe0, 0xad, 0xa0, 0xf1, 0x3d, 0x90]
         );
         assert_ne!(error_block, uniform_block);
+        let (mut data_error, mut data_uniform) =
+            query_coins(Purpose::Data, || Ok(ChaCha20Rng::from_seed([0; 32]))).unwrap();
+        assert_eq!((data_error.get_stream(), data_uniform.get_stream()), (4, 5));
+        let mut data_error_block = [0; 64];
+        let mut data_uniform_block = [0; 64];
+        data_error.fill_bytes(&mut data_error_block);
+        data_uniform.fill_bytes(&mut data_uniform_block);
+        assert_ne!(data_error_block, data_uniform_block);
+        assert_ne!(data_error_block, error_block);
+        assert_ne!(data_uniform_block, uniform_block);
     }
 
     fn fixture() -> (Arc<BfvParameters>, SecretKey, Zeroizing<Vec<u64>>) {
@@ -176,10 +202,12 @@ mod tests {
     fn failed_entropy_returns_no_ciphertext_and_a_fresh_attempt_decrypts_the_original_mask() {
         let (parameters, key, words) = fixture();
 
-        let failed = encrypt_with_entropy(&key, &parameters, &words, || Err(Error::Backend));
+        let failed = encrypt_with_entropy(&key, &parameters, &words, Purpose::Query, || {
+            Err(Error::Backend)
+        });
 
         assert!(matches!(failed, Err(Error::Backend)));
-        let encrypted = encrypt(&key, &parameters, &words).unwrap();
+        let encrypted = encrypt(&key, &parameters, &words, Purpose::Query).unwrap();
         let plain = Zeroizing::new(key.try_decrypt(&encrypted).unwrap());
         let actual = Zeroizing::new(Vec::<u64>::try_decode(&*plain, Encoding::poly()).unwrap());
         assert_eq!(actual.as_slice(), words.as_slice());

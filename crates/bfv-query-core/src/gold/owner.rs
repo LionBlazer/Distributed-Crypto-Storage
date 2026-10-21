@@ -7,7 +7,7 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     sync::Arc,
 };
-/// Import-only N4096 protected owner. No secret getter, Clone, Debug or key generation.
+/// Generated or independently pinned imported N4096 owner. No secret getter, Clone or Debug.
 /// ```compile_fail
 /// fn secret(x:bfv_query_core::gold::Owner){let _=x.key;}
 /// ```
@@ -28,6 +28,58 @@ pub(super) fn parameters() -> Result<Arc<BfvParameters>> {
         .map_err(|_| Error::Backend)
 }
 impl Owner {
+    pub fn generate(scope: [u8; 32], context: [u64; 8]) -> Result<Self> {
+        let generated = catch_unwind(AssertUnwindSafe(|| {
+            super::generation::generate(scope, context)
+        }))
+        .map_err(|_| Error::Backend)??;
+        Self::from_sdk(generated.expected, generated.sdk, generated.salt)
+    }
+    pub fn seal_key(&self, identity: &CustodyIdentity, key: &CustodyKey) -> Result<EncryptedKey> {
+        let mut plain = Zeroizing::new(Vec::with_capacity(super::key_custody::PLAIN_BYTES));
+        plain.extend_from_slice(&self.sdk);
+        for value in self.salt.iter() {
+            plain.extend_from_slice(&value.to_le_bytes());
+        }
+        super::key_custody::seal(&self.expected, identity, key, plain)
+    }
+    pub fn restore_key(
+        expected: KeyExpected,
+        identity: &CustodyIdentity,
+        key: &CustodyKey,
+        record: &EncryptedKey,
+    ) -> Result<Self> {
+        let plain = super::key_custody::open(&expected, identity, key, record)?;
+        let sdk = Zeroizing::new(plain[..N + 3].to_vec());
+        let salt = Zeroizing::new(core::array::from_fn(|i| {
+            u64::from_le_bytes(
+                plain[N + 3 + 8 * i..N + 11 + 8 * i]
+                    .try_into()
+                    .expect("fixed key salt"),
+            )
+        }));
+        Self::from_sdk(expected, sdk, salt)
+    }
+    pub(super) fn secret_opening(&self) -> Result<lower::SecretOpening> {
+        lower::SecretOpening::checked(
+            self.expected.context(),
+            self.expected.root(),
+            self.sdk.clone(),
+            self.salt.clone(),
+        )
+        .map_err(Error::from)
+    }
+    pub(super) fn encrypt_original(
+        &self,
+        words: &[u64],
+        purpose: super::encryption::Purpose,
+    ) -> Result<Vec<u8>> {
+        let ciphertext: Ciphertext = catch_unwind(AssertUnwindSafe(|| {
+            super::encryption::encrypt(&self.key, &self.parameters, words, purpose)
+        }))
+        .map_err(|_| Error::Backend)??;
+        Ok(serialize(&ciphertext))
+    }
     pub fn from_sdk(
         expected: KeyExpected,
         sdk: Zeroizing<Vec<u8>>,
@@ -74,11 +126,9 @@ impl Owner {
         data: &lower::data::Expected,
     ) -> Result<OriginatingQuery> {
         self.require_data(data)?;
-        let ciphertext: Ciphertext = catch_unwind(AssertUnwindSafe(|| {
-            super::encryption::encrypt(&self.key, &self.parameters, &mask.raw_words())
-        }))
-        .map_err(|_| Error::Backend)??;
-        let request = PublicRequest::checked(binding, data, serialize(&ciphertext))?;
+        let ciphertext =
+            self.encrypt_original(&mask.raw_words(), super::encryption::Purpose::Query)?;
+        let request = PublicRequest::checked(binding, data, ciphertext)?;
         Ok(OriginatingQuery {
             request,
             mask,

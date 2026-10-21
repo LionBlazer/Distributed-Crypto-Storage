@@ -3,8 +3,13 @@
 mod binding;
 mod custody;
 mod encryption;
+mod generation;
+#[cfg(test)]
+mod generation_tests;
+mod key_custody;
 mod origin;
 mod owner;
+mod preparation;
 #[cfg(test)]
 mod tests;
 use bfv_ciphertext_formation::gold as lower;
@@ -14,12 +19,14 @@ pub use binding::{InputBinding, InputScope, KeyExpected, Parameters};
 pub use custody::{
     CustodyIdentity, CustodyKey, EncryptedOrigin, MAX_ORIGIN_BYTES, RestoreExpected,
 };
+pub use key_custody::{EncryptedKey, KEY_RECORD_BYTES};
 pub use origin::{
     DecryptedProduct, Evaluator, MAX_REQUEST_BYTES, Mask256, OriginatingQuery, PublicRequest,
     UnverifiedProduct,
 };
 pub use owner::Owner;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
+pub use preparation::OriginatingData;
 use sha2::{Digest, Sha256, Sha512};
 use zeroize::Zeroizing;
 pub const N: usize = 4096;
@@ -67,13 +74,15 @@ impl From<product::Error> for Error {
 }
 pub fn profile_digest() -> [u8; 32] {
     let mut h = Sha256::new();
-    h.update(b"DCS/Gold-protected-owner/v2/IMPORT-ONLY/ARITHMETIC-UNASSESSED/no-SQL");
+    h.update(
+        b"DCS/Gold-protected-owner/v3/GENERATE-OR-GUARDED-IMPORT/ARITHMETIC-UNASSESSED/no-SQL",
+    );
     h.update(lower::data::profile_digest());
     h.update(product::profile_digest());
     for n in [N as u64, Q[0], Q[1], T, SCALE, 10] {
         h.update(n.to_le_bytes());
     }
-    h.update(b"actualSDK-CBD20/Cs528;typedMask256;exact-original-inputs;OS-seeded-ChaCha20-stream0-error-stream1-A-remask;exact-SDK-phase-preserved;private-custody-equation-reopen-no-reencrypt;full18point-check-before-decrypt4096;no-Source-admission-head-lock-or-security");
+    h.update(b"actualSDK-CBD20/Cs528;typedMask256;exact-original-inputs;OS-seeded-ChaCha20-query0/1-key2/Cs3-DATA4/5;exact-SDK-phase-preserved;generated-key-Cs-open;sealed-key-exact-independent-KeyExpected;original-DATA-and-Query-Prepared-no-secret-getter;private-custody-equation-reopen-no-reencrypt;full18point-check-before-decrypt4096;no-Source-admission-head-lock-or-security");
     h.finalize().into()
 }
 pub(super) fn digest64(domain: &[u8], fields: &[&[u8]]) -> [u8; 64] {

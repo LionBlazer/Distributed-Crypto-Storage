@@ -246,6 +246,15 @@ v2 owner profile are separate from this public arithmetic certificate. Imported
 key entropy, existing DATA provenance and complete confidentiality remain open;
 this changes no product, Formation, fresh-head or SQL admission grant.
 
+The protected owner now also has a [normal generated lifecycle](../bfv-query-core/src/gold/GENERATION.md):
+actual CBD20 keys/Cs salts use separate OS-seeded ChaCha20 streams2/3, and new
+DATA uses error/remasking streams4/5. Its bounded AEAD key record reopens the same
+independently retained Cs, and private factories prepare genuine DATA/fused Query
+proofs without a key getter. This establishes a concrete honest local producer,
+not network enrollment, Source/Word semantics or sampling honesty from a proof.
+Legacy imports, already stored DATA and complete confidentiality remain outside
+that producer guarantee; all existing SQL/security guards remain closed.
+
 Smallness does not prove sampler entropy. The certificate does not establish
 same-secret Formation, authenticated Source/hidden-program completeness,
 authorization, current agreed head/QC, durable locks or SQL admission.

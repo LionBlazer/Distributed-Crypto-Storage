@@ -10,6 +10,9 @@ impl CustodyKey {
     pub fn new(key: Zeroizing<[u8; 32]>) -> Self {
         Self(key)
     }
+    pub(super) fn cipher(&self) -> Result<XChaCha20Poly1305> {
+        XChaCha20Poly1305::new_from_slice(self.0.as_ref()).map_err(|_| Error::Shape)
+    }
 }
 #[derive(Clone, PartialEq, Eq)]
 pub struct CustodyIdentity {
@@ -21,6 +24,9 @@ impl CustodyIdentity {
             return Err(Error::Binding);
         }
         Ok(Self { record })
+    }
+    pub(super) fn record(&self) -> &[u8; 32] {
+        &self.record
     }
 }
 /// Independently retained original request is mandatory for exact Submitted replay.
@@ -138,7 +144,7 @@ pub(super) fn seal_payload(
     }
     let nonce = owner::fresh_nonce();
     let h = header(owner, data, request, identity, nonce, plain.len() + TAG)?;
-    let cipher = XChaCha20Poly1305::new_from_slice(key.0.as_ref()).map_err(|_| Error::Shape)?;
+    let cipher = key.cipher()?;
     let tag = cipher
         .encrypt_in_place_detached(XNonce::from_slice(&nonce), &h, &mut plain)
         .map_err(|_| Error::Authentication)?;
@@ -191,7 +197,7 @@ impl Owner {
         }
         let end = bytes.len() - TAG;
         let mut plain = Zeroizing::new(bytes[HEADER..end].to_vec());
-        let cipher = XChaCha20Poly1305::new_from_slice(key.0.as_ref()).map_err(|_| Error::Shape)?;
+        let cipher = key.cipher()?;
         cipher
             .decrypt_in_place_detached(
                 XNonce::from_slice(&nonce),

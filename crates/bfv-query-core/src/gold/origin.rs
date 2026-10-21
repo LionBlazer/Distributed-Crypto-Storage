@@ -122,6 +122,17 @@ impl PublicRequest {
     pub fn query_ciphertext(&self) -> &[u8] {
         &self.bytes[self.split..]
     }
+    /// Fixed public endpoints for native Formation/Word composition; no proof or authority.
+    pub fn formation_request(&self) -> Result<lower::Request> {
+        lower::Request::checked(
+            self.product_nonce(),
+            [
+                self.data_ciphertext().to_vec(),
+                self.query_ciphertext().to_vec(),
+            ],
+        )
+        .map_err(Error::from)
+    }
     pub(super) fn product_nonce(&self) -> [u8; 32] {
         Sha256::digest(digest64(
             b"DCS/Gold-owner/complete-product-request/v1",

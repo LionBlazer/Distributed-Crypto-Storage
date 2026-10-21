@@ -1,12 +1,21 @@
-# Owner-controlled query randomness
+# Owner-controlled input randomness
 
 The protected owner now owns the query error and uniform-remasking streams. This
 addresses a concrete gap between the numerical independent-LWE model and the
 upstream encryption API: fhe0.1.1 accepts a caller CryptoRng for its CBD error,
 but creates A using a separate internal thread-RNG seed and ChaCha8 expansion.
 Passing a stronger RNG to `try_encrypt` alone does not change that A path.
-This document assesses the new QUERY producer's sampling boundary only, not
-imported key provenance, pre-existing DATA sampling or complete confidentiality.
+This document records the input producer's sampling boundary, not imported key
+provenance, pre-existing DATA sampling or complete confidentiality. The v3
+[generation lifecycle](GENERATION.md) extends the same policy with these fixed domains:
+
+| Purpose | ChaCha20 stream IDs |
+| --- | --- |
+| Query error / A remask | 0 / 1 |
+| Generated SDK key / Cs salt | 2 / 3 |
+| DATA error / A remask | 4 / 5 |
+
+Each input encryption and key generation obtains a separate fresh OS seed.
 
 ## Construction and exact relation
 
@@ -74,12 +83,15 @@ local source property is not a complete platform/compiler/side-channel audit.
 
 ## Profile and verification boundary
 
-The protected Gold owner profile changes fromv1 tov2 and commits to OS-seeded
+The v2 protected Gold owner profile introduced OS-seeded
 ChaCha20 stream0-error/stream1-A-remasking and exact phase preservation. Existing
 InputBinding/KeyExpected/request/custody associations carry that profile. No
 legacy-profile conversion or migration is introduced. The fixed lower DATA,
 Query Formation and product profiles, actual error relation and resource caps
-are unchanged. Imported key entropy and authenticated DATA origin remain open.
+are unchanged. V3 adds normal honest key/DATA generation and key custody, with
+the six fixed domains above and no private key getter. Imported key entropy and
+authenticated database-Source origin remain open. No native bounded-input proof
+alone attests that its producer sampled honestly.
 
 Owning tests pin the20-round zero-key block prefix and separate stream IDs/
 initial counters. Two explicit PUBLIC test seeds remask both ciphertext inputs

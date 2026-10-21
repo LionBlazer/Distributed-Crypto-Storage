@@ -473,8 +473,9 @@ theorem, finality or SQL admission.
 ## Protected N4096 owner inputs
 
 The optional `gold-owner` feature adds the separate [Gold owner family](src/gold/README.md).
-It imports an independently pinned guarded SDK key, opens its actual Cs, generates
-an original query ciphertext through actual SDK encryption with owner-controlled
+It generates a key with fresh OS/ChaCha20 coins or imports an independently pinned
+guarded SDK key, opens its actual Cs, generates original DATA/query ciphertexts
+through actual SDK encryption with owner-controlled
 ChaCha20 error coins and an exact phase-preserving A remask, then checks the complete
 conditional public arithmetic certificate before client decryption. Protected AEAD
 origination restore rechecks the original input equations; it never re-encrypts or
@@ -485,4 +486,6 @@ The [sampler contract](src/gold/SAMPLER.md) records the precise randomness/phase
 argument and unresolved imported-key/DATA assumptions. The
 [executed validation](src/gold/VALIDATION.md) distinguishes the original four
 SDK/custody cases, new sampler cases, compile-fail contracts and separate
-default/all-feature compilation.
+default/all-feature compilation. The [generated lifecycle](src/gold/GENERATION.md)
+adds bounded authenticated key restoration and prepares real native DATA/fused
+Query proofs while retaining the secret key inside Owner.

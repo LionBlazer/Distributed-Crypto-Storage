@@ -111,6 +111,66 @@ files byte-for-byte to6 original crate archives, whose SHA256 values match
 Cargo.lock. The source/review receipts and raw native outputs stay ignored in
 `.local/`; no generated outputs, private coins or keys are committed.
 
+## V3 generated key, custody and native preparation
+
+Executed2026-10-22 Europe/Moscow with the same pinned Rust1.99/MSVC release,
+native CPU codegen, two Cargo jobs/two Rayon threads and one harness thread.
+The [generated lifecycle](GENERATION.md) now creates actual SDK CBD20 keys and
+Cs salts through OS-seeded ChaCha20 streams2/3, uses streams4/5 for original DATA,
+and retains query streams0/1. It supplies encrypted key custody and normal private
+DATA/fused Query preparation without a secret getter. The v3 owner digest changes;
+lower DATA/Query/product profiles and native verifiers remain unchanged.
+
+All11 Gold cases passed in4.36s on the exact r166 native image. The new end-to-end
+case uses Owner::generate, actual original DATA encryption, destruction/restoration
+of Owner, genuine dense DATA proof generation/cold verification, genuine fused
+Query proof generation/cold verification, ciphertext-only FHE multiplication,
+full product-certificate verification and client decryption, followed by the
+independent4096-word plaintext oracle. The native-proof stages use the protected
+factories, not an SDK-secret fixture or a supplied verification callback.
+
+Hostile cases include entropy failure and invalid key context, wrong independent
+KeyExpected/record identity/custody key, damaged/tagged/trailing/truncated key
+records, repaired AEAD containing a different bounded actual SDK secret, foreign
+owner or substituted original DATA, wrong Cw salt, altered original query mask,
+wrong original nonce and damaged native proof frames. A valid key record still
+has to reopen the same actual Cs. The preceding sampler/custody/product cases
+also passed. Test custody keys and inputs are explicitly public/nonsecret.
+
+The5693952-byte test image SHA256 is
+`9E10E0C848F78A7D9AE22D7425A4EBC0A1DF7164BF7AD990D99EEE71020E0423`.
+The held process lived4378.0731ms, CPU7.546875s. Its214 samples observed peak
+private508325888 bytes; OS peak working set519004160 bytes. The120s/1792MiB
+research fuses did not fire; no cleanup kill was needed and terminal exit was0.
+The exact source and image identities matched before/after observation. This is
+a whole test-process observation, not whole-peer memory or network performance.
+
+| Native component in the generated/restored-owner example | Milliseconds |
+| --- | ---: |
+| Dense DATA proof generation | 1270.322 |
+| Independent dense DATA verification | 470.527 |
+| Fused Query proof generation | 1474.772 |
+| Independent fused Query verification | 642.885 |
+
+That whole test, including setup and hostile frame checks, took4005.211ms.
+DATA/query frames were3279669/3344021 bytes and the encrypted key record4315
+bytes. These are individual measurements without a latency distribution. They
+exclude Source-version/Word proofs, fresh agreed-head/QC checks, network, locks,
+SQL response assembly and durable I/O. Neither the test nor its smaller product
+component establishes<=500ms full SQL. Even the fresh fused Query proof alone
+exceeds that target on this environment.
+
+Strict all-feature/all-target Clippy, default all-target checking, all5 Gold
+compile-fail contracts, explicit rustfmt and requirements_sync passed. No dependency
+or lockfile version changed. The earlier original-archive sampler provenance
+review remains applicable to the unchanged SDK/Rand sources. Raw native images,
+source receipts and generated test outputs stay ignored in `.local/`.
+
+This gate proves normal generated-client Formation mathematics and protected
+key restoration, without native Source/Word semantics or a security/admission
+flag. Guarded legacy imports do not gain sampling provenance; authenticated
+database-source origin, key enrollment and complete composed security remain open.
+
 ## Remaining complete-query obligations
 
 These intervals exclude State/Role3/DATA admission proofs, the Cmd/lock proof,

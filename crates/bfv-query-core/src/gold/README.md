@@ -1,9 +1,9 @@
 # Protected Gold owner inputs
 
-The optional `gold-owner` family owns import-only N4096/Q2/t65537/variance10
-SDK secrets, original owner-encrypted query inputs, conditional public-product
+The optional `gold-owner` family owns generated or independently pinned imported
+N4096/Q2/t65537/variance10 SDK secrets, original owner-encrypted DATA/query inputs, conditional public-product
 checking and client-side full-ring decryption. It is separate from the old
-N8192 Owner/PublicSetup family. No conversion, key generation, bootstrap,
+N8192 Owner/PublicSetup family. No conversion, bootstrap,
 Source admission, storage-client SQL compiler, finality or runtime route exists.
 
 The lower DATA expectation supplied here is independently selected mathematical
@@ -14,11 +14,20 @@ Result and current weighted QC before exposing a SQL response or mutation.
 
 ## Owned contracts
 
+- `Owner::generate(scope,context)` obtains fresh fallible OS entropy, samples
+  the actual SDK CBD20 key with ChaCha20 stream2 and its Cs salt with stream3,
+  computes the actual packed Cs, then uses the complete guarded import checker.
+  It supplies no enrollment, key authorization or receiving security flag.
 - `KeyExpected::checked` requires the exact fixed Parameters and canonical full
   Cs context/root plus owner scope. `Owner::from_sdk` consumes guarded actual
   SDK bytes and Cs salt, validates ALL4096 coefficients and opens Cs using the
   real lower SecretOpening before the SDK decoder. Same key_id alone is useless.
   No SDK secret/key/private-salt getter, Clone, Debug or public callback exists.
+- `Owner::originate_data` consumes4096 canonical unscaled private words and
+  encrypts them with separate ChaCha20 DATA streams4/5. Move-only `OriginatingData`
+  exposes only ciphertext and salted commitment metadata. `prepare_data` checks
+  this literal original ciphertext and same Cs/context before making the actual
+  lower `data::Prepared`; native proving/verification is still required.
 - `InputBinding::checked(InputScope)` fixes database/App/G/Rules/context/parent,
   client/controller/principal/stable transaction/call/snapshot, SourceVersion,
   DataAdmission, original Statement/Cmd, attempt and nonce. All fields are public
@@ -30,6 +39,11 @@ Result and current weighted QC before exposing a SQL response or mutation.
   preserving every coefficient of the SDK phase. It retains that original
   unseeded canonical QueryCt and fixes the literal ordered
   [DataCt,QueryCt]. There is no arbitrary QueryCt->OriginatingQuery constructor.
+- `PublicRequest::formation_request` derives the original ordered endpoints and
+  a nonce hashing the full protected request for the lower native composition.
+  `Owner::prepare_query` retains the private key/mask: it checks original Ct/nonce,
+  same Cs, all canonical Stmt96 words, original mask bytes and Cw opening, then
+  returns only the original fused Query `Prepared`. This grants no Word semantics.
 - `PublicRequest` is untrusted bounded public wire; decode mints no private
   scope. `Evaluator` receives ONLY public ciphertexts and performs genuine SDK
   multiplication without RK, followed by a complete public arithmetic certificate.
@@ -41,6 +55,15 @@ Result and current weighted QC before exposing a SQL response or mutation.
   cannot replace the actual arithmetic verifier.
 
 ## Protected cold custody
+
+`seal_key` creates an exact4315-byte `EncryptedKey`, using XChaCha20Poly1305
+with a fresh fallible OS nonce. The fixed header binds profile, record identity
+and complete independently retained KeyExpected. `restore_key` authenticates
+those same pins, decrypts only the bounded SDK bytes/salt and reopens ALL4096
+coefficients against the actual Cs before creating Owner. No generated/verified
+flag is stored. The caller must protect CustodyKey independently; filesystem
+durability, anti-rollback, enrollment and exclusive-writer policy stay outside
+this library. See the [generation contract](GENERATION.md).
 
 `seal_origin` uses fresh XChaCha20Poly1305 nonce and a caller-custodied
 `CustodyKey`. Its fixed header binds family/profile, record identity, exact
@@ -88,7 +111,7 @@ Direct libraries are the existing SDK/fhe-math/fhe-traits for real computation;
 [Gold Formation](../../../bfv-ciphertext-formation/src/gold/README.md) for actual
 Cs and private input equations; [unrelinearized product](../../../bfv-unrelinearized-product/README.md)
 for the complete conditional arithmetic certificate; hiding Poseidon/P3-field
-for the fixed private commitment; pinned ChaCha20/rand for query randomness,
+for the fixed private commitment; pinned ChaCha20/rand for key/DATA/query randomness,
 and XChaCha/SHA2/zeroize for custody. `rand_chacha0.9.0` is an explicit optional
 dependency of `gold-owner`; it was already present transitively through the SDK.
 No registry, SQL parser, consensus, experiment, GUI or fixture dependency is added.
@@ -115,3 +138,8 @@ phase preservation under different masks, and entropy-failure rejection followed
 by honest origination. The [validation record](VALIDATION.md)
 reports the measured scope and remaining costs. No <=500ms complete-query result
 or whole-peer memory/security claim follows from these local contracts.
+
+The v3 [generation and native-preparation path](GENERATION.md) additionally uses
+an actual generated/restored owner for genuine dense DATA and fused Query proofs,
+then actual public FHE/product verification and client completion. These are
+native Formation results without Source-version/Word semantics, fresh QC or SQL.
