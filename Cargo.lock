@@ -621,6 +621,7 @@ dependencies = [
 name = "bfv-unrelinearized-certificate"
 version = "0.1.0"
 dependencies = [
+ "bfv-hiding-stark",
  "ethnum",
  "fhe",
  "fhe-math",
@@ -628,7 +629,16 @@ dependencies = [
  "ndarray",
  "num-bigint 0.4.8",
  "num-traits",
+ "p3-air",
+ "p3-batch-stark",
+ "p3-commit",
+ "p3-field",
+ "p3-lookup",
+ "p3-matrix",
+ "p3-security",
+ "p3-uni-stark",
  "rand 0.9.2",
+ "registry200-proof",
  "serde_json",
  "sha2",
  "zeroize",
@@ -3197,6 +3207,27 @@ checksum = "be7a317aa82ba3d758229db6dd1e2baa75f9aa6f1179d98b3b1e0c2c6b930d59"
 dependencies = [
  "p3-field",
  "p3-matrix",
+ "serde",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
+name = "p3-batch-stark"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3de9ea6d9df5aaa3bcd70a2deb1be64b88281f0908f7b5032079dc1b1b1ead02"
+dependencies = [
+ "hashbrown",
+ "p3-air",
+ "p3-challenger",
+ "p3-commit",
+ "p3-field",
+ "p3-lookup",
+ "p3-matrix",
+ "p3-maybe-rayon",
+ "p3-uni-stark",
+ "p3-util",
  "serde",
  "thiserror 2.0.21",
  "tracing",

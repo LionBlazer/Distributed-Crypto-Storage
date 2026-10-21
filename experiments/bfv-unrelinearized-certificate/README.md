@@ -89,3 +89,10 @@ equations against the original SDK inputs. Its observed local total was
 phase timings, process observation and rejection cases. This remains owner-side
 pre-proving preparation. The actual cryptographic Formation argument and its
 Source/Cw/Cs/current-head composition are still required before SQL admission.
+
+The private [full Formation AIR](src/gold_formation/program/README.md) adds all
+graph, range and commitment constraints plus native symbolic/security/resource
+inspection. `--unverified-formation-air-plan` inspects the full relation without
+committing preprocessing or allocating a private proof trace. It accepts no
+query and supplies no cryptographic Formation result. Its request binding is a
+separate experimental contract, not the SourceVersion version-tag contract.

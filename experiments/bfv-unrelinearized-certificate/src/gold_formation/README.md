@@ -61,10 +61,11 @@ u64 overflow. The existing p<2^62 Montgomery module is deliberately not reused.
 For canonical A<q and |S|<=20, an ordinary integer negacyclic product has absolute
 coefficient at most20*N*(q-1)<2^47, far below p/2. Its centered Gold lift is exact.
 With c0<q, W<=65536, |E|<=20 and bounded K, the entire residual has absolute value
-below2^50, also below p/2. These bounds explain the arithmetic; no AIR/argument
-constrains them in this source slice. A future proof must constrain the actual
-FFT, full inputs/ranges, same-secret/error and commitments, not publish secret
-frequencies/products or treat this native check as a proof verifier.
+below2^50, also below p/2. These bounds explain the owner-local arithmetic.
+The separate [full AIR](program/README.md) constrains the FFT, full input ranges,
+shared secret/errors and commitments. It currently supplies symbolic planning;
+its actual private trace, proof and receiving verifier are still required.
+Secret frequencies/products and this owner-local checker cannot replace a proof.
 
 ## Lifecycle, bounds and owning tests
 
@@ -106,7 +107,7 @@ query remain unimplemented.
 ## Complete private arithmetic graph
 
 The private `graph` module supplies the complete 139264-gate arithmetic
-schedule for the future N4096 Formation AIR: one secret forward transform,
+schedule used by the N4096 Formation AIR: one secret forward transform,
 four actual public-A pointwise jobs and four inverse transforms. Its 32 slots make
 4352 exact rows. Lazy metadata owns original node IDs, twiddles, folded first
 input bit-reversal/twists, last inverse normalization and the final-forward

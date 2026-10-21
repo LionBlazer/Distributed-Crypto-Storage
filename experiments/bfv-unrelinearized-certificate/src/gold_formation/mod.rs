@@ -2,6 +2,7 @@
 //! No proof, key authentication, Source/SQL admission or assessed security is supplied.
 mod fft;
 mod graph;
+mod program;
 #[cfg(test)]
 mod tests;
 
@@ -12,6 +13,16 @@ use crate::{
 };
 use sha2::{Digest, Sha512};
 use zeroize::Zeroizing;
+
+/// Geometry/symbolic planning only. No Source, Formation, key or SQL proof is made.
+pub(super) fn inspect_unverified_air(
+    statement: &Statement,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let assessment = program::inspect(statement, None)?;
+    assessment.log();
+    assessment.require_resources()?;
+    Ok(())
+}
 
 pub(super) const SCALE: u64 = 16389;
 pub(super) const PRIVATE_WITNESS_BYTES: usize = 7 * N * core::mem::size_of::<i64>();

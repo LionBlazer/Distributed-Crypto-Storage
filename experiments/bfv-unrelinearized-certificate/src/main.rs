@@ -111,6 +111,21 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         );
         return Ok(());
     }
+    if args == ["--unverified-formation-air-plan"] {
+        println!(
+            "{}",
+            serde_json::json!({
+                "kind":"UNVERIFIED_formation_air_symbolic_plan", "degree":geometry::N,
+                "proof_verified":false,"cryptographic_security_assessed":false,
+                "source_authenticated":false,"key_authenticated":false,
+                "sql_accepted":false,"fresh_head_verified":false,"network_measured":false,
+                "private_trace_allocated":false,"pp_committed":false
+            })
+        );
+        let example = fixture::example()?;
+        gold_formation::inspect_unverified_air(&example.statement)?;
+        return Ok(());
+    }
     if args != ["--public-fixture"] {
         return Err(Error::Shape.into());
     }
