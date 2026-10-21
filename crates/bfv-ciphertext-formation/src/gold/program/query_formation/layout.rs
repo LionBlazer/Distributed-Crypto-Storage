@@ -1,5 +1,5 @@
 //! Closed H2048 fused geometry. No old profile is relabeled.
-pub(super) const DOMAIN: &[u8] = b"DCS/research/CoreGold/FusedQuery57/H2048/PP708/v1";
+pub(in crate::gold) const DOMAIN: &[u8] = b"DCS/research/CoreGold/FusedQuery57/H2048/PP708/v1";
 pub(super) const H: usize = 2048;
 pub(super) const LOG_H: usize = 11;
 pub(super) const W: usize = 512;

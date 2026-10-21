@@ -170,6 +170,8 @@ exact source, byte, timing and resource receipts.
 
 Source/DATA proofs, original FHE request/product, owner provenance, bootstrap and
 history, fresh weighted QC, transport and durable completion are absent from
-these timings. A transferable proof joining QueryCt to this same private Stmt96
-mask is also required; local owner custody does not supply that proof. The
+these timings. The separate [QueryCt formation composition](query_mask_inventory/VALIDATION.md#fused-original-query-formation)
+now proves the complete Stmt96-mask/original-QueryCt relation through a public
+lower mathematical API. Its independent Word/Source/DATA/current-head admission
+is still required; local owner custody does not supply that evidence. The
 complete DCS query has not met the <=500ms target.

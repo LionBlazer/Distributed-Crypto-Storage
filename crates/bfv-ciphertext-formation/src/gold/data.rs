@@ -303,9 +303,6 @@ pub(super) fn dense_native_fixture() -> (Expected, Prepared, Prepared) {
 #[cfg(test)]
 pub(in crate::gold) fn fused_query_native_fixture(
     high: bool,
-) -> (
-    super::program::query_formation::Expected,
-    super::program::query_formation::Prepared,
-) {
+) -> (super::query::Expected, super::query::Prepared) {
     tests::fused_query_fixture(high)
 }

@@ -1,11 +1,14 @@
-# Fused query Formation candidate
+# Fused query Formation backend
 
-Test-private single-AIR mathematics for the complete Stmt96/mask/Cw/Cs/QueryCt
-relation. It is not registered in SQL, peer runtime or owner custody. The retained
+Fixed single-AIR mathematics for the complete Stmt96/mask/Cw/Cs/QueryCt
+relation, behind the public [gold::query](../../query.rs) mathematical facade.
+It is not registered in SQL, peer runtime or owner custody. The retained
 13-field statement header is supplied independently by the upper family; this
 module does not verify Word history or choose SQL semantics. Source/DATA/key
-admission, exact original ordered-pair association, current weighted head,
-product/result, locks, transport and complete-query latency remain upper work.
+admission, current weighted head, product/result, locks, transport and
+complete-query latency remain upper work. The private registry composition now
+binds the exact original ordered pair, retained DATA Expected and original Word
+header through this facade; it still grants no SQL or DATA admission.
 
 The complete lower DATA Expected is retained and rebound with a distinct fused
 protocol, full statement root and full header. Its original request, nonce,
@@ -53,6 +56,16 @@ proof and a genuine unbalanced-mask lookup proof. Test-only negative trace
 preparation bypasses honest mask checking exclusively to exercise the unchanged
 native receiver; no public or production bypass exists. The
 [validation record](VALIDATION.md) separates actual execution from remaining work.
+
+`gold::query::Expected::checked` captures public metadata; it verifies no proof.
+Its `core_expected()` supplies the rebound public binding for `data::Prepared`.
+`query::Prepared::new` consumes that same guarded preparation and complete Stmt96,
+checking the original captured binding before any proof. `query::prove` returns
+unverified bytes; `query::verify` always bounds/decodes the distinct frame, rebuilds
+public PP and calls the actual native verifier. Only then can it return the
+move-only, privately constructed `query::VerifiedFormation`. There is no cast
+to DATA/Word/Source admission, setup callback or format fallback. All fixtures,
+attack trace writers and diagnostic snapshots remain test-only.
 
 ```sh
 cargo test --release --locked -p bfv-ciphertext-formation gold::program::query_formation:: -- --nocapture --test-threads=1

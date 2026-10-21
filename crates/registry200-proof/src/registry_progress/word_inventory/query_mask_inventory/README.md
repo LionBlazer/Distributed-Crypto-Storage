@@ -174,3 +174,15 @@ these are standalone encoding-component timings, not SQL latency. Full receipts,
 frame sizes, resource observations and limits are in [VALIDATION.md](VALIDATION.md).
 QueryCt formation, full original request/Cs/nonce context association,
 Word/Source/DATA/current-head joins and the real DCS path remain future work.
+
+The later private `formation` composition now binds the full original ordered
+DATA/Query pair and retained DATA Expected into an acyclic Cw context, preserving
+the original query nonce, QueryCt and DATA Cs/context. Its v3 profile uses the
+public `bfv-ciphertext-formation::gold::query` facade and original Word header13.
+`writer::Opening::into_fused` transfers the complete original statement and its
+same guarded W opening directly, with no raw getter. One distinct fused proof
+replaces the earlier separate mask and dense Formation proofs. Every receiving
+call reconstructs the independently retained expectation and runs native
+verification. No old-frame fallback, DATA admission, Word proof, freshness or SQL
+capability is introduced. The 13 standalone mask cases remain independently
+owned; the three composition cases exercise the public lower API from this crate.

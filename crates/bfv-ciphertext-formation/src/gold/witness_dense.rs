@@ -6,7 +6,6 @@ impl Preparation {
     pub(in crate::gold) fn dense_trace(self, expected: &data::Expected) -> Result<PrivateTrace> {
         self.dense_trace_layout(expected, WRITER_LAYOUT, None, false)
     }
-    #[cfg(test)]
     pub(in crate::gold) fn fused_query_trace(
         self,
         expected: &data::Expected,
@@ -67,7 +66,7 @@ impl Preparation {
         let [
             height,
             width,
-            graph_rows,
+            _graph_rows,
             cw_first,
             cs_first,
             range_values,
@@ -76,21 +75,10 @@ impl Preparation {
             acc_cell,
             slots,
         ] = writer_layout;
-        if (
-            height,
-            width,
-            graph_rows,
-            cw_first,
-            cs_first,
-            range_values,
-            bits,
-            checkpoint,
-            acc_cell,
-            slots,
-        ) != (2048, 512, 1463, 1463, 1977, 248, 267, 496, 508, 56)
-            && !(cfg!(test)
-                && statement.is_some()
-                && writer_layout == [2048, 512, 1438, 1438, 1952, 248, 267, 496, 508, 57])
+        if (statement.is_none() && writer_layout != WRITER_LAYOUT)
+            || (statement.is_some()
+                && writer_layout != crate::gold::program::query_formation::WRITER_LAYOUT)
+            || (negative && !cfg!(test))
             || graph.values.len() != 81920
             || products.len() != 2
             || errors.len() != 1

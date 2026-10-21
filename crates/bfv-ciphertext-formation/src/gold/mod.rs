@@ -6,6 +6,7 @@ mod fft;
 mod geometry;
 mod graph;
 mod program;
+pub mod query;
 mod relation;
 mod request;
 mod setup;

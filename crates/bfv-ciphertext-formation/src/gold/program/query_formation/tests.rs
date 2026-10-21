@@ -135,10 +135,11 @@ fn complete_inventory_symbolics_and_every_public_field_are_captured_before_priva
 fn real_fused_proof_cold_verifies_and_damaged_native_argument_fails() {
     let (e, p) = data::fused_query_native_fixture(false);
     let begin = std::time::Instant::now();
-    let frame = native::produce(&e, p).unwrap();
+    let frame = crate::gold::query::prove(&e, p).unwrap().into_bytes();
     let produced = begin.elapsed();
     let begin = std::time::Instant::now();
-    native::receive(&e, &frame).unwrap();
+    let verified = crate::gold::query::verify(&e, &frame).unwrap();
+    assert_eq!(verified.expected().binding(), e.binding());
     let received = begin.elapsed();
     eprintln!(
         "fused_query_native produce_ms={:.3} cold_receive_ms={:.3} sum_ms={:.3} frame_bytes={} SQL=false Word=false fresh_head=false",
@@ -172,6 +173,28 @@ fn real_fused_proof_cold_verifies_and_damaged_native_argument_fails() {
         native::receive(&foreign, &repaired),
         Err(Error::Verification)
     ));
+}
+#[test]
+fn public_preparation_rejects_changed_statement_and_foreign_captured_expectation() {
+    use crate::gold::query;
+    let (e, p) = data::fused_query_native_fixture(false);
+    let mut words = p.statement.0;
+    words[20] += Val::ONE;
+    assert!(matches!(
+        query::Prepared::new(&e, p.input, words),
+        Err(Error::Binding)
+    ));
+    let (e, p) = data::fused_query_native_fixture(false);
+    let foreign = query::Expected::checked(&e.core, e.statement, e.header).unwrap();
+    // Same ciphertext, roots, header and statement; a different complete binding.
+    assert_ne!(foreign.binding(), e.binding());
+    assert!(matches!(
+        query::Prepared::new(&foreign, p.input, p.statement.0),
+        Err(Error::Binding)
+    ));
+    let (e, p) = data::fused_query_native_fixture(false);
+    let foreign = query::Expected::checked(&e.core, e.statement, e.header).unwrap();
+    assert!(matches!(query::prove(&foreign, p), Err(Error::Binding)));
 }
 fn repair_statement(trace: &mut crate::gold::witness::PrivateTrace, words: &[Val; 96]) {
     let mut state = [Val::ZERO; 12];

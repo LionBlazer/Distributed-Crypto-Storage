@@ -1,8 +1,8 @@
 //! Closed mathematical join: original Stmt96 -> Cw -> original QueryCt, same DATA Cs.
-//! Neither component verifies Word history, DATA admission, key authorization or SQL.
-use super::{Expected as MaskExpected, backend, wire, writer};
+//! One fused proof; no Word history, DATA admission, key authorization or SQL.
+use super::{Expected as MaskExpected, backend, writer};
 use crate::Val;
-use bfv_ciphertext_formation::gold::{self, data};
+use bfv_ciphertext_formation::gold::{self, data, query};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use sha2::{Digest, Sha256, Sha512};
 
@@ -27,15 +27,15 @@ impl From<gold::Error> for Error {
         Self::Formation(error)
     }
 }
-type Result<T> = core::result::Result<T, Error>;
+pub(super) type Result<T> = core::result::Result<T, Error>;
 
 fn profile() -> [u8; 32] {
     let mut h = Sha256::new();
-    h.update(b"DCS/research/WordStmt96-QueryMask-OriginalQueryFormation/v2/dense/no-admission");
+    h.update(b"DCS/research/WordStmt96-QueryMask-OriginalQueryFormation/v3/fused/no-admission");
     h.update(super::profile());
     h.update(data::profile_digest());
-    h.update(data::dense_profile_digest());
-    h.update(b"literal-ordered-pair/full-DATA-Expected/same-Cs-and-context/full-Stmt-root/nonzero-original-nonce/acyclic-Cw-context/two-independent-native-verifiers");
+    h.update(query::profile_digest());
+    h.update(b"literal-ordered-pair/full-DATA-Expected/same-Cs-and-context/full-Stmt-root/nonzero-original-nonce/acyclic-Cw-context/one-fused-native-verifier/original-Word-header13");
     h.finalize().into()
 }
 fn feed(h: &mut Sha512, values: impl IntoIterator<Item = Val>) {
@@ -76,6 +76,7 @@ pub(super) fn encoding_context(
 pub(super) struct Expected {
     mask: MaskExpected,
     formation: data::Expected,
+    fused: query::Expected,
 }
 impl Expected {
     pub(super) fn checked(
@@ -100,13 +101,23 @@ impl Expected {
             [context, installed.contexts()[1]],
             [vector, installed.roots()[1]],
         )?;
-        Ok(Self { mask, formation })
+        let fused = query::Expected::checked(
+            &formation,
+            statement,
+            super::super::header("statement")
+                .try_into()
+                .map_err(|_| Error::Binding)?,
+        )?;
+        Ok(Self {
+            mask,
+            formation: fused.core_expected().clone(),
+            fused,
+        })
     }
 }
 
-/// Two independently framed, UNVERIFIED mathematical proofs. No accepted flag.
+/// One distinct UNVERIFIED fused mathematical frame. No accepted flag.
 pub(super) struct Evidence {
-    mask: Vec<u8>,
     formation: Vec<u8>,
 }
 pub(super) fn produce(
@@ -114,27 +125,17 @@ pub(super) fn produce(
     opening: writer::Opening,
     secret: gold::SecretOpening,
 ) -> Result<Evidence> {
-    let prepared = data::Prepared::new(
-        &expected.formation,
-        opening.formation_opening(&expected.mask)?,
-        secret,
-    )?;
-    let mask = backend::ProverSetup::new()?.produce(&expected.mask, opening)?;
-    let formation = data::prove_dense(&expected.formation, prepared)?.into_bytes();
-    Ok(Evidence { mask, formation })
+    let prepared = opening.into_fused(&expected.mask, &expected.fused, secret)?;
+    let formation = query::prove(&expected.fused, prepared)?.into_bytes();
+    Ok(Evidence { formation })
 }
 
-/// Both independent native verifiers are mandatory on EVERY receiving call.
-/// Only these two mathematical relations are checked, not DATA/Word/freshness/SQL.
+/// The independently prepared native verifier is mandatory on EVERY receiving call.
+/// This mathematical relation supplies no DATA/Word/freshness/SQL authority.
 pub(super) fn verify(expected: &Expected, evidence: &Evidence) -> Result<()> {
-    if evidence.mask.is_empty()
-        || evidence.mask.len() > wire::MAX_FRAME
-        || evidence.formation.is_empty()
-        || evidence.formation.len() > data::MAX_DENSE_EVIDENCE_BYTES
-    {
+    if evidence.formation.is_empty() || evidence.formation.len() > query::MAX_EVIDENCE_BYTES {
         return Err(Error::Resource);
     }
-    backend::verify(&expected.mask, &evidence.mask)?;
-    data::verify_dense(&expected.formation, &evidence.formation)?;
+    query::verify(&expected.fused, &evidence.formation)?;
     Ok(())
 }

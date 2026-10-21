@@ -119,3 +119,12 @@ that move-only type still grants mathematical evidence only. Original H8192
 automatic fallback or runtime/SQL registration. The internal dense fixture,
 snapshot and attack helpers remain test-only; normal library builds include
 the fixed equations, guarded writer, codec and assessed native backend.
+
+`gold::query` exposes the fixed fused Stmt96/mask/Cw/Cs/QueryCt relation through
+separate `Expected`, move-only `Prepared`, `prove` and `verify` contracts. It
+retains every original DATA equation, both full roots, all4096 coefficients and
+the independently supplied statement header. The exact same guarded W/key inputs
+are prepared under `Expected::core_expected()`. Only cold native verification
+creates its private move-only `VerifiedFormation`; that type grants mathematics
+without Source/Word/DATA admission, freshness or SQL authority. Its `DCSGQF01`
+frame rejects original/dense frames. See the [backend boundary and usage](src/gold/program/query_formation/README.md).

@@ -116,8 +116,62 @@ The live owner progress preparation still uses the separate Source/Input16 and
 Control815/Predicate896 chain; see its
 [actual preparation](../../../../../storage-client/src/private_predicate/source/locking/joint/progress/prepare.rs).
 This candidate cannot be relabeled into that protocol or substituted for its
-Word/Source/fresh-head admission. The original exact statement/header, retained
-DATA/key, original ordered pair and actual product/result must be joined before
-an upper receiver can admit SQL. The
+Word/Source/fresh-head admission. The later mathematical original-pair join below
+preserves the exact statement/header and retained DATA/key metadata. Actual
+Word/Source/DATA admission, product/result and finality must still be joined
+before an upper receiver can admit SQL. The
 [SQL capability guard](../../../../../storage-client/SQL-CAPABILITY-VALIDATION.md)
 remains closed. No mutation/lock can be committed from this component alone.
+
+## Public mathematical facade and original-pair consumer
+
+On2026-10-21 the unchanged fixed backend became available through `gold::query`.
+The public types are defined in `gold/query.rs`, outside the private AIR/layout,
+codec and native implementation. `Expected` binds the same complete original
+DATA expectation, complete statement root and header13. Its public
+`core_expected()` returns metadata for preparing the same guarded W/key inputs;
+it supplies no verified DATA capability. `Prepared` consumes that preparation
+and the full Stmt96, checks the captured expectation, original header, packed
+u32 words, zero95 and full statement root, then transfers the guarded inputs to
+the original derivation. The production writer admits only the two exact fixed
+layout/statement combinations; its false-input bypass remains test-only.
+
+`prove` returns unverified bytes. Every `verify` independently bounds/decodes
+DCSGQF01, constructs PUBLIC preprocessing and runs the full actual native
+verifier before constructing its private move-only result. No original/dense
+frame, producer setup or acceptance flag is adopted. The mathematical profile,
+frame profile, ordered native equations and full PP pins above are unchanged.
+
+Eight owning cases passed in6.88s, including three new constructor/prover binding
+rejections within one case and honest receiving through the public facade.
+The original high-W, repaired header/hash, global lookup and native-opening
+attacks remain mandatory. Six unchanged dense cases passed in4.23s and both
+complete Pair/DATA ordered-symbolic/full-PP golden cases passed in0.06s. Both
+affected libraries passed strict release/all-target Clippy. Six compile-fail
+ownership cases passed, including both new query-result forge/clone attempts.
+The dependency-free requirements mirror test passed. These are component and
+contract gates, not a passing SQL suite.
+
+The eight-case process lived6898.8845ms, used12.34375 CPU-seconds and peaked at
+515698688 OS working-set bytes and506851328 sampled private bytes. The dense
+regression process lived4238.2829ms and peaked at526340096 OS working-set bytes.
+Both functional gates overlapped an upper compilation; their timings are not
+performance evidence. All retained120s/1792MiB whole-PID fuses,20ms samples,
+held image/creation identity, successful terminal state and no-direct-child
+checks passed without faults or forced cleanup.
+
+Lower release test image:6391296 bytes, SHA256
+CCCF7D35931FBFC5C69F4827887803FE0EF6C53C75DB01AF22263F5B78817D96.
+Ignored local build/held records r102-r104 and checks r105 retain complete source
+hashes, commands, outputs and samples. The final upper source adds one additional
+foreign-opening assertion after those lower runs; it does not change the lower
+code. These records precede this documentation-only result update. Private keys
+and generated proofs remain ignored.
+
+The private registry consumer now binds the original ordered DATA/Query pair,
+complete retained DATA expectation and original Word header through this public
+API. Its complete opening/prove/cold-receive observation and paired dense
+baseline are recorded at the
+[owning composition boundary](../../../../../registry200-proof/src/registry_progress/word_inventory/query_mask_inventory/VALIDATION.md#fused-original-query-formation).
+That measured component still exceeds500ms at16 threads and grants no SQL,
+freshness or durable locking capability.

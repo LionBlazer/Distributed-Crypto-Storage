@@ -247,3 +247,95 @@ the original statement/mask, every high-zero coefficient, same Cs, bounded noise
 and original-query association. Omitting a proof from the existing Expected is
 not such an optimization. Word/state admission, composed security and the real
 peer SQL/finality path remain unfinished.
+
+## Fused original Query Formation
+
+On2026-10-21 the private composition selected the fixed public
+`bfv_ciphertext_formation::gold::query` mathematical API. Its distinct v3 join
+profile includes the fused profile and original Word header13. The complete
+original ordered DATA/Query request, its nonzero nonce, complete retained DATA
+Expected, full Stmt96 root and Cw root still define the acyclic context and
+association. QueryCt is exactly original operand1; the original DATA Cs/root
+and key context are preserved. Constructor metadata never constitutes DATA or
+Word admission.
+
+The SAME protected statement/mask/salt opening transfers directly into one
+fused native proof, through `writer::Opening::into_fused`; no private getter,
+fixture result or second query encryption is substituted. The lower backend
+retains both complete Cw/Cs streams, all96 statement fields, every4096 coefficient,
+same-secret and original bounded-error/exact-quotient equations. Every cold
+receiver independently constructs public PP and runs actual native verification.
+The receiver accepts only the distinct DCSGQF01 frame. Both standalone-mask and
+dense Formation frames reject with Encoding; old protocols are not fallbacks.
+
+All16 owning tests passed in6.64s: the13 original standalone-mask cases and three
+composition cases. The honest joined case exercises the public lower API from
+a separate crate, then damages a genuine native OOD value with canonical framing
+preserved and requires Verification failure. Original-query nonce and complete
+DATA-association substitutions must fail Binding at receiving, and transferring
+the old private opening to either foreign expectation must fail Mask(Binding).
+A genuine same-key ciphertext with W[256]!=0 still fails Arithmetic in producing.
+Lower public-AIR/hostile/constructor8, dense6 and original-full-golden2 cases,
+six compile-fail ownership checks, strict all-target Clippy for both libraries
+and requirements_sync also passed. No proof, native security parameter,
+coefficient, noise bound, resource limit or SQL refusal was weakened.
+
+After all builds, Clippy and documentation checks completed, the exact honest
+composition case ran sequentially at16 then2 Rayon threads on the SAME release
+image. Within each run the fused chain and previous-best dense two-proof
+baseline use the SAME original literal pair, complete statement, W and key/Cs.
+Each makes fresh private proofs and independently reconstructs public setup.
+Fused runs first. The baseline is test-only comparison; it is not a receiving
+path. Keys and proof randomness differ between processes. Background load is
+uncontrolled. These single observations establish neither a bound nor a
+statistical latency distribution or a production thread-policy change.
+
+| Threads | Backend | Produce ms | Cold receive ms | Sum ms | Mask bytes | Formation bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 2 | Fused H2048 |1284.873|471.577|1756.449|included|3362101|
+| 2 | Separate mask + dense H2048 |1602.136|623.841|2225.976|1729264|3276405|
+| 16 | Fused H2048 |359.166|178.199|537.365|included|3360341|
+| 16 | Separate mask + dense H2048 |458.713|237.503|696.216|1735184|3277973|
+
+The16-thread paired observation reduces this component by22.8%; the2-thread
+observation reduces it by21.1%. Producing includes protected opening checks and
+private preparation, complete proving and framing. Receiving includes independent
+cold public PP, bounded decoding and native verification. Expected construction,
+fixture key generation/encryption, Word/Source/DATA/key admission, FHE product,
+client result completion, current weighted finality, transport and durable locks
+are outside the intervals. The537.365ms component itself still exceeds500ms;
+no full-query claim follows. The proof is about3.36MB, an unmeasured real-network
+transfer cost in this observation.
+
+The16-case functional process lived6661.0634ms and used11.875 CPU-seconds with
+518492160 OS-peak working-set and511352832 sampled private bytes. That functional
+run overlapped Clippy and is not the paired performance evidence. The exact
+16/2-thread processes lived1376.4515/4550.8734ms and used11.203125/8.125 CPU-seconds,
+with OS peaks517292032/516206592 and private peaks511340544/503562240 bytes.
+Those whole-process values include the dense baseline and hostile checks; they
+are not individual-backend or concurrent-peer memory bounds. Every run retained
+the120s/1792MiB fuse,20ms sampling, held process/image/creation identity and final
+exit0/no-direct-child checks. No fault, fuse or forced cleanup occurred.
+
+Final registry release image:11686912 bytes, SHA256
+0CFAEA59EB43743B8C0DA24A20FD1FC6D8A8DD1E47A56646A013A8ADA2173DF4.
+Ignored local build/held records r105-r107 retain exact sources, commands, output
+and memory samples. Earlier build r102 was successful but exposed an unused
+nested-error diagnostic; the final added foreign-opening rejection assertion
+exercises that concrete failure and strict Clippy passes without suppression.
+This result record follows the executed snapshots and changes no executable
+code. Private material and generated proof outputs are not committed.
+
+Reproduce the exact paired case with the same pinned release/native build and
+`RAYON_NUM_THREADS=16`, then2, using:
+
+```sh
+cargo test --release --locked -p registry200-proof registry_progress::word_inventory::query_mask_inventory::formation::tests::real_fused_original_query_proof_verifies_and_rejects_damaged_argument -- --exact --nocapture --test-threads=1
+```
+
+The enclosing Word inventory and composition remain private research consumers.
+The new lower API grants conditional mathematics only. Full Word/Source/DATA
+admission, original product/result, bootstrap/history, fresh weighted QC, real
+peer transport and durable SQL locking still need a complete joined receiver.
+The live Source/Input16 + Control815/Predicate896 route and SQL capability guards
+remain unchanged. The complete-query <=500ms target is unmet.

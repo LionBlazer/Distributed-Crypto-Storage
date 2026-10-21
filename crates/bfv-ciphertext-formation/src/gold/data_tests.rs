@@ -136,11 +136,8 @@ impl Fixture {
 
 pub(in crate::gold) fn fused_query_fixture(
     high: bool,
-) -> (
-    program::query_formation::Expected,
-    program::query_formation::Prepared,
-) {
-    use program::query_formation as query;
+) -> (gold::query::Expected, gold::query::Prepared) {
+    use gold::query;
     let f = Fixture::new();
     let mask: [u8; 32] = core::array::from_fn(|i| (i as u8).wrapping_mul(29) ^ 0xa7);
     let (data, words) = f.query_input_mask(mask, high);

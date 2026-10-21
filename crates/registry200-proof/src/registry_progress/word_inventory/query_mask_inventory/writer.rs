@@ -95,6 +95,19 @@ impl Opening {
         )
         .map_err(|_| Error::Binding)
     }
+    /// Consume the complete original statement and its SAME protected W opening.
+    /// No raw statement/mask/key is exposed through a getter.
+    pub(super) fn into_fused(
+        self,
+        mask: &Expected,
+        fused: &bfv_ciphertext_formation::gold::query::Expected,
+        secret: bfv_ciphertext_formation::gold::SecretOpening,
+    ) -> super::formation::Result<bfv_ciphertext_formation::gold::query::Prepared> {
+        use bfv_ciphertext_formation::gold::{data, query};
+        let opening = self.formation_opening(mask)?;
+        let input = data::Prepared::new(fused.core_expected(), opening, secret)?;
+        Ok(query::Prepared::new(fused, input, self.statement)?)
+    }
 }
 struct PrivateFields(Vec<Val>);
 impl Drop for PrivateFields {
