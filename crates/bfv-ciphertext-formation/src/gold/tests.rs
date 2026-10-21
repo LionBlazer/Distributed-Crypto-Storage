@@ -182,7 +182,7 @@ fn pair_snapshot_varint(mut value: usize, output: &mut Vec<u8>) {
     }
     output.push(value as u8);
 }
-fn pair_snapshot_ciphertext(operand: usize) -> Vec<u8> {
+pub(super) fn pair_snapshot_ciphertext(operand: usize) -> Vec<u8> {
     let mut ciphertext = Vec::new();
     for component in 0..2 {
         let mut packed = Vec::with_capacity(N * 60 / 8);

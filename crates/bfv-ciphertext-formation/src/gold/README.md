@@ -182,3 +182,11 @@ The focused SDK query case passed in 0.11s and all 14 CoreGold cases passed in
 7.539ms for the local API call, its precise boundary and the whole-case resource
 observations. This establishes no whole-process erasure or 500ms complete-query
 result.
+
+The test-private [dense DATA inventory](program/dense_data_inventory/README.md)
+reuses the original graph and private range equation emitter in a new H2048
+layout. Actual metadata, default packing, analytical security and resource gates
+passed, with complete original Pair/Data golden preservation. It has no private
+writer, proof, accepting API or runtime registration; the deployed H8192 family
+above keeps its original behavior. See the [validation record](DATA-VALIDATION.md#dense-data-metadata)
+for the precise boundary and remaining proof measurements.

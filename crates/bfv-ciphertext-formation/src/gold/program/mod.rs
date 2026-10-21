@@ -22,3 +22,10 @@ pub(super) const BITS: usize = 128;
 pub(super) const CHECKPOINT: usize = 496;
 pub(super) const ACCUMULATOR: usize = 508;
 pub(super) const BUS: &str = "dcs/gold-formation-full-program/v1/node-value";
+
+#[cfg(test)]
+mod data_snapshot_capture;
+
+#[cfg(test)]
+mod dense_data_inventory;
+mod range_equations;

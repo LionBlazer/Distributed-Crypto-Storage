@@ -1,8 +1,5 @@
 //! The complete immutable relation. No caller-selected gates, AIRs or bus layouts.
-use super::super::{
-    geometry::Q,
-    relation::{ExpectedRef, RelationKind},
-};
+use super::super::relation::{ExpectedRef, RelationKind};
 use super::pp::*;
 use super::*;
 use bfv_hiding_stark::{Val, poseidon};
@@ -136,65 +133,18 @@ impl<AB: InteractionBuilder<F = Val>> Air<AB> for ProgramAir {
             };
             b.assert_zero((AB::Expr::ONE - active) * value);
         }
-        for k in 0..2 {
-            let base = range_layout.stride * k;
-            let mut bit = BITS + range_layout.bits * k;
-            for bank in 0..1 + kind.operands() {
-                let x = packed::<AB>(&row[bit..bit + 6]);
-                let slack = packed::<AB>(&row[bit + 6..bit + 12]);
-                bit += 12;
-                b.assert_zero(r.clone() * (v[base + bank].clone() + Val::from_u8(20) - x.clone()));
-                b.assert_zero(r.clone() * (x + slack - Val::from_u8(40)));
-            }
-            for job in 0..kind.products() {
-                let biased = packed::<AB>(&row[bit..bit + 20]);
-                bit += 20;
-                b.assert_zero(
-                    r.clone()
-                        * (v[base + range_layout.k + job].clone() + Val::from_u32(524288)
-                            - biased.clone()),
-                );
-                // Exclude -524288; preserve EXACT symmetric[-524287,+524287].
-                b.assert_zero(
-                    r.clone()
-                        * (biased * v[base + range_layout.inverse + job].clone() - AB::Expr::ONE),
-                );
-            }
-            for operand in 0..kind.operands() {
-                let w = packed::<AB>(&row[bit..bit + 17]);
-                let slack = packed::<AB>(&row[bit + 17..bit + 34]);
-                bit += 34;
-                b.assert_zero(r.clone() * (v[base + range_layout.w + operand].clone() - w.clone()));
-                b.assert_zero(r.clone() * (w + slack - Val::from_u32(65536)));
-            }
-            for job in 0..kind.products() {
-                let operand = job / 2;
-                let basis = job % 2;
-                let delta = [536854528, 282551134][basis];
-                b.assert_zero(
-                    r.clone()
-                        * (c[kind.products() * k + job].clone()
-                            + v[base + range_layout.product + job].clone()
-                            - v[base + range_layout.w + operand].clone() * Val::from_u64(delta)
-                            - v[base + range_layout.e + operand].clone()
-                            - v[base + range_layout.k + job].clone() * Val::from_u64(Q[basis])),
-                );
-            }
-        }
-        let acc: AB::Expr = row[ACCUMULATOR].into();
-        let pair = v[0].clone()
-            + Val::from_u8(20)
-            + (v[range_layout.stride].clone() + Val::from_u8(20)) * Val::from_u8(64);
-        let word = acc.clone() + pair * c[8].clone();
-        b.assert_zero(f[RESET].clone() * acc.clone());
-        b.assert_zero(
-            r.clone() * (v[2 * range_layout.stride].clone() - f[EMIT].clone() * word.clone()),
+        super::range_equations::evaluate(
+            b,
+            super::range_equations::Inputs {
+                kind,
+                bits: &row[BITS..BITS + 2 * range_layout.bits],
+                values: &v,
+                constants: &c,
+                flags: &f,
+                accumulator: row[ACCUMULATOR].into(),
+                next_accumulator: next[ACCUMULATOR],
+            },
         );
-        b.when_transition().assert_zero(
-            r.clone() * (next[ACCUMULATOR] - (AB::Expr::ONE - f[EMIT].clone()) * word),
-        );
-        b.assert_zero((AB::Expr::ONE - r.clone()) * acc);
-
         let hash = poseidon::evaluate(&mut b.when(h.clone()), &row[BITS..BITS + poseidon::WIDTH]);
         for i in 0..8 {
             let salt_or_data = f[PAYLOAD].clone()
@@ -275,9 +225,4 @@ impl<AB: InteractionBuilder<F = Val>> Air<AB> for ProgramAir {
             b.assert_zero(*cell);
         }
     }
-}
-fn packed<AB: InteractionBuilder<F = Val>>(bits: &[AB::Var]) -> AB::Expr {
-    bits.iter()
-        .enumerate()
-        .fold(AB::Expr::ZERO, |a, (i, v)| a + (*v) * Val::from_u64(1 << i))
 }

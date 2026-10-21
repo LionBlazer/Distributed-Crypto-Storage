@@ -192,3 +192,74 @@ The local consistency check and cold public proof verification are different
 operations. The 7.539 ms measurement cannot replace peer-verifiable evidence or
 establish a speedup for the complete SQL/locking request. Its purpose is a fast,
 shared input check for the planned protected owner recovery path.
+
+## Dense DATA metadata
+
+A test-private candidate packs the same 81,920 original graph gates into
+56-slot rows and overlays all 4096 original range coefficients across every
+physical row. Per-slot phase and fanout flags preserve unaligned boundaries.
+Its 1463 graph rows, 514 Cw and 66 Cs rows leave five range-only rows in H2048.
+Every gate coefficient, node occurrence, range/c0/secret-pack schedule and full
+hash preimage is compared with the original implementation. All-node balance,
+unique producers, inactive slots, checkpoint resets and accumulator boundaries
+are also checked. This is a complete mathematical inventory, not a proof.
+
+The private `range_equations` extraction preserves every original expression in
+its original order. Before extraction, an actual native original-DATA capture
+pinned all ordered BASE/EXT constraints, both original and packed lookups, full
+PP, PUBLIC32, profiles, original request and binding. All seven literals passed
+after extraction, alongside the existing four Pair literals. No post-extraction
+capture or fallback can replace those constants. Production AIR, PP, profiles,
+witness, native backend and receiving behavior are otherwise unchanged.
+
+The new metadata tests reported H2048, MAIN512, PP668, PUBLIC32, BASE1248,
+EXT84, degree4, eight committed quotient chunks, 243 original messages,
+81 packed lookups, AUX410 and 2622 batched openings. The actual SDK baseline
+and composed UDR/LDR reports met the same individual 128-bit floor, including
+every finite term; the LogUp term was 297.075187496394 bits. The modeled workspace
+was 669,417,472 bytes, below the unchanged 1792 MiB policy. These are analytical
+proof-profile checks, not observed proving memory or lattice/system assurance.
+
+Before adding any private writer, a separate native test captured the full
+571,450-byte ordered symbolic tuple. Its unconditional SHA256 is
+`6fe109f433d7f0c66dc51ec403cd103bdbf0056a72634af2cc0888a8ba8b3814`.
+The full streamed PP SHA256 is
+`6f4bdb87a034d70a662a9948098c5c6aefb1d69f67b0c8aedee50f3e1e465170`.
+Both hashes include the distinct research domain; neither relabels an old proof.
+
+There is no MAIN writer, complete PP factory/commitment, native setup, producer,
+verifier, codec, installation or SQL acceptance in this child. PP still depends
+on the exact request; cross-request reuse is invalid. Genuine proofs and hostile
+native verification, full resource observation, query-mask/Stmt96 association,
+installed DATA provenance and fresh quorum composition remain required. A
+smaller height or workspace estimate does not establish a speedup or the 500 ms
+complete-query target. Module ownership and focused commands are in the
+[inventory README](program/dense_data_inventory/README.md).
+
+## Local thread-count experiment
+
+A separate experiment ran the existing original-DATA owning proof test twice
+on the same release image and source, once with 16 Rayon threads and once with
+two. Each execution produced one honest and one actual false-wire proof, with
+fresh OS randomness and strict native rejection. The machine reported an AMD
+Ryzen 9 9950X3D2, 16 physical cores and 32 logical processors. Run order was 16
+then two; background load was uncontrolled. This is one paired observation.
+
+| Original-DATA phase | Two threads | Sixteen threads |
+| --- | ---: | ---: |
+| Public preprocessing within production | 584.520 ms | 127.090 ms |
+| Actual native proving | 2711.298 ms | 630.625 ms |
+| Complete local production | 3338.311 ms | 811.960 ms |
+| Cold preprocessing within receiving | 799.192 ms | 115.289 ms |
+| Actual native verification | 66.953 ms | 59.635 ms |
+| Complete cold receiving | 906.353 ms | 204.303 ms |
+
+Both limited processes passed without a fuse, forced cleanup or live child.
+The sixteen-thread test observed 1,334,018,048 peak private bytes and
+1,349,459,968 OS-peak working-set bytes. This test includes a second hostile
+proof; its process lifetime is not one-query latency. Separate randomized proof
+bytes prevent claiming an identical transcript comparison. No production thread
+policy changed: assigning 16 threads to each peer would need whole-node
+scheduling and multi-process resource measurement. Even the faster standalone
+production plus cold receiving exceeded one second and omitted the complete
+SQL/FHE/finality route.
