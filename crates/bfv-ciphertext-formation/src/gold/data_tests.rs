@@ -80,10 +80,21 @@ impl Fixture {
     /// Reuse this actual key/parameters for one honest SDK query ciphertext.
     /// No Source, peer answer, accepted product or native proof is synthesized.
     fn query_input(&self) -> (Expected, Zeroizing<Vec<u64>>) {
+        self.query_input_with_high(false)
+    }
+    fn query_input_with_high(&self, high: bool) -> (Expected, Zeroizing<Vec<u64>>) {
+        let mut mask = [0u8; 32];
+        mask[16..].fill(255);
+        self.query_input_mask(mask, high)
+    }
+    fn query_input_mask(&self, mask: [u8; 32], high: bool) -> (Expected, Zeroizing<Vec<u64>>) {
         let key = SecretKey::from_bytes(&self.sdk, &self.parameters).unwrap();
         let mut raw = Zeroizing::new(vec![0u64; N]);
-        for age in 128..256 {
-            raw[255 - age] = 1;
+        for age in 0..256 {
+            raw[255 - age] = u64::from((mask[age / 8] >> (age % 8)) & 1);
+        }
+        if high {
+            raw[256] = 1;
         }
         let plain = Zeroizing::new(
             Plaintext::try_encode(raw.as_slice(), Encoding::poly(), &self.parameters).unwrap(),
@@ -121,6 +132,30 @@ impl Fixture {
         )
         .unwrap()
     }
+}
+
+pub(in crate::gold) fn fused_query_fixture(
+    high: bool,
+) -> (
+    program::query_formation::Expected,
+    program::query_formation::Prepared,
+) {
+    use program::query_formation as query;
+    let f = Fixture::new();
+    let mask: [u8; 32] = core::array::from_fn(|i| (i as u8).wrapping_mul(29) ^ 0xa7);
+    let (data, words) = f.query_input_mask(mask, high);
+    let header = core::array::from_fn(|i| Val::from_usize(500 + i));
+    let mut statement = core::array::from_fn(|i| Val::from_usize(1000 + i));
+    statement[..13].copy_from_slice(&header);
+    for (word, bytes) in mask.as_chunks::<4>().0.iter().enumerate() {
+        statement[78 + word] = Val::from_u32(u32::from_le_bytes(*bytes));
+    }
+    statement[95] = Val::ZERO;
+    let expected =
+        query::Expected::checked(&data, query::statement_root(&statement), header).unwrap();
+    let input = f.prepare_with(&expected.core, words, f.sdk.clone());
+    let prepared = query::Prepared::new(&expected, input, statement).unwrap();
+    (expected, prepared)
 }
 fn encode_secret(s: &[i64]) -> Zeroizing<Vec<u8>> {
     let mut out = Zeroizing::new(vec![10, 128, 32]);

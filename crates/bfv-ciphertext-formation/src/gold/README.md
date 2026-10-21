@@ -200,3 +200,11 @@ uses that same static Schedule with a second AIR binding every public coefficien
 Its four metadata tests, old full goldens and actual Dense proof regressions
 passed. It has no private backend, and aggregate proof security remains
 UNASSESSED with a rejecting guard. Role-only routing is not a measured speedup.
+
+The test-private [fused Query candidate](program/query_formation/README.md) keeps
+the complete Cw/Cs/Stmt claims in one H2048 AIR. It adds scaled-mask/high-zero
+constraints and one global lookup joining all eight packed statement words to
+the SAME FHE input. Native implementation source is shared with dense DATA, but
+its profile and frame are separate. This is not a SQL/runtime registration;
+the original request, Source/Word/DATA admission and fresh agreed head must still
+be joined at the upper receiving boundary.

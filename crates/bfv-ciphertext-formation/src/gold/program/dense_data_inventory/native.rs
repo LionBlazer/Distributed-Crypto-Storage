@@ -1,4 +1,4 @@
-//! Fixed genuine dense proof backend; the facade owns mathematical result types.
+// Fixed genuine dense proof backend; the facade owns mathematical result types.
 use super::*;
 use crate::gold::witness::PrivateTrace;
 use bfv_hiding_stark::Config;
@@ -44,7 +44,7 @@ impl<AB: InteractionBuilder<F = Val>> Air<AB> for FullAir {
     }
 }
 
-pub(super) fn prescreen(e: &data::Expected) -> Result<(FullAir, assessment::Assessment)> {
+pub(super) fn prescreen(e: &Expected) -> Result<(FullAir, assessment::Assessment)> {
     let air = air::MetadataAir::new(e)?;
     let report = assessment::assess(&air)?;
     report.require_resources()?;
@@ -79,15 +79,15 @@ pub(super) fn phase_end(phase: &str, t: Instant) {
     let _ = (phase, t);
 }
 
-pub(in crate::gold) fn produce(e: &data::Expected, prepared: data::Prepared) -> Result<Vec<u8>> {
+pub(in crate::gold) fn produce(e: &Expected, prepared: Prepared) -> Result<Vec<u8>> {
     catch_unwind(AssertUnwindSafe(|| {
-        prepared.inner.require_expected(ExpectedRef::Data(e))?;
+        prepared.require_dense_expected(e)?;
         let (air, report) = prescreen(e)?;
         let t = phase_start("public_pp_setup");
         let public = super::native_setup::public_data(&air, e, &report)?;
         phase_end("public_pp_setup", t);
         let t = phase_start("private_full_trace");
-        let trace = prepared.inner.dense_trace(e)?;
+        let trace = prepared.dense_trace(e)?;
         phase_end("private_full_trace", t);
         let proof = prove_trace(e, &air, &trace, &public)?;
         drop(trace);
@@ -101,7 +101,7 @@ pub(in crate::gold) fn produce(e: &data::Expected, prepared: data::Prepared) -> 
     .map_err(|_| Error::Backend)?
 }
 pub(super) fn prove_trace(
-    e: &data::Expected,
+    e: &Expected,
     air: &FullAir,
     trace: &PrivateTrace,
     public: &ProverData<Config>,
@@ -121,7 +121,7 @@ pub(super) fn prove_trace(
     phase_end("prove_batch", t);
     result
 }
-pub(in crate::gold) fn receive(e: &data::Expected, frame: &[u8]) -> Result<()> {
+pub(in crate::gold) fn receive(e: &Expected, frame: &[u8]) -> Result<()> {
     let payload = super::native_wire::payload(e, frame)?;
     catch_unwind(AssertUnwindSafe(|| {
         let (air, report) = prescreen(e)?;
@@ -136,7 +136,7 @@ pub(in crate::gold) fn receive(e: &data::Expected, frame: &[u8]) -> Result<()> {
     .map_err(|_| Error::Backend)?
 }
 pub(super) fn verify(
-    e: &data::Expected,
+    e: &Expected,
     air: &FullAir,
     proof: &BatchProof<Config>,
     common: &CommonData<Config>,

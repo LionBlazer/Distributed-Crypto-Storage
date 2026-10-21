@@ -84,6 +84,10 @@ fn raw_frame(e: &data::Expected, payload: &[u8]) -> Vec<u8> {
 fn one_real_data_fixture_proves_cold_verifies_and_false_local_wire_fails_real_native_verification()
 {
     let (e, honest_prepared, false_prepared) = data::dense_native_fixture();
+    assert_eq!(
+        hex(data::dense_profile_digest()),
+        "02da94943cc4525796b506c168276e91be771cd5269a75469d4c59eef002c68f"
+    );
     let start = native::phase_start("honest_complete_producer");
     let frame = data::prove_dense(&e, honest_prepared).unwrap().into_bytes();
     native::phase_end("honest_complete_producer", start);

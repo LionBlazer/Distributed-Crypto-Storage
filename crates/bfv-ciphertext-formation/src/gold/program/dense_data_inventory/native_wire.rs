@@ -1,22 +1,25 @@
-//! Closed canonical Gold Formation frame and complete native five-round topology.
+// Closed canonical Gold Formation frame and complete native five-round topology.
 use super::assessment::Assessment;
 use super::layout::{DOMAIN, H, LOG_H, PP as PP_WIDTH, W as WIDTH};
-use crate::gold::{Error, Result, data};
+use super::{
+    Expected,
+    layout::{
+        AUX, EXT_BOUND, FRAME_DOMAIN, FRAME_SHAPE, GOLD_BOUND, NATIVE_MAGIC as MAGIC, PACKED,
+    },
+};
+use crate::gold::{Error, Result};
 const DEGREE_BITS: usize = LOG_H + 1;
 use bfv_hiding_stark::{Challenge, Config, LOG_BLOWUP, QUERIES, Val};
 use p3_batch_stark::BatchProof;
 use p3_field::PrimeCharacteristicRing;
 use sha2::{Digest, Sha256};
 
-const MAGIC: &[u8; 8] = b"DCSGDD01";
 pub(super) const HEADER_BYTES: usize = 128;
 pub(in crate::gold) const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
 const MAX_PAYLOAD_BYTES: usize = MAX_FRAME_BYTES - HEADER_BYTES;
 pub(super) const MAX_SEQUENCE: usize = 4096;
 pub(super) const MAX_SLOTS: usize = 4 * 1024 * 1024;
 const CHUNKS: usize = 8;
-const PACKED: usize = 81;
-const AUX: usize = 410;
 const ROUNDS: usize = 5;
 const INPUT_DEPTH: usize = DEGREE_BITS + LOG_BLOWUP;
 // Analytic envelope for the SAME native shape: input query Gold <=324480,
@@ -24,13 +27,13 @@ const INPUT_DEPTH: usize = DEGREE_BITS + LOG_BLOWUP;
 // use350000 directGold. EF5 <=4928 including the lookup terminal; reserve5100. Pruned frontier5*1599+6060
 // =14055digests; reserve15000 incltop-levelroots. All controls/containers <32768.
 // Canonical Gold binary8bytes/<=9boundedslots, EF5 40bytes/<=48slots, digest32/37.
-const HONEST_SLOTS: usize = 350_000 * 9 + 5_100 * 48 + 15_000 * 37 + 32_768;
-const HONEST_PAYLOAD_BYTES: usize = 350_000 * 8 + 5_100 * 40 + 15_000 * 32 + 3 * 32_768;
+const HONEST_SLOTS: usize = GOLD_BOUND * 9 + EXT_BOUND * 48 + 15_000 * 37 + 32_768;
+const HONEST_PAYLOAD_BYTES: usize = GOLD_BOUND * 8 + EXT_BOUND * 40 + 15_000 * 32 + 3 * 32_768;
 pub(in crate::gold) fn profile() -> [u8; 32] {
     let mut h = Sha256::new();
-    h.update(b"DCS/research/dense-data56/actual-native-frame/v1\0");
+    h.update(FRAME_DOMAIN);
     h.update(DOMAIN);
-    h.update(b"H2048/MAIN512/PP668/PV32;degree12/default81/AUX410/chunks8;MAIN2/AUX2/PP1;all5rounds/random-main-quotient-PP-AUX;12FRI;terminal0+actualnative;freshOSprivate/PUBLIC-PPonly;boundedPostcard+canonicalGold+reencode+EOF;NO-admission");
+    h.update(FRAME_SHAPE);
     for n in [
         HEADER_BYTES,
         MAX_FRAME_BYTES,
@@ -46,8 +49,20 @@ pub(in crate::gold) fn profile() -> [u8; 32] {
     h.finalize().into()
 }
 pub(super) fn require_assessment(assessment: &Assessment) -> Result<()> {
+    let closed_shape = (MAGIC == b"DCSGDD01"
+        && PP_WIDTH == 668
+        && PACKED == 81
+        && AUX == 410
+        && GOLD_BOUND == 350_000
+        && EXT_BOUND == 5_100)
+        || (MAGIC == b"DCSGQF01"
+            && PP_WIDTH == 708
+            && PACKED == 83
+            && AUX == 420
+            && GOLD_BOUND == 360_000
+            && EXT_BOUND == 5_200);
     if WIDTH != 512
-        || PP_WIDTH != 668
+        || !closed_shape
         || DEGREE_BITS != 12
         || LOG_BLOWUP != 3
         || QUERIES != 192
@@ -63,7 +78,7 @@ pub(super) fn require_assessment(assessment: &Assessment) -> Result<()> {
 }
 
 /// Full independently retained binding is checked BEFORE PP or proof decoding.
-pub(super) fn payload<'a>(expected: &data::Expected, frame: &'a [u8]) -> Result<&'a [u8]> {
+pub(super) fn payload<'a>(expected: &Expected, frame: &'a [u8]) -> Result<&'a [u8]> {
     if frame.len() < HEADER_BYTES || frame.len() > MAX_FRAME_BYTES {
         return Err(Error::Resource);
     }
@@ -79,7 +94,7 @@ pub(super) fn payload<'a>(expected: &data::Expected, frame: &'a [u8]) -> Result<
     }
     Ok(&frame[HEADER_BYTES..])
 }
-fn frame(expected: &data::Expected, bytes: &[u8]) -> Result<Vec<u8>> {
+fn frame(expected: &Expected, bytes: &[u8]) -> Result<Vec<u8>> {
     if bytes.is_empty() || bytes.len() > MAX_PAYLOAD_BYTES {
         return Err(Error::Resource);
     }
@@ -93,7 +108,7 @@ fn frame(expected: &data::Expected, bytes: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 pub(super) fn encode(
-    expected: &data::Expected,
+    expected: &Expected,
     proof: &BatchProof<Config>,
     assessment: &Assessment,
 ) -> Result<Vec<u8>> {
@@ -255,7 +270,12 @@ mod tests {
             .sum::<usize>();
         assert_eq!(folded, 6060);
         assert_eq!(5 * 1599 + folded, 14055);
-        assert_eq!((HONEST_SLOTS, HONEST_PAYLOAD_BYTES), (3_982_568, 3_582_304));
+        if MAGIC == b"DCSGDD01" {
+            assert_eq!((HONEST_SLOTS, HONEST_PAYLOAD_BYTES), (3_982_568, 3_582_304));
+        } else {
+            assert_eq!(MAGIC, b"DCSGQF01");
+            assert_eq!((HONEST_SLOTS, HONEST_PAYLOAD_BYTES), (4_077_368, 3_666_304));
+        }
         const {
             assert!(HONEST_SLOTS < MAX_SLOTS);
             assert!(HONEST_PAYLOAD_BYTES + HEADER_BYTES < MAX_FRAME_BYTES)

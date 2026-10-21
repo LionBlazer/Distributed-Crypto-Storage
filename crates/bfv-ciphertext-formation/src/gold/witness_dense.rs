@@ -4,8 +4,59 @@ use super::*;
 use crate::gold::{data, program::dense_data_inventory::WRITER_LAYOUT};
 impl Preparation {
     pub(in crate::gold) fn dense_trace(self, expected: &data::Expected) -> Result<PrivateTrace> {
+        self.dense_trace_layout(expected, WRITER_LAYOUT, None, false)
+    }
+    #[cfg(test)]
+    pub(in crate::gold) fn fused_query_trace(
+        self,
+        expected: &data::Expected,
+        statement: &[Val; 96],
+        root: [Val; 4],
+    ) -> Result<PrivateTrace> {
+        self.dense_trace_layout(
+            expected,
+            crate::gold::program::query_formation::WRITER_LAYOUT,
+            Some((statement, root)),
+            false,
+        )
+    }
+    #[cfg(test)]
+    pub(in crate::gold) fn fused_query_negative_trace(
+        self,
+        expected: &data::Expected,
+        statement: &[Val; 96],
+        root: [Val; 4],
+    ) -> Result<PrivateTrace> {
+        self.dense_trace_layout(
+            expected,
+            crate::gold::program::query_formation::WRITER_LAYOUT,
+            Some((statement, root)),
+            true,
+        )
+    }
+    fn dense_trace_layout(
+        self,
+        expected: &data::Expected,
+        writer_layout: [usize; 10],
+        statement: Option<(&[Val; 96], [Val; 4])>,
+        negative: bool,
+    ) -> Result<PrivateTrace> {
         let scope = ExpectedRef::Data(expected);
         self.require_expected(scope)?;
+        if let Some((statement, _)) = statement.filter(|_| !(cfg!(test) && negative)) {
+            for (coefficient, &word) in self.openings[0].words.iter().enumerate() {
+                let want = if coefficient < 256 {
+                    let bit = 255 - coefficient;
+                    ((statement[78 + bit / 32].as_canonical_u64() >> (bit % 32)) & 1)
+                        * super::super::geometry::SCALE
+                } else {
+                    0
+                };
+                if word != want {
+                    return Err(Error::Arithmetic);
+                }
+            }
+        }
         let EquationWitness {
             plan,
             graph,
@@ -24,7 +75,7 @@ impl Preparation {
             checkpoint,
             acc_cell,
             slots,
-        ] = WRITER_LAYOUT;
+        ] = writer_layout;
         if (
             height,
             width,
@@ -37,6 +88,9 @@ impl Preparation {
             acc_cell,
             slots,
         ) != (2048, 512, 1463, 1463, 1977, 248, 267, 496, 508, 56)
+            && !(cfg!(test)
+                && statement.is_some()
+                && writer_layout == [2048, 512, 1438, 1438, 1952, 248, 267, 496, 508, 57])
             || graph.values.len() != 81920
             || products.len() != 2
             || errors.len() != 1
@@ -59,9 +113,23 @@ impl Preparation {
         drop(plan);
         let mut cs_words = Zeroizing::new(Vec::with_capacity(512));
         let mut accumulator = 0u64;
+        let mut mask_accumulator = 0u64;
         for row_index in 0..height {
             let row = &mut main.0.values[row_index * width..(row_index + 1) * width];
             row[acc_cell] = Val::from_u64(accumulator);
+            if statement.is_some() && row_index < 128 {
+                row[509] = Val::from_u64(mask_accumulator);
+                let bit0 = self.openings[0].words[2 * row_index] / super::super::geometry::SCALE;
+                let bit1 =
+                    self.openings[0].words[2 * row_index + 1] / super::super::geometry::SCALE;
+                let word = mask_accumulator + ((2 * bit0 + bit1) << (30 - 2 * (row_index % 16)));
+                if row_index % 16 == 15 {
+                    row[510] = Val::from_u64(word);
+                    mask_accumulator = 0;
+                } else {
+                    mask_accumulator = word;
+                }
+            }
             for k in 0..2 {
                 let at = 2 * row_index + k;
                 let base = range_values + layout.stride * k;
@@ -132,6 +200,19 @@ impl Preparation {
             &cs_words,
             self.key.root,
         )?;
+        if let Some((statement, root)) = statement {
+            let mut state = PrivateFields([Val::ZERO; 12]);
+            for (block, words) in statement.as_chunks::<8>().0.iter().enumerate() {
+                let row = &mut main.0.values
+                    [(cs_first + 66 + block) * width..(cs_first + 67 + block) * width];
+                row[checkpoint..checkpoint + 12].copy_from_slice(&state.0);
+                state.0[..8].copy_from_slice(words);
+                state.0 = poseidon::write(&mut row[..poseidon::WIDTH], state.0);
+            }
+            if state.0[..4] != root {
+                return Err(Error::Binding);
+            }
+        }
         Ok(main)
     }
 }

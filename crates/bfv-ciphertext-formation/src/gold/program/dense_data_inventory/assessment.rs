@@ -1,6 +1,6 @@
-//! Metadata assessment for the explicit dense Data mathematical proof domain.
-//! SDK calls and checked ownership-envelope formulas retained from original assessor.
-//! No trace, proof, trusted preprocessing or mathematical capability is created.
+// Metadata assessment for the explicit dense Data mathematical proof domain.
+// SDK calls and checked ownership-envelope formulas retained from original assessor.
+// No trace, proof, trusted preprocessing or mathematical capability is created.
 
 use bfv_hiding_stark::{
     Challenge, Challenger, EXTENSION_DEGREE, LOG_BLOWUP, MODULUS_BITS, Pcs, QUERIES,

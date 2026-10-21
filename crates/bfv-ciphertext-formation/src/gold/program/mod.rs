@@ -1,5 +1,6 @@
 mod air;
 mod assessment;
+mod dense_backend;
 mod descriptor;
 mod pp;
 use super::{Error, Result};
@@ -31,3 +32,6 @@ mod range_equations;
 
 #[cfg(test)]
 mod role_coefficient_inventory;
+
+#[cfg(test)]
+pub(in crate::gold) mod query_formation;

@@ -204,6 +204,15 @@ impl Prepared {
         self.inner
             .check_private_consistency(ExpectedRef::Data(expected))
     }
+    pub(in crate::gold) fn require_dense_expected(&self, expected: &Expected) -> Result<()> {
+        self.inner.require_expected(ExpectedRef::Data(expected))
+    }
+    pub(in crate::gold) fn dense_trace(
+        self,
+        expected: &Expected,
+    ) -> Result<super::witness::PrivateTrace> {
+        self.inner.dense_trace(expected)
+    }
 }
 /// Producer bytes are UNVERIFIED; no accepted/currentness label is serialized.
 pub struct UnverifiedDataFormationEvidence {
@@ -290,4 +299,13 @@ pub fn verify_dense(expected: &Expected, bytes: &[u8]) -> Result<VerifiedDataFor
 #[cfg(test)]
 pub(super) fn dense_native_fixture() -> (Expected, Prepared, Prepared) {
     tests::dense_native_fixture()
+}
+#[cfg(test)]
+pub(in crate::gold) fn fused_query_native_fixture(
+    high: bool,
+) -> (
+    super::program::query_formation::Expected,
+    super::program::query_formation::Prepared,
+) {
+    tests::fused_query_fixture(high)
 }

@@ -1,11 +1,12 @@
-//! Sealed deterministic PUBLIC-only preprocessing; no seeded configuration escapes.
+// Sealed deterministic PUBLIC-only preprocessing; no seeded configuration escapes.
 use super::assessment::Assessment;
-use super::layout::{BUS, PP as PP_WIDTH};
+use super::layout::{BUS, PORTS, PP as PP_WIDTH};
 use super::native::FullAir as ProgramAir;
 use super::*;
 const DEGREE_BITS: usize = LOG_H + 1;
+use super::Expected;
 use super::native_wire as wire;
-use crate::gold::{Error, Result, data};
+use crate::gold::{Error, Result};
 use bfv_hiding_stark::{
     ChallengeMmcs, Challenger, Compress, Config, Hash, LOG_BLOWUP, Mmcs, Pcs, QUERIES,
     RANDOM_CODEWORDS,
@@ -18,7 +19,7 @@ use p3_lookup::Kind;
 use rand_public_pp::{SeedableRng, rngs::StdRng};
 use sha2::{Digest, Sha256, Sha512};
 
-fn public_stream(expected: &data::Expected, label: u8) -> StdRng {
+fn public_stream(expected: &Expected, label: u8) -> StdRng {
     let mut hash = Sha512::new();
     hash.update(b"DCS/research/DENSE-DATA56/PUBLIC-PP-ONLY/v1\0");
     hash.update(Sha256::digest(DOMAIN));
@@ -30,7 +31,7 @@ fn public_stream(expected: &data::Expected, label: u8) -> StdRng {
     seed.copy_from_slice(&digest[..32]);
     StdRng::from_seed(seed)
 }
-fn public_mmcs(expected: &data::Expected, label: u8) -> Mmcs {
+fn public_mmcs(expected: &Expected, label: u8) -> Mmcs {
     let permutation = default_goldilocks_poseidon2_12();
     Mmcs::new(
         Hash::new(permutation.clone()),
@@ -46,7 +47,7 @@ fn public_mmcs(expected: &data::Expected, label: u8) -> Mmcs {
 /// The caller has already assessed the SAME immutable AIR before entering here.
 pub(super) fn public_data(
     air: &ProgramAir,
-    expected: &data::Expected,
+    expected: &Expected,
     assessment: &Assessment,
 ) -> Result<ProverData<Config>> {
     assessment.require_resources()?;
@@ -98,7 +99,9 @@ fn require_common(common: &CommonData<Config>, assessment: &Assessment) -> Resul
         return Err(Error::Shape);
     }
     let lookups = &common.lookups[0];
-    if lookups.len() != assessment.packed_lookup_count() || lookups.total_count_weight() != 972 {
+    if lookups.len() != assessment.packed_lookup_count()
+        || lookups.total_count_weight() != (4 * PORTS) as u64
+    {
         return Err(Error::Shape);
     }
     let mut messages = 0usize;
@@ -116,7 +119,7 @@ fn require_common(common: &CommonData<Config>, assessment: &Assessment) -> Resul
             .checked_add(lookup.elements.len())
             .ok_or(Error::Resource)?;
     }
-    if messages != 243 {
+    if messages != PORTS {
         return Err(Error::Shape);
     }
     Ok(())

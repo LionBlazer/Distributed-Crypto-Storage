@@ -1,6 +1,5 @@
 //! Internal complete dense DATA packing and native proof backend. No SQL admission.
 mod air;
-mod assessment;
 mod layout;
 mod plan;
 #[cfg(test)]
@@ -12,6 +11,7 @@ use super::super::{
     relation::{ExpectedRef, RelationKind},
 };
 use super::{descriptor::Descriptor, pp as old_pp};
+use data::{Expected, Prepared};
 use layout::*;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 #[cfg(test)]
@@ -44,11 +44,9 @@ fn hex(bytes: impl AsRef<[u8]>) -> String {
 }
 
 // Fixed backend for the explicit data::prove_dense/verify_dense mathematical facade.
-mod native;
-mod native_setup;
+super::dense_backend::instantiate_fixed_dense_backend!();
 #[cfg(test)]
 mod native_tests;
-mod native_wire;
 pub(in crate::gold) use native::{produce, receive};
 pub(in crate::gold) use native_wire::{MAX_FRAME_BYTES, profile};
 pub(in crate::gold) const WRITER_LAYOUT: [usize; 10] = [

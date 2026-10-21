@@ -49,6 +49,14 @@ Fixture factories, semantic/golden snapshots and attack helpers are compiled
 only for tests. Actual admission checks retain the complete inventory; numerical
 inventory summaries are checked in normal builds too. Phase logging is test-only.
 
+The native implementation source is instantiated by `program::dense_backend`
+against two concrete closed host types: this DATA facade and the test-private
+fused Query candidate. That compile-time source generation shares the native
+assessment/setup/codec/prover/receiver implementation without a runtime selector
+or verifier callback. Each host still fixes its own complete geometry, Expected,
+guarded Prepared and distinct protocol. An unconditional literal regression
+retains this facade's original native wire digest.
+
 ```sh
 cargo test --release --offline --locked -p bfv-ciphertext-formation --lib constraints_lookups_and_full_preprocessing_snapshot -- --nocapture --test-threads=1
 cargo test --release --offline --locked -p bfv-ciphertext-formation --lib gold::program::dense_data_inventory:: -- --nocapture --test-threads=1
