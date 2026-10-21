@@ -34,9 +34,13 @@ CA connector also retains its exact endpoint pin check after the handshake.
 drop and has no Debug implementation. It is distinct from owner FHE/AEAD keys.
 Identity generation and endpoint discovery belong to the calling application.
 
-`ConnectionDeadline` owns an absolute socket watchdog, disarmed and joined on
-drop. It closes the socket at expiry even when partial reads keep progressing;
-it neither stops remote computations nor changes application state. TLS
+`ConnectionDeadline` owns an absolute I/O watchdog, disarmed and joined on drop.
+Cancellable client connections latch expiry and wake their readiness wait, even
+while partial reads keep progressing. Their socket closes when its owner drops.
+The public `new(&TcpStream)` constructor and accepted/raw server paths still use
+socket shutdown; this client change does not establish prompt interruption of
+their already pending blocking reads. The watchdog never stops remote
+computations or changes application state. TLS
 handshakes use the existing 15-second budget as an absolute deadline as well as
 an inactivity timeout. `CancellableConnection::set_io_timeout` and `deadline`
 let an explicit application operation choose its own bounded I/O policy after
@@ -56,14 +60,30 @@ timeout and 15-second read/write timeouts. These are transport bounds, not a
 proof of a whole-process RAM or latency target. Windows accepted sockets are
 explicitly returned to blocking mode before the TLS handshake.
 
-`RequestControl::begin` creates a caller-owned `RequestScope`; cancellation closes
-only that scope's registered local sockets and makes further scoped RPCs fail with
+`RequestControl::begin` creates a caller-owned `RequestScope`; cancellation wakes
+only that scope's registered local I/O and makes further scoped RPCs fail with
 `Interrupted`. `Connector::connect_cancellable` registers before the TLS handshake,
 so blocked handshake/frame I/O can be interrupted without waiting for its timeout.
 The initial TCP connect remains bounded by two seconds. Dropping the scope removes
 it from future calls; an old cancellation handle cannot affect a new operation.
 Socket registrations are removed on connection drop. No peer process is killed,
 and cancellation grants no protocol rollback or mutation authorization.
+
+The private client socket uses pinned Mio 1.2.4 readiness and one shared Waker.
+All registered I/O passes through Mio. A blocked read/write waits for its needed
+readiness or a terminal cancellation/deadline signal, without periodic polling.
+Spurious wakes and interrupted waits retain the same I/O expiry. Both the raw
+adapter and outer TLS methods check terminal state; cancellation cannot escape
+through buffered plaintext or a swallowed write error. Internal cancellation is
+`ConnectionAborted`, since rustls and standard exact-I/O helpers retry
+`Interrupted`. Public `Cancellation::check` retains its existing error meaning.
+No policy timeout, frame cap, TLS/certificate check or protocol wire changes.
+The [native validation record](../../docs/transport-client-cancellation.md)
+covers the actual held-server regression and four-peer recovery gate, with their
+remaining latency and server-side limitations.
+Ordinary `Connector::connect` keeps its original raw-TcpStream return type after
+the handshake watchdog joins, registration absence is checked, readiness is
+deregistered and blocking mode is restored. No alternative verifier is involved.
 
 There are no direct project dependencies, GUI, process supervision or database
 operations. The [peer runtime](../peer-runtime/README.md) consumes this contract.

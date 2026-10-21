@@ -5,8 +5,10 @@
 mod cancellation;
 mod deadline;
 mod permissionless;
+mod socket;
 pub use cancellation::{Cancellation, RequestControl, RequestScope};
 pub use deadline::ConnectionDeadline;
+use socket::Socket;
 
 use rustls::{
     ClientConfig, ClientConnection, RootCertStore, ServerConfig, ServerConnection, StreamOwned,
@@ -72,34 +74,42 @@ pub struct Acceptor {
 /// Server-side TLS stream after endpoint authentication. Authentication itself
 /// supplies no application, computation or agreement authority.
 pub type AcceptedConnection = StreamOwned<ServerConnection, TcpStream>;
-/// A TLS stream whose local socket is interrupted when its operation is cancelled.
+/// A TLS stream whose local I/O is interrupted when its operation is cancelled.
 pub struct CancellableConnection {
-    stream: StreamOwned<ClientConnection, TcpStream>,
+    stream: StreamOwned<ClientConnection, Socket>,
     _registration: Option<cancellation::Registration>,
 }
 impl Read for CancellableConnection {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
-        self.stream.read(bytes)
+        self.stream.sock.check()?;
+        let result = self.stream.read(bytes);
+        self.stream.sock.check()?;
+        result
     }
 }
 impl CancellableConnection {
     /// Own an absolute budget in addition to the socket's inactivity timeout.
     pub fn deadline(&self, budget: Duration) -> io::Result<ConnectionDeadline> {
-        ConnectionDeadline::new(&self.stream.sock, budget)
+        ConnectionDeadline::interrupt(self.stream.sock.interrupt(), budget)
     }
     /// Set explicit operation I/O budgets after the bounded TLS handshake.
     /// Cancellation still interrupts the registered underlying socket.
     pub fn set_io_timeout(&self, timeout: Duration) -> io::Result<()> {
-        self.stream.sock.set_read_timeout(Some(timeout))?;
-        self.stream.sock.set_write_timeout(Some(timeout))
+        self.stream.sock.set_io_timeout(timeout)
     }
 }
 impl Write for CancellableConnection {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.stream.write(bytes)
+        self.stream.sock.check()?;
+        let result = self.stream.write(bytes);
+        self.stream.sock.check()?;
+        result
     }
     fn flush(&mut self) -> io::Result<()> {
-        self.stream.flush()
+        self.stream.sock.check()?;
+        let result = self.stream.flush();
+        self.stream.sock.check()?;
+        result
     }
 }
 fn roots(authority: &[u8]) -> io::Result<RootCertStore> {
@@ -132,8 +142,13 @@ impl Connector {
         &self,
         endpoint: &Endpoint,
     ) -> io::Result<StreamOwned<ClientConnection, TcpStream>> {
-        self.connect_inner(endpoint, None)
-            .map(|connection| connection.stream)
+        let connection = self.connect_inner(endpoint, None)?;
+        // No cancellation registration exists on this path, and its handshake
+        // watchdog has joined. Transfer the same descriptor without duplicating it.
+        Ok(StreamOwned::new(
+            connection.stream.conn,
+            connection.stream.sock.into_owned()?,
+        ))
     }
     pub fn connect_cancellable(
         &self,
@@ -150,14 +165,16 @@ impl Connector {
         if let Some(cancellation) = cancellation {
             cancellation.check()?;
         }
-        let mut socket = TcpStream::connect_timeout(&endpoint.address, Duration::from_secs(2))?;
-        let registration = cancellation
-            .map(|token| token.register(&socket))
-            .transpose()?;
+        let socket = TcpStream::connect_timeout(&endpoint.address, Duration::from_secs(2))?;
         socket.set_read_timeout(Some(IO_TIMEOUT))?;
         socket.set_write_timeout(Some(IO_TIMEOUT))?;
         socket.set_nodelay(true)?;
-        let handshake_deadline = ConnectionDeadline::new(&socket, IO_TIMEOUT)?;
+        let socket = Socket::new(socket)?;
+        let registration = cancellation
+            .map(|token| token.register(socket.interrupt()))
+            .transpose()?;
+        let handshake_deadline = ConnectionDeadline::interrupt(socket.interrupt(), IO_TIMEOUT)?;
+        let mut socket = socket;
         let mut connection = ClientConnection::new(
             self.client_config(endpoint)?,
             ServerName::try_from("dcs-peer").map_err(io::Error::other)?,

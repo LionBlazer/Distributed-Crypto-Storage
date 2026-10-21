@@ -302,3 +302,295 @@ fn historical_ca_mode_remains_explicit_and_does_not_become_permissionless() {
     );
     assert_eq!(task.join().unwrap().unwrap(), client.fingerprint());
 }
+
+#[test]
+fn cancelling_an_actual_tls_response_wait_finishes_before_server_release() -> io::Result<()> {
+    held_tls_response_finishes_before_release(ResponseWaitStop::Cancellation)
+}
+
+#[test]
+fn absolute_deadline_ends_an_idle_tls_response_wait_before_server_release() -> io::Result<()> {
+    held_tls_response_finishes_before_release(ResponseWaitStop::Deadline)
+}
+
+#[test]
+fn cancelling_a_tls_handshake_finishes_before_server_release() -> io::Result<()> {
+    held_tls_response_finishes_before_release(ResponseWaitStop::Handshake)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ResponseWaitStop {
+    Cancellation,
+    Deadline,
+    Handshake,
+}
+
+fn held_tls_response_finishes_before_release(stop_by: ResponseWaitStop) -> io::Result<()> {
+    use peer_transport::Cancellation;
+    use std::io::Read;
+    use std::{
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            mpsc,
+        },
+        time::{Duration, Instant},
+    };
+
+    const SETUP: Duration = Duration::from_secs(20);
+    const INACTIVITY: Duration = Duration::from_secs(10);
+    const CANCEL: Duration = Duration::from_secs(2);
+    const REQUEST: &[u8] = b"PUBLIC TLS cancellation request";
+    fn receive<T>(
+        stage: &'static str,
+        receiver: &mpsc::Receiver<T>,
+        expires: Instant,
+    ) -> io::Result<T> {
+        let remaining = expires
+            .checked_duration_since(Instant::now())
+            .ok_or_else(|| io::Error::from(io::ErrorKind::TimedOut))?;
+        receiver.recv_timeout(remaining).map_err(|error| {
+            io::Error::new(
+                match error {
+                    mpsc::RecvTimeoutError::Timeout => io::ErrorKind::TimedOut,
+                    mpsc::RecvTimeoutError::Disconnected => io::ErrorKind::BrokenPipe,
+                },
+                stage,
+            )
+        })
+    }
+    fn joined<T>(result: thread::Result<T>) -> io::Result<T> {
+        result.map_err(|_| io::Error::other("TLS cancellation test worker panicked"))
+    }
+    struct Release {
+        sender: Option<mpsc::SyncSender<()>>,
+        stop: Arc<AtomicBool>,
+    }
+    impl Drop for Release {
+        fn drop(&mut self) {
+            self.stop.store(true, Ordering::Release);
+            if let Some(sender) = self.sender.take() {
+                let _ = sender.send(());
+            }
+        }
+    }
+
+    // Arrange genuine, fresh, non-secret TLS participants using the existing helper.
+    let server_identity = self_signed();
+    let client_identity = self_signed();
+    let expected_client = client_identity.fingerprint();
+    let acceptor = Acceptor::permissionless(&server_identity)?;
+    let connector = Connector::permissionless(&client_identity)?;
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    listener.set_nonblocking(true)?;
+    let endpoint = Endpoint {
+        address: listener.local_addr()?,
+        identity: server_identity.fingerprint(),
+    };
+    let cancellation = Cancellation::default();
+    let observed = Instant::now();
+
+    thread::scope(|scope| -> io::Result<()> {
+        let (release_sender, release_receiver) = mpsc::sync_channel(1);
+        let (seen_sender, seen_receiver) = mpsc::sync_channel(1);
+        let (reading_sender, reading_receiver) = mpsc::sync_channel(1);
+        let (read_sender, read_receiver) = mpsc::sync_channel(1);
+        let (cancel_sender, cancel_receiver) = mpsc::sync_channel(1);
+        let stop = Arc::new(AtomicBool::new(false));
+        let holding = Arc::new(AtomicBool::new(false));
+        // INSIDE the scope, before worker owners: unwind releases the server
+        // before thread::scope can perform any implicit joins.
+        let release = Release {
+            sender: Some(release_sender),
+            stop: stop.clone(),
+        };
+        let server_holding = holding.clone();
+        let server = scope.spawn(move || -> io::Result<()> {
+            let expires = Instant::now() + SETUP;
+            let mut socket = loop {
+                match listener.accept() {
+                    Ok((socket, _)) => break socket,
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                        if stop.load(Ordering::Acquire) || Instant::now() >= expires {
+                            return Err(io::Error::from(io::ErrorKind::TimedOut));
+                        }
+                        thread::park_timeout(Duration::from_millis(1));
+                    }
+                    Err(error) => return Err(error),
+                }
+            };
+            if stop_by == ResponseWaitStop::Handshake {
+                socket.set_read_timeout(Some(INACTIVITY))?;
+                // Observe an actual TLS ClientHello record beginning, then
+                // deliberately send no ServerHello. This is no TLS-positive.
+                let mut record_type = [0];
+                socket.read_exact(&mut record_type)?;
+                if record_type != [22] {
+                    return Err(io::Error::other("Expected TLS handshake record"));
+                }
+                server_holding.store(true, Ordering::Release);
+                seen_sender.send(()).map_err(io::Error::other)?;
+                let held = release_receiver
+                    .recv_timeout(INACTIVITY)
+                    .map_err(io::Error::other);
+                server_holding.store(false, Ordering::Release);
+                held?;
+                drop(socket);
+                return Ok(());
+            }
+            let (identity, mut stream) = acceptor.accept(socket)?;
+            stream.sock.set_read_timeout(Some(INACTIVITY))?;
+            stream.sock.set_write_timeout(Some(INACTIVITY))?;
+            if identity != expected_client || read_frame(&mut stream, 1024)? != REQUEST {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Real TLS request mismatch",
+                ));
+            }
+            server_holding.store(true, Ordering::Release);
+            eprintln!(
+                "tls_cancel phase=server_holding elapsed_us={}",
+                observed.elapsed().as_micros()
+            );
+            seen_sender.send(()).map_err(io::Error::other)?;
+            // No response, close_notify, socket shutdown or stream drop until
+            // this INDEPENDENT release (or the 10-second failure bound).
+            let held = release_receiver
+                .recv_timeout(INACTIVITY)
+                .map_err(io::Error::other);
+            server_holding.store(false, Ordering::Release);
+            held?;
+            Ok(())
+        });
+        let read_token = cancellation.clone();
+        let mut reader = Some(scope.spawn(move || {
+            let result = (|| -> io::Result<io::Result<Vec<u8>>> {
+                if stop_by == ResponseWaitStop::Handshake {
+                    reading_sender.send(()).map_err(io::Error::other)?;
+                }
+                let mut stream = connector.connect_cancellable(&endpoint, Some(&read_token))?;
+                if stop_by == ResponseWaitStop::Handshake {
+                    return Err(io::Error::other("Unanswered TLS handshake completed"));
+                }
+                stream.set_io_timeout(INACTIVITY)?;
+                write_frame(&mut stream, REQUEST, 1024)?;
+                let deadline = if stop_by == ResponseWaitStop::Deadline {
+                    Some(stream.deadline(Duration::from_millis(100))?)
+                } else {
+                    None
+                };
+                // This announces intent to read, not proof that the scheduler
+                // has entered the OS recv syscall. No sleep claims that proof.
+                reading_sender.send(()).map_err(io::Error::other)?;
+                eprintln!(
+                    "tls_cancel phase=read_start elapsed_us={}",
+                    observed.elapsed().as_micros()
+                );
+                let read = read_frame(&mut stream, 1024);
+                eprintln!(
+                    "tls_cancel phase=read_return error={:?} elapsed_us={}",
+                    read.as_ref().err().map(io::Error::kind),
+                    observed.elapsed().as_micros()
+                );
+                drop(deadline);
+                drop(stream); // Include actual TLS/socket registration cleanup.
+                eprintln!(
+                    "tls_cancel phase=connection_dropped elapsed_us={}",
+                    observed.elapsed().as_micros()
+                );
+                Ok(read)
+            })();
+            let _ = read_sender.send(result);
+        }));
+        let mut cancelling = None;
+        let observation = (|| -> io::Result<()> {
+            let setup_expires = Instant::now() + SETUP;
+            receive("server receipt", &seen_receiver, setup_expires)?;
+            receive("read intent", &reading_receiver, setup_expires)?;
+            if !matches!(read_receiver.try_recv(), Err(mpsc::TryRecvError::Empty)) {
+                return Err(io::Error::other("Read finished before actual cancellation"));
+            }
+            if !holding.load(Ordering::Acquire) {
+                return Err(io::Error::other("Server did not retain the response wait"));
+            }
+
+            // Act: cancel the SAME token registered by the real Connector.
+            // One absolute observation budget covers BOTH completion signals
+            // and actual joins; it is not renewed for the second receive.
+            let expires = Instant::now() + CANCEL;
+            if stop_by != ResponseWaitStop::Deadline {
+                let cancel_token = cancellation.clone();
+                cancelling = Some(scope.spawn(move || {
+                    eprintln!(
+                        "tls_cancel phase=cancel_start elapsed_us={}",
+                        observed.elapsed().as_micros()
+                    );
+                    cancel_token.cancel();
+                    eprintln!(
+                        "tls_cancel phase=cancel_return elapsed_us={}",
+                        observed.elapsed().as_micros()
+                    );
+                    let _ = cancel_sender.send(());
+                }));
+                receive("cancel return", &cancel_receiver, expires)?;
+            }
+            let result = receive("read and connection drop", &read_receiver, expires)?;
+            let read = if stop_by == ResponseWaitStop::Handshake {
+                match result {
+                    Err(error) => Err(error),
+                    Ok(_) => return Err(io::Error::other("Unanswered TLS handshake succeeded")),
+                }
+            } else {
+                result?
+            };
+            match (stop_by, read) {
+                (ResponseWaitStop::Deadline, Err(error))
+                    if error.kind() == io::ErrorKind::TimedOut => {}
+                (ResponseWaitStop::Cancellation | ResponseWaitStop::Handshake, Err(error))
+                    if !matches!(
+                        error.kind(),
+                        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+                    ) => {}
+                (_, Err(_)) => {
+                    return Err(io::Error::other("Read did not report the requested stop"));
+                }
+                (_, Ok(_)) => return Err(io::Error::other("Server sent no response payload")),
+            }
+            if let Some(worker) = cancelling.take() {
+                joined(worker.join())?;
+            }
+            joined(
+                reader
+                    .take()
+                    .ok_or_else(|| io::Error::other("Missing read worker"))?
+                    .join(),
+            )?;
+            if Instant::now() >= expires
+                || cancellation.is_cancelled() != (stop_by != ResponseWaitStop::Deadline)
+                || !holding.load(Ordering::Acquire)
+            {
+                return Err(io::Error::other(
+                    "Cancellation did not finish before independent server release",
+                ));
+            }
+            Ok(())
+        })();
+
+        // Always release first on failure; then join EVERY remaining worker.
+        // No unwrap/early propagation can strand a held server on an error.
+        eprintln!(
+            "tls_cancel phase=server_release elapsed_us={}",
+            observed.elapsed().as_micros()
+        );
+        drop(release);
+        let reader_join = reader.map(|worker| joined(worker.join())).unwrap_or(Ok(()));
+        let cancel_join = cancelling
+            .map(|worker| joined(worker.join()))
+            .unwrap_or(Ok(()));
+        let server_join = joined(server.join());
+        observation?;
+        reader_join?;
+        cancel_join?;
+        server_join??;
+        Ok(())
+    })
+}

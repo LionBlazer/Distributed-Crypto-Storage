@@ -1,7 +1,7 @@
-//! Cancellation owns only local RPC sockets, never peer processes or protocol state.
+//! Cancellation wakes local RPC I/O, never peer processes or protocol state.
+use crate::socket::Interrupt;
 use std::{
     io,
-    net::{Shutdown, TcpStream},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -65,7 +65,7 @@ impl Drop for RequestScope {
 #[derive(Default)]
 struct State {
     cancelled: AtomicBool,
-    sockets: Mutex<Vec<Arc<TcpStream>>>,
+    sockets: Mutex<Vec<Arc<Interrupt>>>,
 }
 #[derive(Clone, Default)]
 pub struct Cancellation(Arc<State>);
@@ -87,18 +87,17 @@ impl Cancellation {
         self.0.cancelled.store(true, Ordering::Release);
         if let Ok(sockets) = self.0.sockets.lock() {
             for socket in sockets.iter() {
-                let _ = socket.shutdown(Shutdown::Both);
+                socket.cancel();
             }
         }
     }
-    pub(crate) fn register(&self, socket: &TcpStream) -> io::Result<Registration> {
+    pub(crate) fn register(&self, socket: Arc<Interrupt>) -> io::Result<Registration> {
         let mut sockets = self
             .0
             .sockets
             .lock()
             .map_err(|_| io::Error::other("Socket registry poisoned"))?;
         self.check()?;
-        let socket = Arc::new(socket.try_clone()?);
         sockets.push(socket.clone());
         Ok(Registration {
             cancellation: self.clone(),
@@ -108,7 +107,7 @@ impl Cancellation {
 }
 pub(crate) struct Registration {
     cancellation: Cancellation,
-    socket: Arc<TcpStream>,
+    socket: Arc<Interrupt>,
 }
 impl Drop for Registration {
     fn drop(&mut self) {
@@ -121,17 +120,22 @@ impl Drop for Registration {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{io::Read, net::TcpListener, sync::mpsc, time::Duration};
+    use std::{
+        io::Read,
+        net::{TcpListener, TcpStream},
+        sync::mpsc,
+        time::Duration,
+    };
     #[test]
     fn cancellation_interrupts_blocked_socket_io_and_rejects_later_registrations() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let mut socket = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let mut socket =
+            crate::socket::Socket::new(TcpStream::connect(listener.local_addr().unwrap()).unwrap())
+                .unwrap();
         let (_server, _) = listener.accept().unwrap();
-        socket
-            .set_read_timeout(Some(Duration::from_secs(10)))
-            .unwrap();
+        socket.set_io_timeout(Duration::from_secs(10)).unwrap();
         let cancellation = Cancellation::default();
-        let registered = cancellation.register(&socket).unwrap();
+        let registered = cancellation.register(socket.interrupt()).unwrap();
         let (sent, received) = mpsc::channel();
         let thread = std::thread::spawn(move || {
             let mut byte = [0];
@@ -140,7 +144,8 @@ mod tests {
         cancellation.cancel();
         assert!(received.recv_timeout(Duration::from_secs(1)).unwrap());
         thread.join().unwrap();
-        assert!(cancellation.register(&_server).is_err());
+        let server = crate::socket::Socket::new(_server).unwrap();
+        assert!(cancellation.register(server.interrupt()).is_err());
         drop(registered);
         assert!(cancellation.0.sockets.lock().unwrap().is_empty());
     }

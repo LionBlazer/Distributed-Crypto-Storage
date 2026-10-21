@@ -327,6 +327,13 @@ fn actual_tls_status_requires_clean_terminal_and_rejects_trailing_or_truncated_s
 
 #[test]
 fn real_tls_empty_actors_wait_in_two_partitions_then_heal_and_catch_up_an_offline_signer() {
+    let started = std::time::Instant::now();
+    let mark = |phase: &str| {
+        eprintln!(
+            "empty_tls_recovery phase={phase} elapsed_ms={}",
+            started.elapsed().as_millis()
+        )
+    };
     let (binding, keys) = binding();
     let files = Files::new();
     let owner = identity();
@@ -378,6 +385,7 @@ fn real_tls_empty_actors_wait_in_two_partitions_then_heal_and_catch_up_an_offlin
         .map(|p| FinalityClient::new(connector.clone(), p.clone(), &binding))
         .collect();
     let mut running: Vec<_> = servers.into_iter().map(|s| s.spawn().unwrap()).collect();
+    mark("four-partitioned-actors-started");
     let mut journal = version_journal::Journal::new(binding.journal_genesis().clone()).unwrap();
     let first = empty(&mut journal, &binding);
     // Remote local-control tags are rejected by the actual consensus decoder;
@@ -407,6 +415,7 @@ fn real_tls_empty_actors_wait_in_two_partitions_then_heal_and_catch_up_an_offlin
     for client in &clients {
         until(|| client.submit(&first).is_ok());
     }
+    mark("first-original-imported-without-quorum");
     // Observe a bounded no-quorum interval across actual RPCs, not an arbitrary
     // sleep followed by a guessed local-manager state.
     let end = std::time::Instant::now() + Duration::from_secs(3);
@@ -416,8 +425,11 @@ fn real_tls_empty_actors_wait_in_two_partitions_then_heal_and_catch_up_an_offlin
         }
         std::thread::park_timeout(Duration::from_millis(20));
     }
-    for server in &mut running {
+    mark("partition-no-quorum-observed");
+    for (index, server) in running.iter_mut().enumerate() {
+        mark(&format!("partition-stop-{index}-start"));
         server.stop().unwrap();
+        mark(&format!("partition-stop-{index}-joined"));
     }
     drop(running);
     let mut running = Vec::new();
@@ -452,12 +464,14 @@ fn real_tls_empty_actors_wait_in_two_partitions_then_heal_and_catch_up_an_offlin
     for client in &clients {
         until(|| client.submit(&first).is_ok() || client.observed_slot().is_ok_and(|s| s >= 2));
     }
+    mark("four-healed-actors-imported-first-original");
     until(|| {
         clients
             .iter()
             .all(|c| c.observed_slot().is_ok_and(|s| s == 2))
     });
     running[3].stop().unwrap();
+    mark("first-QC-and-offline-signer-stopped");
     let second = empty(&mut journal, &binding);
     for client in &clients[..3] {
         until(|| client.submit(&second).is_ok());
@@ -474,6 +488,7 @@ fn real_tls_empty_actors_wait_in_two_partitions_then_heal_and_catch_up_an_offlin
         &protocol_storage::ByteBudget::new(version_journal::MAX_JOURNAL_BYTES).unwrap(),
     )
     .unwrap();
+    mark("second-QC-offline-owner-reopened");
     running[3] = FinalityServer::bind(
         ListenerConfig {
             listen: endpoints[3].address,
@@ -490,6 +505,7 @@ fn real_tls_empty_actors_wait_in_two_partitions_then_heal_and_catch_up_an_offlin
     .spawn()
     .unwrap();
     until(|| clients[3].observed_slot().is_ok_and(|s| s == 3));
+    mark("offline-signer-caught-up");
     let mut follower = registry200_finality::Follower::new(binding.clone()).unwrap();
     until(|| {
         clients[3]
@@ -519,8 +535,11 @@ fn real_tls_empty_actors_wait_in_two_partitions_then_heal_and_catch_up_an_offlin
     assert_eq!(fresh.context().slot(), 1);
     assert!(clients[3].submit(&first).is_err());
     assert_eq!(clients[3].observed_slot().unwrap(), 3);
-    for server in &mut running {
+    mark("fresh-lineage-and-damaged-QC-rejection-checked");
+    for (index, server) in running.iter_mut().enumerate() {
+        mark(&format!("final-stop-{index}-start"));
         server.stop().unwrap();
+        mark(&format!("final-stop-{index}-joined"));
     }
 }
 

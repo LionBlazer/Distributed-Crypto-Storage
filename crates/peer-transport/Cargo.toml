@@ -6,6 +6,7 @@ rust-version = "1.99"
 publish = false
 
 [dependencies]
+mio = { version = "=1.2.4", default-features = false, features = ["os-poll", "net"] }
 rustls = { version = "=0.23.45", default-features = false, features = ["std", "ring"] }
 serde.workspace = true
 bincode = "1.3"
