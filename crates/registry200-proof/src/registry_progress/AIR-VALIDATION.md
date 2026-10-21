@@ -239,3 +239,72 @@ receipts use `.local/word-cmd-native-r9-`. Its own temporary Core edits were
 removed/restored. AUX, PCS, proofs and SQL authority were never created. Genuine
 honest and hostile hiding proofs, bounded cold verification and complete DCS
 composition remain required; these timings do not establish a <=500ms query.
+
+## Actual complete word hiding proofs and cold receiver
+
+The complete private candidate now has a genuine native hiding prover and cold
+receiver, not just trace diagnostics. PUBLIC preprocessing uses its own sealed
+deterministic setup, which is dropped before any private commitment. The producer
+checks the same complete schedule and uses fresh OS randomness for actual native
+proving. The receiver rebuilds its own AIR and trusted PUBLIC CommonData; no
+sender-selected preprocessing, cached verdict or admission token is accepted.
+
+The separate canonical frame binds the complete independently retained public
+expectation, role and profile. Its 4MiB byte limit, 4096 per-sequence limit and
+4Mi shared-slot limit precede native verification. All five PCS rounds and full
+MAIN2/PP2/AUX2/FRI topology are checked. The scalar field's binary representation
+is strict canonical LE[8]; all five extension coordinates, EOF and re-encoding
+are also checked. The original complete semantic Pool goldens remain unchanged.
+
+All 13 owning cases passed in 2.32 s, including both actual honest role proofs
+and cold verification. A repaired Add passes every local BASE equation but has
+an unbalanced wire multiset. Release proving created its actual proof, and
+native verification rejected it with exact `Lookup(TerminalSumNonZero)`.
+Forging its terminal to zero passes fixed topology but still fails actual native
+opening/OOD verification. Wrong MAIN/PP/AUX openings and a FRI leaf also fail
+native verification. Header/scope, canonicality, EOF, sequence/global/frontier
+limits and a final restored honest cold verification passed their owning gates.
+
+One optimized CPU/Rayon2 sample measured these phases in milliseconds:
+
+| Phase | Control | Predicate |
+| --- | ---: | ---: |
+| Producer assessment | 11.444 | 12.374 |
+| Producer PUBLIC preprocessing | 91.234 | 94.423 |
+| Private MAIN preparation | 4.255 | 4.490 |
+| Native proving | 180.101 | 183.430 |
+| Canonical encoding | 3.611 | 3.467 |
+| Producer total, including cleanup/gaps | 296.452 | 303.881 |
+| Cold assessment | 11.411 | 12.109 |
+| Cold canonical decode | 6.426 | 6.482 |
+| Cold PUBLIC preprocessing | 94.576 | 90.858 |
+| Native verification | 60.881 | 60.429 |
+| Cold total, including cleanup/gaps | 178.022 | 174.624 |
+
+Frames were 2926794/2925098 bytes. Totals overlap their component phases and must
+not be added to them. Later fast hostile rejections are excluded from honest
+verification measurements. Unrelated compiler processes were active; these are
+diagnostic single samples, without a controlled comparative speedup claim.
+
+The supervised 13-case process lasted 2331.6882 ms with 3.609375 CPU seconds,
+114 memory samples, sampled peak private bytes 118890496 and OS peak working set
+129662976. It exited zero with no fuse, cleanup kill or unexpected direct child.
+Strict all-target Clippy passed. The 10474496-byte image SHA256 is
+`FA7B717B3FCFCAEEFC530AF8298B1E9016F38588DB549B9616A5D6CECD3DA40F`.
+
+Receipts use `.local/word-cmd-native-r12-`; the exact executed 24-file overlay is
+archived at `.local/word-probe-native-overlay-r1`, aggregate SHA256
+`772DD5EB2CB9AFE7E5170EB5CF71814CFD73190CABBD8878AB0BA2B6AEF17C5D`.
+After validation the private module is retained in source under `cfg(test)`;
+only documentation/comments were updated afterwards. No production receiving
+API, feature escape or accepted-state capability was added.
+
+These samples exclude Source/DATA proofs, the original FHE request/product,
+independently proved bootstrap/history, fresh weighted quorum certificates,
+transport and durable completion. Honest fixtures exercise only Begin and
+Start/Done; the remaining business branches need their own witness/proof gates.
+Standalone SDK parameter reports do not establish BFV confidentiality or
+complete-system security. The complete DCS query has not met <=500ms. Rebuilding
+request-specific PUBLIC preprocessing on each side is a measured next target;
+it cannot be cached across different requests without a new constrained-input
+profile and independent native security/binding checks.

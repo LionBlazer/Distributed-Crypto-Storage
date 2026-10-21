@@ -1,0 +1,224 @@
+//! Test-private complete Cmd160/StateVersion word family and native proof probe.
+//! No accepted state, cached verdict, SQL result or network admission is created.
+mod air;
+mod canonical;
+mod check;
+mod control;
+mod evaluate;
+mod expr;
+mod owner;
+mod plan;
+mod predicate;
+mod recipes;
+mod schema;
+mod streams;
+#[cfg(test)]
+mod tests;
+mod witness;
+mod witness_tests;
+use crate::{
+    Val,
+    source::{self, version::SourceVersionExpected},
+};
+use expr::{Builder, Pool};
+use p3_field::PrimeCharacteristicRing;
+use schema::*;
+use sha2::{Digest, Sha256, Sha512};
+const TARGET_HEIGHT: usize = 512;
+const PROFILE_DOMAIN:&[u8]=b"DCS/research/word208/StateVersion-Cmd160-Stmt96/H512/v1/fullSource680/fullP2/typed-u32/fixedPolicy25/Mask256-four-duplicates/relativeOldRoot-no-proof";
+fn profile() -> [u8; 32] {
+    Sha256::digest(PROFILE_DOMAIN).into()
+}
+fn domain(label: &str) -> [Val; 4] {
+    let mut h = Sha256::new();
+    h.update(PROFILE_DOMAIN);
+    h.update((label.len() as u64).to_le_bytes());
+    h.update(label);
+    let bytes: [u8; 32] = h.finalize().into();
+    source::statement::words(&bytes[..16])
+        .collect::<Vec<_>>()
+        .try_into()
+        .expect("domain4")
+}
+fn header(label: &str) -> Vec<Val> {
+    domain(label)
+        .into_iter()
+        .chain([Val::ONE])
+        .chain(source::statement::words(&profile()))
+        .collect()
+}
+/// Metadata is private and unproved. A future receiving boundary must obtain the
+/// entire SourceVersion + independently confirmed OldRoot/bootstrap association.
+/// This inspector cannot install metadata or turn it into a proof capability.
+struct Metadata {
+    source: SourceVersionExpected,
+    predicate: bool,
+    registry_header: [Val; 33],
+    enrollment_header: [Val; 33],
+    context: [Val; 100],
+    scope: [Val; 16],
+    parent: [Val; 8],
+    enrollment: [Val; 4],
+    old: [Val; 4],
+    command: [Val; 4],
+    statement: [Val; 4],
+    next: [Val; 4],
+    result: [Val; 4],
+    blind_sql: [Val; 8],
+}
+impl Metadata {
+    fn sample(predicate: bool) -> Self {
+        // Only a bounded PUBLIC metadata example, without Source proving, SDK FHE,
+        // a private witness or an assertion that these arbitrary roots open.
+        let old = super::air_snapshot_tests::statements().0;
+        let s = old.expected.source();
+        let images: [Vec<u8>; 2] = core::array::from_fn(|i| {
+            s.heads[i]
+                .iter()
+                .copied()
+                .chain(s.packets[i].iter().copied())
+                .collect()
+        });
+        let heads = core::array::from_fn::<_, 2, _>(|i| {
+            compact_store::Commitment::decode(&s.heads[i], source::statement::limits())
+                .expect("pinned public head")
+        });
+        let source = SourceVersionExpected::checked(
+            [&images[0], &images[1]],
+            [&heads[0], &heads[1]],
+            source::statement::encode_digest(s.key_commitment),
+            source::statement::encode_digest(s.open_commitment),
+        )
+        .expect("public images; NOT verified");
+        let parent = source::statement::words(&[0xb7; 32])
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("8words");
+        let make_header = |label: &str| {
+            let mut v = header(label);
+            v.extend(source::statement::words(&[0xa7; 32]));
+            v.extend(source::statement::words(&s.heads[0][8..40]));
+            v.extend(s.key_commitment);
+            v.try_into().expect("33header")
+        };
+        let registry_header = make_header("registry");
+        let enrollment_header = make_header("enrollment");
+        let mut h = Sha512::new();
+        h.update(PROFILE_DOMAIN);
+        h.update(source.version_id());
+        h.update(source.state_commitment());
+        for image in &images {
+            h.update((image.len() as u64).to_le_bytes());
+            h.update(image);
+        }
+        h.update(source::statement::encode_digest(s.key_commitment));
+        let scope = source::statement::words(&h.finalize())
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("16scope");
+        let enrollment = [Val::from_u32(3); 4];
+        let old = [Val::from_u32(5); 4];
+        let command = [Val::from_u32(7); 4];
+        let statement = [Val::from_u32(13); 4];
+        let next = [Val::from_u32(19); 4];
+        let result = [Val::from_u32(23); 4];
+        // Acyclic: these independent public inputs precede every Cmd/Stmt/next/Result
+        // preimage. NONE of those produced roots is fed back into context100.
+        let mut ctx = Vec::new();
+        ctx.extend(source::statement::words(&profile()));
+        ctx.extend(source::statement::words(&[0xa7; 32]));
+        ctx.extend(parent);
+        ctx.extend(source::statement::words(&source.version_id()));
+        ctx.extend(s.key_commitment);
+        ctx.extend(s.open_commitment);
+        ctx.extend(enrollment);
+        ctx.extend(scope);
+        ctx.extend(source::statement::words(&s.heads[0][8..40]));
+        for head in &s.heads {
+            ctx.extend(source::statement::words(&Sha512::digest(head)));
+        }
+        let context = ctx.try_into().expect("acyclic context100");
+        Self {
+            source,
+            predicate,
+            registry_header,
+            enrollment_header,
+            context,
+            scope,
+            parent,
+            enrollment,
+            old,
+            command,
+            statement,
+            next,
+            result,
+            blind_sql: source::statement::words(&[0x61; 32])
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("sql8"),
+        }
+    }
+}
+/// SINGLE closed factory. E IDs and Builder are never supplied by any caller.
+/// Every semantic/serializer/hash/lookup use below comes from this ONE owner.
+fn complete_build(m: &Metadata) -> Result<recipes::Built, String> {
+    let b = Builder::new(m.predicate);
+    {
+        let s = Source::new(&b);
+        let controllers = controllers(&b);
+        for controller in controllers {
+            b.nonzero(&controller, b.c(1));
+        }
+        let prefix = m.registry_header.map(|v| b.val(v));
+        let enrollment = m.enrollment.map(|v| b.val(v));
+        let old = Bank::new(&b, "old", prefix, enrollment, &s);
+        let new = Bank::new(&b, "new", prefix, enrollment, &s);
+        canonical::bank(&b, &old, controllers);
+        canonical::bank(&b, &new, controllers);
+        let c = control::Command::new(&b, &old, m.predicate);
+        let matches = s.ages.map(|age| b.mask_read(age));
+        let w = predicate::Walk::new(
+            &b,
+            &old,
+            &c,
+            matches,
+            m.blind_sql.map(|v| b.val(v)),
+            m.predicate,
+        );
+        streams::source_and_enrollment(&b, m, &s, controllers);
+        streams::command(&b, m, &old, &c, controllers, m.parent.map(|v| b.val(v)));
+        let links = streams::statement_and_progress(&b, m, &old, &c, &w, controllers);
+        let effect = streams::effect(&w, &links);
+        control::apply(
+            &b,
+            &old,
+            &new,
+            &c,
+            &effect,
+            m.parent.map(|v| b.val(v)),
+            controllers,
+        );
+        streams::bank(&b, m, &old, false);
+        streams::bank(&b, m, &new, true);
+        streams::result(&b, m, &old, &new, &c, &w, &links);
+        b.close();
+    }
+    let built = b.take();
+    built.origins.require_complete(&built.pool)?;
+    let pool = &built.pool;
+    if !pool.errors.is_empty() {
+        return Err(pool.errors.join(","));
+    }
+    Ok(built)
+}
+fn complete(m: &Metadata) -> Result<Pool, String> {
+    Ok(complete_build(m)?.pool)
+}
+
+// Metadata-only native assessment; the entire owning module is cfg(test).
+mod assessment;
+
+// Actual private native hiding math probe; no production acceptance API.
+mod probe;
+mod probe_tests;
+mod probe_wire;

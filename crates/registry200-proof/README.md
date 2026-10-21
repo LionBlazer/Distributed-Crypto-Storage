@@ -10,6 +10,11 @@ The v2 step profile uses width 8266 and the distinct v2 Statement96 profile; no
 old proof profile is reinterpreted. This module does not activate SQL or finality;
 existing profiles and admission remain unchanged.
 
+The test-private [complete word proof candidate](src/registry_progress/word_inventory/README.md)
+uses a separate bounded H512 relation and actual hiding proof/cold verification.
+Its 13 owning cases passed in 2.32 s. It remains outside production admission;
+its subsecond mathematical samples exclude the complete DCS query composition.
+
 This library owns the single fixed Source-opening and Registry200 lifecycle
 circuits previously owned by the hiding-FRI experiment. It verifies actual
 hiding STARKs; a profile match, owner signature or public claim is insufficient.
