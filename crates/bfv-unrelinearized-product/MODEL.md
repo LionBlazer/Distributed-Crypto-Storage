@@ -237,6 +237,15 @@ hashing or quantum attacks. All security and live SQL admission flags remain
 false. The numerical gate itself no longer needs an incomplete partial minimum
 or another optimization of the research estimator.
 
+The normal protected QUERY owner's [sampler contract](../bfv-query-core/src/gold/SAMPLER.md)
+now uses one fresh fallible OS seed, separate ChaCha20 error/uniform streams and
+an exact owner-side A remask. It preserves the SDK input phase/noise while removing
+the outgoing A's sole dependence on the SDK's internal ChaCha8 expansion. Its
+ideal-uniform argument, concrete PRG assumption, unbiased distribution path and
+v2 owner profile are separate from this public arithmetic certificate. Imported
+key entropy, existing DATA provenance and complete confidentiality remain open;
+this changes no product, Formation, fresh-head or SQL admission grant.
+
 Smallness does not prove sampler entropy. The certificate does not establish
 same-secret Formation, authenticated Source/hidden-program completeness,
 authorization, current agreed head/QC, durable locks or SQL admission.

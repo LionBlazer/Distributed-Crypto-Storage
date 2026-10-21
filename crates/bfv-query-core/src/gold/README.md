@@ -25,8 +25,10 @@ Result and current weighted QC before exposing a SQL response or mutation.
   metadata pins, not authority. Raw SQL, operators/constants and mask remain
   private. Any salted commitments must come from the protected future compiler.
 - `Owner::originate` consumes typed `Mask256`, full binding and DATA metadata.
-  It generates p[255-age] for all256 mask bits, performs real SDK encryption,
-  retains the original unseeded canonical QueryCt and fixes the literal ordered
+  It generates p[255-age] for all256 mask bits, performs real SDK encryption
+  with an owner-controlled error stream and independently remasks A while
+  preserving every coefficient of the SDK phase. It retains that original
+  unseeded canonical QueryCt and fixes the literal ordered
   [DataCt,QueryCt]. There is no arbitrary QueryCt->OriginatingQuery constructor.
 - `PublicRequest` is untrusted bounded public wire; decode mints no private
   scope. `Evaluator` receives ONLY public ciphertexts and performs genuine SDK
@@ -56,9 +58,16 @@ This checks shared bounded E and exact K. It creates no PP/MAIN/proof or accepte
 DATA capability. The transient private Cw uses zero salt and is never exposed or
 serialized; its purpose is solely to call the existing complete private equations.
 
-The actual SDK samples A's seed internally with thread RNG, independently of the
-caller RNG. Restore therefore never tries seed replay, re-encryption or a fresh
-request substitution. Only actual SDK generation or this protected authenticated
+The actual SDK still samples its intermediate A's seed internally. The private
+`encryption` module supplies ChaCha20 error coins, then applies an independent
+ChaCha20 uniform polynomial BEFORE constructing any PublicRequest. Both streams
+start at counter0 with separate stream IDs and one fresh fallible256-bit OS seed.
+The [sampler contract](SAMPLER.md) proves exact phase/noise preservation and
+distinguishes ideal randomness from the concrete PRG assumption. Entropy failure
+returns no input; no public seed/RNG/entropy callback is accepted.
+
+Restore never tries seed replay, re-encryption or a fresh request substitution.
+Only this original encryption/remasking path or the protected authenticated
 original-input equation path can mint OriginatingQuery. Bounded consistency does
 not prove honest random sampling: trusted producer/custody provenance remains
 explicit. Custody alone also supplies no rollback protection, exclusive writer,
@@ -79,23 +88,30 @@ Direct libraries are the existing SDK/fhe-math/fhe-traits for real computation;
 [Gold Formation](../../../bfv-ciphertext-formation/src/gold/README.md) for actual
 Cs and private input equations; [unrelinearized product](../../../bfv-unrelinearized-product/README.md)
 for the complete conditional arithmetic certificate; hiding Poseidon/P3-field
-for the fixed private commitment; pinned XChaCha/SHA2/rand/zeroize for custody.
+for the fixed private commitment; pinned ChaCha20/rand for query randomness,
+and XChaCha/SHA2/zeroize for custody. `rand_chacha0.9.0` is an explicit optional
+dependency of `gold-owner`; it was already present transitively through the SDK.
 No registry, SQL parser, consensus, experiment, GUI or fixture dependency is added.
 The upper readonly core_expected getter supplies metadata, never a proof lease.
 
-All composed security, lattice/noise and SQL assurances remain unestablished.
+Composed security and SQL assurances remain unestablished. The completed
+[classical numerical estimate](../../../../experiments/lattice-cost-prefix/ESTIMATE.md)
+and conditional lower noise theorem retain their stated assumptions.
 The arithmetic model remains explicitly UNASSESSED; its classical ROM/noise
 conditions do not become a production crypto assurance through this wrapper.
 Hidden WHERE is an architectural requirement, not a new confidentiality theorem.
 Delegated/raw-input clients, output-driven DML and transferable SQL claims are
 not enabled. Current peer predicate/lock/QC obligations are unchanged.
 
-Four executed owning cases exercise actual SDK product+complete arithmetic before
+The original four owning cases exercise actual SDK product+complete arithmetic before
 an independent post-check full4096 oracle, destroyed-owner cold restore, AEAD/
 scope tampering, repaired authenticated wrong QueryCt/Q1 error and wrong mask
 requiring concrete Arithmetic, wrong SDK/Cs and codec bounds. Public parameters
 are shared; real keys and owner objects remain fresh. No Source/Formation proof,
 accepted fixture answer, fake verifier or checked-DATA factory is used. All four
-cases and three compile-fail contracts passed; the [validation record](VALIDATION.md)
+cases and three compile-fail contracts passed before the sampler change. Three
+additional owning sampler cases check disjoint20-round streams, complete exact
+phase preservation under different masks, and entropy-failure rejection followed
+by honest origination. The [validation record](VALIDATION.md)
 reports the measured scope and remaining costs. No <=500ms complete-query result
 or whole-peer memory/security claim follows from these local contracts.

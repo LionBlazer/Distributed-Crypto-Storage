@@ -474,11 +474,15 @@ theorem, finality or SQL admission.
 
 The optional `gold-owner` feature adds the separate [Gold owner family](src/gold/README.md).
 It imports an independently pinned guarded SDK key, opens its actual Cs, generates
-an original query ciphertext through actual SDK encryption and checks the complete
+an original query ciphertext through actual SDK encryption with owner-controlled
+ChaCha20 error coins and an exact phase-preserving A remask, then checks the complete
 conditional public arithmetic certificate before client decryption. Protected AEAD
 origination restore rechecks the original input equations; it never re-encrypts or
 adopts a stored success flag. The supplied DATA expectation is mathematical metadata,
 not Source/current-head admission. Old N8192 Owner/public profiles remain separate.
 No production SQL, finality, lattice/noise or composed-security assurance is added.
-The [executed validation](src/gold/VALIDATION.md) covers four actual SDK/custody
-cases, three compile-fail contracts and separate default/all-feature compilation.
+The [sampler contract](src/gold/SAMPLER.md) records the precise randomness/phase
+argument and unresolved imported-key/DATA assumptions. The
+[executed validation](src/gold/VALIDATION.md) distinguishes the original four
+SDK/custody cases, new sampler cases, compile-fail contracts and separate
+default/all-feature compilation.

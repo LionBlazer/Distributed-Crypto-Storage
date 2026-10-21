@@ -2,6 +2,7 @@
 //! DATA metadata is not admission; no Source, current head, SQL or security grant.
 mod binding;
 mod custody;
+mod encryption;
 mod origin;
 mod owner;
 #[cfg(test)]
@@ -66,13 +67,13 @@ impl From<product::Error> for Error {
 }
 pub fn profile_digest() -> [u8; 32] {
     let mut h = Sha256::new();
-    h.update(b"DCS/Gold-protected-owner/v1/IMPORT-ONLY/ARITHMETIC-UNASSESSED/no-SQL");
+    h.update(b"DCS/Gold-protected-owner/v2/IMPORT-ONLY/ARITHMETIC-UNASSESSED/no-SQL");
     h.update(lower::data::profile_digest());
     h.update(product::profile_digest());
     for n in [N as u64, Q[0], Q[1], T, SCALE, 10] {
         h.update(n.to_le_bytes());
     }
-    h.update(b"actualSDK-CBD20/Cs528;typedMask256;exact-original-inputs;freshSDKencrypt;private-custody-equation-reopen-no-reencrypt;full18point-check-before-decrypt4096;no-Source-admission-head-lock-or-security");
+    h.update(b"actualSDK-CBD20/Cs528;typedMask256;exact-original-inputs;OS-seeded-ChaCha20-stream0-error-stream1-A-remask;exact-SDK-phase-preserved;private-custody-equation-reopen-no-reencrypt;full18point-check-before-decrypt4096;no-Source-admission-head-lock-or-security");
     h.finalize().into()
 }
 pub(super) fn digest64(domain: &[u8], fields: &[&[u8]]) -> [u8; 64] {

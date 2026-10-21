@@ -1,7 +1,7 @@
 //! Actual SDK secret ownership; no old N8192 Owner conversion or raw origin import.
 use super::*;
-use fhe::bfv::{BfvParameters, BfvParametersBuilder, Ciphertext, Encoding, Plaintext, SecretKey};
-use fhe_traits::{DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
+use fhe::bfv::{BfvParameters, BfvParametersBuilder, Ciphertext, Encoding, SecretKey};
+use fhe_traits::{DeserializeParametrized, FheDecoder, FheDecrypter};
 use rand::RngCore;
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
@@ -74,19 +74,10 @@ impl Owner {
         data: &lower::data::Expected,
     ) -> Result<OriginatingQuery> {
         self.require_data(data)?;
-        let words = mask.raw_words();
-        let plain = Zeroizing::new(
-            Plaintext::try_encode(words.as_slice(), Encoding::poly(), &self.parameters)
-                .map_err(|_| Error::Backend)?,
-        );
         let ciphertext: Ciphertext = catch_unwind(AssertUnwindSafe(|| {
-            self.key.try_encrypt(&*plain, &mut rand::rng())
+            super::encryption::encrypt(&self.key, &self.parameters, &mask.raw_words())
         }))
-        .map_err(|_| Error::Backend)?
-        .map_err(|_| Error::Backend)?;
-        // Unseed the actual original SDK object; no replacement input is encrypted.
-        let ciphertext = Ciphertext::new(ciphertext.iter().cloned().collect(), &self.parameters)
-            .map_err(|_| Error::Backend)?;
+        .map_err(|_| Error::Backend)??;
         let request = PublicRequest::checked(binding, data, serialize(&ciphertext))?;
         Ok(OriginatingQuery {
             request,

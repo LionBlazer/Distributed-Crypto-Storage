@@ -7,7 +7,7 @@ publish = false
 
 
 [features]
-gold-owner = ["dep:bfv-ciphertext-formation", "dep:bfv-unrelinearized-product", "dep:bfv-hiding-stark", "dep:p3-field", "dep:chacha20poly1305"]
+gold-owner = ["dep:bfv-ciphertext-formation", "dep:bfv-unrelinearized-product", "dep:bfv-hiding-stark", "dep:p3-field", "dep:chacha20poly1305", "dep:rand_chacha"]
 formation-proofs = ["basis-proofs", "dep:bfv-ciphertext-formation"]
 basis-proofs = ["key-proofs", "dep:bfv-basis-convolution"]
 key-proofs = ["dep:bfv-key-transform", "dep:bfv-hiding-stark", "dep:p3-field", "dep:chacha20poly1305", "dep:prost"]
@@ -29,6 +29,7 @@ fhe = "=0.1.1"
 fhe-math = "=0.1.1"
 fhe-traits = "=0.1.1"
 rand = "=0.9.2"
+rand_chacha = { version = "=0.9.0", optional = true }
 serde = { version = "1", features = ["derive"] }
 bincode = "=1.3.3"
 sha2 = "=0.10.9"
