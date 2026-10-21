@@ -291,6 +291,113 @@ fn genuine_source_and_both_new_encoding_proofs_roundtrip_with_complete_distinct_
     }
 }
 #[test]
+fn matching_pair_verifies_the_original_source_and_both_complete_children() {
+    let cases = cases();
+    let source_expected = &cases.source.statement().expected;
+    let mask_expected = &cases.mask.statement().expected;
+    let original = source_bytes();
+
+    let started = Instant::now();
+    let separate_source = wire::verify(source_expected, original, cases.source.as_bytes()).unwrap();
+    let separate_mask = wire::verify(mask_expected, original, cases.mask.as_bytes()).unwrap();
+    let separate_ms = started.elapsed().as_secs_f64() * 1000.;
+
+    let started = Instant::now();
+    let pair = wire::verify_pair(
+        source_expected,
+        mask_expected,
+        original,
+        cases.source.as_bytes(),
+        cases.mask.as_bytes(),
+    )
+    .unwrap();
+    eprintln!(
+        "two_lane_test phase=wire_pair_verify elapsed_ms={:.3} separate_ms={separate_ms:.3} source_bytes={} source_child_bytes={} mask_child_bytes={}",
+        started.elapsed().as_secs_f64() * 1000.,
+        original.len(),
+        cases.source.as_bytes().len(),
+        cases.mask.as_bytes().len(),
+    );
+    assert_eq!(
+        pair.source().statement().values(),
+        separate_source.statement().values()
+    );
+    assert_eq!(
+        pair.private_mask().statement().values(),
+        separate_mask.statement().values()
+    );
+}
+#[test]
+fn a_pair_requires_exact_roles_complete_source_and_key_before_any_proof_work() {
+    let source_expected = source_expected();
+    let mask = mask_expected(truth_mask());
+    for (left, right) in [
+        (&mask, &source_expected),
+        (&source_expected, &source_expected),
+        (&mask, &mask),
+    ] {
+        assert!(matches!(
+            wire::verify_pair(left, right, &[], &[], &[]),
+            Err(wire::Error::Proof(bfv_hiding_stark::Error::Shape))
+        ));
+    }
+    let mut changed = fixture().source.claim().clone();
+    changed.request[31] ^= 1;
+    let changed_source = CanonicalSource::checked_claim(&changed).unwrap();
+    let foreign = Expected::private_mask(
+        &changed_source,
+        binding(7),
+        mask.sql_identity(),
+        mask.public_nonce(),
+        source::statement::encode_digest(mask.command()),
+    )
+    .unwrap();
+    assert!(matches!(
+        wire::verify_pair(&source_expected, &foreign, &[], &[], &[]),
+        Err(wire::Error::Proof(bfv_hiding_stark::Error::Shape))
+    ));
+    for key in [
+        KeyBinding::new(
+            [0x42; 16],
+            [0x92; 16],
+            7,
+            [0x95; 32],
+            source::statement::encode_digest([Val::from_u8(3); 4]),
+        )
+        .unwrap(),
+        binding(8),
+        KeyBinding::new(
+            [0x42; 16],
+            [0x91; 16],
+            7,
+            [0x96; 32],
+            source::statement::encode_digest([Val::from_u8(3); 4]),
+        )
+        .unwrap(),
+        KeyBinding::new(
+            [0x42; 16],
+            [0x91; 16],
+            7,
+            [0x95; 32],
+            source::statement::encode_digest([Val::from_u8(4); 4]),
+        )
+        .unwrap(),
+    ] {
+        let foreign = Expected::private_mask(
+            &fixture().source,
+            key,
+            mask.sql_identity(),
+            mask.public_nonce(),
+            source::statement::encode_digest(mask.command()),
+        )
+        .unwrap();
+        assert!(matches!(
+            wire::verify_pair(&source_expected, &foreign, &[], &[], &[]),
+            Err(wire::Error::Proof(bfv_hiding_stark::Error::Shape))
+        ));
+    }
+}
+#[test]
 fn changed_source_or_child_and_repaired_context_headers_cannot_reuse_genuine_proofs() {
     let evidence = &cases().mask;
     let e = &evidence.statement().expected;
@@ -336,10 +443,42 @@ fn changed_source_or_child_and_repaired_context_headers_cannot_reuse_genuine_pro
         };
         let repaired = wire::encode(&replacement, &statement, &proof).unwrap();
         assert!(wire::verify(&replacement, source_bytes(), &repaired).is_err());
+        assert!(
+            wire::verify_pair(
+                &cases().source.statement().expected,
+                &replacement,
+                source_bytes(),
+                cases().source.as_bytes(),
+                &repaired
+            )
+            .is_err()
+        );
     }
     let mut damaged = evidence.as_bytes().to_vec();
     *damaged.last_mut().unwrap() ^= 1;
     assert!(wire::verify(e, source_bytes(), &damaged).is_err());
+    assert!(
+        wire::verify_pair(
+            &cases().source.statement().expected,
+            e,
+            source_bytes(),
+            cases().source.as_bytes(),
+            &damaged
+        )
+        .is_err()
+    );
+    let mut damaged_source_child = cases().source.as_bytes().to_vec();
+    *damaged_source_child.last_mut().unwrap() ^= 1;
+    assert!(
+        wire::verify_pair(
+            &cases().source.statement().expected,
+            e,
+            source_bytes(),
+            &damaged_source_child,
+            evidence.as_bytes()
+        )
+        .is_err()
+    );
     let source_backend = Backend::source(fixture().source.claim()).unwrap();
     let mut source_proof: Proof<Config> = codec::decode(
         source_bytes(),
@@ -355,6 +494,16 @@ fn changed_source_or_child_and_repaired_context_headers_cannot_reuse_genuine_pro
         codec::serialize(&source_proof, &source_backend.shape, wire::MAX_SOURCE).unwrap();
     assert!(matches!(
         wire::verify(e, &corrupted_source, evidence.as_bytes()),
+        Err(wire::Error::Verification)
+    ));
+    assert!(matches!(
+        wire::verify_pair(
+            &cases().source.statement().expected,
+            e,
+            &corrupted_source,
+            cases().source.as_bytes(),
+            evidence.as_bytes()
+        ),
         Err(wire::Error::Verification)
     ));
     assert!(matches!(

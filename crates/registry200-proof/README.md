@@ -139,8 +139,11 @@ never duplicated into the child frame. The new 29-field candidate key binding is
 public metadata only, without Key33, CsHat, a same-secret Formation proof or a
 security grant. It changes no old profile, SQL/runtime admission, protocol/G,
 proof-consumer or current-head policy. Its fixed backend branch uses the same
-actual hiding suite and mandatory individual assessment. Seven genuine owning
-tests passed in 17.18 s, plus nine existing boundary tests and strict all-target
+actual hiding suite and mandatory individual assessment. Nine owning tests,
+including genuine proof cases, passed in 35.62 s, plus nine existing boundary
+tests and strict all-target
 Clippy; see the [executed validation](src/two_lane_encoding/VALIDATION.md).
-Source-first verification alone took about one second in this observation, so
-the 500 ms complete-query target remains unmet.
+The all-or-nothing pair frontend verifies the common Source once before both
+children. On identical proofs, its observed 1595.910 ms compares with 2674.165 ms
+for two independent single-child calls; the 500 ms complete-query target remains
+unmet.

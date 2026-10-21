@@ -135,13 +135,54 @@ pub fn verify(
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let frame = BorrowedFrame::parse(e, bytes)?;
         source::verification::verify(e.source_claim(), original_source)?;
-        let statement = frame.statement;
-        let backend = Backend::two_lane_encoding(&statement)?;
-        let proof = codec::decode(frame.child, &backend.shape, SEQUENCE, CHILD_SLOTS)?;
-        backend.verify(&proof)?;
-        Ok(VerifiedEncoding { statement })
+        verify_child(frame)
     }))
     .map_err(|_| Error::Verification)?
+}
+/// Both mathematical encodings, available only after all three proofs verify.
+/// This supplies no key, SQL, current-head or finality authority.
+pub struct VerifiedPair {
+    source: VerifiedEncoding,
+    mask: VerifiedEncoding,
+}
+impl VerifiedPair {
+    pub fn source(&self) -> &VerifiedEncoding {
+        &self.source
+    }
+    pub fn private_mask(&self) -> &VerifiedEncoding {
+        &self.mask
+    }
+}
+/// Verify one original Source and both matching encodings in one fresh call.
+/// No verified Source state escapes or survives across calls. Each child keeps
+/// its existing wire/decoded limits; this defines no aggregate transport frame.
+pub fn verify_pair(
+    source_expected: &Expected,
+    mask_expected: &Expected,
+    original_source: &[u8],
+    source_child: &[u8],
+    mask_child: &[u8],
+) -> Result<VerifiedPair, Error> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        source_expected.require_pair(mask_expected)?;
+        let source_frame = BorrowedFrame::parse(source_expected, source_child)?;
+        let mask_frame = BorrowedFrame::parse(mask_expected, mask_child)?;
+        source::verification::verify(source_expected.source_claim(), original_source)?;
+        // Each helper drops its backend and decoded proof before the next starts.
+        let source = verify_child(source_frame)?;
+        let mask = verify_child(mask_frame)?;
+        Ok(VerifiedPair { source, mask })
+    }))
+    .map_err(|_| Error::Verification)?
+}
+// Private to this module. Both callers concretely verify the matching Source
+// before reaching here; no caller-supplied flag/token/verifier can replace it.
+fn verify_child(frame: BorrowedFrame<'_>) -> Result<VerifiedEncoding, Error> {
+    let statement = frame.statement;
+    let backend = Backend::two_lane_encoding(&statement)?;
+    let proof = codec::decode(frame.child, &backend.shape, SEQUENCE, CHILD_SLOTS)?;
+    backend.verify(&proof)?;
+    Ok(VerifiedEncoding { statement })
 }
 pub(crate) fn encode(
     e: &Expected,

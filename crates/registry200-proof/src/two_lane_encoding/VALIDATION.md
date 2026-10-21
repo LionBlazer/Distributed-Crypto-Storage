@@ -96,3 +96,59 @@ memory counters. The source-only packet received two independent hash-bound
 reviews before Root compilation. Root subsequently applied Rust formatting,
 the explicit existing-package dev lockfile edge and test-only API/lint fixes;
 the actual arithmetic, profiles, proof gates and canonical limits were retained.
+
+## Joint verification of one Source and two children
+
+A subsequent change adds `wire::verify_pair` without changing any AIR, profile,
+single-child wire byte, cap or existing single-child proof policy. The function
+first requires exact SourceAllOriginal/PrivateMask roles, equal complete
+Source691/raw heads/packets and equal candidate key29. Both child headers are
+preflighted. One concrete Source verification precedes two sequential child
+verifications, with each backend/decoded proof dropped before the next. The
+opaque pair is returned only after all three proofs pass. No verified Source
+token, persistent success cache or caller-selected verifier is introduced.
+
+Strict all-target Clippy passed again. The same owning-test command above now
+runs 9 tests; all passed in 35.62 s, without ignored tests. The new cheap role/source/
+key mismatch test also passed independently before the real gate. The existing
+public Source/child fixture is reused inside one process. New pair attacks cover
+repaired foreign expected contexts, the genuine corrupted Source and both damaged
+children. The new genuine pair case checks both complete public statements
+against two independent single-child verification calls.
+
+Within that one case, on the **same exact proof bytes**:
+
+| Complete mathematical verification call | Wall time |
+| --- | ---: |
+| Two independent single-child calls, each including Source |2674.165 ms|
+| One fresh pair call, including Source and both children |1595.910 ms|
+
+This comparison is one ordered observation, not a statistical latency guarantee
+or a full-query benchmark. Source verification is still mandatory on every pair
+call. The pair remains above 500 ms before same-secret Formation, FHE evaluation,
+transition/freshness, transport/consensus and client completion. No component
+subtraction is reported as a standalone Source-verification measurement.
+
+The actual Source payload was 19,298,495 B; children were 3,359,047 B and 2,363,559 B.
+Those generated proof sizes differ slightly from the first gate because hiding
+proofs have fresh randomness; the frame/profile and limits did not change.
+The process exited 0 after 35,641.0147 ms OS lifetime with 39.65625 CPU seconds.
+Across 1736 nominal 20 ms samples, peak private bytes were 856,317,952 and OS peak
+working set was 845,717,504. No 120 s/1792 MiB fuse, observer fault, cleanup kill,
+unexpected terminal child or source/image drift occurred.
+
+Exact ignored local evidence for this later gate:
+
+- `.local/two-lane-native-r2-observe/result.json`, SHA256
+  `467BB770537B9253661E7DB47295BAF47BB831C8662202F4037E77A6DA05CC2B`.
+- `.local/observe-two-lane-r2.py`, SHA256
+  `690D89EF6BAE9170F0CDB5C093C7B0CC92086D5EE3C4F109AD38185606D4BA8C`.
+- Release image `registry200_proof-5076f82234ff8d30.exe`, 6,254,592 B, SHA256
+  `73882E22F58BED70AE3A0571487F295259E73C59FA8F2A911133C297AFF1D6CE`.
+- Independent source review `.local/two-lane-pair-review-r1/review.md`, SHA256
+  `C3AC3C9467E1C5D2FCC8F346A3E3C7A3469460AC12B35549662E3F5006C11A2A`.
+
+The earlier nine old-boundary checks and requirements synchronization retain
+their original scope; these new changes touch only the two-lane pair frontend,
+its context check, tests and documentation. No expensive production-network or
+recovery boundary was changed or rerun.

@@ -159,6 +159,20 @@ impl Expected {
         }
         Ok(())
     }
+    /// A pair must refer to exactly one original Source and candidate key.
+    /// This checks public context only; it supplies no proof or freshness authority.
+    pub(crate) fn require_pair(&self, mask: &Self) -> Result<(), Error> {
+        if self.role != Role::SourceAllOriginal
+            || mask.role != Role::PrivateMask
+            || self.source_claim().values() != mask.source_claim().values()
+            || self.source_claim().heads != mask.source_claim().heads
+            || self.source_claim().packets != mask.source_claim().packets
+            || self.key.values() != mask.key.values()
+        {
+            return Err(Error::Shape);
+        }
+        Ok(())
+    }
 }
 #[derive(Clone)]
 pub struct Statement {

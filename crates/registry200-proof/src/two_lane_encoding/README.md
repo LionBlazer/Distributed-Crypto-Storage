@@ -2,7 +2,7 @@
 
 This new namespace owns two distinct fixed hiding AIRs: SourceAllOriginal and
 PrivateMask. It changes no old coefficient/Key/Formation/progress proof profile,
-wire, current application, SQL admission or consensus rule. Seven owning tests
+wire, current application, SQL admission or consensus rule. Nine owning tests
 passed with genuine Source/child proofs and observed resources; see the
 [executed validation](VALIDATION.md). This supplies one mathematical input
 boundary for an experimental N4096 unrelinearized product. Same-secret
@@ -91,6 +91,15 @@ Both paths call the concrete source::verification::verify every time; no cached
 Boolean, success token or alternate verifier can skip it. VerifiedEncoding exposes
 only the full mathematical Statement, not SQL/Key/Formation/finality authority.
 
+wire::verify_pair accepts independently expected SourceAllOriginal and PrivateMask
+roles, one original Source and two child frames. It requires literal equality of
+the complete Source public values/raw heads/packets and all 29 candidate key
+fields before parsing both bounded frames. It genuinely verifies that one Source,
+then both children sequentially, dropping each backend/decoded proof before the
+next. VerifiedPair becomes available only after all three proofs pass. No Source
+verification token escapes or survives the call. The original single-child APIs
+and all proof/profile bytes remain unchanged.
+
 DCS2LE01 has a152-byte header:magic8/tag1/zero7/profile32/complete Expected identity64/
 C_w32/payload length4/zero4. C_w alone remains an unverified claim during parse;
 the full proof must authenticate it. Exactly one child is at most12 MiB including
@@ -111,7 +120,7 @@ lifting. No product, peer runtime or consumer dependency is added.
 
 ## Owning tests
 
-Seven tests passed. Cheap checks independently build all4096 raw
+Nine tests passed. Cheap checks independently build all4096 raw
 plaintext coefficients and apply the ACTUAL SDK modular scaling primitive,
 compare zero/all/threshold masks, and compare the streamed commitment against
 an independent full sequential digest. Genuine cases share one actual public
@@ -125,11 +134,16 @@ use the real AIR checker and incur no extra proving. Total direct prove sites
 are one Source, two honest children and two malicious child attempts, not any
 Key/Basis/Formation/FHE/network proof. Source-first checks remain fresh on every
 production verify despite setup reuse in the explicitly public test fixture.
+The pair tests compare both complete verified statements with independent single
+calls, reject swapped/duplicate roles and foreign Source/key contexts before
+proof work, and exercise repaired headers, Source corruption and each damaged
+child through the all-or-nothing pair frontend.
 
 Strict all-target Clippy, the cheap SDK/vector checks, nine existing admission/
-profile/wire checks and requirements synchronization passed. The seven tests
-took 17.18 s in one observed process. The Source-first pair verifications took
-1084.735 ms and964.233 ms, already exceeding the 500 ms complete-query target before
-Formation, FHE product, consensus or transport. These measurements do not connect
-the separate public arithmetic experiment to an accepted SQL operation. The
-validation record preserves the commands, evidence identities and exact scope.
+profile/wire checks and requirements synchronization passed. The original seven
+tests took 17.18 s; the later nine-test pair gate took 35.62 s, including the
+additional real verification comparisons and attacks. In the same later run,
+two single calls took 2674.165 ms and the joint call took 1595.910 ms on identical
+proof bytes. This remains above the 500 ms complete-query target before Formation,
+FHE product, consensus or transport. The validation record preserves the commands,
+evidence identities and scope of these component observations.
