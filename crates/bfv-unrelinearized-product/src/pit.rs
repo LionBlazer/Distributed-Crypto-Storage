@@ -56,44 +56,6 @@ fn primitive_root(p: u64) -> Result<u64> {
     }
     Err(Error::Arithmetic)
 }
-fn transform(values: &mut [u64], root: u64, p: u64, inverse: bool) {
-    let n = values.len();
-    let mut j = 0;
-    for i in 1..n {
-        let mut bit = n >> 1;
-        while j & bit != 0 {
-            j ^= bit;
-            bit >>= 1;
-        }
-        j ^= bit;
-        if i < j {
-            values.swap(i, j);
-        }
-    }
-    let root = if inverse { pow(root, p - 2, p) } else { root };
-    let mut length = 2;
-    while length <= n {
-        let step = pow(root, (n / length) as u64, p);
-        for chunk in values.chunks_exact_mut(length) {
-            let (left, right) = chunk.split_at_mut(length / 2);
-            let mut weight = 1;
-            for (a, b) in left.iter_mut().zip(right) {
-                let x = *a;
-                let y = mul(*b, weight, p);
-                *a = add(x, y, p);
-                *b = sub(x, y, p);
-                weight = mul(weight, step, p);
-            }
-        }
-        length *= 2;
-    }
-    if inverse {
-        let inv = pow(n as u64, p - 2, p);
-        for value in values {
-            *value = mul(*value, inv, p);
-        }
-    }
-}
 pub(crate) fn produce(inputs: &[Polynomial; 4]) -> Result<ProductCertificate> {
     for input in inputs {
         canonical(input, N)?;
@@ -102,10 +64,11 @@ pub(crate) fn produce(inputs: &[Polynomial; 4]) -> Result<ProductCertificate> {
     let mut quotients: [Polynomial; 3] = std::array::from_fn(|_| Vec::with_capacity(4));
     for (basis, p) in QP.into_iter().enumerate() {
         let root = primitive_root(p)?;
+        let field = Modulus::new(p)?;
         let mut transformed: [Vec<u64>; 4] = std::array::from_fn(|i| {
             let mut values = vec![0; 2 * N];
             values[..N].copy_from_slice(&inputs[i][basis]);
-            transform(&mut values, root, p, false);
+            field.transform(&mut values, root, false);
             values
         });
         for component in 0..3 {
@@ -121,7 +84,7 @@ pub(crate) fn produce(inputs: &[Polynomial; 4]) -> Result<ProductCertificate> {
                     _ => mul(transformed[1][i], transformed[3][i], p),
                 };
             }
-            transform(&mut product, root, p, true);
+            field.transform(&mut product, root, true);
             if product[2 * N - 1] != 0 {
                 return Err(Error::Arithmetic);
             }
@@ -209,6 +172,45 @@ pub(crate) fn check(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn dense_public_convolution_retains_every_product_and_quotient_coefficient() -> Result<()> {
+        // Fixed PUBLIC NONSECRET coefficients, including every basis boundary.
+        let inputs = std::array::from_fn(|operand| {
+            QP.iter()
+                .map(|&p| {
+                    (0..N)
+                        .map(|at| match (at + operand) % 5 {
+                            0 => p - 1,
+                            1 => p / 2,
+                            2 => operand as u64 + 1,
+                            3 => (at as u64 * 7919 + 17 + operand as u64) % p,
+                            _ => 0,
+                        })
+                        .collect()
+                })
+                .collect()
+        });
+        let certificate = produce(&inputs)?;
+        let mut digest = Sha512::new();
+        for polynomial in certificate.products.iter().chain(&certificate.quotients) {
+            for row in polynomial {
+                for value in row {
+                    digest.update(value.to_le_bytes());
+                }
+            }
+        }
+        let digest: String = digest
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        assert_eq!(
+            digest,
+            "94120219463f2115c811c87e1cc6ff83c533f6ec15b8bf94dbc7dcee48be38bd5158f7a93534781576068593641888aefd5fa36f003abc6ecf43c4a10d672b51"
+        );
+        check(&inputs, &certificate, &prefix(&certificate))?;
+        Ok(())
+    }
     fn inputs() -> [Polynomial; 4] {
         std::array::from_fn(|i| {
             QP.iter()

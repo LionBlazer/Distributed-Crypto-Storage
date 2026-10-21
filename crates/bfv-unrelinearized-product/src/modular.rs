@@ -1,7 +1,7 @@
 //! Public coefficient arithmetic for the closed certificate checker.
 //!
-//! Horner evaluation keeps its accumulator in the ordinary residue domain. Only
-//! the common point is in Montgomery form, so coefficients need no conversion.
+//! Horner evaluation and public NTT butterflies keep coefficients in the ordinary
+//! residue domain. Only their common points/twiddles are Montgomery values.
 //! This module has no private-witness or cryptographic security authority.
 use crate::{Error, Result};
 
@@ -52,6 +52,10 @@ impl Modulus {
         let sum = a + b;
         if sum >= self.p { sum - self.p } else { sum }
     }
+    fn subtract(&self, a: u64, b: u64) -> u64 {
+        debug_assert!(a < self.p && b < self.p);
+        if a >= b { a - b } else { a + self.p - b }
+    }
     pub(crate) fn multiply(&self, a: u64, b: u64) -> u64 {
         self.reduce(a, self.encode(b))
     }
@@ -72,6 +76,54 @@ impl Modulus {
         coefficients.iter().rev().fold(0, |value, &coefficient| {
             self.add(self.reduce(value, point), coefficient)
         })
+    }
+    /// Producer-only radix2 transform with an independently checked exact root.
+    /// Twiddle w represents omega^j*R, so REDC(b,w) remains ordinary b*omega^j.
+    /// Updating two Montgomery twiddles retains that domain; no coefficient is
+    /// ever interpreted as Montgomery or converted in an inner butterfly.
+    pub(crate) fn transform(&self, values: &mut [u64], root: u64, inverse: bool) {
+        let n = values.len();
+        debug_assert!(n.is_power_of_two() && n > 1 && (n as u64) < self.p);
+        debug_assert!(values.iter().all(|&value| value < self.p) && root < self.p);
+        let mut j = 0;
+        for i in 1..n {
+            let mut bit = n >> 1;
+            while j & bit != 0 {
+                j ^= bit;
+                bit >>= 1;
+            }
+            j ^= bit;
+            if i < j {
+                values.swap(i, j);
+            }
+        }
+        let root = if inverse {
+            self.power(root, self.p - 2)
+        } else {
+            root
+        };
+        let mut length = 2;
+        while length <= n {
+            let step = self.encode(self.power(root, (n / length) as u64));
+            for chunk in values.chunks_exact_mut(length) {
+                let (left, right) = chunk.split_at_mut(length / 2);
+                let mut weight = self.encode(1);
+                for (a, b) in left.iter_mut().zip(right) {
+                    let x = *a;
+                    let y = self.reduce(*b, weight);
+                    *a = self.add(x, y);
+                    *b = self.subtract(x, y);
+                    weight = self.reduce(weight, step);
+                }
+            }
+            length *= 2;
+        }
+        if inverse {
+            let inverse_n = self.encode(self.power(n as u64, self.p - 2));
+            for value in values {
+                *value = self.reduce(*value, inverse_n);
+            }
+        }
     }
 }
 

@@ -122,3 +122,52 @@ are not committed. The recorded test-image SHA256 values are
 (experiment), and `2BCF3AC63372115B7840AA63A3E220DBB59665A64F2A940D9E835E0284D62B43`
 (upper). CLI SHA256:
 `125826437EF6FE9D34E19322748BC81C8EFA56987C93B66A5CE3A8070B7AB8DC`.
+
+## Producer NTT optimization
+
+Also executed on 2026-10-21 with the same release, worker and held-process
+observation settings. The producer now shares the private Montgomery field
+implementation with the verifier. Public NTT coefficients stay ordinary;
+twiddles are encoded once per stage, updated in Montgomery form, and applied
+with REDC. Inverse normalization encodes its common factor once. Canonical
+input validation, primitive-root checks, convolution geometry, all seven
+integer certificates, eighteen challenge points, cold verification, frame
+bytes and the UNASSESSED profile are unchanged.
+
+Before changing the transform, a native test recorded SHA512 of EVERY product
+and quotient coefficient for fixed public dense inputs in all four bases.
+Boundary values include zero, p-1 and p/2. The final test unconditionally pins
+`94120219463f2115c811c87e1cc6ff83c533f6ec15b8bf94dbc7dcee48be38bd5158f7a93534781576068593641888aefd5fa36f003abc6ecf43c4a10d672b51`;
+no capture fallback remains. The existing independent sparse convolution
+oracle, actual SDK full 4096-coefficient checks and repaired false-output/quotient/codec
+rejections also passed. No SDK computation or verifier is replaced by this hash.
+
+| Same measured scope | Before | After |
+| --- | ---: | ---: |
+| Actual SDK example: complete public certificate production |34.685 ms|27.408 ms|
+| Same example boundary: complete cold arithmetic checking |32.330 ms|32.595 ms|
+| Nineteen owning cases, test-reported total |0.46 s|0.43 s|
+
+These are individual observations with freshly generated public test examples,
+not percentiles. The old/new complete coefficient identity supplies the exact
+deterministic comparison; elapsed times alone do not establish equivalence.
+The final core process took 435.842 ms/0.4375 CPU seconds, with sampled peak private
+bytes 23,191,552 and OS peak working set 23,461,888. Its 1,652,224-byte test image SHA256
+was `C08CC4FF5B3DF2B8A7EBDE6165ECD9418F8FAA177F5F96BF6585A0D8B4671C2A`.
+
+All four protected Gold owner cases passed in 0.24 s. The same local
+originate->wire decode->actual SDK product/certificate->complete check->full4096
+client decryption scope took 69.102 ms (encryption 0.900, worker 34.012,
+receive 34.063), versus its prior 76.316 ms observation. This includes neither
+DATA/Source admission nor SQL compilation/locks, fresh weighted agreement,
+transport or durable completion. Cold import/restore took 12.775 ms. That process
+took 259.411 ms/0.234375 CPU seconds, peak private bytes 21,786,624 and OS peak working
+set 25,976,832; no fuse, cleanup kill or unexpected child occurred in either run.
+The exact 1,737,899-byte certificate remains unchanged.
+
+Strict all-target Clippy, the owning consumer's all-feature Clippy, formatting
+and the dependency-free requirements mirror gate passed. No heavy Source or
+network recovery gate was repeated for this producer-only implementation
+change. Receipts use `.local/product-ntt-native-r1-` and `r2-`; generated receipts
+are not committed. Complete-query 500 ms, concrete security and live SQL remain
+unestablished.

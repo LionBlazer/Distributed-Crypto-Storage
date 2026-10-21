@@ -290,8 +290,16 @@ mod tests {
         let example = crate::tests::fixture::example()?;
         example.complete()?;
         let statement = example.statement;
+        let producing = std::time::Instant::now();
         let frame = crate::produce(&statement)?.into_bytes();
+        let production_ms = producing.elapsed().as_secs_f64() * 1000.0;
+        let checking = std::time::Instant::now();
         let checked = crate::check_arithmetic(&statement, &frame)?;
+        eprintln!(
+            "public_product production_ms={production_ms:.3} checking_ms={:.3} certificate_bytes={}",
+            checking.elapsed().as_secs_f64() * 1000.0,
+            frame.len()
+        );
         assert_eq!(checked.expected().request_wire(), statement.request_wire());
         assert_eq!(checked.expected().output_wire(), statement.output_wire());
         assert_eq!(checked.expected().nonce(), statement.nonce());

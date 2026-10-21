@@ -27,7 +27,8 @@ The private modules own distinct parts of that operation:
 - `geometry`: fixed N4096, t65537, Q2/P2 and complete row checks.
 - `scale`: exact SDK constructor constants and seven integer certificates.
 - `pit`: prover convolution and the fixed eighteen-point identity checker.
-- `modular`: bounded Montgomery Horner arithmetic for public verification.
+- `modular`: bounded Montgomery Horner verification and producer NTT arithmetic;
+  coefficients stay ordinary while evaluation points and twiddles are encoded.
 - `certificate`: the complete 1,737,899-byte codec, associations and transcript.
 
 Normal dependencies are only `ethnum` 1.5.3, `num-bigint` 0.4.8,
@@ -54,3 +55,8 @@ Clippy. One local product/certificate/client operation took 75.604 ms. Fresh
 receiving with all input proofs took 1730.017 ms. Neither observation establishes
 the 500 ms complete network query target. Frame bounds exclude other buffers;
 whole-process resource observations have their own recorded scope.
+
+The subsequent producer NTT optimization retains every product/quotient
+coefficient and the same complete frame/profile. Nineteen owning cases and the
+protected Gold owner's four cases passed; the validation record distinguishes
+the observed local improvement from the still unmet complete-query target.
