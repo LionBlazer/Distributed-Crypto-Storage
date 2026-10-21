@@ -16,7 +16,7 @@ registry200-joint = { path = "../registry200-joint" }
 registry200-finality = { path = "../registry200-finality" }
 work-finality = { path = "../work-finality" }
 peer-transport = { path = "../peer-transport" }
-bfv-query-core = { path = "../bfv-query-core" }
+bfv-query-core = { path = "../bfv-query-core", features = ["gold-evaluator"] }
 bfv-query-proof = { path = "../bfv-query-proof" }
 bfv-mul-relin-proof = { path = "../bfv-mul-relin-proof" }
 bfv-relinearization-key-source = { path = "../bfv-relinearization-key-source" }

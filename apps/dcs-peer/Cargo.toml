@@ -27,7 +27,8 @@ p3-field = "=0.8.0"
 sha2 = "=0.10.9"
 getrandom = "=0.2.17"
 bincode = "=1.3.3"
-bfv-query-core = { path = "../../crates/bfv-query-core" }
+bfv-query-core = { path = "../../crates/bfv-query-core", features = ["gold-owner"] }
+bfv-ciphertext-formation = { path = "../../crates/bfv-ciphertext-formation" }
 compact-query = { path = "../../crates/compact-query", default-features = false, features = ["bfv-experiment"] }
 compact-store = { path = "../../crates/compact-store" }
 relational-types = { path = "../../crates/relational-types" }

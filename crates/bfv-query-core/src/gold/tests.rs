@@ -334,7 +334,7 @@ fn repaired_authenticated_records_still_require_all_original_private_equations()
     // Canonical SDK parse succeeds: rejection must be shared-E arithmetic, not shape.
     {
         use fhe_traits::DeserializeParametrized;
-        Ciphertext::from_bytes(&altered, &owner::parameters().unwrap()).unwrap();
+        Ciphertext::from_bytes(&altered, &origin::parameters().unwrap()).unwrap();
     }
     let altered = PublicRequest::checked(binding.clone(), &f.data, altered).unwrap();
     let repaired = custody::seal_payload(

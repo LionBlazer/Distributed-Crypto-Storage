@@ -143,7 +143,7 @@ mod tests {
     }
 
     fn fixture() -> (Arc<BfvParameters>, SecretKey, Zeroizing<Vec<u64>>) {
-        let parameters = super::super::owner::parameters().unwrap();
+        let parameters = super::super::origin::parameters().unwrap();
         let key = SecretKey::random(&parameters, &mut rand::rng());
         let mut words = Zeroizing::new(vec![0; N]);
         for (i, value) in words.iter_mut().take(256).enumerate() {

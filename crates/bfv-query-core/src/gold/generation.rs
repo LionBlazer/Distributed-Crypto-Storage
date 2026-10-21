@@ -32,7 +32,7 @@ fn generate_with_entropy(
     let mut salt_coins = key_coins.clone();
     salt_coins.set_stream(3);
     salt_coins.set_word_pos(0);
-    let parameters = owner::parameters()?;
+    let parameters = origin::parameters()?;
     let key = SecretKey::random(&parameters, &mut key_coins);
     let sdk = Zeroizing::new(key.to_bytes());
     let coefficients = Zeroizing::new(fhe::proto::bfv::SecretKey::from(&key).coeffs);

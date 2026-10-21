@@ -1,5 +1,13 @@
 # Protected Gold owner inputs
 
+`gold-evaluator` separately exports the bounded untrusted `PublicRequest`, fixed
+public `Evaluator` and `UnverifiedProduct`, plus public parameter/binding metadata.
+This feature compiles no Gold Owner, private mask, custody, input equation or
+decryption implementation. `gold-owner` includes it and enables those private
+roles. Both use identical existing parameters, profile digests and wire bytes.
+The evaluator owns its own SDK public parameters; it never calls an owner helper.
+`UnverifiedProduct::into_parts` transfers only untrusted output/certificate bytes.
+
 The optional `gold-owner` family owns generated or independently pinned imported
 N4096/Q2/t65537/variance10 SDK secrets, original owner-encrypted DATA/query inputs, conditional public-product
 checking and client-side full-ring decryption. It is separate from the old

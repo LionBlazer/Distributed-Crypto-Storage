@@ -472,6 +472,12 @@ theorem, finality or SQL admission.
 
 ## Protected N4096 owner inputs
 
+The separate `gold-evaluator` feature exports only the public request/evaluator
+and unverified product roles of the [Gold family](src/gold/README.md). It compiles
+no Gold owner, private mask, custody, encryption or decryption implementation.
+The actual [peer RPC](../peer-runtime/GOLD-PRODUCT.md) uses this public dependency;
+its fixed parameters, profile and original request wire remain unchanged.
+
 The optional `gold-owner` feature adds the separate [Gold owner family](src/gold/README.md).
 It generates a key with fresh OS/ChaCha20 coins or imports an independently pinned
 guarded SDK key, opens its actual Cs, generates original DATA/query ciphertexts

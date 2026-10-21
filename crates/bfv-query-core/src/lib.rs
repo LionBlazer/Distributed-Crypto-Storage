@@ -2,7 +2,7 @@
 //! Parameters and arithmetic match the measured byte-limb probe; retrieval is external.
 mod canonical;
 mod coefficient_predicate;
-#[cfg(feature = "gold-owner")]
+#[cfg(feature = "gold-evaluator")]
 pub mod gold;
 pub use coefficient_predicate::{
     COEFFICIENT_PREDICATE_ROWS, COEFFICIENT_PREDICATE_SEMANTICS_ID, CoefficientRow,

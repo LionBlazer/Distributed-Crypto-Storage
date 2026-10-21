@@ -1,6 +1,6 @@
 //! Actual SDK secret ownership; no old N8192 Owner conversion or raw origin import.
 use super::*;
-use fhe::bfv::{BfvParameters, BfvParametersBuilder, Ciphertext, Encoding, SecretKey};
+use fhe::bfv::{BfvParameters, Ciphertext, Encoding, SecretKey};
 use fhe_traits::{DeserializeParametrized, FheDecoder, FheDecrypter};
 use rand::RngCore;
 use std::{
@@ -18,15 +18,7 @@ pub struct Owner {
     sdk: Zeroizing<Vec<u8>>,
     salt: Zeroizing<[u64; 4]>,
 }
-pub(super) fn parameters() -> Result<Arc<BfvParameters>> {
-    BfvParametersBuilder::new()
-        .set_degree(N)
-        .set_plaintext_modulus(T)
-        .set_moduli(&Q)
-        .set_variance(10)
-        .build_arc()
-        .map_err(|_| Error::Backend)
-}
+use super::origin::parameters;
 impl Owner {
     pub fn generate(scope: [u8; 32], context: [u64; 8]) -> Result<Self> {
         let generated = catch_unwind(AssertUnwindSafe(|| {

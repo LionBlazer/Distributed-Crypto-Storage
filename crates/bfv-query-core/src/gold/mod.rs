@@ -1,41 +1,55 @@
-//! Protected N4096 owner-originated input and conditional arithmetic completion.
+//! N4096 public evaluator, with separately enabled protected owner inputs/completion.
 //! DATA metadata is not admission; no Source, current head, SQL or security grant.
 mod binding;
+#[cfg(feature = "gold-owner")]
 mod custody;
+#[cfg(feature = "gold-owner")]
 mod encryption;
+#[cfg(feature = "gold-owner")]
 mod generation;
-#[cfg(test)]
+#[cfg(all(test, feature = "gold-owner"))]
 mod generation_tests;
+#[cfg(feature = "gold-owner")]
 mod key_custody;
 mod origin;
+#[cfg(feature = "gold-owner")]
 mod owner;
+#[cfg(feature = "gold-owner")]
 mod preparation;
+#[cfg(feature = "gold-owner")]
 mod statement;
-#[cfg(test)]
+#[cfg(all(test, feature = "gold-owner"))]
 mod tests;
 use bfv_ciphertext_formation::gold as lower;
 use bfv_hiding_stark::Val;
 use bfv_unrelinearized_product as product;
 pub use binding::{InputBinding, InputScope, KeyExpected, Parameters};
+#[cfg(feature = "gold-owner")]
 pub use custody::{
     CustodyIdentity, CustodyKey, EncryptedOrigin, MAX_ORIGIN_BYTES, RestoreExpected,
 };
+#[cfg(feature = "gold-owner")]
 pub use key_custody::{EncryptedKey, KEY_RECORD_BYTES};
-pub use origin::{
-    DecryptedProduct, Evaluator, MAX_REQUEST_BYTES, Mask256, OriginatingQuery, PublicRequest,
-    UnverifiedProduct,
-};
+#[cfg(feature = "gold-owner")]
+pub use origin::{DecryptedProduct, Mask256, OriginatingQuery};
+pub use origin::{Evaluator, MAX_REQUEST_BYTES, PublicRequest, UnverifiedProduct};
+#[cfg(feature = "gold-owner")]
 pub use owner::Owner;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
+#[cfg(feature = "gold-owner")]
 pub use preparation::OriginatingData;
 use sha2::{Digest, Sha256, Sha512};
+#[cfg(feature = "gold-owner")]
 pub use statement::OriginatingStatement;
+#[cfg(feature = "gold-owner")]
 use zeroize::Zeroizing;
 pub const N: usize = 4096;
 pub const Q: [u64; 2] = [1073692673, 1073668097];
 pub const T: u64 = 65537;
 pub const SCALE: u64 = 16389;
 pub(super) const MAX_CT: usize = 128 * 1024;
+pub const MAX_PRODUCT_OUTPUT_BYTES: usize = MAX_CT;
+pub const PRODUCT_CERTIFICATE_BYTES: usize = product::CERTIFICATE_BYTES;
 pub type Result<T> = core::result::Result<T, Error>;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {

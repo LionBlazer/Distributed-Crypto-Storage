@@ -757,3 +757,11 @@ Joint process regression and focused runtime/API checks; see the
 The separate [v3 Driver record](../../docs/progress-driver-scoped-completion.md)
 now covers the fixed new-G Predicate/Result160 WAIT continuation; transport alone
 grants no SQL or current-head authority.
+# Gold public computation RPC
+
+`RemotePeer::gold_product` uses the actual owner-authenticated daemon/TLS route
+for the fixed N4096 BFV product and conditional certificate. The peer depends on
+`bfv-query-core/gold-evaluator`, which does not compile the Gold owner/key/custody
+role. Returned bytes remain unverified until checked against original input and
+nonce. [Protocol and scope](GOLD-PRODUCT.md) describe bounds, shared heavy-work
+admission, ownership and remaining SQL/finality obligations.

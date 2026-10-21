@@ -199,3 +199,11 @@ It starts no legacy custody or SQL fallback and prints only public Ready metadat
 The four-OS Progress gate and existing Joint regression passed; see the
 [native record](../../docs/progress-network-validation.md). No full Predicate/WAIT
 owner result or performance claim follows from this entry point.
+# Gold product service
+
+The ordinary daemon also serves the bounded owner-only
+[Gold product RPC](../../crates/peer-runtime/GOLD-PRODUCT.md). It performs real
+N4096 BFV computation/certification with public-only worker inputs. Its reply
+is unverified mathematical material; SQL/current-head/lock admission remains
+separate. `cargo test --release --locked -p dcs-peer --test gold_product`
+exercises an independently running daemon and actual TLS roundtrip.

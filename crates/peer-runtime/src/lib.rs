@@ -7,6 +7,7 @@ mod client;
 mod delta;
 pub mod evidence;
 pub mod finality;
+mod gold_product;
 pub mod joint_participant;
 mod objects;
 mod pages;
@@ -28,6 +29,7 @@ pub use evidence::{
     JobVerifier, MAX_EVIDENCE_BYTES, MAX_JOB_BYTES, MAX_JOBS, MutationEvidence, MutationJob,
     MutationManifest,
 };
+pub use gold_product::{GoldProductReply, GoldProductRequest, MAX_GOLD_PRODUCT_RESPONSE_BYTES};
 pub use pages::{
     MAX_PAGE_BATCH_ADDRESSES, MAX_PAGE_BATCH_RESPONSE_BYTES, PageAddress, PageBatch,
     PageBatchRequest, PageError, PageImage,

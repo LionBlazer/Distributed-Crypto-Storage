@@ -182,6 +182,15 @@ For distributed or cryptographic changes, cover the affected failure model,
 authorization, version freshness, proof rejection, or resource limit as relevant.
 Performance claims require reproducible measurements of the full operation.
 
+Process discovery by a numerical parent PID is not proof of ownership: Windows
+can reuse the PID of a terminated parent while its old children remain alive.
+Before registering a discovered process for cleanup, hold its handle, verify its
+exact intended executable and require its creation time to be no earlier than
+the held parent's creation time. Never terminate a pre-existing process or an
+unknown executable. Cleanup may stop only directly launched children or fully
+validated descendants. Track known Windows console helpers separately and let
+them exit with their attached task processes.
+
 Keep test feedback fast. Choose the smallest meaningful checks at the owning
 boundary and optimize expensive setup, repeated verification and unnecessary
 serialization. Profile slow scenarios by preparation, proving, verification,

@@ -81,6 +81,8 @@ pub enum Request {
     },
     /// Owner-only bounded streaming FHE computation. Never a SQL or lock grant.
     PrivateProduct(crate::PrivateProductRequest),
+    /// Owner-only genuine N4096 product/certificate. Never SQL or lock admission.
+    GoldProduct(crate::GoldProductRequest),
 }
 impl Request {
     pub fn name(&self) -> &'static str {
@@ -107,6 +109,7 @@ impl Request {
             Self::FetchReadImage(_) => "read-image",
             Self::StoreDelta(_) => "store-delta",
             Self::PrivateProduct(_) => "private-product",
+            Self::GoldProduct(_) => "gold-product",
         }
     }
 }
@@ -182,6 +185,8 @@ pub enum Response {
     /// Untrusted ciphertext membership response; the client verifies exact heads.
     Pages(crate::PageBatch),
     ReadImage(crate::ReadImage),
+    /// UNVERIFIED output and conditional certificate; receiver must check originals.
+    GoldProduct(crate::GoldProductReply),
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProofReply {

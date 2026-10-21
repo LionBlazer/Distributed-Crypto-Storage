@@ -1,8 +1,8 @@
 //! Actual public evaluator and protected local input scope, without SQL authority.
 use super::*;
 use binding::BINDING_BYTES;
-use fhe::bfv::{BfvParameters, Ciphertext};
-use fhe_traits::DeserializeParametrized;
+use fhe::bfv::{BfvParameters, BfvParametersBuilder, Ciphertext};
+use fhe_traits::{DeserializeParametrized, Serialize};
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     sync::Arc,
@@ -10,7 +10,9 @@ use std::{
 const HEADER: usize = 8 + 32 + BINDING_BYTES + 64 + 8;
 pub const MAX_REQUEST_BYTES: usize = HEADER + 2 * MAX_CT;
 /// Owner-private finite truth table; every packed bit denotes one age value.
+#[cfg(feature = "gold-owner")]
 pub struct Mask256(Zeroizing<[u8; 32]>);
+#[cfg(feature = "gold-owner")]
 impl Mask256 {
     pub fn new(bits: [u8; 32]) -> Self {
         Self(Zeroizing::new(bits))
@@ -42,6 +44,7 @@ pub struct PublicRequest {
     split: usize,
 }
 impl PublicRequest {
+    #[cfg(feature = "gold-owner")]
     pub(super) fn checked(
         binding: InputBinding,
         data: &lower::data::Expected,
@@ -160,12 +163,14 @@ impl PublicRequest {
 /// ```compile_fail
 /// fn duplicate(x:bfv_query_core::gold::OriginatingQuery){let _=x.clone();}
 /// ```
+#[cfg(feature = "gold-owner")]
 pub struct OriginatingQuery {
     pub(super) request: PublicRequest,
     pub(super) mask: Mask256,
     pub(super) data: lower::data::Expected,
     pub(super) key_binding: [u8; 64],
 }
+#[cfg(feature = "gold-owner")]
 impl OriginatingQuery {
     pub fn public_request(&self) -> &PublicRequest {
         &self.request
@@ -195,6 +200,18 @@ impl UnverifiedProduct {
     pub fn certificate(&self) -> &[u8] {
         &self.certificate
     }
+    pub fn into_parts(self) -> (Vec<u8>, Vec<u8>) {
+        (self.output, self.certificate)
+    }
+}
+pub(super) fn parameters() -> Result<Arc<BfvParameters>> {
+    BfvParametersBuilder::new()
+        .set_degree(N)
+        .set_plaintext_modulus(T)
+        .set_moduli(&Q)
+        .set_variance(10)
+        .build_arc()
+        .map_err(|_| Error::Backend)
 }
 /// Actual ciphertext-only SDK worker; receives no secret, mask or original rows.
 pub struct Evaluator {
@@ -203,7 +220,7 @@ pub struct Evaluator {
 impl Evaluator {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            parameters: owner::parameters()?,
+            parameters: parameters()?,
         })
     }
     pub fn evaluate(&self, request: &PublicRequest) -> Result<UnverifiedProduct> {
@@ -216,17 +233,19 @@ impl Evaluator {
         if output.len() != 3 {
             return Err(Error::Shape);
         }
-        let output = owner::serialize(&output);
+        let output = output.to_bytes();
         let expected = request.product_expected(output.clone())?;
         let certificate = product::produce(&expected)?.into_bytes();
         UnverifiedProduct::from_parts(output, certificate)
     }
 }
 /// Conditional arithmetic-checked client plaintext; no SQL selection, lock or QC.
+#[cfg(feature = "gold-owner")]
 pub struct DecryptedProduct {
     pub(super) binding: InputBinding,
     pub(super) values: Zeroizing<Vec<u64>>,
 }
+#[cfg(feature = "gold-owner")]
 impl DecryptedProduct {
     pub fn binding(&self) -> &InputBinding {
         &self.binding

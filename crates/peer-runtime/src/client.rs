@@ -84,6 +84,23 @@ impl RemotePeer {
             response.result.map_err(io::Error::other)
         })
     }
+    /// Genuine remote computation; the returned bytes convey no proof verdict.
+    /// Original input/nonce, DATA/Word, current head and SQL admission remain
+    /// obligations of the receiving owner, independently of TLS success.
+    pub fn gold_product(
+        &self,
+        request: &bfv_query_core::gold::PublicRequest,
+    ) -> io::Result<bfv_query_core::gold::UnverifiedProduct> {
+        match self.call(Request::GoldProduct(crate::GoldProductRequest::new(
+            request,
+        )))? {
+            Response::GoldProduct(reply) => reply.into_unverified(),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Unexpected Gold product response",
+            )),
+        }
+    }
     /// Receives the complete encrypted version without copying its four payload
     /// fields. None is a valid known unexpected success; RemoteError remains an
     /// I/O error. The caller must independently validate both complete images,
@@ -118,6 +135,7 @@ impl RemotePeer {
             Request::FetchPages(_) => (crate::MAX_PAGE_BATCH_RESPONSE_BYTES, Some(12)),
             Request::FetchReadImage(_) => (crate::MAX_READ_IMAGE_RESPONSE_BYTES, Some(13)),
             Request::StoreDelta(_) => (crate::MAX_STORE_DELTA_RESPONSE_BYTES, Some(2)),
+            Request::GoldProduct(_) => (crate::MAX_GOLD_PRODUCT_RESPONSE_BYTES, Some(14)),
             _ => (MAX_FRAME_BYTES, None),
         };
         let name = request.name().to_string();

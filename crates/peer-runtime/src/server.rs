@@ -275,6 +275,7 @@ fn serve(socket: TcpStream, acceptor: Acceptor, shared: Arc<Shared>) -> io::Resu
         Request::FetchPages(_) => crate::MAX_PAGE_BATCH_RESPONSE_BYTES,
         Request::FetchReadImage(_) => crate::MAX_READ_IMAGE_RESPONSE_BYTES,
         Request::StoreDelta(_) => crate::MAX_STORE_DELTA_RESPONSE_BYTES,
+        Request::GoldProduct(_) => crate::MAX_GOLD_PRODUCT_RESPONSE_BYTES,
         _ => MAX_FRAME_BYTES,
     };
     let operation = wire.request.name().to_owned();
@@ -331,9 +332,16 @@ fn dispatch(
             | Request::InitJournal { .. }
             | Request::InitRegistryJournal { .. }
             | Request::CollectJournal { .. }
+            | Request::GoldProduct(_)
     );
     if privileged && remote != shared.owner {
         return Err(RemoteError::Unauthorized);
+    }
+    if let Request::GoldProduct(request) = request {
+        // The one existing process gate bounds this SDK work too. No store
+        // mutex, owner secret, statement opening or per-job verifier is imported.
+        let _permit = shared.proof_busy.try_acquire()?;
+        return crate::gold_product::evaluate(request).map(Response::GoldProduct);
     }
     if let Request::Prove {
         object,
@@ -442,6 +450,7 @@ fn dispatch(
         }
         Request::Copy { .. } => unreachable!("copy handled without the local store lock"),
         Request::PrivateProduct(_) => Err(RemoteError::InvalidRequest),
+        Request::GoldProduct(_) => Err(RemoteError::InvalidRequest),
         Request::InstallSetup(_)
         | Request::Evaluate { .. }
         | Request::Prove { .. }

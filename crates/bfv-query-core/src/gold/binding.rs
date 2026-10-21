@@ -72,9 +72,11 @@ impl KeyExpected {
     pub fn root_words(&self) -> [u64; 4] {
         self.root.map(|v| v.as_canonical_u64())
     }
+    #[cfg(feature = "gold-owner")]
     pub(super) fn context(&self) -> [Val; 8] {
         self.context
     }
+    #[cfg(feature = "gold-owner")]
     pub(super) fn root(&self) -> [Val; 4] {
         self.root
     }
@@ -157,6 +159,7 @@ impl InputBinding {
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
     }
+    #[cfg(feature = "gold-owner")]
     pub(super) fn statement(&self) -> [u8; 32] {
         self.statement
     }
