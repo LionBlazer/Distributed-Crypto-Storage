@@ -53,6 +53,7 @@ members = [
     "experiments/fhe-prototype",
     "experiments/core-workloads",
     "experiments/bfv-unrelinearized-selection",
+    "experiments/bfv-unrelinearized-certificate",
 ]
 default-members = [
     "crates/bfv-hiding-stark",
