@@ -236,3 +236,7 @@ mod goldens;
 mod probe;
 mod probe_tests;
 mod probe_wire;
+
+// Independent PUBLIC branch witness/proof coverage, no runtime admission.
+mod owner_cases;
+mod owner_cases_tests;

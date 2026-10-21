@@ -211,7 +211,7 @@ impl Drop for WalkInput {
     }
 }
 /// Exact absorb rule, with guarded scratch, never a proof or a serialized status.
-fn hash(v: &[Val]) -> [Val; 4] {
+pub(super) fn hash(v: &[Val]) -> [Val; 4] {
     assert!(!v.is_empty() && v.len().is_multiple_of(8));
     let mut state = [Val::ZERO; 12];
     let mut scratch = [Val::ZERO; 248];
@@ -222,10 +222,10 @@ fn hash(v: &[Val]) -> [Val; 4] {
     scratch.fill(Val::ZERO);
     state[..4].try_into().expect("root4")
 }
-fn words(bytes: &[u8]) -> Vec<Val> {
+pub(super) fn words(bytes: &[u8]) -> Vec<Val> {
     source::statement::words(bytes).collect()
 }
-fn append64(v: &mut Vec<Val>, x: u64) {
+pub(super) fn append64(v: &mut Vec<Val>, x: u64) {
     v.extend([Val::from_u32(x as u32), Val::from_u32((x >> 32) as u32)]);
 }
 /// PUBLIC NONSECRET original ciphertext images from the golden fixture; NO proof

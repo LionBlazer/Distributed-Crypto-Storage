@@ -18,6 +18,8 @@ profiles and APIs are unchanged.
 - `owner`, `evaluate` and `witness` construct bounded public examples and guarded
   private MAIN traces. `check` evaluates actual SDK constraints and original
   lookups for diagnostics; it is not a proof verifier.
+- `owner_cases` independently serializes typed public branch examples and
+  retains their explicit expected outcomes before creating any trace or proof.
 - `assessment` derives actual SDK geometry, conditional security reports and a
   workspace policy before allocating PP or MAIN.
 - `structural_setup` constructs immutable public preprocessing. `probe` owns
@@ -47,8 +49,8 @@ The equations check conflicts before OFFSET, acquire qualifying OFFSET rows,
 skip conflicts before consuming OFFSET and perform no search for LIMIT0. Resume
 binds its original statement and blocked revision. NOWAIT derives failure while
 restoring the latest saved locks. End compacts complete slots and progress by
-transaction identity. These branches still need additional honest witness/proof
-coverage; the current honest examples cover Begin and Predicate Start/Done.
+transaction identity. Honest native cases cover Begin, Start/Done and the six
+additional branches below; this does not establish all PostgreSQL semantics.
 Untouched progress also requires independently proved bootstrap and OldRoot
 history. Normalized windows 0..4 are bounded mathematical inputs, with no SQL
 parser or runtime bridge.
@@ -104,7 +106,7 @@ cargo clippy --release --locked -p registry200-proof --all-targets -- -D warning
 cargo test --release --locked -p registry200-proof registry_progress::word_inventory:: -- --nocapture --test-threads=1
 ```
 
-All 16 cases passed in 3.94s: complete inventory and unconditional literal graph
+The first 16 cases passed in 3.94s: complete inventory and unconditional literal graph
 and PP pins, actual assessment, honest MAIN checks, public-value constraints,
 independent preprocessing invariance, three genuine honest proofs and receiving,
 and canonical/resource/hostile proof gates. The warm predicate case uses the
@@ -128,6 +130,46 @@ These single samples do not establish a controlled speedup or a complete query.
 The exact executed source, phase breakdown and resource receipts are recorded in
 [AIR validation](../AIR-VALIDATION.md).
 
+## Six independently specified branch proofs
+
+The two additional tests passed with the existing sixteen in one 19-case,
+6.00s native gate. The nineteenth case belonged to a temporary compression
+measurement, whose code/dependency was removed after archiving. Eighteen owning
+tests remain. Each of these six positive branches has its own genuine proof:
+
+| Case | Independent expected outcome |
+| --- | --- |
+| WAIT before OFFSET | row0 conflict, cursor0, no visited/selected, Park with real Progress48 |
+| SKIP before OFFSET | skip row0, lock offset row1 AND selected row2, Done/cursor3 |
+| LIMIT0 | no attempted row despite row0 conflict, Done, no new locks |
+| WAIT resume | original row0 prefix retained, old holder absent, select rows1/2, micro2/Done |
+| NOWAIT latest savepoint | selected prefix row0, Error, failed1, restore latest saved row0 and release row2 |
+| End A | move B's entire53 slot +5 progress fields to slot0; Result for ended A has newProgress0 |
+
+Typed Bank/Slot/Frame examples independently serialize complete bank208, Cmd160,
+Stmt96, Progress48 and Result160. Only the original nonsecret Source/enrollment
+fixture is shared. Every case checks all old/new bank words and physical scan
+and Result wires, then creates a fresh native proof and verifies it against an
+independent current Expected309. Producer and receiver public setup is reused
+within a role and released before the other role. These math roundtrips measured
+245.142-258.317ms, excluding fixture/direct-check and public setup preparation.
+
+All six fully repaired wrong outcomes fail actual witness equations; an honest
+proof with a repaired header for each wrong claim also fails native verification.
+Six additional resume negatives preserve the historical progress root while
+changing its revision, prefix, wait mode, holder or original SQL identity. Resume
+retains the original snapshot/call/statement while its current parent changes;
+the historical holder may already have ended. The fixture does not prove the
+intervening EndB or prior history. Opaque nonactor progress still depends on
+independently established bootstrap and OldRoot induction.
+
+Re-Park, named rollback/release, NOWAIT without a savepoint, End actor1/abort/failed
+and counter overflow are not newly covered. NOWAIT's selected prefix represents
+an error, never successful returned rows. See the owning validation record for
+exact source, byte, timing and resource receipts.
+
 Source/DATA proofs, original FHE request/product, owner provenance, bootstrap and
 history, fresh weighted QC, transport and durable completion are absent from
-these timings. The complete DCS query has not met the <=500ms target.
+these timings. A transferable proof joining QueryCt to this same private Stmt96
+mask is also required; local owner custody does not supply that proof. The
+complete DCS query has not met the <=500ms target.
