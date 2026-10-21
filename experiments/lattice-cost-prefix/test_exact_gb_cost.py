@@ -84,6 +84,35 @@ class ExactSeriesTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     list(subject.coefficients(n, factors, precision))
 
+    def test_certified_positive_prefixes_match_independent_full_products(self):
+        cases = [(n, [(s, n), (d, m)], 128)
+                 for n in [32, 64, 128] for s in [17, 41]
+                 for d in [57, 79, 80, 81, 127] for m in [1, 2**16, 2**31]]
+        certified = 0
+        for n, factors, precision in cases:
+            if subject._proved_nonnegative_prefix(n, factors, precision):
+                certified += 1
+                with self.subTest(n=n, factors=factors):
+                    expected = finite_binomial_series(n, factors, precision)
+                    self.assertTrue(all(value >= 0 for value in expected))
+                    self.assertIsNone(subject.first_negative(n, factors, precision))
+        self.assertGreater(certified, 50)
+
+    def test_actual_negative_bounded_profile_is_not_certified_positive(self):
+        n, multiplicity = 4096, 2**31 + 4096
+        self.assertEqual(subject.first_negative(n, [(41, multiplicity)], 8192), 6615)
+        for k, negative in [(6614, False), (6615, True)]:
+            expected = sum((-1)**j * math.comb(multiplicity, j)
+                           * math.comb(n + k - 41*j - 1, k - 41*j)
+                           for j in range(k // 41 + 1))
+            self.assertEqual(expected < 0, negative)
+        self.assertEqual(subject.first_negative(1, [(41, 1), (81, 2**31)], 128), 81)
+
+    def test_general_nonnegative_certificate_keeps_zeros_and_unbounded_denominator(self):
+        for n, factors in [(8, [(1, 8)]), (12, [(2, 3), (3, 4)]), (4, [])]:
+            self.assertIsNone(subject.first_negative(n, factors, 64))
+            self.assertTrue(all(value >= 0 for value in finite_binomial_series(n, factors, 64)))
+
 
 if __name__ == "__main__":
     unittest.main()

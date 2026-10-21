@@ -260,6 +260,18 @@ The complete Gaussian-like loop still exceeded120s (GNU SIGKILL at120.049s),
 without any attack-result or model completion; ADPS16 did not start. Source pins
 and cleanup checks passed. No numerical security minimum was established. See
 [validation and remaining gates](../../experiments/lattice-cost-prefix/VALIDATION.md).
+
+The subsequent v3 [exact nonnegative-prefix derivation](../../experiments/lattice-cost-prefix/POSITIVE-PREFIX.md)
+proves whole prefixes using integer inequalities rather than expanding them.
+All other cases keep the same sparse coefficients and first-negative search.
+Nine local tests passed; the negative control at6615 remains required. Actual
+Sage r8 passed74 complete oracle/Cost cases and2047 coefficients, plus both
+fallbacks and the42-coefficient baseline, before the explicit v3 override.
+The full model then advanced through Arora–GB to BKW and primal-hybrid routines
+in30/60/90s stack samples. GNU SIGKILL at120.063s still prevented a completed
+eight-attack map or numeric minimum; ADPS16 did not start. Source/cleanup checks
+passed. This is progress in the offline assessment tool, not cryptographic
+approval or a complete-query speed measurement. No receiving flag changes.
 Smallness does not prove sampler entropy. The certificate does not establish
 same-secret Formation, authenticated Source/hidden-program completeness,
 authorization, current agreed head/QC, durable locks or SQL admission.

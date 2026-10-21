@@ -43,6 +43,12 @@ quadratic convolution over all earlier coefficients. Many-factor inputs can
 still be expensive; this is not a universal resource bound. No attack is omitted,
 no cost is approximated and resource failures must remain incomplete results.
 
+The later [exact nonnegative-prefix criterion](POSITIVE-PREFIX.md) proves that no
+negative coefficient exists for two precisely checked families. It preserves
+the original infinity Cost instead of expanding those series. All other inputs
+still use the complete sparse recurrence. Its sufficient inequalities use only
+integers; no floating-point tail or attack cost is substituted.
+
 Direct dependencies are Python's standard library, with optional Sage and the
 [pinned official GB implementation](https://github.com/malb/lattice-estimator/blob/53da5982597709ba0fdf94ea37a84d822310fd84/estimator/gb.py)
 for the explicit adapter. There is no dependency on DCS application modules,

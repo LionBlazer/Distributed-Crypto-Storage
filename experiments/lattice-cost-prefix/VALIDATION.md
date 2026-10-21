@@ -56,3 +56,39 @@ MATZOV/ADPS16 results are still required before interpreting numeric estimates.
 BFV confidentiality, sampler
 entropy, product Fiat–Shamir, whole-system security and the <=500ms complete SQL
 goal remain unestablished. Production acceptance paths are unchanged.
+
+## Exact sign criterion, v3
+
+The [algebraic criterion](POSITIVE-PREFIX.md) preserves the original no-negative
+Cost using sufficient exact integer inequalities. It neither approximates the
+series nor converts a resource failure into infinity. Inputs outside the proved
+families retain the complete sparse recurrence. The negative n4096/degree41
+example still reaches its independently checked first negative at6615; a
+one-variable example still reaches81. Accepted positive families are compared
+with independent complete finite-binomial products.
+
+All9 local unittest cases passed in0.435s. A separate CPython diagnostic covered
+all4092 odd degrees from9 through8191 with each multiplicity0,1,2^31 at n4096 and
+precision8192. Of12276 prefix decisions,12251 were certified nonnegative and25
+used the complete recurrence; total observed time was561.390ms. These selected
+multiplicity bounds test the sign algorithm, not actual Sage tail/sample choices,
+a cost model or SQL performance. Raw receipts stay in `.local/`.
+
+The v3 source SHA256 is
+`188a1e011c9841bda5aa8b894d2cdfdb6a616fc9e2d7874332d703786372141a`.
+The authorized r8 run used actual Sage10.10/Python3.12.3 and passed all74
+QQ PowerSeries/Cost/type/order/metadata cases,2047 coefficients, two original
+fallbacks and the42-coefficient public baseline before installing the explicit
+`exact_integer_sparse_positive_prefix_v3` override. All original estimator files
+and public script pins were checked before and after. Archive and official gb.py
+identities are unchanged from above; all admission/security flags remain false.
+
+This time30s stack sampling reached BKW's N/ntop/ntest/t1 functions;60s and90s
+samples reached primal-hybrid GSA/beta/cost_zeta/scipy optimization. Thus the run
+advanced past Arora–GB, without dropping it or changing its returned cost rule.
+GNU SIGKILL still stopped the whole model at120.063s, returncode-9. There was no
+completed result-map/attack_result record, model completion or ADPS16 execution.
+Kernel absence and server shutdown were confirmed. Partial progress is not a
+numeric minimum, and waited-child CPU/RSS is not aggregate process-tree usage.
+Further profiling/bounded execution of the remaining full attacks is needed;
+neither parameter security nor the <=500ms complete SQL goal is established.

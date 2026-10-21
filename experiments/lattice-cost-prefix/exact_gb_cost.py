@@ -9,7 +9,7 @@ from hashlib import sha256
 from pathlib import Path
 
 OFFICIAL_GB_SHA256 = "d785ee73ad40a470422d1ddc21d76e9f32b8ab1d85d88ae2539590b32bbd7edc"
-IMPLEMENTATION = "exact_integer_sparse_differential_prefix_v2"
+IMPLEMENTATION = "exact_integer_sparse_positive_prefix_v3"
 _installed = False
 
 
@@ -120,13 +120,53 @@ def coefficients(n, factors, precision):
 
 def first_negative(n, factors, precision):
     """First STRICTLY negative coefficient below precision, or None after all pass."""
+    normalized = _domain(n, factors, precision, int)
+    if normalized is not None and _proved_nonnegative_prefix(*normalized):
+        return None
     return next((i for i, value in enumerate(coefficients(n, factors, precision)) if value < 0), None)
+
+
+def _proved_nonnegative_prefix(n, factors, precision):
+    """Exact sufficient certificate; false means use the full sparse recurrence.
+
+    First: if sum(m)<=n, H is a product of nonnegative geometric polynomials
+    and (1-z)**(-remaining). Second: for H=(1-z**d)**m*((1-z**s)/(1-z))**n,
+    write K=precision-1, B=n+K-1, r=K/B. Composition counting gives
+      D[k]-n*D[k-s] <= q[k] <= D[k], D[k]=binomial(n+k-1,k),
+      D[k-a]/D[k] <= r**a, for k<=K.
+    The absolute error from (1-z**d)**m is <= D[k]*x/(1-x), x=m*r**d.
+    Hence n*r**s<=1/2 and x<=1/4 prove H[k]>=D[k]/6>0 for every k<=K.
+    Both tests use exact integer inequalities. Capping the TEST exponent at80
+    is conservative since 0<=r<=1; it never truncates the original series.
+    """
+    n, precision = int(n), int(precision)
+    active = {}
+    for d, m in factors:
+        if m and d < precision:
+            active[int(d)] = active.get(int(d), 0) + int(m)
+    if sum(active.values()) <= n:
+        return True
+    if len(active) != 2:
+        return False
+    k = precision - 1
+    b = n + k - 1
+    for s, count in active.items():
+        if count != n:
+            continue
+        d, m = next((d, m) for d, m in active.items() if d != s)
+        test_degree = min(d, 80)
+        if (2 * n * k**s <= b**s
+                and 4 * m * k**test_degree <= b**test_degree):
+            return True
+    return False
 
 
 def _cost(gb, original_n, normalized, omega, Integer):
     n, factors, precision = normalized
     retval = gb.Cost(rop=gb.oo, dreg=gb.oo)
     retval.register_impermanent({"rop": True, "dreg": False, "mem": False})
+    if _proved_nonnegative_prefix(n, factors, precision):
+        return retval
     for degree, coefficient in enumerate(_coefficients(n, factors, precision, Integer)):
         if coefficient < 0:
             retval["dreg"] = degree
@@ -170,6 +210,12 @@ def _equivalence_gate(gb, original, candidate, Integer):
         (12, [(9, 2), (41, 12)], 96, 2),
         (32, [(9, 0), (41, 32)], 96, 2),
         (16, [(9, 1), (41, 16)], 96, 2),
+        (64, [(41, 64), (80, 2**31)], 128, 2),
+        (128, [(41, 128), (81, 2**31)], 256, 2),
+        (64, [(41, 64), (81, 2**31 + 1)], 128, 2),
+        (64, [(41, 64), (79, 2**31)], 128, 2),
+        (4097, [(41, 4097), (81, 2**31)], 96, 2),
+        (1, [(41, 1), (81, 2**31)], 128, 2),
     ]
     checked_coefficients = 0
     for n, factors, prec, omega in cases:
