@@ -33,10 +33,12 @@ pub(super) fn row(d: &Descriptor, index: usize) -> Result<[Val; PP_WIDTH]> {
         return Err(Error::Shape);
     }
     let mut out = [Val::ZERO; PP_WIDTH];
-    if index < RANGE_FIRST {
+    let kind = d.kind;
+    let layout = kind.range();
+    if index < kind.range_first() {
         out[FLAGS + ARITH] = Val::ONE;
         let gates = d.graph.row(index)?.gates;
-        let point = (768..1280).contains(&index);
+        let point = (768..768 + 128 * kind.products()).contains(&index);
         out[FLAGS + POINTWISE] = Val::from_bool(point);
         out[FLAGS + FANOUT] = Val::from_bool((704..768).contains(&index));
         for (slot, gate) in gates.iter().enumerate() {
@@ -49,7 +51,7 @@ pub(super) fn row(d: &Descriptor, index: usize) -> Result<[Val; PP_WIDTH]> {
                 out[COEFFICIENTS + slot * 4 + at] = Val::from_u64(*value)
             }
             let expected = if (704..768).contains(&index) {
-                [4, 4]
+                [kind.products() as u8, kind.products() as u8]
             } else if point {
                 [1, 0]
             } else {
@@ -59,33 +61,39 @@ pub(super) fn row(d: &Descriptor, index: usize) -> Result<[Val; PP_WIDTH]> {
                 return Err(Error::Shape);
             }
         }
-    } else if index < SOURCE_FIRST {
-        let r = index - RANGE_FIRST;
+    } else if index < kind.cw_first(0) {
+        let r = index - kind.range_first();
         out[FLAGS + RANGE] = Val::ONE;
         out[FLAGS + RESET] = Val::from_bool(r.is_multiple_of(4));
         out[FLAGS + EMIT] = Val::from_bool(r % 4 == 3);
         out[COEFFICIENTS + 8] = Val::from_u64(1u64 << (12 * (r % 4)));
         for c in 0..2 {
             let at = 2 * r + c;
-            let base = 17 * c;
+            let base = layout.stride * c;
             out[base] = Val::from_u64(node(0, at)?);
-            out[base + 7] = Val::from_u64(node(65, at)?);
-            out[base + 8] = Val::from_u64(node(66, at)?);
-            for job in 0..4 {
-                out[base + 9 + job] = Val::from_u64(node(28 + 12 * job, at)?);
-                out[COEFFICIENTS + 4 * c + job] = Val::from_u64(d.c0[job][at]);
+            for operand in 0..kind.operands() {
+                out[base + layout.w + operand] = Val::from_u64(node(kind.w_tag(operand), at)?);
+            }
+            for job in 0..kind.products() {
+                out[base + layout.product + job] = Val::from_u64(node(kind.final_vector(job), at)?);
+                out[COEFFICIENTS + kind.products() * c + job] = Val::from_u64(d.c0[job][at]);
             }
         }
         if r % 4 == 3 {
-            out[34] = Val::from_u64(node(67, r / 4)?)
+            out[2 * layout.stride] = Val::from_u64(node(kind.cs_tag(), r / 4)?)
         }
-    } else if index < PADDING_FIRST {
-        let (role, start, length, tag, flag) = if index < MASK_FIRST {
-            (0, SOURCE_FIRST, 514, 65, SOURCE)
-        } else if index < CS_FIRST {
-            (1, MASK_FIRST, 514, 66, MASK)
+    } else if index < kind.padding_first() {
+        let (role, start, length, tag, flag) = if index < kind.cs_first() {
+            let role = (index - kind.cw_first(0)) / 514;
+            (
+                role,
+                kind.cw_first(role),
+                514,
+                kind.w_tag(role),
+                if role == 0 { SOURCE } else { MASK },
+            )
         } else {
-            (2, CS_FIRST, 66, 67, CS)
+            (kind.operands(), kind.cs_first(), 66, kind.cs_tag(), CS)
         };
         let r = index - start;
         for f in [HASH, flag] {
@@ -110,26 +118,30 @@ pub(super) fn row(d: &Descriptor, index: usize) -> Result<[Val; PP_WIDTH]> {
 }
 
 /// Signed exact port multiplicity, shared by descriptor inventory and AIR expression.
-pub(super) fn count(p: usize, f: &[i32; 16]) -> i32 {
+pub(super) fn count(p: usize, f: &[i32; 16], kind: super::super::relation::RelationKind) -> i32 {
     let mut n = 0;
     if f[ARITH] != 0 {
         n = match p % 4 {
             0 => -1,
             1 => -1 + f[POINTWISE],
-            2 => 1 + 3 * f[FANOUT],
-            3 => 1 - f[POINTWISE] + 3 * f[FANOUT],
+            2 => 1 + (kind.products() as i32 - 1) * f[FANOUT],
+            3 => 1 - f[POINTWISE] + (kind.products() as i32 - 1) * f[FANOUT],
             _ => 0,
         };
     }
     if f[RANGE] != 0 {
-        if p < 34 {
-            n += match p % 17 {
-                0 | 7 | 8 => 1,
-                9..=12 => -1,
-                _ => 0,
+        let layout = kind.range();
+        if p < 2 * layout.stride {
+            let bank = p % layout.stride;
+            n += if bank == 0 || (layout.w..layout.w + kind.operands()).contains(&bank) {
+                1
+            } else if (layout.product..layout.product + kind.products()).contains(&bank) {
+                -1
+            } else {
+                0
             };
         }
-        if p == 34 {
+        if p == 2 * layout.stride {
             n += f[EMIT];
         }
     }
@@ -141,13 +153,13 @@ pub(super) fn count(p: usize, f: &[i32; 16]) -> i32 {
 
 pub(super) fn inventory(d: &Descriptor) -> Result<()> {
     use p3_field::PrimeField64;
-    let mut balance = vec![0i32; 68 * N];
-    let mut producers = vec![0u8; 68 * N];
+    let mut balance = vec![0i32; (d.kind.cs_tag() + 1) * N];
+    let mut producers = vec![0u8; (d.kind.cs_tag() + 1) * N];
     for r in 0..HEIGHT {
         let row = row(d, r)?;
         let flags = core::array::from_fn(|i| row[FLAGS + i].as_canonical_u64() as i32);
         for (p, value) in row.iter().take(PORTS).enumerate() {
-            let n = count(p, &flags);
+            let n = count(p, &flags, d.kind);
             if n.abs() > 4 {
                 return Err(Error::Shape);
             }
@@ -160,7 +172,10 @@ pub(super) fn inventory(d: &Descriptor) -> Result<()> {
             }
             let tag = ((id - 1) / 65536) as usize;
             let at = ((id - 1) % 65536) as usize;
-            if node(tag, at)? != id {
+            if tag > d.kind.cs_tag()
+                || (tag == d.kind.cs_tag() && at >= 512)
+                || node(tag, at)? != id
+            {
                 return Err(Error::Shape);
             }
             let cell = tag * N + at;
@@ -173,9 +188,9 @@ pub(super) fn inventory(d: &Descriptor) -> Result<()> {
     if balance.iter().any(|&n| n != 0) {
         return Err(Error::Shape);
     }
-    for tag in 0..68 {
+    for tag in 0..=d.kind.cs_tag() {
         for at in 0..N {
-            let want = u8::from(tag < 67 || at < 512);
+            let want = u8::from(tag < d.kind.cs_tag() || at < 512);
             if producers[tag * N + at] != want {
                 return Err(Error::Shape);
             }

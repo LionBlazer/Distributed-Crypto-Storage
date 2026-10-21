@@ -172,3 +172,215 @@ fn graph_fft_matches_independent_full_negacyclic_integer_oracle() {
         assert_eq!(i128::from(*a), *e);
     }
 }
+
+// PUBLIC metadata-only Pair snapshot. These literal coefficients are deliberately
+// not claimed to be an encryption, a private witness, or an accepted query.
+fn pair_snapshot_varint(mut value: usize, output: &mut Vec<u8>) {
+    while value >= 128 {
+        output.push((value as u8 & 127) | 128);
+        value >>= 7;
+    }
+    output.push(value as u8);
+}
+fn pair_snapshot_ciphertext(operand: usize) -> Vec<u8> {
+    let mut ciphertext = Vec::new();
+    for component in 0..2 {
+        let mut packed = Vec::with_capacity(N * 60 / 8);
+        for (basis, &modulus) in Q.iter().enumerate() {
+            let mut pending = 0u64;
+            let mut bits = 0;
+            for index in 0..N {
+                let value = if index == N - 1 || index % 257 == 0 {
+                    modulus - 1
+                } else if index % 257 == 1 {
+                    0
+                } else {
+                    (index as u64 * 2_654_435_761
+                        + operand as u64 * 104_729
+                        + component as u64 * 7_919
+                        + basis as u64 * 65_537)
+                        % modulus
+                };
+                pending |= value << bits;
+                bits += 30;
+                while bits >= 8 {
+                    packed.push(pending as u8);
+                    pending >>= 8;
+                    bits -= 8;
+                }
+            }
+            assert_eq!(bits, 0);
+            assert_eq!(pending, 0);
+        }
+        assert_eq!(packed.len(), N * 60 / 8);
+        let mut polynomial = vec![8, 2, 16];
+        pair_snapshot_varint(N, &mut polynomial);
+        polynomial.push(26);
+        pair_snapshot_varint(packed.len(), &mut polynomial);
+        polynomial.extend(packed);
+        ciphertext.push(10);
+        pair_snapshot_varint(polynomial.len(), &mut ciphertext);
+        ciphertext.extend(polynomial);
+    }
+    ciphertext
+}
+fn pair_snapshot_expected() -> Expected {
+    let request = Request::checked(
+        [0x93; 32],
+        [pair_snapshot_ciphertext(0), pair_snapshot_ciphertext(1)],
+    )
+    .unwrap();
+    assert_eq!(
+        Request::decode(request.bytes()).unwrap().bytes(),
+        request.bytes()
+    );
+    let contexts = core::array::from_fn(|role| {
+        core::array::from_fn(|word| Val::from_usize(1_001 + role * 97 + word * 17))
+    });
+    let roots = core::array::from_fn(|role| {
+        core::array::from_fn(|word| Val::from_usize(2_003 + role * 193 + word * 31))
+    });
+    Expected::checked(request, [0xa7; 64], contexts, roots).unwrap()
+}
+
+// Stream the actual native serde representation: SymbolicExpr uses upstream's
+// deterministic post-order FlatNode enum. Pointer addresses are never serialized.
+// The bound limits the stream, without retaining a second serialized AST buffer.
+struct PairSnapshotHash {
+    hash: sha2::Sha256,
+    bytes: usize,
+}
+impl PairSnapshotHash {
+    fn new() -> Self {
+        use sha2::Digest;
+        let mut hash = sha2::Sha256::new();
+        hash.update(b"DCS/CoreGold/Pair-ordered-symbolic/postcard-p3-0.8/v1");
+        Self { hash, bytes: 0 }
+    }
+}
+impl postcard::ser_flavors::Flavor for PairSnapshotHash {
+    type Output = ([u8; 32], usize);
+    fn try_push(&mut self, value: u8) -> postcard::Result<()> {
+        self.try_extend(&[value])
+    }
+    fn try_extend(&mut self, bytes: &[u8]) -> postcard::Result<()> {
+        use sha2::Digest;
+        self.bytes = self
+            .bytes
+            .checked_add(bytes.len())
+            .filter(|&size| size <= 64 * 1024 * 1024)
+            .ok_or(postcard::Error::SerializeBufferFull)?;
+        self.hash.update(bytes);
+        Ok(())
+    }
+    fn finalize(self) -> postcard::Result<Self::Output> {
+        use sha2::Digest;
+        Ok((self.hash.finalize().into(), self.bytes))
+    }
+}
+fn pair_snapshot_hex(bytes: [u8; 32]) -> String {
+    use std::fmt::Write;
+    let mut output = String::with_capacity(64);
+    for byte in bytes {
+        write!(&mut output, "{byte:02x}").unwrap();
+    }
+    output
+}
+
+#[test]
+fn ordered_pair_constraints_lookups_and_full_preprocessing_snapshot() {
+    use bfv_hiding_stark::{Challenge, Challenger, Pcs};
+    use p3_air::{BaseAir, symbolic::AirLayout};
+    use p3_batch_stark::symbolic::{
+        get_log_num_quotient_chunks_for_domain, get_symbolic_constraints,
+    };
+    use p3_commit::{PolynomialSpace, UnivariateStarkPcs};
+    use p3_field::{PrimeField64, coset::TwoAdicMultiplicativeCoset};
+    use p3_lookup::{LogUpGadget, Lookups};
+    use p3_matrix::Matrix;
+    use sha2::Digest;
+
+    // Native Pair digests captured before single-DATA dispatch: mathematical
+    // profile, wire profile, every ordered symbolic constraint and every PP cell.
+    const GOLDEN: [&str; 4] = [
+        "1d46aabee8b12e654743ca89bd9f8e22f6eca41eba415d0a4de860790f6ffa09",
+        "b4026496eec3f20a214ebe6f5a1ce2de4a7ae5a6394977c5c69c548cd8601d4b",
+        "be34a0d28c815be2e06e2ed8a7e8cdc9df5c443d3a66832525f6c4b7ee83ddd3",
+        "2734dbd8f156b96508c4db6269586f03294502f6ed8ac986723bc8846dbc0a07",
+    ];
+    let air = program::ProgramAir::new(pair_snapshot_expected()).unwrap();
+    assert_eq!(air.width(), 512);
+    assert_eq!(air.preprocessed_width(), 272);
+    assert_eq!(air.num_public_values(), 36);
+    let (symbolic_hash, symbolic_bytes, counts) = {
+        let layout = AirLayout::from_air(&air);
+        let domain = TwoAdicMultiplicativeCoset::<Val>::new(Val::ONE, 13).unwrap();
+        let zk = usize::from(<Pcs as UnivariateStarkPcs<Challenge, Challenger>>::ZK);
+        assert_eq!(zk, 1);
+        let gadget = LogUpGadget::new();
+        let original = Lookups::<Val>::from_air::<Challenge, _>(&air);
+        let log = get_log_num_quotient_chunks_for_domain::<Val, Challenge, _, _>(
+            &air, layout, domain, &original, zk, &gadget,
+        );
+        let budget = (1usize << log) + 1 - zk;
+        let packed = original
+            .clone()
+            .pack_same_bus_with_degree(budget, |lookup| {
+                gadget
+                    .constraint_degree_with_transition(lookup, domain.transition_degree_multiple())
+            });
+        assert_eq!(
+            get_log_num_quotient_chunks_for_domain::<Val, Challenge, _, _>(
+                &air, layout, domain, &packed, zk, &gadget,
+            ),
+            log
+        );
+        let (base, extension) =
+            get_symbolic_constraints::<Val, Challenge, _, _>(&air, layout, &packed, &gadget);
+        let counts = [base.len(), extension.len(), original.len(), packed.len()];
+        assert_eq!(counts, [1_588, 46, 128, 43]);
+        let (hash, bytes) = postcard::serialize_with_flavor(
+            &(base, extension, original, packed),
+            PairSnapshotHash::new(),
+        )
+        .unwrap();
+        (hash, bytes, counts)
+    }; // Drop symbolic DAGs before allocating the complete public PP matrix.
+    let pp = air.preprocessed_trace().expect("fixed actual Pair PP");
+    assert_eq!((pp.height(), pp.width()), (8_192, 272));
+    assert_eq!(pp.values.len(), 8_192 * 272);
+    let mut pp_hash = sha2::Sha256::new();
+    pp_hash.update(b"DCS/CoreGold/Pair-full-preprocessing/LE64/v1");
+    for dimension in [pp.height(), pp.width()] {
+        pp_hash.update((dimension as u64).to_le_bytes());
+    }
+    for value in &pp.values {
+        pp_hash.update(value.as_canonical_u64().to_le_bytes());
+    }
+    let actual = [
+        pair_snapshot_hex(profile_digest()),
+        pair_snapshot_hex(wire::profile()),
+        pair_snapshot_hex(symbolic_hash),
+        pair_snapshot_hex(pp_hash.finalize().into()),
+    ];
+    eprintln!(
+        "core_gold_pair_snapshot golden_set=true base={} extension={} original_lookups={} packed_lookups={} symbolic_bytes={} pp_fields={} pp_bytes={} math_profile={} wire_profile={} ordered_symbolic={} full_pp={}",
+        counts[0],
+        counts[1],
+        counts[2],
+        counts[3],
+        symbolic_bytes,
+        pp.values.len(),
+        pp.values.len() * 8,
+        actual[0],
+        actual[1],
+        actual[2],
+        actual[3]
+    );
+    for (actual, expected) in actual.iter().zip(GOLDEN) {
+        assert_eq!(
+            actual, expected,
+            "CoreGold Pair byte-contract golden changed"
+        );
+    }
+}

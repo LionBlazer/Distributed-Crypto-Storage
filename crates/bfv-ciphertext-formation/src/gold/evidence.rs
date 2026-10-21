@@ -1,6 +1,9 @@
 //! One actual closed full-AIR native proof. Evidence is not Source/key/SQL authority.
 use super::program::{Assessment, ProgramAir};
-use super::{Error, Expected, Prepared, Result, program, setup, wire};
+use super::{
+    Error, Expected, Prepared, Result, program, relation::ExpectedRef, setup, wire,
+    witness::Preparation,
+};
 use bfv_hiding_stark::Config;
 use p3_batch_stark::{
     BatchProof, CommonData, ProverData, StarkInstance, prove_batch, verify_batch,
@@ -52,8 +55,11 @@ impl VerifiedFormation {
     }
 }
 
-fn prescreen(expected: &Expected) -> Result<(ProgramAir, Assessment)> {
-    let air = ProgramAir::new(expected.clone())?;
+pub(super) fn prescreen(expected: ExpectedRef<'_>) -> Result<(ProgramAir, Assessment)> {
+    let air = match expected {
+        ExpectedRef::Pair(e) => ProgramAir::new(e.clone())?,
+        ExpectedRef::Data(e) => ProgramAir::data(e.clone())?,
+    };
     let assessment = program::assess(&air)?;
     assessment.require_resources()?;
     wire::require_assessment(&assessment)?;
@@ -69,6 +75,13 @@ fn private_config() -> Result<Config> {
 /// No expensive self-verification is hidden in this producer. Receiving verify
 /// remains mandatory. Prescreening precedes both public PP and private MAIN.
 pub fn prove(expected: &Expected, prepared: Prepared) -> Result<UnverifiedFormationEvidence> {
+    let bytes = prove_bytes(ExpectedRef::Pair(expected), prepared.inner)?;
+    Ok(UnverifiedFormationEvidence {
+        expected: expected.clone(),
+        bytes,
+    })
+}
+pub(super) fn prove_bytes(expected: ExpectedRef<'_>, prepared: Preparation) -> Result<Vec<u8>> {
     catch_unwind(AssertUnwindSafe(|| {
         prepared.require_expected(expected)?;
         let (air, assessment) = prescreen(expected)?;
@@ -91,15 +104,12 @@ pub fn prove(expected: &Expected, prepared: Prepared) -> Result<UnverifiedFormat
         let bytes = wire::encode(expected, &proof, &assessment)?;
         #[cfg(test)]
         phase_end("canonical_encode", began);
-        Ok(UnverifiedFormationEvidence {
-            expected: expected.clone(),
-            bytes,
-        })
+        Ok(bytes)
     }))
     .map_err(|_| Error::Proving)?
 }
-fn prove_trace(
-    expected: &Expected,
+pub(super) fn prove_trace(
+    expected: ExpectedRef<'_>,
     air: &ProgramAir,
     trace: &p3_matrix::dense::RowMajorMatrix<bfv_hiding_stark::Val>,
     data: &ProverData<Config>,
@@ -124,6 +134,12 @@ fn prove_trace(
 /// same actual analytical/resource gates, rederived PUBLIC PP/CommonData, fresh
 /// actual native verify_batch. No verdict is restored from serialized metadata.
 pub fn verify(expected: &Expected, frame: &[u8]) -> Result<VerifiedFormation> {
+    verify_bytes(ExpectedRef::Pair(expected), frame)?;
+    Ok(VerifiedFormation {
+        expected: expected.clone(),
+    })
+}
+pub(super) fn verify_bytes(expected: ExpectedRef<'_>, frame: &[u8]) -> Result<()> {
     let payload = wire::payload(expected, frame)?; // BEFORE any heavy setup or decoding.
     catch_unwind(AssertUnwindSafe(|| {
         let (air, assessment) = prescreen(expected)?;
@@ -137,14 +153,12 @@ pub fn verify(expected: &Expected, frame: &[u8]) -> Result<VerifiedFormation> {
         drop(data.prover_only); // No public PP LDEs retained by the receiving verifier.
         verify_native(expected, &air, &proof, &common)?;
         // SDK proof/config/CommonData/AIR all die before this mathematical result returns.
-        Ok(VerifiedFormation {
-            expected: expected.clone(),
-        })
+        Ok(())
     }))
     .map_err(|_| Error::Backend)?
 }
 fn verify_native(
-    expected: &Expected,
+    expected: ExpectedRef<'_>,
     air: &ProgramAir,
     proof: &BatchProof<Config>,
     common: &CommonData<Config>,
@@ -193,11 +207,11 @@ mod tests {
     #[test]
     fn false_first_graph_wire_preserves_local_equations_but_real_native_lookup_rejects() {
         let (expected, prepared) = super::super::tests::fixture();
-        let (air, assessment) = prescreen(&expected).unwrap();
+        let (air, assessment) = prescreen(ExpectedRef::Pair(&expected)).unwrap();
         let coefficients = air.first_gate_coefficients();
         assert_eq!(coefficients[0], Val::ONE);
         assert_eq!(coefficients[2], Val::ONE);
-        let data = setup::public_data(&air, &expected, &assessment).unwrap();
+        let data = setup::public_data(&air, ExpectedRef::Pair(&expected), &assessment).unwrap();
         let mut trace = prepared.trace(&expected).unwrap();
         // Change ONLY the first gate's input0 and both outputs. Its two local
         // equations still hold; EVERY other row, all four final AS products,
@@ -213,7 +227,7 @@ mod tests {
             trace.0.values[3],
             coefficients[2] * trace.0.values[0] + coefficients[3] * trace.0.values[1]
         );
-        let attempted = prove_trace(&expected, &air, &trace.0, &data);
+        let attempted = prove_trace(ExpectedRef::Pair(&expected), &air, &trace.0, &data);
         if cfg!(debug_assertions) {
             // Debug native bus replay may reject early; RELEASE below is the
             // required real proof+verification oracle. No Shape/resource passes.

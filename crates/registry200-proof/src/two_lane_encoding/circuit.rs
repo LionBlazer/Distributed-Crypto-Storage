@@ -111,14 +111,16 @@ impl Witness {
         }
     }
     /// Consumes the SAME final encoding opening; no salt/raw-W factory escapes.
-    /// The caller must already have freshly verified the actual matching pair.
+    /// The caller must already have freshly verified the actual matching encoding.
     pub(crate) fn into_formation_opening(
         self,
         statement: &Statement,
-    ) -> std::result::Result<bfv_ciphertext_formation::gold::ScaledOpening, super::formation::Error>
-    {
+    ) -> std::result::Result<
+        bfv_ciphertext_formation::gold::ScaledOpening,
+        bfv_ciphertext_formation::gold::Error,
+    > {
         self.require_expected(&statement.expected)
-            .map_err(|_| super::formation::Error::Binding)?;
+            .map_err(|_| bfv_ciphertext_formation::gold::Error::Binding)?;
         let words = self.coefficients(); // Exactly once; words are ALREADY scaled.
         let Self {
             expected: _,
@@ -130,12 +132,12 @@ impl Witness {
         drop(plain);
         drop(mask);
         drop(opening_salt);
-        Ok(bfv_ciphertext_formation::gold::ScaledOpening::checked(
+        bfv_ciphertext_formation::gold::ScaledOpening::checked(
             statement.expected.encoding_context(),
             statement.encoded,
             words,
             encoding_salt,
-        )?)
+        )
     }
     pub fn statement(&self) -> Statement {
         let e = &self.expected;

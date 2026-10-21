@@ -347,3 +347,66 @@ The static proof does not establish the 500 ms target or the remaining
 single-DATA Formation/query/fresh-head composition. New SourceVersion native
 failures retain `SourceVersionProof(BackendError)`; repaired OOD tests require
 exact cryptographic Verification rather than accepting a wrapper panic.
+
+## Immutable-version DATA Formation
+
+The additive data_formation namespace consumes exactly one Role3
+VersionSourceAllOriginal encoding and the new CoreGold DATA Formation proof. Its
+independent Expected accepts only the sealed StateCertificate source family. It
+binds the whole State public claim, both complete raw heads/packets, C_key,
+C_state, all candidate key29 metadata, Cw and the complete literal GFMDQ001
+request. Version identity remains request-independent; it is never compared or
+cast to a query q. Original Pair, mask, Formation and product profiles remain
+unchanged. The old Pair APIs do not accept this new role.
+
+secret_context(KeyBinding) is pure public metadata for DATA-specific Cs528. Its
+separate domain includes the fixed DATA profile and the first25 key values. It
+excludes its own Cs, Source/Cw and request, so owner-side Cs construction is
+acyclic. AEAD C_key and BFV Cs remain separate commitments. Metadata does not
+verify key authorization, lattice security or currentness.
+
+Prerequisites borrows one State frame (20MiB) and one child (12MiB). Its closed
+verification checks complete Statement/Cw association and freshly calls actual
+wire::verify, including source::version::verify and native Role3 verification.
+The producer does this before consuming the SAME final Witness. The crate-private
+consuming helper moves its already-scaled W and encoding salt exactly once into
+ScaledOpening and drops the source plaintext/original opening salt. SDK secret
+bytes and Cs salt move into SecretOpening. The actual lower DATA producer then
+applies its fixed security/resource gates before private MAIN. No raw opening,
+callback, caller-selected verifier or serialized checked state is adopted.
+
+Receiving first rejects empty/over32MiB DATA frames, checks the independently
+retained literal request and fresh prerequisites, then invokes actual cold native
+DATA verification. Only this route creates private-field move-only
+VerifiedDataFormation containing public Expected metadata. It supplies no
+source-version freshness, QueryCt/Cmd theorem, SourceVersion cast, SQL result,
+lock/QC, BFV/noise/composed-security or500ms guarantee.
+
+One owning fixture uses one genuine StateCertificate, one Role3 child and one
+actual DATA Formation proof. The same SDK secret produces the DATA-specific Cs
+and unseeded DataCt2. The ciphertext encrypts m=W*SCALE^-1 mod65537 so internal
+SDK scaling happens once. Missing/foreign State, full Cw/request/nonce, bounds,
+header and canonical decoded/reencoded OOD mutations reuse those same proofs.
+State OOD must report exact SourceVersionProof(Verification) at producer and
+receiver; DATA OOD must report exact Formation(Verification), excluding panic.
+Honest resource/proving failure fails the test. Two compile-fail examples protect
+the receiving result's private construction and ownership.
+
+The fixture additionally compiles two different private masks over the public
+age domain, encrypts them under the same retained SDK key and reuses the SAME
+accepted DataCt. A public evaluator receives only ciphertexts/public parameters
+and genuinely computes each Ct3. Actual complete conditional arithmetic checking
+precedes owner decryption and an independent full4096 ring oracle comparison.
+This is a local test of encrypted arithmetic/input reuse, not a production
+OriginatingQuery capability, query proof, SQL/locking/freshness/network path or an
+assessed product policy. It adds no query Formation proof or second Pair operand.
+
+Direct production dependencies are the parent Role3 Statement/Witness/wire,
+actual SourceVersion through that dispatcher and bfv-ciphertext-formation::gold::data.
+The public product library and SDK are used by the owning test only. The
+[executed DATA validation](../../../bfv-ciphertext-formation/src/gold/DATA-VALIDATION.md)
+records this genuine chain, its hostile cases, two ownership examples and the
+unchanged full Pair/product gate. Fresh mathematical receiving took 1378.583ms;
+the two fixture products took 65.408/64.543ms after query encryption. These are
+local mathematical timings, without the complete SQL/finality path or a 500ms
+claim. Resource fuses and actual proof rejection remain unchanged.

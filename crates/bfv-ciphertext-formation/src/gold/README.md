@@ -92,3 +92,64 @@ the exact gate coefficients; no fake checked proof or accepting verifier exists.
 
 See [executed validation](VALIDATION.md) for actual phases, bounded-process
 measurements, commands and remaining complete-query obligations.
+
+## Single immutable DATA ciphertext Formation
+
+The additive gold::data namespace owns a distinct one-Ct2 mathematical relation.
+Request::checked(nonce,ciphertext) and decode accept exactly one canonical
+unseeded N4096/Q2 SDK ciphertext. No dummy, zero or duplicated second ciphertext
+exists. The static admission nonce is metadata, never query q or a SourceVersion
+tag cast. GFMDQ001 request and DCSGFD01 proof frame have separate mathematical/
+wire profiles. Existing Pair public APIs, digests and preprocessing stay intact.
+
+data::Expected::checked retains the complete literal request, association64,
+contexts[DATA,Cs] and roots[DATA,Cs]. PV32 binds profile8, complete Expected
+digest16, Cs4 and Cw4. Prepared::new consumes ONE existing ScaledOpening and
+ONE SecretOpening. The SAME W4096 is already scaled: the builder performs no
+second SCALE or SDK encryption. Every W word, salt and actual SDK secret stays
+guarded. Proving outputs UNVERIFIED bytes; only cold verify creates move-only
+VerifiedDataFormation. No callback, receipt, mutable flag or verifier factory
+can replace actual checks.
+
+The private RelationKind Pair/Data chooses a closed inventory inside the SAME
+graph, PP generator, AIR, witness writer, assessor and native backend. DATA has
+one secret forward FFT, two public-A pointwise products and two inverse FFTs:
+81920 gates/2560 rows. ONE E per coefficient is shared across Q0/Q1; two K values
+preserve strict symmetric[-524287,+524287] via nonzero biased20 inverses. Full
+Cw4112 and packed Cs528 openings use the same arithmetic as Pair. DATA has39
+graph vectors, W tag39 and Cs tag40. Range coefficients use9 ports/98bits; two
+per row give2048 range rows, then514 Cw rows and66 Cs rows. H8192 contains5188
+active rows and3004 zero padding rows. MAIN512/PP272/128 original LogUp messages
+remain. Range ports19..127 and bits196..367 are explicitly zero outside their
+active phases; all inactive/padding cells are constrained. No absent operand
+equation or hash stream is evaluated.
+
+All native default-packing, security, terminal0, canonical decode/reencode/EOF,
+32MiB frame,1792MiB analytical workspace and fresh-OS private-config gates remain.
+The actual DATA AIR is assessed BEFORE PP/private MAIN; desired lookup counts
+or caller reports cannot substitute. PUBLIC-only PP setup drops its public
+seeded config before private commits. Receiving reconstructs its own PP then
+performs the actual cold native verifier.
+
+Dependencies are unchanged: existing Gold FFT/Poseidon/hiding engine, pinned P3
+batch/LogUp/security/codec, SHA2 and zeroize. FHE SDK remains dev-only. This lower
+library has no registry, Source, Session, CLI or fixture dependency. An upper
+DATA admission must freshly verify SourceVersion and version-DATA encoding,
+transfer SAME final W/salt and bind all original Source/Ckey/Cstate/BFV metadata.
+The lower relation supplies no such prerequisites, authorization, current-head
+freshness, SQL, noise or lattice-security assessment.
+
+Four new owning tests passed in the 14-case CoreGold gate. They use actual random SDK
+encryption of public rows, genuine W/Cs openings, wrong bounded key with repaired
+Cs, shared-error and repaired final-W failures, spare-column/K/padding checks,
+and one honest native DATA argument reused for OOD/binding/cap/EOF rejections.
+ONE additional genuine false-wire argument preserves all local equations and
+final products and must reach exact native Lookup(TerminalSumNonZero) in release.
+Repairing only terminal0 must still fail native verification. The two full prove
+sites run sequentially in one test. Two compile-fail examples protect the result.
+
+The [executed DATA validation](DATA-VALIDATION.md) records native assessment,
+14 owning cases, both upper chains, four privacy examples and exact Pair
+ordered-symbolic/full-PP golden comparisons. The 500ms complete-operation and
+whole-peer memory targets remain unestablished. Keeping H8192 implies no
+factor-two speed or memory claim.

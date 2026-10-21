@@ -11,8 +11,8 @@ use zeroize::Zeroizing;
 pub(super) const SLOTS: usize = 32;
 pub(super) const STAGES: usize = 12;
 pub(super) const FORWARD_GATES: usize = N / 2 * STAGES;
-pub(super) const POINTWISE_GATES: usize = 4 * N;
-pub(super) const INVERSE_GATES: usize = 4 * FORWARD_GATES;
+const POINTWISE_GATES: usize = 4 * N;
+const INVERSE_GATES: usize = 4 * FORWARD_GATES;
 pub(super) const GATES: usize = FORWARD_GATES + POINTWISE_GATES + INVERSE_GATES;
 pub(super) const ROWS: usize = GATES / SLOTS;
 const VECTORS: usize = 65;
@@ -70,7 +70,8 @@ pub(super) struct Row {
 /// Full literal request + actual canonical A data, with bounded PUBLIC tables.
 pub(super) struct Plan {
     identity: [u8; 64],
-    a_frequency: [Vec<u64>; 4],
+    kind: super::relation::RelationKind,
+    a_frequency: Vec<Vec<u64>>,
     forward: [Vec<u64>; STAGES],
     inverse: [Vec<u64>; STAGES],
     twist: Vec<u64>,
@@ -83,7 +84,7 @@ impl Plan {
             || GATES != 139264
             || ROWS != 4352
             || NODES != 266240
-            || logical_vectors()? > LOGICAL_VECTOR_CAP
+            || logical_vectors(inputs.kind)? > LOGICAL_VECTOR_CAP
         {
             return Err(Error::Resource);
         }
@@ -92,7 +93,7 @@ impl Plan {
         identity.update(b"DCS/GOLD-FORMATION/private-fixed-graph/v1");
         identity.update(inputs.nonce);
         identity.update(inputs.identity); // SHA512 of the entire original request wire.
-        for component in inputs.components {
+        for component in inputs.components.iter().copied() {
             for values in component {
                 identity.update((values.len() as u64).to_le_bytes());
                 for &value in values {
@@ -100,13 +101,11 @@ impl Plan {
                 }
             }
         }
-        let a_frequency = (0..4)
+        let a_frequency = (0..inputs.kind.products())
             .map(|job| {
                 fast.public_frequency(inputs.components[2 * (job / 2) + 1][job % 2], Q[job % 2])
             })
-            .collect::<Result<Vec<_>>>()?
-            .try_into()
-            .map_err(|_| Error::Shape)?;
+            .collect::<Result<Vec<_>>>()?;
         let omega = fft::mul(fft::PSI, fft::PSI);
         let inv_omega = fft::pow(omega, GOLD - 2);
         let forward = twiddles(omega);
@@ -119,6 +118,7 @@ impl Plan {
             .map(|v| fft::mul(v, inv_n))
             .collect();
         let plan = Self {
+            kind: inputs.kind,
             identity: identity.finalize().into(),
             a_frequency,
             forward,
@@ -130,7 +130,7 @@ impl Plan {
         Ok(plan)
     }
     pub(super) fn row(&self, index: usize) -> Result<Row> {
-        if index >= ROWS {
+        if index >= self.kind.graph_rows() {
             return Err(Error::Shape);
         }
         let mut gates = [Gate {
@@ -145,14 +145,14 @@ impl Plan {
         Ok(Row { gates })
     }
     fn gate(&self, index: usize) -> Result<Gate> {
-        if index >= GATES {
+        if index >= self.kind.graph_rows() * SLOTS {
             return Err(Error::Shape);
         }
         if index < FORWARD_GATES {
             return self.butterfly(None, index);
         }
         let index = index - FORWARD_GATES;
-        if index < POINTWISE_GATES {
+        if index < self.kind.products() * N {
             let job = index / N;
             let at = index % N;
             return Ok(Gate {
@@ -162,7 +162,7 @@ impl Plan {
                 output_uses: [1, 0],
             });
         }
-        let index = index - POINTWISE_GATES;
+        let index = index - self.kind.products() * N;
         self.butterfly(Some(index / FORWARD_GATES), index % FORWARD_GATES)
     }
     fn butterfly(&self, job: Option<usize>, index: usize) -> Result<Gate> {
@@ -178,9 +178,9 @@ impl Plan {
                 if stage == 0 {
                     13 + job
                 } else {
-                    17 + job * STAGES + stage - 1
+                    13 + self.kind.products() + job * STAGES + stage - 1
                 },
-                17 + job * STAGES + stage,
+                13 + self.kind.products() + job * STAGES + stage,
                 self.inverse[stage][offset],
             )
         } else {
@@ -204,7 +204,7 @@ impl Plan {
             }
         }
         let uses = if job.is_none() && stage == STAGES - 1 {
-            4
+            self.kind.products() as u8
         } else {
             1
         };
@@ -222,16 +222,16 @@ impl Plan {
         })
     }
     pub(super) fn audit_inventory(&self) -> Result<()> {
-        let mut inventory = Inventory::new();
-        for index in 0..GATES {
+        let mut inventory = Inventory::new(self.kind);
+        for index in 0..self.kind.graph_rows() * SLOTS {
             inventory.include(self.gate(index)?)?;
         }
         inventory.finish()
     }
     pub(super) fn build(&self, secret: &[i64]) -> Result<Trace> {
-        let mut wires = source_bank(secret)?;
-        let mut values = Zeroizing::new(Vec::with_capacity(GATES));
-        for index in 0..ROWS {
+        let mut wires = source_bank(secret, self.kind)?;
+        let mut values = Zeroizing::new(Vec::with_capacity(self.kind.graph_rows() * SLOTS));
+        for index in 0..self.kind.graph_rows() {
             for gate in self.row(index)?.gates {
                 let input = gate
                     .inputs
@@ -258,10 +258,10 @@ impl Plan {
         if trace.identity != self.identity {
             return Err(Error::Binding);
         }
-        if trace.values.len() != GATES {
+        if trace.values.len() != self.kind.graph_rows() * SLOTS {
             return Err(Error::Shape);
         }
-        let mut wires = source_bank(secret)?;
+        let mut wires = source_bank(secret, self.kind)?;
         for (index, values) in trace.values.iter().enumerate() {
             if values.iter().any(|&v| v >= GOLD) {
                 return Err(Error::Arithmetic);
@@ -292,11 +292,15 @@ impl Plan {
         if trace.identity != self.identity {
             return Err(Error::Binding);
         }
-        if operand >= 2 || basis >= 2 || trace.values.len() != GATES {
+        if operand >= self.kind.operands()
+            || basis >= 2
+            || trace.values.len() != self.kind.graph_rows() * SLOTS
+        {
             return Err(Error::Shape);
         }
         let job = operand * 2 + basis;
-        let first = FORWARD_GATES + POINTWISE_GATES + job * FORWARD_GATES + (STAGES - 1) * (N / 2);
+        let first =
+            FORWARD_GATES + self.kind.products() * N + job * FORWARD_GATES + (STAGES - 1) * (N / 2);
         let mut product = Zeroizing::new(vec![0; N]);
         let limit = 20_i128 * N as i128 * i128::from(Q[basis] - 1);
         for gate_index in first..first + N / 2 {
@@ -333,19 +337,19 @@ struct Inventory {
     producers: Vec<u8>,
 }
 impl Inventory {
-    fn new() -> Self {
+    fn new(kind: super::relation::RelationKind) -> Self {
         let mut this = Self {
-            balance: vec![0; NODES],
-            producers: vec![0; NODES],
+            balance: vec![0; kind.vectors() * N],
+            producers: vec![0; kind.vectors() * N],
         };
         for at in 0..N {
             this.balance[at] = 1;
             this.producers[at] = 1;
         }
         // Exact outer boundary: one range-bank consumer for each final inverse coefficient.
-        for job in 0..4 {
+        for job in 0..kind.products() {
             for at in 0..N {
-                this.balance[(28 + job * STAGES) * N + at] -= 1;
+                this.balance[kind.final_vector(job) * N + at] -= 1;
             }
         }
         this
@@ -355,12 +359,12 @@ impl Inventory {
             if node.id() >= GOLD {
                 return Err(Error::Shape);
             }
-            self.balance[node.slot()] -= 1;
+            *self.balance.get_mut(node.slot()).ok_or(Error::Shape)? -= 1;
         }
         for (node, uses) in gate.outputs.into_iter().zip(gate.output_uses) {
             match node {
                 Some(node) if (1..=4).contains(&uses) => {
-                    self.balance[node.slot()] += i32::from(uses);
+                    *self.balance.get_mut(node.slot()).ok_or(Error::Shape)? += i32::from(uses);
                     self.producers[node.slot()] = self.producers[node.slot()]
                         .checked_add(1)
                         .ok_or(Error::Shape)?;
@@ -378,11 +382,11 @@ impl Inventory {
         Ok(())
     }
 }
-fn source_bank(secret: &[i64]) -> Result<Zeroizing<Vec<u64>>> {
+fn source_bank(secret: &[i64], kind: super::relation::RelationKind) -> Result<Zeroizing<Vec<u64>>> {
     if secret.len() != N || secret.iter().any(|v| !(-20..=20).contains(v)) {
         return Err(Error::Arithmetic);
     }
-    let mut bank = Zeroizing::new(vec![0; NODES]);
+    let mut bank = Zeroizing::new(vec![0; kind.vectors() * N]);
     for (cell, &value) in bank.iter_mut().zip(secret) {
         *cell = if value < 0 {
             GOLD - value.unsigned_abs()
@@ -416,15 +420,15 @@ fn add(a: u64, b: u64) -> u64 {
 fn neg(a: u64) -> u64 {
     if a == 0 { 0 } else { GOLD - a }
 }
-fn logical_vectors() -> Result<usize> {
+fn logical_vectors(kind: super::relation::RelationKind) -> Result<usize> {
     // Trace + one private wire bank + all public A/twiddle/twist tables +
     // public inventory + four lifted outputs; not SDK/allocator/whole-PID RAM.
     let terms = [
-        GATES * 4 * 8,
-        NODES * 8,
-        (4 * N + 2 * (N - 1) + 2 * N) * 8,
-        NODES * 5,
-        4 * N * 8,
+        kind.graph_rows() * SLOTS * 4 * 8,
+        kind.vectors() * N * 8,
+        (kind.products() * N + 2 * (N - 1) + 2 * N) * 8,
+        kind.vectors() * N * 5,
+        kind.products() * N * 8,
     ];
     terms
         .into_iter()

@@ -189,3 +189,13 @@ contracts remain separate. [Executed version encoding validation](src/two_lane_e
 covers fourteen owning cases, the unchanged full product consumer and two
 privacy examples. This is an input-encoding proof, without DATA ciphertext
 Formation, current-head authorization or SQL admission.
+
+
+The separate `two_lane_encoding::data_formation` composition now consumes the
+immutable-version encoding with an actual single-DATA ciphertext Formation.
+Both producer and receiver freshly verify State/Role3; the producer consumes
+the same final W/salt and original SDK secret. [Executed DATA validation](../bfv-ciphertext-formation/src/gold/DATA-VALIDATION.md)
+records one genuine collection, strict cryptographic rejections, two encrypted
+products reusing the same checked DATA ciphertext, and the preserved Pair path.
+It grants mathematical association only; SQL/current-head/key authorization
+and network lock finality are not supplied by this new result.

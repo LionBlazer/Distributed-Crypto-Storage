@@ -1,6 +1,6 @@
 //! Sealed deterministic PUBLIC-only preprocessing; no seeded configuration escapes.
 use super::program::{Assessment, BUS, DEGREE_BITS, PP_WIDTH, ProgramAir};
-use super::{Error, Expected, Result, profile_digest, wire};
+use super::{Error, Result, relation::ExpectedRef, wire};
 use bfv_hiding_stark::{
     ChallengeMmcs, Challenger, Compress, Config, Hash, LOG_BLOWUP, Mmcs, Pcs, QUERIES,
     RANDOM_CODEWORDS,
@@ -13,11 +13,11 @@ use p3_lookup::Kind;
 use rand_public_pp::{SeedableRng, rngs::StdRng};
 use sha2::{Digest, Sha512};
 
-fn public_stream(expected: &Expected, label: u8) -> StdRng {
+fn public_stream(expected: ExpectedRef<'_>, label: u8) -> StdRng {
     let mut hash = Sha512::new();
     hash.update(b"DCS/GOLD-FORMATION/PUBLIC-PP-ONLY/v1\0");
-    hash.update(profile_digest());
-    hash.update(wire::profile());
+    hash.update(expected.kind().profile());
+    hash.update(wire::profile_for(expected.kind()));
     hash.update(expected.binding());
     hash.update([label]);
     let digest = hash.finalize();
@@ -25,7 +25,7 @@ fn public_stream(expected: &Expected, label: u8) -> StdRng {
     seed.copy_from_slice(&digest[..32]);
     StdRng::from_seed(seed)
 }
-fn public_mmcs(expected: &Expected, label: u8) -> Mmcs {
+fn public_mmcs(expected: ExpectedRef<'_>, label: u8) -> Mmcs {
     let permutation = default_goldilocks_poseidon2_12();
     Mmcs::new(
         Hash::new(permutation.clone()),
@@ -41,7 +41,7 @@ fn public_mmcs(expected: &Expected, label: u8) -> Mmcs {
 /// The caller has already assessed the SAME immutable AIR before entering here.
 pub(super) fn public_data(
     air: &ProgramAir,
-    expected: &Expected,
+    expected: ExpectedRef<'_>,
     assessment: &Assessment,
 ) -> Result<ProverData<Config>> {
     assessment.require_resources()?;

@@ -1,11 +1,10 @@
 //! Consumed owner-private mathematical inputs. No key/Source/SQL grant or secret getter.
-use super::program::{
-    ACCUMULATOR, BITS, CHECKPOINT, CS_FIRST, HEIGHT, MASK_FIRST, RANGE_FIRST, SOURCE_FIRST, WIDTH,
-};
+use super::program::{ACCUMULATOR, BITS, CHECKPOINT, HEIGHT, WIDTH};
 use super::{
     Error, Expected, Result, Val,
-    geometry::{DELTA, Inputs, N, Q, T},
+    geometry::{DELTA, N, Q, T},
     graph,
+    relation::{CapturedExpected, ExpectedRef},
 };
 use bfv_hiding_stark::poseidon;
 use p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
@@ -137,11 +136,9 @@ pub(super) fn hash_fields(context: [Val; 8], salt: &[u64; 4], words: &[u64]) -> 
     state.0[..4].try_into().map_err(|_| Error::Shape)
 }
 
-/// Opaque consumed witness for the one fixed full relation, not an acceptance token.
+/// Opaque consumed witness for the original Pair relation; public API unchanged.
 pub struct Prepared {
-    expected: Expected,
-    openings: [ScaledOpening; 2],
-    key: SecretOpening,
+    pub(super) inner: Preparation,
 }
 impl Prepared {
     pub fn new(
@@ -149,42 +146,74 @@ impl Prepared {
         openings: [ScaledOpening; 2],
         key: SecretOpening,
     ) -> Result<Self> {
+        Ok(Self {
+            inner: Preparation::new(ExpectedRef::Pair(expected), Vec::from(openings), key)?,
+        })
+    }
+    #[cfg(test)]
+    pub(super) fn require_expected(&self, expected: &Expected) -> Result<()> {
+        self.inner.require_expected(ExpectedRef::Pair(expected))
+    }
+    #[cfg(test)]
+    pub(super) fn trace(self, expected: &Expected) -> Result<PrivateTrace> {
+        self.inner.trace(ExpectedRef::Pair(expected))
+    }
+}
+pub(super) struct Preparation {
+    expected: CapturedExpected,
+    openings: Vec<ScaledOpening>,
+    key: SecretOpening,
+}
+impl Preparation {
+    pub(super) fn new(
+        expected: ExpectedRef<'_>,
+        openings: Vec<ScaledOpening>,
+        key: SecretOpening,
+    ) -> Result<Self> {
+        let kind = expected.kind();
+        if openings.len() != kind.operands() {
+            return Err(Error::Shape);
+        }
         for (i, o) in openings.iter().enumerate() {
-            if o.context != expected.contexts()[i] || o.root != expected.roots()[i] {
+            if o.context != expected.context(i) || o.root != expected.root(i) {
                 return Err(Error::Binding);
             }
         }
-        if key.context != expected.contexts()[2] || key.root != expected.roots()[2] {
+        if key.context != expected.context(kind.operands())
+            || key.root != expected.root(kind.operands())
+        {
             return Err(Error::Binding);
         }
         Ok(Self {
-            expected: expected.clone(),
+            expected: expected.captured(),
             openings,
             key,
         })
     }
-    pub(super) fn require_expected(&self, expected: &Expected) -> Result<()> {
+    pub(super) fn require_expected(&self, expected: ExpectedRef<'_>) -> Result<()> {
         self.expected.require_same(expected)
     }
     /// Called only by the closed backend AFTER actual assessment/resource gates.
     /// All auxiliary secret graph/product banks drop before native MAIN commitment.
-    pub(super) fn trace(self, expected: &Expected) -> Result<PrivateTrace> {
+    pub(super) fn trace(self, expected: ExpectedRef<'_>) -> Result<PrivateTrace> {
         self.require_expected(expected)?;
-        let plan = graph::Plan::new(Inputs::new(expected.request())?)?;
+        let kind = expected.kind();
+        let layout = kind.range();
+        let plan = graph::Plan::new(expected.inputs()?)?;
         let graph = plan.build(&self.key.secret)?;
-        let products: [Zeroizing<Vec<i64>>; 4] = (0..4)
+        let products: Vec<Zeroizing<Vec<i64>>> = (0..kind.products())
             .map(|j| plan.product(&graph, j / 2, j % 2))
-            .collect::<Result<Vec<_>>>()?
-            .try_into()
-            .map_err(|_| Error::Shape)?;
-        let mut errors: [Zeroizing<Vec<i64>>; 2] =
-            core::array::from_fn(|_| Zeroizing::new(vec![0; N]));
-        let mut quotients: [Zeroizing<Vec<i64>>; 4] =
-            core::array::from_fn(|_| Zeroizing::new(vec![0; N]));
-        for j in 0..4 {
+            .collect::<Result<Vec<_>>>()?;
+        let mut errors: Vec<Zeroizing<Vec<i64>>> = (0..kind.operands())
+            .map(|_| Zeroizing::new(vec![0; N]))
+            .collect();
+        let mut quotients: Vec<Zeroizing<Vec<i64>>> = (0..kind.products())
+            .map(|_| Zeroizing::new(vec![0; N]))
+            .collect();
+        for j in 0..kind.products() {
             let operand = j / 2;
             let b = j % 2;
-            let ct = expected.request().input(2 * operand);
+            let ct = expected.input(2 * operand);
             for at in 0..N {
                 let phase = i128::from(ct[b][at]) + i128::from(products[j][at])
                     - i128::from(DELTA[b]) * i128::from(self.openings[operand].words[at]);
@@ -214,7 +243,7 @@ impl Prepared {
             }
         }
         let mut main = PrivateTrace(RowMajorMatrix::new(Val::zero_vec(HEIGHT * WIDTH), WIDTH));
-        for r in 0..graph::ROWS {
+        for r in 0..kind.graph_rows() {
             let row = &mut main.0.values[r * WIDTH..(r + 1) * WIDTH];
             for (slot, values) in graph.values[32 * r..32 * r + 32].iter().enumerate() {
                 for (i, &v) in values.iter().enumerate() {
@@ -227,43 +256,46 @@ impl Prepared {
         let mut cs_words = Zeroizing::new(Vec::with_capacity(512));
         let mut accumulator = 0u64;
         for r in 0..2048 {
-            let row = &mut main.0.values[(RANGE_FIRST + r) * WIDTH..(RANGE_FIRST + r + 1) * WIDTH];
+            let row = &mut main.0.values
+                [(kind.range_first() + r) * WIDTH..(kind.range_first() + r + 1) * WIDTH];
             row[ACCUMULATOR] = Val::from_u64(accumulator);
             for k in 0..2 {
                 let at = 2 * r + k;
-                let base = 17 * k;
-                let mut bit = BITS + 184 * k;
-                for (bank, value) in [self.key.secret[at], errors[0][at], errors[1][at]]
-                    .into_iter()
-                    .enumerate()
-                {
+                let base = layout.stride * k;
+                let mut bit = BITS + layout.bits * k;
+                for bank in 0..1 + kind.operands() {
+                    let value = if bank == 0 {
+                        self.key.secret[at]
+                    } else {
+                        errors[bank - 1][at]
+                    };
                     row[base + bank] = signed(value);
                     let biased = (value + 20) as u64;
                     write_bits(&mut row[bit..bit + 6], biased);
                     write_bits(&mut row[bit + 6..bit + 12], 40 - biased);
                     bit += 12;
                 }
-                for j in 0..4 {
+                for j in 0..kind.products() {
                     let value = quotients[j][at];
-                    row[base + 3 + j] = signed(value);
+                    row[base + layout.k + j] = signed(value);
                     let biased = (value + 524288) as u64;
                     write_bits(&mut row[bit..bit + 20], biased);
                     bit += 20;
-                    row[base + 13 + j] = Val::from_u64(biased)
+                    row[base + layout.inverse + j] = Val::from_u64(biased)
                         .try_inverse()
                         .ok_or(Error::Arithmetic)?;
                 }
-                for operand in 0..2 {
+                for operand in 0..kind.operands() {
                     let w = self.openings[operand].words[at];
-                    row[base + 7 + operand] = Val::from_u64(w);
+                    row[base + layout.w + operand] = Val::from_u64(w);
                     write_bits(&mut row[bit..bit + 17], w);
                     write_bits(&mut row[bit + 17..bit + 34], T - 1 - w);
                     bit += 34;
                 }
-                for j in 0..4 {
-                    row[base + 9 + j] = signed(products[j][at]);
+                for j in 0..kind.products() {
+                    row[base + layout.product + j] = signed(products[j][at]);
                 }
-                if bit != BITS + 184 * (k + 1) {
+                if bit != BITS + layout.bits * (k + 1) {
                     return Err(Error::Shape);
                 }
             }
@@ -271,7 +303,7 @@ impl Prepared {
                 + 64 * ((self.key.secret[2 * r + 1] + 20) as u64);
             let word = accumulator + (pair << (12 * (r % 4)));
             if r % 4 == 3 {
-                row[34] = Val::from_u64(word);
+                row[2 * layout.stride] = Val::from_u64(word);
                 cs_words.push(word);
                 accumulator = 0;
             } else {
@@ -281,32 +313,28 @@ impl Prepared {
         drop(products);
         drop(errors);
         drop(quotients);
-        for (start, context, root, salt, words) in [
-            (
-                SOURCE_FIRST,
-                self.openings[0].context,
-                self.openings[0].root,
-                &*self.openings[0].salt,
-                self.openings[0].words.as_slice(),
-            ),
-            (
-                MASK_FIRST,
-                self.openings[1].context,
-                self.openings[1].root,
-                &*self.openings[1].salt,
-                self.openings[1].words.as_slice(),
-            ),
-            (
-                CS_FIRST,
-                self.key.context,
-                self.key.root,
-                &*self.key.salt,
-                cs_words.as_slice(),
-            ),
-        ] {
+        for role in 0..=kind.operands() {
+            let (start, context, root, salt, words) = if role < kind.operands() {
+                let opening = &self.openings[role];
+                (
+                    kind.cw_first(role),
+                    opening.context,
+                    opening.root,
+                    &*opening.salt,
+                    opening.words.as_slice(),
+                )
+            } else {
+                (
+                    kind.cs_first(),
+                    self.key.context,
+                    self.key.root,
+                    &*self.key.salt,
+                    cs_words.as_slice(),
+                )
+            };
             write_hash(&mut main.0, start, context, salt, words, root)?;
         }
-        // All698 padding rows and all inactive columns retain their initial zero.
+        // All relation-specific padding rows and inactive columns stay zero.
         Ok(main)
     }
 }

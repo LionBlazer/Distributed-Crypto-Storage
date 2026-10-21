@@ -2,6 +2,7 @@
 pub mod air;
 pub mod circuit;
 pub mod commitment;
+pub mod data_formation;
 pub mod formation;
 pub mod layout;
 pub mod product;

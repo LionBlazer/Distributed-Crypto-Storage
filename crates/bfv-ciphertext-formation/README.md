@@ -98,3 +98,12 @@ Source/encoding prerequisites and owns their association. The
 [executed native gates](src/gold/VALIDATION.md) establish local proof behavior,
 not key admission, lattice assurance, current-head freshness, SQL acceptance,
 network latency or the 500ms complete-query target.
+
+
+The additive `gold::data` facade now shares the closed CoreGold backend for one
+actual DATA ciphertext. Its upper StateVersion/Role3 consumer transfers the same
+final W and secret openings into that proof. [DATA validation](src/gold/DATA-VALIDATION.md)
+covers actual native proofs, hostile arguments and exact preservation of both
+Pair profiles, ordered symbolic constraints and the full preprocessing matrix.
+This supplies request-independent DATA mathematics; production installation,
+query provenance and fresh SQL/lock finality remain separate boundaries.

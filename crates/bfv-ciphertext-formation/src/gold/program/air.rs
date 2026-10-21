@@ -1,5 +1,8 @@
 //! The complete immutable relation. No caller-selected gates, AIRs or bus layouts.
-use super::super::geometry::Q;
+use super::super::{
+    geometry::Q,
+    relation::{ExpectedRef, RelationKind},
+};
 use super::pp::*;
 use super::*;
 use bfv_hiding_stark::{Val, poseidon};
@@ -15,6 +18,12 @@ pub(in crate::gold) struct ProgramAir {
 }
 impl ProgramAir {
     pub(in crate::gold) fn new(expected: super::super::Expected) -> Result<Self> {
+        Self::from_expected(ExpectedRef::Pair(&expected))
+    }
+    pub(in crate::gold) fn data(expected: super::super::data::Expected) -> Result<Self> {
+        Self::from_expected(ExpectedRef::Data(&expected))
+    }
+    fn from_expected(expected: ExpectedRef<'_>) -> Result<Self> {
         let descriptor = Descriptor::new(expected)?;
         if poseidon::WIDTH != 248
             || PORTS + 368 != CHECKPOINT
@@ -22,7 +31,7 @@ impl ProgramAir {
             || WIDTH != 512
             || PP_WIDTH != 272
             || HEIGHT != 8192
-            || descriptor.values.len() != PUBLIC_VALUES
+            || descriptor.values.len() != descriptor.kind.public_values()
         {
             return Err(Error::Shape);
         }
@@ -31,6 +40,9 @@ impl ProgramAir {
         };
         this.inventory()?;
         Ok(this)
+    }
+    pub(in crate::gold) fn kind(&self) -> RelationKind {
+        self.descriptor.kind
     }
     pub(super) fn inventory(&self) -> Result<()> {
         pp::inventory(&self.descriptor)
@@ -59,7 +71,7 @@ impl BaseAir<Val> for ProgramAir {
         Some(RowMajorMatrix::new(values, PP_WIDTH))
     }
     fn num_public_values(&self) -> usize {
-        PUBLIC_VALUES
+        self.descriptor.kind.public_values()
     }
     fn main_next_row_columns(&self) -> Vec<usize> {
         (CHECKPOINT..=ACCUMULATOR).collect()
@@ -76,6 +88,8 @@ impl<AB: InteractionBuilder<F = Val>> Air<AB> for ProgramAir {
         let pre = b.preprocessed().clone();
         let p = pre.current_slice();
         let f: [AB::Expr; 16] = core::array::from_fn(|i| p[FLAGS + i].into());
+        let kind = self.descriptor.kind;
+        let range_layout = kind.range();
         let a = f[ARITH].clone();
         let r = f[RANGE].clone();
         let h = f[HASH].clone();
@@ -106,60 +120,76 @@ impl<AB: InteractionBuilder<F = Val>> Air<AB> for ProgramAir {
         // Full direct bit ranges share scratch with Poseidon only in disjoint PP phases.
         for bit in 0..368 {
             let value: AB::Expr = row[BITS + bit].into();
-            b.when(r.clone()).assert_bool(value.clone());
+            if bit < 2 * range_layout.bits {
+                b.when(r.clone()).assert_bool(value.clone());
+            }
             let active = if bit < poseidon::WIDTH {
-                r.clone() + h.clone()
-            } else {
+                if bit < 2 * range_layout.bits {
+                    r.clone() + h.clone()
+                } else {
+                    h.clone()
+                }
+            } else if bit < 2 * range_layout.bits {
                 r.clone()
+            } else {
+                AB::Expr::ZERO
             };
             b.assert_zero((AB::Expr::ONE - active) * value);
         }
         for k in 0..2 {
-            let base = 17 * k;
-            let mut bit = BITS + 184 * k;
-            for bank in 0..3 {
+            let base = range_layout.stride * k;
+            let mut bit = BITS + range_layout.bits * k;
+            for bank in 0..1 + kind.operands() {
                 let x = packed::<AB>(&row[bit..bit + 6]);
                 let slack = packed::<AB>(&row[bit + 6..bit + 12]);
                 bit += 12;
                 b.assert_zero(r.clone() * (v[base + bank].clone() + Val::from_u8(20) - x.clone()));
                 b.assert_zero(r.clone() * (x + slack - Val::from_u8(40)));
             }
-            for job in 0..4 {
+            for job in 0..kind.products() {
                 let biased = packed::<AB>(&row[bit..bit + 20]);
                 bit += 20;
                 b.assert_zero(
                     r.clone()
-                        * (v[base + 3 + job].clone() + Val::from_u32(524288) - biased.clone()),
+                        * (v[base + range_layout.k + job].clone() + Val::from_u32(524288)
+                            - biased.clone()),
                 );
                 // Exclude -524288; preserve EXACT symmetric[-524287,+524287].
-                b.assert_zero(r.clone() * (biased * v[base + 13 + job].clone() - AB::Expr::ONE));
+                b.assert_zero(
+                    r.clone()
+                        * (biased * v[base + range_layout.inverse + job].clone() - AB::Expr::ONE),
+                );
             }
-            for operand in 0..2 {
+            for operand in 0..kind.operands() {
                 let w = packed::<AB>(&row[bit..bit + 17]);
                 let slack = packed::<AB>(&row[bit + 17..bit + 34]);
                 bit += 34;
-                b.assert_zero(r.clone() * (v[base + 7 + operand].clone() - w.clone()));
+                b.assert_zero(r.clone() * (v[base + range_layout.w + operand].clone() - w.clone()));
                 b.assert_zero(r.clone() * (w + slack - Val::from_u32(65536)));
             }
-            for job in 0..4 {
+            for job in 0..kind.products() {
                 let operand = job / 2;
                 let basis = job % 2;
                 let delta = [536854528, 282551134][basis];
                 b.assert_zero(
                     r.clone()
-                        * (c[4 * k + job].clone() + v[base + 9 + job].clone()
-                            - v[base + 7 + operand].clone() * Val::from_u64(delta)
-                            - v[base + 1 + operand].clone()
-                            - v[base + 3 + job].clone() * Val::from_u64(Q[basis])),
+                        * (c[kind.products() * k + job].clone()
+                            + v[base + range_layout.product + job].clone()
+                            - v[base + range_layout.w + operand].clone() * Val::from_u64(delta)
+                            - v[base + range_layout.e + operand].clone()
+                            - v[base + range_layout.k + job].clone() * Val::from_u64(Q[basis])),
                 );
             }
         }
         let acc: AB::Expr = row[ACCUMULATOR].into();
-        let pair =
-            v[0].clone() + Val::from_u8(20) + (v[17].clone() + Val::from_u8(20)) * Val::from_u8(64);
+        let pair = v[0].clone()
+            + Val::from_u8(20)
+            + (v[range_layout.stride].clone() + Val::from_u8(20)) * Val::from_u8(64);
         let word = acc.clone() + pair * c[8].clone();
         b.assert_zero(f[RESET].clone() * acc.clone());
-        b.assert_zero(r.clone() * (v[34].clone() - f[EMIT].clone() * word.clone()));
+        b.assert_zero(
+            r.clone() * (v[2 * range_layout.stride].clone() - f[EMIT].clone() * word.clone()),
+        );
         b.when_transition().assert_zero(
             r.clone() * (next[ACCUMULATOR] - (AB::Expr::ONE - f[EMIT].clone()) * word),
         );
@@ -197,7 +227,7 @@ impl<AB: InteractionBuilder<F = Val>> Air<AB> for ProgramAir {
         }
         for (port, value) in v.iter().enumerate() {
             b.assert_zero((AB::Expr::ONE - a.clone() - r.clone() - h.clone()) * value.clone());
-            if port >= 35 {
+            if port > 2 * range_layout.stride {
                 b.assert_zero(r.clone() * value.clone());
             }
             if port >= 8 {
@@ -206,17 +236,25 @@ impl<AB: InteractionBuilder<F = Val>> Air<AB> for ProgramAir {
             let arith = match port % 4 {
                 0 => -a.clone(),
                 1 => -a.clone() + f[POINTWISE].clone(),
-                2 => a.clone() + f[FANOUT].clone() * Val::from_u8(3),
-                3 => a.clone() - f[POINTWISE].clone() + f[FANOUT].clone() * Val::from_u8(3),
+                2 => a.clone() + f[FANOUT].clone() * Val::from_usize(kind.products() - 1),
+                3 => {
+                    a.clone() - f[POINTWISE].clone()
+                        + f[FANOUT].clone() * Val::from_usize(kind.products() - 1)
+                }
                 _ => AB::Expr::ZERO,
             };
-            let range = if port < 34 {
-                match port % 17 {
-                    0 | 7 | 8 => r.clone(),
-                    9..=12 => -r.clone(),
-                    _ => AB::Expr::ZERO,
+            let range = if port < 2 * range_layout.stride {
+                let bank = port % range_layout.stride;
+                if bank == 0 || (range_layout.w..range_layout.w + kind.operands()).contains(&bank) {
+                    r.clone()
+                } else if (range_layout.product..range_layout.product + kind.products())
+                    .contains(&bank)
+                {
+                    -r.clone()
+                } else {
+                    AB::Expr::ZERO
                 }
-            } else if port == 34 {
+            } else if port == 2 * range_layout.stride {
                 f[EMIT].clone()
             } else {
                 AB::Expr::ZERO

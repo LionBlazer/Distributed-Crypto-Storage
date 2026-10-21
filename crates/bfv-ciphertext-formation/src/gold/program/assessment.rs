@@ -24,7 +24,7 @@ use p3_security::stark::proven_security_report;
 use p3_uni_stark::{OpeningShape, ProvenSecurity, StarkSecurityParams};
 
 use super::air::ProgramAir;
-use super::{BUS, DEGREE_BITS, HEIGHT, LOG_HEIGHT, PORTS, PP_WIDTH, PUBLIC_VALUES, WIDTH};
+use super::{BUS, DEGREE_BITS, HEIGHT, LOG_HEIGHT, PORTS, PP_WIDTH, WIDTH};
 use super::{Error, Result};
 
 const RESOURCE_LIMIT_BYTES: usize = 1792 * 1024 * 1024;
@@ -266,6 +266,29 @@ pub(in crate::gold) fn assess(air: &ProgramAir) -> Result<Assessment> {
         return Err(Error::Security);
     }
     let resources = Resources::derive(&shape, aux_width, chunks, dimension)?;
+    #[cfg(test)]
+    eprintln!(
+        "core_gold_assessment relation={} base={} extension={} degree={} chunks={} original={} packed={} aux={} openings={} workspace_bytes={} unique_bits={} list_bits={} udr_bits={:.12} ldr_bits={:.12} logup_bits={:.12}",
+        if air.kind() == super::super::relation::RelationKind::Data {
+            "data"
+        } else {
+            "pair"
+        },
+        base_constraints,
+        extension_constraints,
+        degree,
+        chunks,
+        messages.count,
+        packed.len(),
+        aux_width,
+        openings,
+        resources.estimated_workspace_bytes,
+        baseline.unique_decoding_bits,
+        baseline.list_decoding_bits,
+        report.udr.security_bits(),
+        report.ldr.as_ref().map_or(0.0, RegimeReport::security_bits),
+        logup.bits.bits()
+    );
     Ok(Assessment {
         chunks,
         packed: packed.len(),
@@ -303,7 +326,7 @@ impl Shape {
         // No call here materializes the large fixed preprocessing matrix.
         if main_width != WIDTH
             || pp_width != PP_WIDTH
-            || public_values != PUBLIC_VALUES
+            || public_values != air.kind().public_values()
             || HEIGHT != pow2(LOG_HEIGHT)?
             || main_width == 0
             || pp_width == 0

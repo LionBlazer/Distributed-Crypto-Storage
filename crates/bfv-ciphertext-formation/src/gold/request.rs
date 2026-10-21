@@ -184,7 +184,7 @@ fn polynomial(bytes: &[u8]) -> Result<Polynomial> {
     }
     Ok(rows)
 }
-fn parse(bytes: &[u8]) -> Result<[Polynomial; 2]> {
+pub(super) fn parse(bytes: &[u8]) -> Result<[Polynomial; 2]> {
     if bytes.is_empty() || bytes.len() > MAX_CT {
         return Err(Error::Resource);
     }

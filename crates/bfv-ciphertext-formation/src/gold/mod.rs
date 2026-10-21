@@ -1,10 +1,12 @@
 //! Fixed N4096/Q2 Formation mathematics. Source, key admission and SQL stay with callers.
+pub mod data;
 mod evidence;
 mod expected;
 mod fft;
 mod geometry;
 mod graph;
 mod program;
+mod relation;
 mod request;
 mod setup;
 #[cfg(test)]

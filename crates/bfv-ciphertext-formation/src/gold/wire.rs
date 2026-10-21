@@ -1,6 +1,9 @@
 //! Closed canonical Gold Formation frame and complete native five-round topology.
 use super::program::{Assessment, DEGREE_BITS, PP_WIDTH, WIDTH};
-use super::{Error, Expected, Result, profile_digest};
+use super::{
+    Error, Result, profile_digest,
+    relation::{ExpectedRef, RelationKind},
+};
 use bfv_hiding_stark::{Challenge, Config, LOG_BLOWUP, QUERIES, Val};
 use p3_batch_stark::BatchProof;
 use p3_field::PrimeCharacteristicRing;
@@ -42,6 +45,27 @@ pub(super) fn profile() -> [u8; 32] {
     hash.finalize().into()
 }
 
+pub(super) fn profile_for(kind: RelationKind) -> [u8; 32] {
+    if kind == RelationKind::Pair {
+        return profile();
+    }
+    let mut h = Sha256::new();
+    h.update(b"DCS/GOLD-DATA-FORMATION/one-full-AIR/native-frame/v1\0");
+    h.update(super::data::profile_digest());
+    h.update(b"one-real-Ct2;H8192/MAIN512/PP272/PV32;degree14/default43/AUX220/chunks8;five-rounds;MAIN2-AUX2-PP1;14binaryFRI;sole-terminal0+actual-native;PUBLIC-PP-only/freshOS-private;bounded-Postcard/reencode/EOF");
+    for n in [
+        HEADER_BYTES,
+        MAX_FRAME_BYTES,
+        MAX_SEQUENCE,
+        MAX_SLOTS,
+        CHUNKS,
+        PACKED,
+        AUX,
+    ] {
+        h.update((n as u64).to_le_bytes());
+    }
+    h.finalize().into()
+}
 pub(super) fn require_assessment(assessment: &Assessment) -> Result<()> {
     if WIDTH != 512
         || PP_WIDTH != 272
@@ -60,14 +84,21 @@ pub(super) fn require_assessment(assessment: &Assessment) -> Result<()> {
 }
 
 /// Full independently retained binding is checked BEFORE PP or proof decoding.
-pub(super) fn payload<'a>(expected: &Expected, frame: &'a [u8]) -> Result<&'a [u8]> {
+pub(super) fn payload<'a>(expected: ExpectedRef<'_>, frame: &'a [u8]) -> Result<&'a [u8]> {
     if frame.len() < HEADER_BYTES || frame.len() > MAX_FRAME_BYTES {
         return Err(Error::Resource);
     }
-    if &frame[..8] != MAGIC || frame[108..HEADER_BYTES] != [0; 20] {
+    if &frame[..8]
+        != (if expected.kind() == RelationKind::Pair {
+            MAGIC
+        } else {
+            b"DCSGFD01"
+        })
+        || frame[108..HEADER_BYTES] != [0; 20]
+    {
         return Err(Error::Encoding);
     }
-    if frame[8..40] != profile() || frame[40..104] != expected.binding() {
+    if frame[8..40] != profile_for(expected.kind()) || frame[40..104] != expected.binding() {
         return Err(Error::Binding);
     }
     let len = u32::from_le_bytes(frame[104..108].try_into().map_err(|_| Error::Encoding)?) as usize;
@@ -76,13 +107,17 @@ pub(super) fn payload<'a>(expected: &Expected, frame: &'a [u8]) -> Result<&'a [u
     }
     Ok(&frame[HEADER_BYTES..])
 }
-fn frame(expected: &Expected, bytes: &[u8]) -> Result<Vec<u8>> {
+fn frame(expected: ExpectedRef<'_>, bytes: &[u8]) -> Result<Vec<u8>> {
     if bytes.is_empty() || bytes.len() > MAX_PAYLOAD_BYTES {
         return Err(Error::Resource);
     }
     let mut out = Vec::with_capacity(HEADER_BYTES + bytes.len());
-    out.extend_from_slice(MAGIC);
-    out.extend_from_slice(&profile());
+    out.extend_from_slice(if expected.kind() == RelationKind::Pair {
+        MAGIC
+    } else {
+        b"DCSGFD01"
+    });
+    out.extend_from_slice(&profile_for(expected.kind()));
     out.extend_from_slice(&expected.binding());
     out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
     out.extend_from_slice(&[0; 20]);
@@ -90,7 +125,7 @@ fn frame(expected: &Expected, bytes: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 pub(super) fn encode(
-    expected: &Expected,
+    expected: ExpectedRef<'_>,
     proof: &BatchProof<Config>,
     assessment: &Assessment,
 ) -> Result<Vec<u8>> {
