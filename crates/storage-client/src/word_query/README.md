@@ -1,7 +1,8 @@
-# Private Word SQL preparation
+# Private Word SQL preparation and public evidence
 
 Optional `storage-client/word-query` owns private SQL compilation and original
-Word/Gold input binding. It does not open Session/PGwire/GUI SQL admission or
+Word/Gold input binding, with distinct owner-private and public-proof preparation
+paths. It does not open Session/PGwire/GUI SQL admission or
 return an accepted SQL result, fresh head or lock lease.
 
 `CompiledLockingSelect::compile` uses the existing `sql-plan` parser for the fixed
@@ -43,12 +44,14 @@ exposes only the intended 32-byte blinded commitment as eight public field words
    genesis/parent, actor/call, client/controller/snapshot/invocation, version and
    DATA pins. It creates the actual original Gold ciphertext using the owner's
    opaque key, without exporting a private mask or SDK key.
-4. `PendingQuery::prove` checks the retained complete expected binding. A wrong
-   expectation does not consume the original. After that guard, one attempt
-   consumes the private Word/statement material even on failure. It checks the
-   actual private original-input equations and produces the genuine native Word
-   argument. `ProvedQuery` borrows the original encrypted input and contains the
-   UNVERIFIED Word frame; it is not a proof verdict or SQL receipt.
+4. `PendingQuery::prove` and `prove_public` are alternatives sharing one-use
+   private Word/statement material. The owner-private `prove` checks the retained
+   complete expected binding before consuming it. A wrong expectation leaves
+   the original available. After the guard, an attempt consumes the material
+   even on failure. It checks actual private original-input equations and
+   produces the genuine native Word argument. `ProvedQuery` borrows the original
+   encrypted input and contains the UNVERIFIED Word frame; it is not a proof
+   verdict or SQL receipt.
 5. The caller can send `proved.input().public_request()` through the actual
    `RemotePeer::gold_product`. The fixed `word::read::owner::Verifier` must still
    independently check the actual installed DATA theorem, Word argument and
@@ -56,6 +59,12 @@ exposes only the intended 32-byte blinded commitment as eight public field words
    head, authorization, whole Result160 opening, weighted finality, durable owner
    state and final SQL projection/locking acceptance remain mandatory outside
    this preparation boundary.
+6. The separate `prove_public(owner, prover, word_expected, data_expected)` path
+   produces both UNVERIFIED Word and fused Query frames from the same original
+   compiled input. `ProvedPublicQuery` exports bounded public evidence suitable
+   for independent receiving. It supplies no owner-private premise in place of
+   a public Query proof. Actual full public `word::read` verification is required
+   before its protected `complete` method can decrypt the original product.
 
 No accepted flag, mutable owner getter, alternate verifier, model evaluator or
 fixture dependency enters normal builds. All private objects are move-only with
@@ -64,12 +73,121 @@ scoped clearing. This is best effort, not complete stack/allocator erasure.
 Direct dependencies are [sql-plan](../../../sql-plan/README.md) for parsing,
 [Word](../../../registry200-proof/src/registry_progress/word/README.md) for
 original canonical serialization and native proofs, its DATA composition,
-[Gold owner inputs](../../../bfv-query-core/src/gold/README.md), OS entropy,
+[Gold owner inputs](../../../bfv-query-core/src/gold/README.md), the optional
+direct [Gold Formation](../../../bfv-ciphertext-formation/src/gold/README.md)
+dependency for original fused Query preparation/proving, OS entropy,
 SHA2 and zeroize. Peer transport and finality policy remain with their existing
 owners. The root feature enables the existing owner-read mathematical composition;
 it does not enable the historical private-input-proofs pipeline by aliasing it.
 
+## Public proof preparation and completion
+
+`PendingQuery::prove_public` first compares the complete retained Word expectation
+and DATA expectation against the original query. Neither a different Word
+binding nor another DATA endpoint consumes the original private material. Once
+those guards pass, it consumes that same one-use material, obtains a fresh
+fallible OS Cw salt internally, and derives the Query expectation and commitment
+from the original ordered request, Stmt96 root and original DATA. A later entropy,
+binding, preparation or proving failure still consumes the attempt. Calling
+either proving alternative afterwards cannot reuse its private witness.
+
+The protected Gold owner's existing `query_commitment` and `prepare_query`
+constructors keep the original mask, complete Stmt96 and SDK secret private.
+The client then invokes the existing fused Query native prover and the original
+Word native prover. It accepts no caller-selected mask, salt, RNG, alternate
+verifier or cached proof verdict. Preparing a native witness or producing its
+bytes establishes no successful public verification.
+
+`ProvedPublicQuery` borrows the original input and exposes only:
+
+- `public_request()`: the same original bounded ciphertext request for the public
+  evaluator, including its original nonce and ordered inputs.
+- `word()` and `query()`: the actual UNVERIFIED native evidence bytes.
+- `query_expected()`: the complete public fused Query expectation, which is
+  metadata rather than a proof result.
+- `complete(owner, checked_read)`: protected decryption requiring an actual
+  `word::read::ArithmeticCheckedRead` from full public receiving, with the same
+  complete Word, fused Query, DATA and original ciphertext-pair bindings.
+
+A caller can send `public_request()` through the real `RemotePeer::gold_product`,
+then independently construct the full read expectation from its original Word,
+DATA, query commitment and the received candidate Ct3. The existing public
+`word::read` receiver must check the real product certificate, Word and fused
+Query proof, plus Source/Role3/DATA or the exact retained immutable DATA theorem.
+An owner-specific checked input or `word::read::owner` result cannot satisfy the
+public completion contract. No private getter or conversion from that premise
+to transferable proof authority is introduced.
+
+These frames can travel to another receiver, but remain unverified until that
+receiver performs the original native checks against its independently retained
+expectations. This path supplies the public evidence needed for eventual
+Predicate composition. Current-state authorization, fresh weighted finality,
+durable Result160/registry completion, composed security and final SQL/lock
+admission remain separate requirements; their guards stay closed.
+
 ## Validation and remaining scope
+
+### Normal public producer validation, 2026-10-22
+
+Based on `2b1d6e7c14ae450bfd1888299067da37dacd7488`, all five owning
+`word_query::` cases passed. The additional native case uses the normal SQL
+compiler and protected Owner to create two genuine Word/fused Query packages,
+actual SDK products and full public read results. The receiver helper accepts
+only public endpoints, unverified evidence and its actually verified immutable
+DATA theorem. Every decrypted coefficient is compared against an independent
+4096-coefficient oracle after genuine public checking.
+
+The case rejects changed original Word claims, a different full DATA binding
+with the same literal ciphertext, damaged/missing Query evidence and a genuine
+sealed read result belonging to another call. It checks shared one-use behavior
+in both proving orders, foreign-owner failure and fallible entropy. All-zero
+salt and repeated noncanonical draws reject after bounded4/8 draws and consume
+the attempt. Neither method substitutes private owner knowledge for the public
+Query proof. The prior owner-private native case and all SQL/mask/entropy
+contract cases also passed.
+
+One two-worker observation from an already prepared original encrypted request:
+
+| Measured component | Milliseconds |
+| --- | ---: |
+| Original native Word and fused Query production, including guarded Cw preparation | 1828.952 |
+| Actual SDK product and complete arithmetic certificate production | 38.333 |
+| Fresh public receiving setup and complete Word/Query/product checking | 911.198 |
+| Bound owner decryption | 1.445 |
+| Whole interval, including public expected construction | **2780.725** |
+
+Word/Query/product frames were 2,937,642 / 3,204,661 / 1,081,595 bytes. This is
+one freshly randomized fixture observation, not a latency percentile or speedup
+comparison. SQL compilation/origination, cold Source/DATA installation and
+prover setup precede this interval. It excludes transport, fresh weighted QC,
+durable Predicate/Result160 completion and SQL/lock admission. All five tests,
+including preparation and hostile cases, took27.45s; that is not a query time.
+The complete500ms requirement remains unmet.
+
+Release/MSVC Rust1.99.0, native CPU, Cargo jobs2, Rayon budget2, locked/offline
+dependencies and the existing source/image-pinned native observer were used.
+The held exact process/creation identity exited0 with no faults, forced cleanup
+or surviving task children. Sampled/OS peak working set was573,558,784 bytes;
+sampled private peak was563,175,424. The unchanged120s/1792MiB fuses and20ms
+sampling sleep are observation bounds, not production-peer memory/latency
+guarantees. No build or other heavy test ran during the capture.
+
+The native report is generated local output, not committed:
+`.local/word-cmd-native-r442-storage-client-observe-tests/result.json`, SHA256
+`66BE42517C8CDF7020AFF7CA87DC06BF755BF5ACBDEB8842DAC734600364DD03`.
+Its27,154,432-byte test image SHA256 is
+`6E2BD4C81A21026695F24860CC0AD7E2C803924EFDF64AFC22CAAE7BD4AB6EBA`.
+Strict all-target Clippy with `word-query`, all five compile-fail examples,
+formatting and local documentation links also passed. The new compile-fail
+example rejects the actual owner-private `OwnerCheckedRead` type at the public
+completion signature. Reproduce the owning cases with
+`cargo test --release --locked -p storage-client --features word-query --lib word_query:: -- --test-threads=1`;
+the source-pinned observer additionally records exact artifacts and resources.
+
+The public producer is now a normal library path. Assessed composed security,
+the actual Predicate journal/voter path, owner recovery/WAIT and a current-head
+barrier remain required before SQL or row-lock acceptance. This stage changes
+none of those guards.
 
 `compile(...).prepare_current(draft, CurrentMaterial)` pins the actual immutable
 source, enrollment, parent, independently retained old root and this compiled

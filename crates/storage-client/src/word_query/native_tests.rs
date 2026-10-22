@@ -1,5 +1,6 @@
 //! Public nonsecret source and explicit expected bank transitions, never an execution fallback.
 use super::*;
+mod public;
 use bfv_ciphertext_formation::gold::data;
 use compact_store::{Layout, Owner as PageOwner};
 use fhe_math::zq::Modulus;
@@ -143,9 +144,15 @@ fn banks(
     next[84 + 23 + 2] = Val::from_u32(4);
     [old, next]
 }
-#[test]
-fn compiled_sql_requires_genuine_data_word_and_original_product_before_owner_completion() {
-    let began = Instant::now();
+struct InstalledFixture {
+    owner: Owner,
+    source: source::version::SourceVersionExpected,
+    plain: Zeroizing<Vec<u8>>,
+    data: installed::Expected,
+    retained: installed::VerifiedDataFormation,
+    data_words: Zeroizing<Vec<u64>>,
+}
+fn installed_fixture() -> InstalledFixture {
     let (source, plain) = source_fixture();
     let key_binding = |cs| {
         encoding::statement::KeyBinding::new(
@@ -208,6 +215,26 @@ fn compiled_sql_requires_genuine_data_word_and_original_product_before_owner_com
     )
     .unwrap();
     drop((state, child, frame, witness));
+    InstalledFixture {
+        owner,
+        source,
+        plain,
+        data,
+        retained,
+        data_words,
+    }
+}
+#[test]
+fn compiled_sql_requires_genuine_data_word_and_original_product_before_owner_completion() {
+    let began = Instant::now();
+    let InstalledFixture {
+        owner,
+        source,
+        plain,
+        data,
+        retained,
+        data_words,
+    } = installed_fixture();
     let producer = word::Prover::new(word::Role::Predicate).unwrap();
     let receiver = word::read::owner::Verifier::new().unwrap();
     let compiled = CompiledLockingSelect::compile(

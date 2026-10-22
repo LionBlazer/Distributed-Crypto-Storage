@@ -1,10 +1,12 @@
 //! Private SQL-to-original-Word/Gold preparation. No SQL/finality acceptance route.
 #[cfg(test)]
 mod native_tests;
+mod public;
 #[cfg(test)]
 mod tests;
 use bfv_query_core::gold::{self, InputBinding, InputScope, Mask256, Owner};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
+pub use public::ProvedPublicQuery;
 use registry200_proof::{
     Val, registry_progress::word, source::statement::encode_digest,
     two_lane_encoding::data_formation as installed,
@@ -21,6 +23,8 @@ pub enum Error {
     Consumed,
     Word(word::Error),
     Input(gold::Error),
+    Query(word::read::query::Error),
+    Formation(bfv_ciphertext_formation::gold::Error),
 }
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
