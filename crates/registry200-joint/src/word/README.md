@@ -7,6 +7,16 @@ Predicate is rejected: its eventual admission must include the original DATA,
 fused Query and actual FHE product, with assessed cryptographic security. A Word
 predicate proof by itself cannot authorize a result or a lock here.
 
+The public [`predicate` packet codec](PREDICATE-PACKET.md) defines the complete
+bounded evidence grammar needed before that Joint branch can be implemented.
+`PredicatePacket` contains original public request/output bytes and all six
+proofs. `BorrowedPredicate` reconstructs its metadata against an independently
+retained Source; it accepts no caller-supplied theorem or association digest.
+Parsing and `expected(&WordExpected)` perform no native proof verification,
+authorization or freshness check. This stage changes no Lane, application
+contract digest or Predicate admission rule, and adds no RPC or accepting
+callback. Existing Predicate rejection remains in force.
+
 `Descriptor` owns complete independently installed SourceVersion metadata,
 network and distinct source/control shard IDs. DCSWAD01 encoding includes both
 full heads and packets, C_key and C_state, with canonical bounded decoding. Its
@@ -51,7 +61,12 @@ separate owner of consensus, signer WAL, quorum and durable floor admission.
 Direct dependencies are [registry200-proof](../../../registry200-proof/README.md)
 for immutable Source and exact Word proof contracts, compact-store for canonical
 public commitments, SHA2, p3-field and [version-journal](../../../version-journal/README.md)
-for owner/body/header and pending import ownership. No old SourceSpec, Key33,
+for owner/body/header and pending import ownership. The predicate codec directly
+uses [Gold Formation](../../../bfv-ciphertext-formation/src/gold/README.md) for
+the original DATA/query metadata and [Gold public input](../../../bfv-query-core/src/gold/README.md)
+decoding through the `gold-evaluator` feature. Its normal dependency edge does
+not enable `gold-owner` or acquire a secret key, private mask or decryption API.
+No old SourceSpec, Key33,
 product stream or historical finality token is reinterpreted. There is no current
 QC, weighted finality, durable floor/reopen, network SQL or GUI acceptance path.
 

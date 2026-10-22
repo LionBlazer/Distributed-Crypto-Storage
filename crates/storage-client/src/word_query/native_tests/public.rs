@@ -1,5 +1,6 @@
 //! Genuine public proofs from compiled SQL; plaintext fixtures are assertions only.
 use super::*;
+use registry200_joint::word::predicate::BorrowedPredicate;
 
 fn pending_sql(fixture: &InstalledFixture, nonce: u8) -> (PendingQuery, word::Expected) {
     let compiled = CompiledLockingSelect::compile(
@@ -210,6 +211,127 @@ fn compiled_sql_public_proofs_bind_original_data_before_completion_and_share_sin
         }
     }
     assert_eq!(completed.coefficients(), oracle.as_slice());
+
+    // A remote verifier reconstructs all endpoints from bounded public bytes
+    // and its OWN immutable Source; no local verified theorem is serialized.
+    let began_packet = Instant::now();
+    let packet = proved
+        .packet(
+            &read,
+            ImmutableEvidence {
+                state: &fixture.state_proof,
+                child: &fixture.child_proof,
+                data: &fixture.data_proof,
+            },
+            response.certificate(),
+        )
+        .unwrap();
+    let parsed = BorrowedPredicate::parse(&fixture.source, packet.as_bytes()).unwrap();
+    let reconstructed = parsed.expected(&expected).unwrap();
+    assert_eq!(
+        reconstructed.data_expected().core_expected().binding(),
+        fixture.data.core_expected().binding()
+    );
+    assert_eq!(
+        reconstructed.query_expected().binding(),
+        proved.query_expected().binding()
+    );
+    let packet_checked = word::read::verify(&reconstructed, parsed.evidence()).unwrap();
+    assert_eq!(
+        proved
+            .complete(&fixture.owner, &packet_checked)
+            .unwrap()
+            .coefficients(),
+        oracle.as_slice()
+    );
+    eprintln!(
+        "word_predicate_packet bytes={} encode_parse_all6_receive_decrypt_ms={:.3} complete_original_Source=true actual_native_all6=true network=false SQL=false freshness=false locks=false security_assessed=false",
+        packet.as_bytes().len(),
+        began_packet.elapsed().as_secs_f64() * 1000.,
+    );
+    assert!(parsed.expected(&foreign_expected).is_err());
+    let claim = fixture.source.statement();
+    let images: [Vec<u8>; 2] = core::array::from_fn(|i| {
+        let mut image = claim.heads[i].to_vec();
+        image.extend_from_slice(&claim.packets[i]);
+        image
+    });
+    let heads = claim
+        .heads
+        .map(|head| compact_store::Commitment::decode(&head, source::statement::limits()).unwrap());
+    let foreign_source = source::version::SourceVersionExpected::checked(
+        [&images[0], &images[1]],
+        [&heads[0], &heads[1]],
+        encode_digest(claim.key_commitment),
+        encode_digest([Val::ONE; 4]),
+    )
+    .unwrap();
+    assert_eq!(foreign_source.version_id(), fixture.source.version_id());
+    assert!(BorrowedPredicate::parse(&foreign_source, packet.as_bytes()).is_err());
+    assert!(
+        proved
+            .packet(
+                &read,
+                ImmutableEvidence {
+                    state: &[],
+                    child: &fixture.child_proof,
+                    data: &fixture.data_proof,
+                },
+                response.certificate(),
+            )
+            .is_err()
+    );
+    assert!(matches!(
+        proved.packet(
+            &public_read_expected(&proved, &foreign_expected, &fixture.data, &response),
+            ImmutableEvidence {
+                state: &fixture.state_proof,
+                child: &fixture.child_proof,
+                data: &fixture.data_proof,
+            },
+            response.certificate(),
+        ),
+        Err(Error::Binding)
+    ));
+    for length in [0, 7, 383, packet.as_bytes().len() - 1] {
+        assert!(BorrowedPredicate::parse(&fixture.source, &packet.as_bytes()[..length]).is_err());
+    }
+    for at in [0, 7, 8, 39, 40, 47, 376, 383] {
+        let mut damaged = packet.as_bytes().to_vec();
+        damaged[at] ^= 1;
+        assert!(BorrowedPredicate::parse(&fixture.source, &damaged).is_err());
+    }
+    for component in 0..8 {
+        let mut damaged = packet.as_bytes().to_vec();
+        damaged[344 + 4 * component..348 + 4 * component].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(BorrowedPredicate::parse(&fixture.source, &damaged).is_err());
+    }
+    for at in [80, 112, 144, 152, 216, 280, 312] {
+        let mut damaged = packet.as_bytes().to_vec();
+        damaged[at..at + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+        assert!(BorrowedPredicate::parse(&fixture.source, &damaged).is_err());
+    }
+    let mut trailing = packet.as_bytes().to_vec();
+    trailing.push(0);
+    assert!(BorrowedPredicate::parse(&fixture.source, &trailing).is_err());
+    let lengths: Vec<_> = packet.as_bytes()[344..376]
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|n| u32::from_le_bytes(*n) as usize)
+        .collect();
+    let mut end = 384 + lengths[0] + lengths[1];
+    for (component, length) in lengths[2..].iter().enumerate() {
+        end += *length;
+        let mut damaged = packet.as_bytes().to_vec();
+        damaged[end - 1] ^= 1;
+        let parsed = BorrowedPredicate::parse(&fixture.source, &damaged).unwrap();
+        let e = parsed.expected(&expected).unwrap();
+        assert!(
+            word::read::verify(&e, parsed.evidence()).is_err(),
+            "damaged complete proof {component}"
+        );
+    }
 
     let receiver = word::read::Verifier::new(&read).unwrap();
     let mut bad_query = proved.query().to_vec();

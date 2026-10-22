@@ -7,7 +7,7 @@ publish = false
 
 [features]
 word-control = ["dep:registry200-proof", "dep:registry200-joint", "dep:registry200-finality", "dep:p3-field", "dep:protocol-storage", "dep:chacha20poly1305", "dep:sha2"]
-word-query = ["bfv-query-core/gold-owner", "dep:bfv-ciphertext-formation", "dep:registry200-proof", "registry200-proof/owner-read", "dep:p3-field", "dep:sha2"]
+word-query = ["bfv-query-core/gold-owner", "dep:bfv-ciphertext-formation", "dep:registry200-joint", "dep:registry200-proof", "registry200-proof/owner-read", "dep:p3-field", "dep:sha2"]
 private-input-proofs = [
     "bfv-query-core/formation-proofs",
     "dep:registry200-proof",

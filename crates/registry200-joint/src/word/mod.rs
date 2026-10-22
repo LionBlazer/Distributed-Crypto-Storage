@@ -2,6 +2,7 @@
 //! Historical verified mathematics is never a current lock, QC or SQL capability.
 mod descriptor;
 mod evidence;
+pub mod predicate;
 mod request;
 mod state;
 #[cfg(test)]

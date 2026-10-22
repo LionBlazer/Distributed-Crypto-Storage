@@ -151,6 +151,9 @@ struct InstalledFixture {
     data: installed::Expected,
     retained: installed::VerifiedDataFormation,
     data_words: Zeroizing<Vec<u64>>,
+    state_proof: Vec<u8>,
+    child_proof: Vec<u8>,
+    data_proof: Vec<u8>,
 }
 fn installed_fixture() -> InstalledFixture {
     let (source, plain) = source_fixture();
@@ -214,7 +217,7 @@ fn installed_fixture() -> InstalledFixture {
         &frame,
     )
     .unwrap();
-    drop((state, child, frame, witness));
+    drop(witness);
     InstalledFixture {
         owner,
         source,
@@ -222,6 +225,9 @@ fn installed_fixture() -> InstalledFixture {
         data,
         retained,
         data_words,
+        state_proof: state,
+        child_proof: child,
+        data_proof: frame,
     }
 }
 #[test]
@@ -234,6 +240,7 @@ fn compiled_sql_requires_genuine_data_word_and_original_product_before_owner_com
         data,
         retained,
         data_words,
+        ..
     } = installed_fixture();
     let producer = word::Prover::new(word::Role::Predicate).unwrap();
     let receiver = word::read::owner::Verifier::new().unwrap();

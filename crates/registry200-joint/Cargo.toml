@@ -10,7 +10,9 @@ registry200-journal = { path = "../registry200-journal" }
 registry200-proof = { path = "../registry200-proof" }
 bfv-product-evidence = { path = "../bfv-product-evidence" }
 bfv-mul-relin-proof = { path = "../bfv-mul-relin-proof" }
-bfv-query-core = { path = "../bfv-query-core", features = ["formation-proofs"] }
+bfv-query-core = { path = "../bfv-query-core", features = ["formation-proofs", "gold-evaluator"] }
+bfv-ciphertext-formation = { path = "../bfv-ciphertext-formation" }
+bfv-unrelinearized-product = { path = "../bfv-unrelinearized-product" }
 bfv-key-transform = { path = "../bfv-key-transform" }
 protocol-storage = { path = "../protocol-storage" }
 version-journal = { path = "../version-journal" }
@@ -20,7 +22,6 @@ compact-store = { path = "../compact-store" }
 
 [dev-dependencies]
 bfv-hiding-stark = { path = "../bfv-hiding-stark" }
-bfv-ciphertext-formation = { path = "../bfv-ciphertext-formation" }
 bfv-relinearization-key-source = { path = "../bfv-relinearization-key-source" }
 zeroize = "=1.9.1"
 ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["std", "fast", "zeroize"] }

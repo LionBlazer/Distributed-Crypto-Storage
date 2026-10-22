@@ -6,7 +6,7 @@ mod public;
 mod tests;
 use bfv_query_core::gold::{self, InputBinding, InputScope, Mask256, Owner};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
-pub use public::ProvedPublicQuery;
+pub use public::{ImmutableEvidence, ProvedPublicQuery};
 use registry200_proof::{
     Val, registry_progress::word, source::statement::encode_digest,
     two_lane_encoding::data_formation as installed,
@@ -25,6 +25,7 @@ pub enum Error {
     Input(gold::Error),
     Query(word::read::query::Error),
     Formation(bfv_ciphertext_formation::gold::Error),
+    Packet(registry200_joint::word::Error),
 }
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {

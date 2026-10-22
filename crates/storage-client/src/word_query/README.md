@@ -75,7 +75,9 @@ Direct dependencies are [sql-plan](../../../sql-plan/README.md) for parsing,
 original canonical serialization and native proofs, its DATA composition,
 [Gold owner inputs](../../../bfv-query-core/src/gold/README.md), the optional
 direct [Gold Formation](../../../bfv-ciphertext-formation/src/gold/README.md)
-dependency for original fused Query preparation/proving, OS entropy,
+dependency for original fused Query preparation/proving, the
+[Joint packet codec](../../../registry200-joint/src/word/PREDICATE-PACKET.md)
+for complete unverified evidence transfer, OS entropy,
 SHA2 and zeroize. Peer transport and finality policy remain with their existing
 owners. The root feature enables the existing owner-read mathematical composition;
 it does not enable the historical private-input-proofs pipeline by aliasing it.
@@ -105,6 +107,14 @@ bytes establishes no successful public verification.
 - `word()` and `query()`: the actual UNVERIFIED native evidence bytes.
 - `query_expected()`: the complete public fused Query expectation, which is
   metadata rather than a proof result.
+- `packet(expected, immutable, product)`: the bounded, unverified
+  [complete Predicate packet](../../../registry200-joint/src/word/PREDICATE-PACKET.md).
+  `ImmutableEvidence` borrows the original Source, Role3 and DATA proof bytes;
+  a retained local theorem cannot be serialized in their place. The method
+  checks the same original Word/query/DATA binding before packaging all six
+  frames and the original public request/output. Its receiver reconstructs
+  endpoints from its independently retained Source and Word expectation, then
+  must perform the full public verification.
 - `complete(owner, checked_read)`: protected decryption requiring an actual
   `word::read::ArithmeticCheckedRead` from full public receiving, with the same
   complete Word, fused Query, DATA and original ciphertext-pair bindings.

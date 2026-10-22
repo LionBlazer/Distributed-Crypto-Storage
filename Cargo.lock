@@ -4318,6 +4318,7 @@ dependencies = [
  "bfv-product-evidence",
  "bfv-query-core",
  "bfv-relinearization-key-source",
+ "bfv-unrelinearized-product",
  "compact-store",
  "ed25519-dalek",
  "p3-field",

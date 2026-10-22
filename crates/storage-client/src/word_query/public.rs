@@ -1,6 +1,15 @@
 //! Original compiled SQL's transferable unverified Word and fused Query evidence.
 use super::*;
 use bfv_ciphertext_formation::gold::query as fused;
+use registry200_joint::word::predicate::PredicatePacket;
+
+/// Original immutable UNVERIFIED Source, Role3 and DATA frames for transfer.
+/// A retained local theorem alone cannot be serialized in their place.
+pub struct ImmutableEvidence<'a> {
+    pub state: &'a [u8],
+    pub child: &'a [u8],
+    pub data: &'a [u8],
+}
 
 impl PendingQuery {
     /// Produce both native arguments from the same original private statement.
@@ -133,6 +142,29 @@ impl ProvedPublicQuery<'_> {
     pub fn query_expected(&self) -> &fused::Expected {
         &self.query_expected
     }
+    /// Export a self-contained unverified packet from this exact original query.
+    /// The receiver must retain its own Source/Word expectation and verify all6.
+    pub fn packet(
+        &self,
+        expected: &word::read::Expected,
+        immutable: ImmutableEvidence<'_>,
+        product: &[u8],
+    ) -> Result<PredicatePacket> {
+        self.require_expected(expected)?;
+        PredicatePacket::from_read(
+            expected,
+            self.public_request(),
+            word::read::Evidence {
+                state: immutable.state,
+                child: immutable.child,
+                data: immutable.data,
+                word: self.word(),
+                query: self.query(),
+                product,
+            },
+        )
+        .map_err(Error::Packet)
+    }
     /// Complete only after actual public DATA/Word/Query/product verification.
     /// This conditional arithmetic plaintext grants no SQL, fresh head or lock.
     pub fn complete(
@@ -140,7 +172,12 @@ impl ProvedPublicQuery<'_> {
         owner: &Owner,
         checked: &word::read::ArithmeticCheckedRead<'_>,
     ) -> Result<gold::DecryptedProduct> {
-        let expected = checked.expected();
+        self.require_expected(checked.expected())?;
+        owner
+            .complete_checked_product(self.original, checked.product())
+            .map_err(Error::Input)
+    }
+    fn require_expected(&self, expected: &word::read::Expected) -> Result<()> {
         if expected.word_expected().binding() != self.word_binding
             || expected.query_expected().binding() != self.query_expected.binding()
             || expected.data_expected().core_expected().binding()
@@ -148,8 +185,6 @@ impl ProvedPublicQuery<'_> {
         {
             return Err(Error::Binding);
         }
-        owner
-            .complete_checked_product(self.original, checked.product())
-            .map_err(Error::Input)
+        Ok(())
     }
 }
