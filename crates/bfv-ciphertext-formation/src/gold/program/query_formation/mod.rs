@@ -29,6 +29,15 @@ pub(in crate::gold) use receiving::ReceivingSetup;
 pub(in crate::gold) fn wire_profile() -> [u8; 32] {
     native_wire::profile()
 }
+/// Metadata diagnostics only; no native setup, proof or admission is created.
+pub(in crate::gold) fn classical_bound(
+    expected: &Expected,
+) -> Result<bfv_hiding_stark::classical::AlgebraicBound> {
+    let air = air::MetadataAir::new(expected)?;
+    let report = assessment::assess(&air)?;
+    report.require_resources()?;
+    report.classical_bound()
+}
 pub(in crate::gold) const WRITER_LAYOUT: [usize; 10] = [
     H,
     W,

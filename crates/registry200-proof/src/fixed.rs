@@ -51,6 +51,27 @@ pub(crate) struct Backend {
     pub shape: Topology,
 }
 impl Backend {
+    /// Symbolic diagnostics over the same closed dispatch as native verification.
+    /// No configuration, RNG, preprocessing or private trace is constructed.
+    pub(crate) fn source_version_classical(
+        e: &source::version::SourceVersionExpected,
+    ) -> Result<engine::classical::AlgebraicBound, Error> {
+        Self::classical(FixedAir::Source(Box::new(source::air::OpeningAir::new(
+            e.statement(),
+        ))))
+    }
+    pub(crate) fn two_lane_classical(
+        s: &two_lane_encoding::statement::Statement,
+    ) -> Result<engine::classical::AlgebraicBound, Error> {
+        Self::classical(FixedAir::TwoLaneEncoding(Box::new(
+            two_lane_encoding::air::EncodingAir::new(s),
+        )))
+    }
+    fn classical(air: FixedAir) -> Result<engine::classical::AlgebraicBound, Error> {
+        let (parameters, report) = engine::analyze(&air)?;
+        report.require_target()?;
+        engine::classical::analyze(&parameters, engine::PROOF_DEGREE_BITS, None)
+    }
     fn new(air: FixedAir, values: Vec<Val>, wanted: (usize, usize)) -> Result<Self, Error> {
         let (parameters, report) = engine::analyze(&air)?;
         let report = report.require_target()?;

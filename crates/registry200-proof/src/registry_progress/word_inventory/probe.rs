@@ -138,6 +138,14 @@ fn prescreen_role(predicate: bool) -> Result<(ProgramAir, Origins, Assessment)> 
     wire::require_assessment(&report)?;
     Ok((air, built.origins, report))
 }
+/// Inspect the actual closed role without constructing its public preprocessing.
+/// This report supplies no evidence, current head or admission authority.
+pub(in crate::registry_progress) fn classical_bound(
+    predicate: bool,
+) -> Result<bfv_hiding_stark::classical::AlgebraicBound> {
+    let (_, _, report) = prescreen_role(predicate)?;
+    report.classical_bound().map_err(|_| Error::Security)
+}
 #[cfg(test)]
 pub(super) fn prescreen(m: &Metadata) -> Result<(ProgramAir, Assessment)> {
     let _ = Expected::checked(m).map_err(|_| Error::Shape)?;

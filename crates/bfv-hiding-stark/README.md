@@ -1,5 +1,11 @@
 # Fixed hiding STARK suite
 
+[`classical::analyze`](src/classical.rs) provides a separate fixed-multiplicity
+diagnostic over trusted actual AIR metadata. The [classical note](CLASSICAL.md)
+defines its conservative algebraic terms, original lookup inputs, numerical
+policy and remaining composition premises. This report is not a proof or an
+operation capability and is not evaluated on native proof paths.
+
 This crate owns the existing private-witness Goldilocks hiding-FRI implementation
 previously held by the source-primitive experiment. The
 [Owner validation](../bfv-key-transform/OWNER-KEY-VALIDATION.md) records actual

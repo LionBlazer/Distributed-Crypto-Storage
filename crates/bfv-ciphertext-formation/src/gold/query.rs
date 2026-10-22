@@ -15,6 +15,13 @@ pub fn profile_digest() -> [u8; 32] {
     h.finalize().into()
 }
 
+/// Diagnose the fixed fused Query AIR and its original lookup inventory.
+/// No native setup, private MAIN, proof or RNG is constructed. The conditional
+/// algebraic report is neither mathematical evidence nor admission authority.
+pub fn classical_bound(expected: &Expected) -> Result<bfv_hiding_stark::classical::AlgebraicBound> {
+    backend::classical_bound(expected)
+}
+
 /// Independently retained public endpoints. Construction verifies no proof.
 /// The caller must separately authenticate the statement, DATA and original key.
 #[derive(Clone)]

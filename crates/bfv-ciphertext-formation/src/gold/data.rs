@@ -269,6 +269,16 @@ pub fn dense_profile_digest() -> [u8; 32] {
     super::program::dense_data_inventory::profile()
 }
 
+/// Diagnose the fixed H2048 dense DATA AIR and its original lookup inventory.
+/// This does not assess the separate H8192 prove()/verify() proof profile.
+/// No native setup, private MAIN, proof or RNG is constructed. The conditional
+/// algebraic report is neither mathematical evidence nor admission authority.
+pub fn dense_classical_bound(
+    expected: &Expected,
+) -> Result<bfv_hiding_stark::classical::AlgebraicBound> {
+    super::program::dense_data_inventory::classical_bound(expected)
+}
+
 /// Prove the SAME complete single-Ct relation using the fixed H2048 layout.
 /// Consumes the original guarded W/Cs inputs; returns unverified bytes only.
 ///

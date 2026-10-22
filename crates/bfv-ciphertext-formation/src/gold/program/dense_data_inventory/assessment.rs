@@ -38,6 +38,9 @@ const DIGEST_WORDS: usize = 4;
 /// Resource acceptance is deliberately separate so a rejected shape can be logged
 /// without building its PP or private MAIN. Future proving must call that gate.
 pub(in crate::gold) struct Assessment {
+    parameters: StarkSecurityParams,
+    original: usize,
+    message_width: usize,
     chunks: usize,
     packed: usize,
     aux_width: usize,
@@ -57,6 +60,20 @@ impl Assessment {
     }
     pub(in crate::gold) fn packed_lookup_count(&self) -> usize {
         self.packed
+    }
+
+    /// Diagnose the actual immutable AIR and original, unpacked lookup inventory.
+    /// The conditional algebraic report is not evidence or an admission capability.
+    /// Native proving and receiving never invoke this additional analysis implicitly.
+    pub(in crate::gold) fn classical_bound(
+        &self,
+    ) -> Result<bfv_hiding_stark::classical::AlgebraicBound> {
+        bfv_hiding_stark::classical::analyze(
+            &self.parameters,
+            DEGREE_BITS,
+            Some((self.original, self.message_width)),
+        )
+        .map_err(|_| Error::Security)
     }
 
     /// Apply before calling preprocessed_trace, native setup or private MAIN.
@@ -296,6 +313,9 @@ pub(in crate::gold) fn assess(air: &ProgramAir) -> Result<Assessment> {
         logup.bits.bits()
     );
     Ok(Assessment {
+        parameters: params,
+        original: messages.count,
+        message_width: messages.width,
         chunks,
         packed: packed.len(),
         aux_width,

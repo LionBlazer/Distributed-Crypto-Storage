@@ -39,6 +39,9 @@ const BUS_MASK: &str = "DCS/research/word208/v1/mask256";
 
 /// Derived numeric metadata, not a checked state, mathematical proof or grant.
 pub(super) struct Assessment {
+    parameters: StarkSecurityParams,
+    original_messages: usize,
+    message_width: usize,
     #[cfg(test)]
     role: &'static str,
     #[cfg(test)]
@@ -68,6 +71,15 @@ pub(super) struct Assessment {
     resources: Resources,
 }
 impl Assessment {
+    /// Conditional diagnostic only, evaluated on demand, never on a proof path.
+    pub(super) fn classical_bound(&self) -> Result<bfv_hiding_stark::classical::AlgebraicBound> {
+        bfv_hiding_stark::classical::analyze(
+            &self.parameters,
+            LOG_HEIGHT + 1,
+            Some((self.original_messages, self.message_width)),
+        )
+        .map_err(|_| "word-assessment:classical-diagnostic".into())
+    }
     pub(super) fn chunks(&self) -> usize {
         self.chunks
     }
@@ -341,6 +353,9 @@ pub(super) fn assess(air: &ProgramAir) -> Result<Assessment> {
     let report = proven_security_report(&fri, &air_shape, &instance, &[extra], &grinding);
     let resources = Resources::derive(air, aux, chunks, dimension, committed_log)?;
     let assessment = Assessment {
+        parameters: params,
+        original_messages: messages.count,
+        message_width: messages.width,
         #[cfg(test)]
         role: if air.plan.pool.predicate {
             "predicate"

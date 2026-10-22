@@ -1,6 +1,7 @@
 //! Fixed private-witness Goldilocks hiding-FRI suite; operation admission belongs to callers.
 #![forbid(unsafe_code)]
 mod assessment;
+pub mod classical;
 pub mod codec;
 mod config;
 pub mod poseidon;

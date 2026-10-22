@@ -1,5 +1,11 @@
 # Conditional Word read mathematics
 
+[`classical::analyze`](classical.rs) derives conditional error accounting from
+the five actual closed AIRs and the separate product PIT, without constructing
+preprocessing, private witnesses or proofs. Its explicit budget expression and
+unfinished transcript/model correspondence are recorded in
+[the classical composition note](CLASSICAL.md). It grants no admission.
+
 This normal library boundary joins the existing immutable SourceVersion/Role3/
 dense DATA Formation, Word Predicate, fused Query Formation and unrelinearized
 FHE product relations. It checks fixed mathematics relative to independently

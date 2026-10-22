@@ -1,5 +1,11 @@
 # Dense DATA mathematical proof backend
 
+`gold::data::dense_classical_bound` and `gold::query::classical_bound` expose
+on-demand conditional diagnostics over each actual fixed AIR. The shared
+assessor retains its already derived SDK parameters and original lookup count
+and width. These functions perform security/resource metadata prescreens without
+building PP, MAIN, setup, RNG or proofs. They supply no DATA/query admission.
+
 This internal child implements a compact layout for the complete single-DATA
 Formation relation. Genuine proving, independent cold verification and hostile
 native proof tests passed. The explicit `gold::data::prove_dense`/`verify_dense`
