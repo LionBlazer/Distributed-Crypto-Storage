@@ -1,9 +1,17 @@
 # Closed Registry200 TLS actor
 
 The distinct [Word bridge](../../WORD-FINALITY.md) adds `WordFinalityClient` and
-`FinalityServer::bind_word` to the same bounded dispatcher. `DCSWFN02` carries
+`FinalityServer::bind_word` to the same bounded dispatcher. `DCSWFN03` carries
 inline native evidence to the actual Word voter, with no blob/catalog, old-family
 casts, Predicate acceptance or current SQL/lock capability.
+
+The private actor `word_clock` owns Word's first-work scheduling only. A pristine
+slot starts after real owner/native admission or authenticated current-context
+consensus traffic; metadata never starts it. Its first handler time is sticky,
+verification counts against the original budget, and retries cannot extend a
+deadline. Native subsequent token durations/activation and durable resumed
+actions retain their original rules. This helper grants no validation, vote or
+latest-head capability. Other application families retain their scheduling.
 
 This module runs the original Source/Lifecycle application through the concrete
 [registry200-finality](../../../registry200-finality/README.md) owner. It contains

@@ -8,6 +8,9 @@ use std::{
     time::Instant,
 };
 use work_finality::consensus::{Action, Input, RoundStep, Timeout};
+#[path = "word_clock.rs"]
+mod word_clock;
+use word_clock::WordClock;
 
 pub(super) enum Command {
     Status,
@@ -189,7 +192,29 @@ fn run(
     rx: Receiver<Envelope>,
 ) -> io::Result<()> {
     let mut timer = active_timer(owned)?;
-    let mut due = deadline(timer)?;
+    let mut word_clock = if matches!(&*owned, Owner::Word(_)) {
+        // Persisted own actions or an advanced round/step resume immediately.
+        // A pristine new slot waits for real work instead of spending rounds
+        // while the owner prepares its next proof. Other families are unchanged.
+        let resumed = owned.outbound()?.iter().any(|a| {
+            matches!(
+                a,
+                Action::Proposal(_) | Action::Vote(_) | Action::Certificate { .. }
+            )
+        }) || timer.is_some_and(|t| t.round() != 0 || t.step() != RoundStep::Propose);
+        Some(WordClock::new(
+            owned.context()?.id(),
+            resumed,
+            Instant::now(),
+        ))
+    } else {
+        None
+    };
+    let mut due = if word_clock.as_ref().is_some_and(|c| c.started().is_none()) {
+        None
+    } else {
+        deadline(timer)?
+    };
     let mut pending = None;
     let mut proposed = None;
     let component = match &*owned {
@@ -211,7 +236,15 @@ fn run(
                     envelope
                         .expires
                         .map_or(Ok(()), require_time)
-                        .and_then(|()| process(owned, &gate, &mut pending, envelope.command))
+                        .and_then(|()| {
+                            process(
+                                owned,
+                                &gate,
+                                &mut pending,
+                                &mut word_clock,
+                                envelope.command,
+                            )
+                        })
                         .map(|reply| (reply, envelope.bytes))
                 };
                 let _ = envelope.reply.send(answer);
@@ -222,11 +255,7 @@ fn run(
         if stop.load(Ordering::Acquire) {
             break;
         }
-        let active = active_timer(owned)?;
-        if active != timer {
-            timer = active;
-            due = deadline(timer)?;
-        }
+        refresh_timer(owned, &mut word_clock, &mut timer, &mut due, false)?;
         if let Some(candidate) = pending.as_ref() {
             if candidate.slot() != owned.context()?.slot() {
                 pending = None;
@@ -244,11 +273,7 @@ fn run(
                     owned.propose(candidate)?;
                 }
                 proposed = Some((current.slot(), current.round()));
-                let active = active_timer(owned)?;
-                if active != timer {
-                    timer = active;
-                    due = deadline(timer)?;
-                }
+                refresh_timer(owned, &mut word_clock, &mut timer, &mut due, false)?;
             }
         }
         if let Some(current) = timer
@@ -260,8 +285,7 @@ fn run(
                         let _timing = timings.span(Some(("timeout", current.slot())), None);
                         owned.timeout(current)?;
                     }
-                    timer = active_timer(owned)?;
-                    due = deadline(timer)?;
+                    refresh_timer(owned, &mut word_clock, &mut timer, &mut due, true)?;
                 }
                 Err(_) => {
                     // Preserve expired token; busy proof work cannot unlock or fake a timeout.
@@ -415,20 +439,58 @@ fn active_timer(owned: &Owner) -> io::Result<Option<Timeout>> {
     owned.active_timer()
 }
 fn deadline(timer: Option<Timeout>) -> io::Result<Option<Instant>> {
+    deadline_at(timer, Instant::now())
+}
+fn deadline_at(timer: Option<Timeout>, start: Instant) -> io::Result<Option<Instant>> {
     timer
         .map(|t| {
-            Instant::now()
+            start
                 .checked_add(Duration::from_millis(t.duration_ms()))
                 .ok_or_else(invalid)
         })
         .transpose()
 }
+fn refresh_timer(
+    owned: &Owner,
+    word_clock: &mut Option<WordClock>,
+    timer: &mut Option<Timeout>,
+    due: &mut Option<Instant>,
+    fired: bool,
+) -> io::Result<()> {
+    let entered = match word_clock {
+        Some(clock) => clock.enter(owned.context()?.id()),
+        None => false,
+    };
+    let active = active_timer(owned)?;
+    if entered || fired || active != *timer {
+        *timer = active;
+        *due = if word_clock.as_ref().is_some_and(|c| c.started().is_none()) {
+            None
+        } else {
+            deadline(active)?
+        };
+    } else if due.is_none()
+        && let Some(start) = word_clock.as_ref().and_then(WordClock::started)
+    {
+        // First admission counts handler verification against the original
+        // Propose budget. Later retries cannot reset or extend this deadline.
+        *due = deadline_at(active, start)?;
+    }
+    Ok(())
+}
+fn observe_work(word_clock: &mut Option<WordClock>, context: [u8; 32], started: Option<Instant>) {
+    if let (Some(clock), Some(started)) = (word_clock, started) {
+        clock.observe(context, started);
+    }
+}
 fn process(
     owned: &mut Owner,
     gate: &crate::ProofGate,
     pending: &mut Option<Candidate>,
+    word_clock: &mut Option<WordClock>,
     command: Command,
 ) -> io::Result<Reply> {
+    let started = word_clock.as_ref().map(|_| Instant::now());
     match command {
         Command::Status => Ok(Reply::Status {
             slot: owned.context()?.slot(),
@@ -451,6 +513,7 @@ fn process(
             let _permit = gate.try_acquire().map_err(|_| busy())?;
             require_snapshot(owned, snapshot)?;
             let candidate = owned.import(&block.block)?;
+            observe_work(word_clock, snapshot.context, started);
             *pending = Some(candidate);
             Ok(Reply::Ok)
         }
@@ -587,6 +650,7 @@ fn process(
                 return Ok(Reply::Ok);
             }
             let candidate = owned.import(&block.block)?;
+            observe_work(word_clock, snapshot.context, started);
             if propose {
                 *pending = Some(candidate)
             }
@@ -596,6 +660,10 @@ fn process(
             require_joint(owned)?;
             require_snapshot(owned, snapshot)?;
             let input = Input::decode(owned.context()?, &bytes).map_err(error)?;
+            // Signed current-context traffic wakes the local clock even when
+            // its Body still needs fetching. Missing/malicious proposer data
+            // cannot indefinitely suppress normal active round timeouts.
+            observe_work(word_clock, snapshot.context, started);
             let value = match &input {
                 Input::Proposal(p) => Some(p.value()),
                 Input::Certificate { value, .. } => Some(value.as_slice()),
@@ -626,6 +694,7 @@ fn process(
                         checkpoint.certificate(),
                     )
                     .map_err(error)?;
+                observe_work(word_clock, snapshot.context, started);
                 if !owned.has(checkpoint.candidate().header().id())? {
                     return Ok(Reply::NeedBlock(checkpoint.candidate().header().id()));
                 }

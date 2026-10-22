@@ -19,7 +19,7 @@ plaintext Source opening or FHE secret in the peer. Canonical preflight grants
 no computation authority: the actual voter rechecks native proofs and its exact
 current snapshot before admission, voting and replay.
 
-The wire is `DCSWFN02`, with its own profile and complete Binding ID. Original,
+The wire is `DCSWFN03`, with its own profile and complete Binding ID. Original,
 Joint and Progress domains remain unchanged. The shared8-command/16MiB queue,
 8-connection/16-neighbor limits, single Body lease,180s I/O and1800s absolute
 operation budgets remain. Body I/O/preflight occur outside signer/proof locks.
@@ -32,7 +32,21 @@ Body through the single Body lease. The durable actor checks the owner signature
 and complete native proof before retaining it; only the elected proposer may
 sign. A learned candidate cannot replace existing local pending intent. No
 application verification result is cached or supplied by this hint. The retired
-`DCSWFN01` transport rejects; there is no compatibility mode or state migration.
+`DCSWFN01`/`DCSWFN02` transports reject; there is no compatibility mode or state migration.
+
+A pristine Word slot waits for authenticated work before starting local round
+timeouts. Owner Body import arms it only after genuine native/owner admission;
+signed current-context proposals/votes/certificates and valid current QCs also
+arm it, including a signed proposal awaiting its missing Body. The first handler
+start is retained, so admission verification consumes the original Propose
+budget. Metadata, failed native admission, foreign contexts and historical QC
+retries do not arm a new slot. Repeated traffic cannot postpone an armed
+deadline. Each later native token retains its exact duration, round increment
+and ANY-quorum activation rules. A changed context returns to idle. On opening,
+persisted own proposal/vote/POL actions or an advanced round/step resume the
+clock immediately. This is a local scheduling policy pinned by the v3 transport
+profile; owner proofs, voter locking/POL rules, weighted quorums, WAL and floors
+retain their original checks. Other application families keep their scheduling.
 
 `WordParticipantBootstrap::read` consumes exactly five bounded local IPC frames:
 configuration, confirmed-work Genesis, two-shard Journal Genesis, complete Word
@@ -164,3 +178,58 @@ lease/expiry/join tests and the dependency-free requirements mirror contract.
 Strict all-target Clippy passed for peer-runtime and registry200-finality; the
 changed Rust files passed rustfmt check. Only documentation changed after the
 captured build.
+
+## Work-triggered Word slots,2026-10-22
+
+Capture327/build326 reprofiled the published availability implementation with
+`DCS_PUBLIC_TIMINGS=1`. Slot2 had two timeout events and22 vote handler calls
+before BEGIN proof preparation finished; across that slot it had eight timeout
+events and345 vote handlers. The slot had started spending rounds before the
+owner submitted any work. Actor queue waiting was not the main delay.
+
+Capture331/build330 passed the same four-process scenario with the v3 scheduling
+policy above and the SAME diagnostic environment, native proof checks,
+partition/no-quorum assertions, foreign-client rejection, independent receiving
+and durable restart/replay. Slot2 had zero timeout events,17 vote handlers and no
+consensus activity before BEGIN proof preparation finished. The four validators
+still performed the genuine native checks; no proof success was cached. All12
+daemon lifetimes exited0 with no observer fault or cleanup action.
+
+| Comparable profiled operation | Availability327 ms | Work-triggered331 ms |
+| --- | ---: | ---: |
+| Bootstrap submission through first QC | 4024.213 | 2757.615 |
+| BEGIN witness/native proof preparation | 299.041 | 313.301 |
+| BEGIN submission through first QC | 3358.763 | **696.776** |
+| BEGIN preparation through independent proof/QC receiving | 4402.034 | **1801.497** |
+| Four participant reopen/replay calls | 18866.943 | 20088.251 |
+| Whole fault/partition/restart/shutdown scenario | 52553.436 | 53603.323 |
+
+These are single profiled observations. Restart work and the whole scenario did
+not improve. The BEGIN operation still excludes FHE/Predicate/SQL and current
+row-lock authority;1801.497ms is not a full-query result or the500ms goal.
+After native BEGIN submission, remaining independently receiving work and owner
+proof preparation are material. The receiver currently reconstructs its public
+Source/Word setup; reusing an original immutable verified installation must
+preserve the full expected source, binding, parent and per-operation checks.
+
+Both captures used the previous locked/offline release environment, held-image/
+creation checks,120s/1792MiB fuses and20ms polling sleep, with no concurrent build
+or test. Capture331 had618 root samples over53.937s; maximum sampled summed live
+working set was562,892,800 bytes and private bytes551,342,080. Summed live
+per-process OS peak counters reached1,110,511,616 bytes, not simultaneous physical
+memory. The profile records only public fixed labels, slots, ordinals and times.
+
+Capture327 report SHA256:
+`66BD088457C2D70530210D9EEFFD86D0DDBEA25F732D80CC70804BFFEF8841FD`.
+Capture331 report SHA256:
+`250A77E26BF4B66C2F76C61F55C763850E0D7A47FF114755DD8AFE33AE091EE3`.
+The8,415,232-byte test image SHA256 was
+`73DEAD5002BFF145EBA5E4E07D7ACF2F29C065FC140350F4E8DCF1399AFD59E8`;
+the23,861,760-byte daemon image SHA256 was
+`9D5B65887AF82BAEDD66E0950E2F856870DAB3527A6FD545C18E7CFD599B0DE9`.
+
+The four clock-policy tests cover idle/foreign contexts, verification time,
+sticky retries, context changes and resumed work. All seven Word-filtered unit
+tests, three owning queue tests, the requirements mirror contract, strict
+peer-runtime all-target Clippy and rustfmt check passed. Only documentation
+changed after capture331.
