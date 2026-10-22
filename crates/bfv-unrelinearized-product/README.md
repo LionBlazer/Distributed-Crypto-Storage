@@ -31,10 +31,19 @@ The private modules own distinct parts of that operation:
   coefficients stay ordinary while evaluation points and twiddles are encoded.
 - `certificate`: the complete 1,737,899-byte codec, associations and transcript.
 
-Normal dependencies are only `ethnum` 1.5.3, `num-bigint` 0.4.8,
-`num-traits` 0.2.19 and `sha2` 0.10.9. No SDK, registry, consensus, storage,
+Normal dependencies are `ethnum` 1.5.3, `num-bigint` 0.4.8,
+`num-traits` 0.2.19, `sha2` 0.10.9 and `p3-maybe-rayon` 0.8.0. No SDK, registry, consensus, storage,
 GUI or experiment enters the normal dependency graph. SDK dependencies and
 the private fixture are confined to owning tests.
+
+After complete canonical checks, PIT verification schedules four read-only field
+jobs on the host's existing Rayon pool. Each retains all18 original points and
+all three identities, with no polynomial copy, new pool or detached work. Every
+task joins before return. Integer/scaler checking and the full transcript remain
+unchanged. Worker budgets belong to the host. The owning
+[CPU-budget/complete-read measurements](../registry200-proof/src/registry_progress/word/read/CPU-SCALING.md)
+record actual pool sizes, resource observations and mixed full-interval results;
+they establish no full SQL500ms improvement.
 
 The [experiment](../../experiments/bfv-unrelinearized-certificate/README.md)
 now consumes this library directly for SDK computation and client completion.

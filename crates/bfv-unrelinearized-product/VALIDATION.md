@@ -1,5 +1,11 @@
 # Product extraction and composed receiving validation
 
+Later [four-field scheduling and complete-read measurements](../registry200-proof/src/registry_progress/word/read/CPU-SCALING.md)
+retain the original profile/frame and all integer/PIT checks. All19 current
+library cases, actual read/owner consumers and the real daemon/TLS/product route
+passed. The record distinguishes fixed-kernel evidence from mixed full-interval
+observations; the500ms complete SQL goal remains unmet.
+
 Executed on 2026-10-21 UTC. This change moves the actual public product
 implementation into a reusable core library and makes the experiment and a
 Source/encoding/Formation consumer use it. The former ten implementation files

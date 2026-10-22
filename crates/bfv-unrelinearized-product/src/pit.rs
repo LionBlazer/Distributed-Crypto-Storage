@@ -4,6 +4,7 @@ use crate::{
     geometry::{N, QP},
     modular::Modulus,
 };
+use p3_maybe_rayon::prelude::*;
 use sha2::{Digest, Sha512};
 
 pub(crate) const POINTS: usize = 18;
@@ -147,7 +148,9 @@ pub(crate) fn check(
     for quotient in &certificate.quotients {
         canonical(quotient, N - 1)?;
     }
-    for (basis, p) in QP.into_iter().enumerate() {
+    // Exactly four read-only field jobs share the host's existing Rayon pool.
+    // No polynomial copy, new pool, challenge change or detached worker exists.
+    QP.into_par_iter().enumerate().try_for_each(|(basis, p)| {
         let field = Modulus::new(p)?;
         for point in points(prefix, basis, p) {
             let a: [u64; 4] = std::array::from_fn(|i| field.evaluate(&inputs[i][basis], point));
@@ -165,8 +168,8 @@ pub(crate) fn check(
                 }
             }
         }
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -242,13 +245,16 @@ mod tests {
         let inputs = inputs();
         let mut c = produce(&inputs)?;
         check(&inputs, &c, &prefix(&c))?;
-        for (basis, p) in QP.into_iter().enumerate() {
-            c.products[2][basis][N - 1] = (c.products[2][basis][N - 1] + 1) % p;
-            assert!(
-                check(&inputs, &c, &prefix(&c)).is_err(),
-                "Fresh hash must not authorize an altered endpoint"
-            );
-            c.products[2][basis][N - 1] = (c.products[2][basis][N - 1] + p - 1) % p;
+        for component in 0..3 {
+            for (basis, p) in QP.into_iter().enumerate() {
+                c.products[component][basis][N - 1] = (c.products[component][basis][N - 1] + 1) % p;
+                assert!(
+                    check(&inputs, &c, &prefix(&c)).is_err(),
+                    "Fresh hash must not authorize false component {component} in basis {basis}"
+                );
+                c.products[component][basis][N - 1] =
+                    (c.products[component][basis][N - 1] + p - 1) % p;
+            }
         }
         c.quotients[1][3][N - 2] = (c.quotients[1][3][N - 2] + 1) % QP[3];
         assert!(check(&inputs, &c, &prefix(&c)).is_err());

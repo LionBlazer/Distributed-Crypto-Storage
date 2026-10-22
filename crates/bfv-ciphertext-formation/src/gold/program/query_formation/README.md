@@ -1,5 +1,8 @@
 # Fused query Formation backend
 
+The [CPU-budget study](../../../../../registry200-proof/src/registry_progress/word/read/CPU-SCALING.md)
+records actual worker counts, lower native Query and complete local read intervals.
+
 Fixed single-AIR mathematics for the complete Stmt96/mask/Cw/Cs/QueryCt
 relation, behind the public [gold::query](../../query.rs) mathematical facade.
 It is not registered in SQL, peer runtime or owner custody. The retained

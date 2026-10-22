@@ -77,3 +77,7 @@ Moving public preparation earlier does not remove its cost or establish500ms.
 
 The actual local receiving/production overlap, sequential control and remaining
 costs are recorded in the [Query receiving measurements](../../../../../bfv-ciphertext-formation/src/gold/program/query_formation/RECEIVING.md).
+
+Later [CPU-budget and product-check measurements](CPU-SCALING.md) report actual
+2/8/16-worker pools and complete local intervals before/after four-field PIT
+parallelism. They retain all native, hostile-proof and original input checks.

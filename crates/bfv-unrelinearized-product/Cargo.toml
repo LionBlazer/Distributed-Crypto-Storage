@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+p3-maybe-rayon = { version = "=0.8.0", features = ["parallel"] }
 ethnum = "=1.5.3"
 num-bigint = "=0.4.8"
 num-traits = "=0.2.19"

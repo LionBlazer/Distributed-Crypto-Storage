@@ -297,8 +297,9 @@ fn different_retained_query(
         assert_eq!(actual[(2 * row + 1) * 512 + 255], row as u64 + 1);
     }
     eprintln!(
-        "retained_math_read different_query=true prepared_ms={prepared_ms:.3} word_prove_ms={word_ms:.3} query_fused_prove_ms={query_ms:.3} fhe_product_and_certificate_ms={product_ms:.3} receiving_setup_ms={receiving_setup_ms:.3} prepared_receive_ms={receive_ms:.3} client_ms={client_ms:.3} per_query_ms={per_query_ms:.3} query_frames_bytes={} SAME_DATA=true receiving_setup_in_budget=true local_receiver_thread=true shared_rayon_pool=true SQL=false freshness=false network=false security_assessed=false",
-        word.len() + query.len() + product.len()
+        "retained_math_read different_query=true prepared_ms={prepared_ms:.3} word_prove_ms={word_ms:.3} query_fused_prove_ms={query_ms:.3} fhe_product_and_certificate_ms={product_ms:.3} receiving_setup_ms={receiving_setup_ms:.3} prepared_receive_ms={receive_ms:.3} client_ms={client_ms:.3} per_query_ms={per_query_ms:.3} query_frames_bytes={} rayon_threads={} SAME_DATA=true receiving_setup_in_budget=true local_receiver_thread=true shared_rayon_pool=true SQL=false freshness=false network=false security_assessed=false",
+        word.len() + query.len() + product.len(),
+        p3_maybe_rayon::prelude::current_num_threads()
     );
     // All hostile examples and their separate receiving setup are outside the measured interval.
     let receiver = Verifier::new(&expected).unwrap();
@@ -456,8 +457,9 @@ fn originating_owner_query(
         assert_eq!(completed.coefficients()[6 * 512 + 255], 0);
         assert_eq!(completed.coefficients()[7 * 512 + 255], 0);
         eprintln!(
-            "originating_owner_read sequence={sequence} role_public_setup_ms={setup_ms:.3} private_input_check_ms={bind_ms:.3} word_prove_ms={word_ms:.3} fhe_product_and_certificate_ms={product_ms:.3} fresh_receive_ms={receive_ms:.3} client_ms={client_ms:.3} local_query_ms={per_query_ms:.3} query_frames_bytes={} installed_DATA=true role_public_setup_reused=true public_Query_proof=false input_equations=true SQL=false freshness=false network=false locks=false security_assessed=false",
-            word.len() + response.output().len() + response.certificate().len()
+            "originating_owner_read sequence={sequence} role_public_setup_ms={setup_ms:.3} private_input_check_ms={bind_ms:.3} word_prove_ms={word_ms:.3} fhe_product_and_certificate_ms={product_ms:.3} fresh_receive_ms={receive_ms:.3} client_ms={client_ms:.3} local_query_ms={per_query_ms:.3} query_frames_bytes={} rayon_threads={} installed_DATA=true role_public_setup_reused=true public_Query_proof=false input_equations=true SQL=false freshness=false network=false locks=false security_assessed=false",
+            word.len() + response.output().len() + response.certificate().len(),
+            p3_maybe_rayon::prelude::current_num_threads()
         );
 
         let bad = damage_batch(&word);

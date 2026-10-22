@@ -142,11 +142,12 @@ fn real_fused_proof_cold_verifies_and_damaged_native_argument_fails() {
     assert_eq!(verified.expected().binding(), e.binding());
     let received = begin.elapsed();
     eprintln!(
-        "fused_query_native produce_ms={:.3} cold_receive_ms={:.3} sum_ms={:.3} frame_bytes={} SQL=false Word=false fresh_head=false",
+        "fused_query_native produce_ms={:.3} cold_receive_ms={:.3} sum_ms={:.3} frame_bytes={} rayon_threads={} SQL=false Word=false fresh_head=false",
         produced.as_secs_f64() * 1000.,
         received.as_secs_f64() * 1000.,
         (produced + received).as_secs_f64() * 1000.,
-        frame.len()
+        frame.len(),
+        p3_maybe_rayon::prelude::current_num_threads()
     );
     let begin = std::time::Instant::now();
     let receiver = crate::gold::query::Verifier::new(&e).unwrap();
