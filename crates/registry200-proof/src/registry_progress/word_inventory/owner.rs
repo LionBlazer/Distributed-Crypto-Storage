@@ -44,6 +44,29 @@ fn at(a: &[Val], i: usize) -> Result<Val> {
     a.get(i).copied().ok_or(Error::Shape)
 }
 impl PrimaryInputs {
+    /// Canonical original actor snapshot for Stmt96 preparation, without a verdict.
+    pub(in crate::registry_progress) fn statement_snapshot(
+        &self,
+        enrollment: [Val; 4],
+    ) -> Option<[Val; 8]> {
+        use super::schema::{CONTROLLER, ID, PRESENT, PRINCIPAL, SLOT, SNAPSHOT, TX_BASE};
+        let c = &self.command;
+        let actor = c.actor.filter(|v| *v < 2)?;
+        if !(1..=2).contains(&c.principal) || c.id == 0 {
+            return None;
+        }
+        let slot = &self.banks[0][TX_BASE + SLOT * actor..TX_BASE + SLOT * (actor + 1)];
+        if self.banks[0][33..37] != enrollment
+            || slot[PRESENT] != Val::ONE
+            || slot[ID] != Val::from_u32(c.id as u32)
+            || slot[ID + 1] != Val::from_u32((c.id >> 32) as u32)
+            || slot[PRINCIPAL] != Val::from_usize(c.principal)
+            || slot[CONTROLLER..CONTROLLER + 8] != self.controllers[c.principal - 1]
+        {
+            return None;
+        }
+        slot[SNAPSHOT..SNAPSHOT + 8].try_into().ok()
+    }
     pub(super) fn value(&self, p: Primary) -> Result<Val> {
         let i = p.index;
         let c = &self.command;

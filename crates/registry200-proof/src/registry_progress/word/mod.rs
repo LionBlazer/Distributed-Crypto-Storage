@@ -4,9 +4,11 @@ pub mod bootstrap;
 mod expected;
 mod inputs;
 pub mod read;
+mod statement;
 use super::word_inventory::{probe, probe_wire};
 pub use expected::{Claims, Expected};
 pub use inputs::{CommandInput, PrivateInputs, RegistryOpening, SourceOpening, WalkInput};
+pub use statement::{StatementDomain, StatementOpening};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {

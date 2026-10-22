@@ -3,6 +3,7 @@ use super::expr::{Builder, E, Ty};
 use super::recipes::Group;
 pub(super) const REGISTRY: usize = 208;
 pub(super) const SLOT: usize = 53;
+pub(super) const TX_BASE: usize = 84;
 pub(super) const PRESENT: usize = 0;
 pub(super) const ID: usize = 1;
 pub(super) const PRINCIPAL: usize = 3;
@@ -92,11 +93,11 @@ impl<'a> Bank<'a> {
                     23..=26 | 36..=39 | 49..=52 => Ty::Mode,
                     _ => Ty::U32,
                 };
-                f[84 + 53 * t + p] = b.input_primary(
+                f[TX_BASE + SLOT * t + p] = b.input_primary(
                     &format!("{label}/slot/{t}/{p}"),
                     ty,
                     Group::Bank(label == "new"),
-                    84 + 53 * t + p,
+                    TX_BASE + SLOT * t + p,
                 );
             }
         }
@@ -131,7 +132,7 @@ impl<'a> Bank<'a> {
     }
     pub fn tx(&self, t: usize) -> Tx<'a> {
         Tx {
-            f: self.f[84 + 53 * t..137 + 53 * t]
+            f: self.f[TX_BASE + SLOT * t..TX_BASE + SLOT * (t + 1)]
                 .try_into()
                 .expect("fixed53"),
         }

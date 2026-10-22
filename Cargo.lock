@@ -4861,6 +4861,7 @@ version = "0.1.0"
 dependencies = [
  "bfv-basis-convolution",
  "bfv-ciphertext-formation",
+ "bfv-hiding-stark",
  "bfv-key-transform",
  "bfv-mul-relin-proof",
  "bfv-product-evidence",
@@ -4870,6 +4871,7 @@ dependencies = [
  "compact-query",
  "compact-store",
  "ed25519-dalek",
+ "fhe-math",
  "getrandom 0.2.17",
  "p3-field",
  "peer-runtime",

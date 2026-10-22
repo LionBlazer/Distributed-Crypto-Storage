@@ -6,6 +6,7 @@ rust-version = "1.99"
 publish = false
 
 [features]
+word-query = ["bfv-query-core/gold-owner", "dep:registry200-proof", "registry200-proof/owner-read", "dep:p3-field", "dep:sha2"]
 private-input-proofs = [
     "bfv-query-core/formation-proofs",
     "dep:registry200-proof",
@@ -55,6 +56,9 @@ serde_json.workspace = true
 zeroize = "1"
 
 [dev-dependencies]
+bfv-hiding-stark = { path = "../bfv-hiding-stark" }
+bfv-ciphertext-formation = { path = "../bfv-ciphertext-formation" }
+fhe-math = { version = "=0.1.1", default-features = false }
 bfv-product-evidence = { path = "../bfv-product-evidence" }
 peer-transport = { path = "../peer-transport" }
 rcgen = "=0.14.8"

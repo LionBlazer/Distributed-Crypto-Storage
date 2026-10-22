@@ -14,6 +14,8 @@ mod query_rpc;
 pub mod relational;
 mod script;
 mod session;
+#[cfg(feature = "word-query")]
+pub mod word_query;
 pub use script::{
     MAX_SCRIPT_BYTES, MAX_SCRIPT_INSERTED_ROWS, MAX_SCRIPT_STATEMENTS, ScriptError, ScriptResult,
     SqlScript, SqlStatement, StatementOutcome, StatementResult,

@@ -21,6 +21,8 @@ pub struct Claims {
 #[derive(Clone)]
 pub struct Expected {
     pub(super) inner: Metadata,
+    genesis: [u8; 32],
+    parent: [u8; 32],
 }
 impl Expected {
     /// Derive original headers/scope/context from the complete immutable Source.
@@ -62,13 +64,13 @@ impl Expected {
             .collect::<Vec<_>>()
             .try_into()
             .map_err(|_| Error::Shape)?;
-        let parent = source::statement::words(&parent)
+        let parent_words: [Val; 8] = source::statement::words(&parent)
             .collect::<Vec<_>>()
             .try_into()
             .map_err(|_| Error::Shape)?;
         let mut ctx = source::statement::words(&super::profile_digest()).collect::<Vec<_>>();
         ctx.extend(source::statement::words(&genesis));
-        ctx.extend(parent);
+        ctx.extend(parent_words);
         ctx.extend(source::statement::words(&source.version_id()));
         ctx.extend(s.key_commitment);
         ctx.extend(s.open_commitment);
@@ -87,7 +89,7 @@ impl Expected {
                 enrollment_header,
                 context,
                 scope,
-                parent,
+                parent: parent_words,
                 enrollment,
                 old: claims.old,
                 command: claims.command,
@@ -96,6 +98,8 @@ impl Expected {
                 result: claims.result,
                 blind_sql: claims.blind_sql,
             },
+            genesis,
+            parent,
         })
     }
     pub fn role(&self) -> Role {
@@ -107,6 +111,12 @@ impl Expected {
     }
     pub fn source(&self) -> &SourceVersionExpected {
         &self.inner.source
+    }
+    pub fn genesis(&self) -> [u8; 32] {
+        self.genesis
+    }
+    pub fn parent(&self) -> [u8; 32] {
+        self.parent
     }
     pub fn binding(&self) -> [u8; 64] {
         word_inventory::probe::binding(&self.inner)
@@ -127,6 +137,13 @@ impl Expected {
     }
     pub fn scope(&self) -> &[Val; 16] {
         &self.inner.scope
+    }
+    /// Public serialization domain only; it authenticates no source or enrollment.
+    pub fn statement_domain(&self) -> super::StatementDomain {
+        super::StatementDomain {
+            scope: self.inner.scope,
+            enrollment: self.inner.enrollment,
+        }
     }
     pub fn registry_header(&self) -> &[Val; 33] {
         &self.inner.registry_header

@@ -60,3 +60,14 @@ Bootstrap803 role.
 Cmd160/Result160 prefixes for independent owner serializers. They add no generic
 hash namespace or alternate profile. `statement_header` remains the original
 thirteen-field Stmt96 prefix. The actual graph, field order and all pins are unchanged.
+
+`PrivateInputs::statement_opening(StatementDomain)` now serializes that exact
+original Stmt96 in normal code. It checks original actor identity/controller/
+snapshot/enrollment, field bounds and query policy, and returns a move-only
+`StatementOpening` with a public root and consuming guarded96-word export. It
+computes no query answer or proof. The full Source, Word, input equations and
+currentness obligations remain. Public `Expected::{genesis,parent,statement_domain}`
+getters retain the exact independent metadata used by the original constructor;
+they grant no authorization. Existing profiles, canonical words and native graph
+are preserved. The optional [client compiler](../../../../storage-client/src/word_query/README.md)
+uses this boundary without exporting Source plaintext or a secret key.

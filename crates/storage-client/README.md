@@ -1,5 +1,10 @@
 # Storage client
 
+The optional [`word-query` preparation boundary](src/word_query/README.md) compiles
+private locking SQL into the original Word statement and actual Gold encrypted
+input. It checks original context/source/actor bindings and creates native Word
+evidence without opening Session SQL acceptance, current-head or lock admission.
+
 Owner/client composition over independent authenticated peer processes. The owner
 retains compact/BFV keys and independently pinned heads; peers retain ciphertext,
 public evaluation material and durable version journals. There is no local

@@ -400,7 +400,7 @@ fn originating_owner_query(
         case.input.walk.sql = case.metadata.blind_sql;
         case.rebuild();
         let expected = word_expected(&case);
-        let statement: [Val; 96] = owner_cases::statement(&case.metadata, &case.input, &case.old)
+        let independent: [Val; 96] = owner_cases::statement(&case.metadata, &case.input, &case.old)
             .try_into()
             .unwrap();
         let mask_bytes = case.input.mask;
@@ -411,13 +411,15 @@ fn originating_owner_query(
                 data.core_expected(),
             )
             .unwrap();
-        let bind_started = Instant::now();
-        let input = owner
-            .bind_statement(
-                &original,
-                Zeroizing::new(statement.map(|v| v.as_canonical_u64())),
-            )
+        let inputs = word_inputs(&mut case);
+        let opening = inputs
+            .statement_opening(&expected.statement_domain())
             .unwrap();
+        assert_eq!(opening.root(), expected.claims().statement);
+        let statement = opening.into_words();
+        assert_eq!(*statement, independent.map(|v| v.as_canonical_u64()));
+        let bind_started = Instant::now();
+        let input = owner.bind_statement(&original, statement).unwrap();
         let bind_ms = bind_started.elapsed().as_secs_f64() * 1000.;
         let started = Instant::now();
         let response = protected::Evaluator::new()
@@ -426,10 +428,7 @@ fn originating_owner_query(
             .unwrap();
         let product_ms = started.elapsed().as_secs_f64() * 1000.;
         let started = Instant::now();
-        let word = producer
-            .produce(&expected, word_inputs(&mut case))
-            .unwrap()
-            .into_bytes();
+        let word = producer.produce(&expected, inputs).unwrap().into_bytes();
         let word_ms = started.elapsed().as_secs_f64() * 1000.;
         let evidence = || OwnerEvidence {
             word: &word,
