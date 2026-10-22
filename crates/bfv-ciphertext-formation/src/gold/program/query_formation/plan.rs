@@ -17,6 +17,8 @@ impl Plan {
             || HASH_END != 2030
             || H != 2048
             || GATES != original.kind.graph_rows() * graph::SLOTS
+            || SLOTS != 57
+            || graph::FORWARD_GATES != 24576
             || PORTS != 248
             || super::super::super::geometry::N != 4096
         {
@@ -80,11 +82,29 @@ impl Plan {
         }
         if index < GRAPH_ROWS {
             p[FLAGS + old_pp::ARITH] = Val::ONE;
-            // Cache each original 32-gate row while consuming the 56-gate dense row.
+            for (group, slot) in ACTIVE_SLOTS.into_iter().enumerate() {
+                p[ACTIVE + group] = Val::from_bool(index * SLOTS + slot < GATES);
+            }
+            for (group, slot) in POINTWISE_SLOTS.into_iter().enumerate() {
+                p[POINTWISE + group] = Val::from_bool(
+                    (graph::FORWARD_GATES..graph::FORWARD_GATES + 2 * 4096)
+                        .contains(&(index * SLOTS + slot)),
+                );
+            }
+            for (group, slot) in FANOUT_SLOTS.into_iter().enumerate() {
+                p[FANOUT + group] = Val::from_bool(
+                    (graph::FORWARD_GATES - 2048..graph::FORWARD_GATES)
+                        .contains(&(index * SLOTS + slot)),
+                );
+            }
+            // Cache each original 32-gate row while consuming the 57-gate dense row.
             let mut cached = None;
             let mut cache_index = usize::MAX;
             for slot in 0..SLOTS {
                 let gate_index = index * SLOTS + slot;
+                if p[active_column(slot)] != Val::from_bool(gate_index < GATES) {
+                    return Err(Error::Shape);
+                }
                 if gate_index >= GATES {
                     continue;
                 }
@@ -94,13 +114,15 @@ impl Plan {
                     cache_index = source
                 }
                 let gate = &cached.as_ref().ok_or(Error::Shape)?.gates[gate_index % graph::SLOTS];
-                p[ACTIVE + slot] = Val::ONE;
                 let point =
                     (graph::FORWARD_GATES..graph::FORWARD_GATES + 2 * 4096).contains(&gate_index);
                 let fanout =
                     (graph::FORWARD_GATES - 2048..graph::FORWARD_GATES).contains(&gate_index);
-                p[POINTWISE + slot] = Val::from_bool(point);
-                p[FANOUT + slot] = Val::from_bool(fanout);
+                if p[pointwise_column(slot)] != Val::from_bool(point)
+                    || p[fanout_column(slot)] != Val::from_bool(fanout)
+                {
+                    return Err(Error::Shape);
+                }
                 let want = if fanout {
                     [2, 2]
                 } else if point {
@@ -184,9 +206,9 @@ pub(super) fn count(p: &[Val; PP], port: usize) -> Result<i32> {
     let flag = |i: usize| p[FLAGS + i].as_canonical_u64() as i32;
     if port < GRAPH_PORTS {
         let slot = port / 4;
-        let active = p[ACTIVE + slot].as_canonical_u64() as i32;
-        let point = p[POINTWISE + slot].as_canonical_u64() as i32;
-        let fanout = p[FANOUT + slot].as_canonical_u64() as i32;
+        let active = p[active_column(slot)].as_canonical_u64() as i32;
+        let point = p[pointwise_column(slot)].as_canonical_u64() as i32;
+        let fanout = p[fanout_column(slot)].as_canonical_u64() as i32;
         let n = match port % 4 {
             0 => -active,
             1 => -active + point,
@@ -243,12 +265,12 @@ impl Plan {
             }
             coefficients += 2;
             for slot in 0..SLOTS {
-                active += usize::try_from(p[ACTIVE + slot].as_canonical_u64())
+                active += usize::try_from(p[active_column(slot)].as_canonical_u64())
                     .map_err(|_| Error::Shape)?
             }
             hashes += usize::try_from(p[FLAGS + old_pp::HASH].as_canonical_u64())
                 .map_err(|_| Error::Shape)?;
-            if row >= GRAPH_ROWS && p[ACTIVE..ACTIVE + SLOTS].iter().any(|&x| x != Val::ZERO) {
+            if row >= GRAPH_ROWS && (0..SLOTS).any(|slot| p[active_column(slot)] != Val::ZERO) {
                 return Err(Error::Shape);
             }
             for port in 0..PORTS {

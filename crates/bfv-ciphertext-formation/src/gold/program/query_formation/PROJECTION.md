@@ -1,5 +1,8 @@
 # Exact structured-Query range projection
 
+This records the executed v2 range projection. Current v3 preserves that private
+relation and additionally [shares exact public selectors](PUBLIC-PREPROCESSING.md).
+
 The v2 DCSGQF02 backend keeps the complete original Query relation: all81920
 Formation gates,4096 coefficients, literal original QueryCt/nonce/association,
 original Cw4112 and Cs528 hashes, Stmt96/header13/zero95, reversed mask lookup,

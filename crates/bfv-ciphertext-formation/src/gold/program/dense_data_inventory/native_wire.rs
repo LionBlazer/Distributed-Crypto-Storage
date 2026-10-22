@@ -56,9 +56,9 @@ pub(super) fn require_assessment(assessment: &Assessment) -> Result<()> {
         && AUX == 410
         && GOLD_BOUND == 350_000
         && EXT_BOUND == 5_100)
-        || (MAGIC == b"DCSGQF02"
+        || (MAGIC == b"DCSGQF03"
             && WIDTH == 416
-            && PP_WIDTH == 708
+            && PP_WIDTH == 545
             && PACKED == 83
             && AUX == 420
             && GOLD_BOUND == 360_000
@@ -274,7 +274,7 @@ mod tests {
         if MAGIC == b"DCSGDD01" {
             assert_eq!((HONEST_SLOTS, HONEST_PAYLOAD_BYTES), (3_982_568, 3_582_304));
         } else {
-            assert_eq!(MAGIC, b"DCSGQF02");
+            assert_eq!(MAGIC, b"DCSGQF03");
             assert_eq!((HONEST_SLOTS, HONEST_PAYLOAD_BYTES), (4_077_368, 3_666_304));
         }
         const {

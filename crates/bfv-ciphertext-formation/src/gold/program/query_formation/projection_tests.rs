@@ -8,10 +8,104 @@ use p3_field::coset::TwoAdicMultiplicativeCoset;
 use p3_lookup::{InteractionBuilder, LogUpGadget, Lookups};
 use p3_matrix::dense::RowMajorMatrix;
 
+const ORIGINAL_PP: usize = 708;
+
+/// Restore the former physical columns without providing a legacy native AIR.
+fn expand_public(compact: &[Val; PP]) -> [Val; ORIGINAL_PP] {
+    let mut original = [Val::ZERO; ORIGINAL_PP];
+    original[..509].copy_from_slice(&compact[..ACTIVE]);
+    for slot in 0..57 {
+        original[509 + slot] = compact[active_column(slot)];
+        original[566 + slot] = compact[pointwise_column(slot)];
+        original[623 + slot] = compact[fanout_column(slot)];
+    }
+    original[680..].copy_from_slice(&compact[STMT_LOOKUP..]);
+    original
+}
+
+/// Independent original geometry: adapt the existing 32-gate PP rows, rather
+/// than the compact Plan or its flag aliases. Literal offsets pin the old matrix.
+fn original_public_row(d: &Descriptor, e: &Expected, index: usize) -> [Val; ORIGINAL_PP] {
+    let mut original = [Val::ZERO; ORIGINAL_PP];
+    let range = old_pp::row(d, d.kind.range_first() + index).unwrap();
+    original[228..247].copy_from_slice(&range[..19]);
+    original[476..480].copy_from_slice(&range[old_pp::COEFFICIENTS..old_pp::COEFFICIENTS + 4]);
+    original[480] = range[old_pp::COEFFICIENTS + 8];
+    for flag in [old_pp::RANGE, old_pp::RESET, old_pp::EMIT] {
+        original[493 + flag] = range[old_pp::FLAGS + flag];
+    }
+    if index < 128 {
+        original[704] = Val::ONE;
+        original[705] = Val::from_bool(index.is_multiple_of(16));
+        original[706] = Val::from_bool(index % 16 == 15);
+        original[707] = Val::from_u64(1 << (30 - 2 * (index % 16)));
+        if index % 16 == 15 {
+            original[247] = Val::from_u64(old_pp::node(41, 7 - index / 16).unwrap());
+        }
+    }
+    if index < 1438 {
+        original[493 + old_pp::ARITH] = Val::ONE;
+        let first = index * 57;
+        let end = (first + 57).min(81920);
+        for source_index in first / 32..=(end - 1) / 32 {
+            let source = old_pp::row(d, source_index).unwrap();
+            for source_slot in 0..32 {
+                let gate = source_index * 32 + source_slot;
+                if !(first..end).contains(&gate) {
+                    continue;
+                }
+                let slot = gate - first;
+                original[4 * slot..4 * slot + 4]
+                    .copy_from_slice(&source[4 * source_slot..4 * source_slot + 4]);
+                let coefficient = old_pp::COEFFICIENTS + 4 * source_slot;
+                original[248 + 4 * slot..252 + 4 * slot]
+                    .copy_from_slice(&source[coefficient..coefficient + 4]);
+                original[509 + slot] = source[old_pp::FLAGS + old_pp::ARITH];
+                original[566 + slot] = source[old_pp::FLAGS + old_pp::POINTWISE];
+                original[623 + slot] = source[old_pp::FLAGS + old_pp::FANOUT];
+            }
+        }
+    } else if index < 2018 {
+        let source = old_pp::row(d, d.kind.cw_first(0) + index - 1438).unwrap();
+        original[..8].copy_from_slice(&source[..8]);
+        original[481..489].copy_from_slice(&source[old_pp::COEFFICIENTS..old_pp::COEFFICIENTS + 8]);
+        original[489..493]
+            .copy_from_slice(&source[old_pp::COEFFICIENTS + 8..old_pp::COEFFICIENTS + 12]);
+        for flag in 0..16 {
+            original[493 + flag] += source[old_pp::FLAGS + flag];
+        }
+    } else if index < 2030 {
+        let block = index - 2018;
+        original[493 + old_pp::HASH] = Val::ONE;
+        original[493 + old_pp::MASK] = Val::ONE;
+        original[493 + old_pp::FIRST] = Val::from_bool(block == 0);
+        original[493 + old_pp::LAST] = Val::from_bool(block == 11);
+        original[489..493].copy_from_slice(&e.statement);
+        for lane in 0..8 {
+            let word = 8 * block + lane;
+            if word < 13 || word == 95 {
+                original[688 + lane] = Val::ONE;
+                original[696 + lane] = if word < 13 { e.header[word] } else { Val::ZERO };
+            }
+            if (78..86).contains(&word) {
+                original[lane] = Val::from_u64(old_pp::node(41, word - 78).unwrap());
+                original[680 + lane] = Val::ONE;
+            }
+        }
+    }
+    original
+}
+
 #[test]
 fn compact_metadata_preserves_every_original_preprocessed_cell_and_security_floor() {
     let e = tests::metadata();
     let (air, report) = native::prescreen(&e).unwrap();
+    let reference = Descriptor::new(ExpectedRef::Data(&e.core)).unwrap();
+    let inventory = air.0.plan.inventory().unwrap();
+    assert_eq!(
+        (H, PP, SLOTS, ACTIVE, POINTWISE, FANOUT, STMT_LOOKUP),
+        (2048, 545, 57, 509, 511, 514, 517)
+    );
     let domain = TwoAdicMultiplicativeCoset::<Val>::new(Val::ONE, LOG_H).unwrap();
     let layout = AirLayout::from_air(&air);
     let gadget = LogUpGadget::new();
@@ -32,20 +126,36 @@ fn compact_metadata_preserves_every_original_preprocessed_cell_and_security_floo
     current.update(DOMAIN);
     let mut legacy = Sha256::new();
     legacy.update(b"DCS/research/CoreGold/FusedQuery57/H2048/PP708/v1");
+    let mut v2 = Sha256::new();
+    v2.update(b"DCS/research/CoreGold/FusedQuery57/H2048/MAIN416/PP708/v2/structured-W");
     for row in 0..H {
-        for value in air.0.plan.row(row).unwrap() {
+        let compact = air.0.plan.row(row).unwrap();
+        let expanded = expand_public(&compact);
+        let original = original_public_row(&reference, &e, row);
+        for (column, (&got, &want)) in expanded.iter().zip(&original).enumerate() {
+            assert_eq!(got, want, "original public cell row={row} column={column}");
+        }
+        for value in compact {
+            current.update(value.as_canonical_u64().to_le_bytes());
+        }
+        for value in expanded {
             let word = value.as_canonical_u64().to_le_bytes();
-            current.update(word);
             legacy.update(word);
+            v2.update(word);
         }
     }
-    // Retained v1 literal: full public matrix values and order did not change.
+    // Both original full-matrix captures survive expansion, including every
+    // public metadata, range, hash, Stmt96 and per-logical-slot flag cell.
     assert_eq!(
         format!("{:x}", legacy.finalize()),
         "d37135fbf16749c8cb08669b109fec4af772cf5fe6906c5ae4394c6fb3bd1932"
     );
+    assert_eq!(
+        format!("{:x}", v2.finalize()),
+        "c37659509244a5efd78996007d6ad60e9d7e96a0ce5093f0797af85c0c0f4406"
+    );
     eprintln!(
-        "query_range_projection_metadata ordered={:x} symbolic_bytes={} full_pp={:x} profile={:x} frame_profile={:x} MAIN={} RANGE_BITS={} workspace={} PRIVATE_MAIN=false proof=false SQL=false",
+        "query_range_projection_metadata ordered={:x} symbolic_bytes={} full_pp={:x} profile={:x} frame_profile={:x} MAIN={} RANGE_BITS={} PP={} original_PP={} physical_flags={} gates={} hash_rows={} coefficients={} positive_uses={} negative_uses={} producers={} workspace={} PRIVATE_MAIN=false proof=false SQL=false",
         Sha256::digest(&bytes),
         bytes.len(),
         current.finalize(),
@@ -53,6 +163,15 @@ fn compact_metadata_preserves_every_original_preprocessed_cell_and_security_floo
         Sha256::digest(native_wire::profile()),
         W,
         RANGE_BITS,
+        PP,
+        ORIGINAL_PP,
+        ACTIVE_SLOTS.len() + POINTWISE_SLOTS.len() + FANOUT_SLOTS.len(),
+        inventory.gates,
+        inventory.hash_rows,
+        inventory.coefficients,
+        inventory.positive_uses,
+        inventory.negative_uses,
+        inventory.producers,
         report.workspace_bytes()
     );
 }

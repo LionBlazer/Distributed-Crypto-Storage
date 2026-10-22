@@ -1,10 +1,10 @@
 //! Closed H2048 fused geometry. No old profile is relabeled.
 pub(in crate::gold) const DOMAIN: &[u8] =
-    b"DCS/research/CoreGold/FusedQuery57/H2048/MAIN416/PP708/v2/structured-W";
+    b"DCS/research/CoreGold/FusedQuery57/H2048/MAIN416/PP545/v3/structured-W/shared-flags";
 pub(super) const H: usize = 2048;
 pub(super) const LOG_H: usize = 11;
 pub(super) const W: usize = 416;
-pub(super) const PP: usize = 708;
+pub(super) const PP: usize = 545;
 pub(super) const PV: usize = 32;
 pub(super) const SLOTS: usize = 57;
 pub(super) const GATES: usize = 81920;
@@ -31,9 +31,37 @@ pub(super) const CONTEXT: usize = POWER + 1;
 pub(super) const ROOT: usize = CONTEXT + 8;
 pub(super) const FLAGS: usize = ROOT + 4;
 pub(super) const ACTIVE: usize = FLAGS + 16;
-pub(super) const POINTWISE: usize = ACTIVE + SLOTS;
-pub(super) const FANOUT: usize = POINTWISE + SLOTS;
-pub(super) const STMT_LOOKUP: usize = FANOUT + SLOTS;
+// Representatives of identical complete public columns. Logical gate/port
+// iteration still visits all 57 slots; only their preprocessing storage is shared.
+pub(super) const ACTIVE_SLOTS: [usize; 2] = [0, 11];
+pub(super) const POINTWISE_SLOTS: [usize; 3] = [0, 9, 50];
+pub(super) const FANOUT_SLOTS: [usize; 3] = [0, 9, 13];
+pub(super) const POINTWISE: usize = ACTIVE + ACTIVE_SLOTS.len();
+pub(super) const FANOUT: usize = POINTWISE + POINTWISE_SLOTS.len();
+pub(super) const STMT_LOOKUP: usize = FANOUT + FANOUT_SLOTS.len();
+pub(super) const fn active_column(slot: usize) -> usize {
+    ACTIVE + if slot < 11 { 0 } else { 1 }
+}
+pub(super) const fn pointwise_column(slot: usize) -> usize {
+    POINTWISE
+        + if slot < 9 {
+            0
+        } else if slot < 50 {
+            1
+        } else {
+            2
+        }
+}
+pub(super) const fn fanout_column(slot: usize) -> usize {
+    FANOUT
+        + if slot < 9 {
+            0
+        } else if slot < 13 {
+            1
+        } else {
+            2
+        }
+}
 pub(super) const FIXED: usize = STMT_LOOKUP + 8;
 pub(super) const FIXED_VALUE: usize = FIXED + 8;
 pub(super) const MASK_ACTIVE: usize = FIXED_VALUE + 8;
@@ -41,16 +69,21 @@ pub(super) const MASK_RESET: usize = MASK_ACTIVE + 1;
 pub(super) const MASK_EMIT: usize = MASK_RESET + 1;
 pub(super) const MASK_POWER: usize = MASK_EMIT + 1;
 pub(super) const BUS: &str = "dcs/research/fused-query57/v1/node-value";
-pub(super) const NATIVE_MAGIC: &[u8; 8] = b"DCSGQF02";
+pub(super) const NATIVE_MAGIC: &[u8; 8] = b"DCSGQF03";
 pub(super) const FRAME_DOMAIN: &[u8] =
-    b"DCS/research/fused-query57/actual-native-frame/v2/structured-W\0";
-pub(super) const FRAME_SHAPE:&[u8]=b"H2048/MAIN416/PP708/PV32;degree12/default83/AUX420/chunks8;MAIN2/AUX2/PP1;all5rounds;all4096-scaled-bit-or-zero-W/implied-canonical-range/Stmt96/Cw4112/Cs528;12FRI;terminal0+actualnative;freshOSprivate/PUBLIC-PPonly;boundedPostcard+canonicalGold+reencode+EOF;NO-admission";
+    b"DCS/research/fused-query57/actual-native-frame/v3/structured-W/shared-flags\0";
+pub(super) const FRAME_SHAPE:&[u8]=b"H2048/MAIN416/PP545/PV32;slotflags2+3+3;degree12/default83/AUX420/chunks8;MAIN2/AUX2/PP1;all5rounds;all4096-scaled-bit-or-zero-W/implied-canonical-range/Stmt96/Cw4112/Cs528;12FRI;terminal0+actualnative;freshOSprivate/PUBLIC-PPonly;boundedPostcard+canonicalGold+reencode+EOF;NO-admission";
 pub(super) const PACKED: usize = 83;
 pub(super) const AUX: usize = 420;
 pub(super) const GOLD_BOUND: usize = 360000;
 pub(super) const EXT_BOUND: usize = 5200;
 const _: () = assert!(
     GRAPH_ROWS == 1438
+        && SLOTS == 57
+        && GATES % SLOTS == 11
+        && 24576 % SLOTS == 9
+        && 32768 % SLOTS == 50
+        && 22528 % SLOTS == 13
         && STMT_FIRST == 2018
         && HASH_END == 2030
         && MASK_POWER + 1 == PP

@@ -1,7 +1,8 @@
 # Fused query Formation validation
 
-Historical v1 record. The current structured-W v2 relation and executed gates
-are recorded in [the range projection](PROJECTION.md).
+Historical v1 record. The structured-W v2 relation is recorded in
+[the range projection](PROJECTION.md); current v3 checks are in the
+[public preprocessing record](PUBLIC-PREPROCESSING.md).
 
 The first metadata-only gate ran on2026-10-21 before any new private proof. It
 passed in0.04s; the held process lived62.5741ms and reported9740288 OS-peak

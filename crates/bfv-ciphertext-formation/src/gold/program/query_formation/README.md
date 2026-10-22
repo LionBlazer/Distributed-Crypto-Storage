@@ -20,7 +20,7 @@ preparation owns the SAME final scaled W, actual SDK-secret opening and full
 statement preimage, without private getters. A successful native receive proves
 only these mathematical relations; no acceptance capability is serialized.
 
-The v2 layout is H2048/MAIN416. It repacks all81920 original graph gates into
+The v3 layout is H2048/MAIN416/PP545. It repacks all81920 original graph gates into
 57 slots per row, then hashes Cw4112, Cs528 and Stmt96 in514+66+12 rows. All4096
 complete S/E/K range groups still occupy every physical row. There are18
 range-only tail rows. The full Cw stream is hashed once instead of twice, while
@@ -41,8 +41,11 @@ P3/hiding/bounded-codec libraries. The native assessment, public setup, prover,
 canonical frame and receiver source is instantiated against two concrete closed
 families by `program::dense_backend`; no runtime AIR/config callback is exposed.
 Existing dense APIs keep their exact protocol/profile. This candidate has the
-distinct DCSGQF02 namespace and closed PP708/PUBLIC32/original248/default83/AUX420
-geometry, with eight quotient chunks and2490 actual batched openings.
+distinct DCSGQF03 namespace and closed PP545/PUBLIC32/original248/default83/AUX420
+geometry, with 2327 derived batched openings. Eight shared public selector columns replace 171 duplicate columns,
+with every logical slot retained. The native assessor derives all openings and
+the unchanged security/resource policy. See the
+[exact public preprocessing argument](PUBLIC-PREPROCESSING.md).
 
 For historical v1, before its first private proof the metadata gate captured the complete572381-byte
 ordered BASE/EXT/original/packed tuple and every1449984 PP field. Unconditional
@@ -94,5 +97,7 @@ Word read interval with actual overlap and its CPU-contention limitation.
 
 The [exact range projection](PROJECTION.md) records why the structured mask
 already implies the removed W range, the full old-constraint extension oracle,
-unchanged original PP pin, v2 profile and native metadata capture. Earlier
-validation/receiving measurements describe v1 and retain their historical scope.
+unchanged original PP pin, v2 profile and native metadata capture. The current
+[public preprocessing record](PUBLIC-PREPROCESSING.md) contains the v3 native
+and upper-consumer checks. Earlier validation/receiving measurements retain
+their historical scope.

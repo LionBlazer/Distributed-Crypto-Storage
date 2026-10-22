@@ -102,24 +102,6 @@ fn complete_inventory_symbolics_and_every_public_field_are_captured_before_priva
     }
     assert_eq!((fixed, masks), (14, 8));
     let pp = pp.finalize();
-    // Literal v2 capture r189 follows exact projection/old-PP checks, before native proving.
-    assert_eq!(bytes.len(), 564835);
-    assert_eq!(
-        format!("{:x}", Sha256::digest(&bytes)),
-        "c134fc6a96e685ef0a0db909020de6ee08954dae2ddbdda7c0cfaa3fbb59a96b"
-    );
-    assert_eq!(
-        format!("{pp:x}"),
-        "c37659509244a5efd78996007d6ad60e9d7e96a0ce5093f0797af85c0c0f4406"
-    );
-    assert_eq!(
-        format!("{:x}", Sha256::digest(profile())),
-        "c3ca285d0da35b3036dc1482fc1f453490da3e1d07da4c1af6dfec8341649bcd"
-    );
-    assert_eq!(
-        format!("{:x}", Sha256::digest(native_wire::profile())),
-        "7349f4d8f2864e980cb46702511cbe864fcfa163557c1b1ed61d1c58d26cc125"
-    );
     eprintln!(
         "fused_query_metadata ordered={:x} symbolic_bytes={} full_pp={:x} profile={:x} frame_profile={:x} PP_fields={} workspace={} MAIN=false proof=false SQL=false",
         Sha256::digest(&bytes),
@@ -129,6 +111,24 @@ fn complete_inventory_symbolics_and_every_public_field_are_captured_before_priva
         Sha256::digest(native_wire::profile()),
         H * PP,
         report.workspace_bytes()
+    );
+    // Literal v3 capture r477 follows every-cell old-PP expansion checks, before native proving.
+    assert_eq!(bytes.len(), 564835);
+    assert_eq!(
+        format!("{:x}", Sha256::digest(&bytes)),
+        "b7461b6ec1579cca0c3e42d2f64cfcf0446e1854be4ee309c6237ef609629149"
+    );
+    assert_eq!(
+        format!("{pp:x}"),
+        "8ced166061c407c6b5c0ee9d53d94085604087ee626c772592117482ad9a53d3"
+    );
+    assert_eq!(
+        format!("{:x}", Sha256::digest(profile())),
+        "eee4eafdabf0b273da352046d993bc3fc16f426a0a935309bd1bb505e4470f81"
+    );
+    assert_eq!(
+        format!("{:x}", Sha256::digest(native_wire::profile())),
+        "c456e707462ac315c45d4849f97034c4ac6538b19765329e9a014ddd85cfb038"
     );
 }
 #[test]
@@ -156,13 +156,15 @@ fn real_fused_proof_cold_verifies_and_damaged_native_argument_fails() {
     let begin = std::time::Instant::now();
     receiver.verify(&frame).unwrap();
     let warm = begin.elapsed();
-    let mut legacy = frame.clone();
-    legacy[..8].copy_from_slice(b"DCSGQF01");
-    assert!(matches!(receiver.verify(&legacy), Err(Error::Encoding)));
-    assert!(matches!(
-        crate::gold::query::verify(&e, &legacy),
-        Err(Error::Encoding)
-    ));
+    for old_magic in [b"DCSGQF01", b"DCSGQF02"] {
+        let mut legacy = frame.clone();
+        legacy[..8].copy_from_slice(old_magic);
+        assert!(matches!(receiver.verify(&legacy), Err(Error::Encoding)));
+        assert!(matches!(
+            crate::gold::query::verify(&e, &legacy),
+            Err(Error::Encoding)
+        ));
+    }
     eprintln!(
         "fused_query_prepared setup_ms={:.3} receive_ms={:.3} total_receiver_ms={:.3} setup_in_budget=true SQL=false",
         setup.as_secs_f64() * 1000.,

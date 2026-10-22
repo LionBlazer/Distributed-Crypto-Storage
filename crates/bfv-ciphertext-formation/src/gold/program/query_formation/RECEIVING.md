@@ -1,7 +1,8 @@
 # Query receiving preparation and measured cost
 
-Historical v1 record. The current structured-W v2 relation and executed gates
-are recorded in [the range projection](PROJECTION.md).
+Historical v1 record. The structured-W v2 relation is recorded in
+[the range projection](PROJECTION.md); current v3 checks are in the
+[public preprocessing record](PUBLIC-PREPROCESSING.md).
 
 The fixed Query relation, full public preprocessing and all literal profile/
 ordered-symbolic/full-PP pins are unchanged. The new `gold::query::Verifier`

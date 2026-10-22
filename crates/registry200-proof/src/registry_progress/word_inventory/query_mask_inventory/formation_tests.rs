@@ -267,7 +267,7 @@ fn real_fused_original_query_proof_verifies_and_rejects_damaged_argument() {
     }
 
     // Locally produced frame only; the public receiver always uses its bounded decoder.
-    assert_eq!(&evidence.formation[..8], b"DCSGQF02");
+    assert_eq!(&evidence.formation[..8], b"DCSGQF03");
     let mut bad: BatchProof<Config> = postcard::from_bytes(&evidence.formation[128..]).unwrap();
     bad.opened_values.instances[0]
         .base_opened_values

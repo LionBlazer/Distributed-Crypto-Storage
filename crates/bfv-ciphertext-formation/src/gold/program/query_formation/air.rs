@@ -27,7 +27,7 @@ impl<const STRUCTURED: bool> QueryAir<STRUCTURED> {
         };
         if poseidon::WIDTH != 248
             || W != 416
-            || PP != 708
+            || PP != 545
             || H != 2048
             || BITS + RANGE_BITS != 395
             || CHECKPOINT != 400
@@ -89,8 +89,8 @@ impl<AB: InteractionBuilder<F = Val>, const STRUCTURED: bool> Air<AB> for QueryA
         }
         for slot in 0..SLOTS {
             let at = 4 * slot;
-            let active: AB::Expr = p[ACTIVE + slot].into();
-            let point: AB::Expr = p[POINTWISE + slot].into();
+            let active: AB::Expr = p[active_column(slot)].into();
+            let point: AB::Expr = p[pointwise_column(slot)].into();
             let x: AB::Expr = row[at].into();
             let y: AB::Expr = row[at + 1].into();
             b.assert_zero(
@@ -176,9 +176,9 @@ impl<AB: InteractionBuilder<F = Val>, const STRUCTURED: bool> Air<AB> for QueryA
             b.assert_zero(f[old_pp::LAST].clone() * (value.clone() - p[ROOT + i]))
         }
         for port in 0..GRAPH_PORTS {
-            let active: AB::Expr = p[ACTIVE + port / 4].into();
-            let point: AB::Expr = p[POINTWISE + port / 4].into();
-            let fanout: AB::Expr = p[FANOUT + port / 4].into();
+            let active: AB::Expr = p[active_column(port / 4)].into();
+            let point: AB::Expr = p[pointwise_column(port / 4)].into();
+            let fanout: AB::Expr = p[fanout_column(port / 4)].into();
             let graph = match port % 4 {
                 0 => -active,
                 1 => -active + point,
