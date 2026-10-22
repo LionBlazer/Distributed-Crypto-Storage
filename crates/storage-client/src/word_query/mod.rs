@@ -45,6 +45,28 @@ pub struct Material {
     pub walk: word::WalkInput,
     pub salts: Zeroizing<[[u64; 4]; 3]>,
 }
+/// Current owner opening only; the next registry/result is produced by the fixed
+/// private witness recipes rather than supplied as a precomputed SQL outcome.
+pub struct CurrentMaterial {
+    pub source: word::SourceOpening,
+    pub registry: word::CurrentRegistry,
+    pub actor: Actor,
+    pub walk: word::WalkInput,
+    pub salts: Zeroizing<[[u64; 4]; 3]>,
+}
+pub struct PreparedCurrentQuery {
+    query: PreparedQuery,
+    expected: word::Expected,
+    opening: word::TransitionOpening,
+}
+impl PreparedCurrentQuery {
+    pub fn expected(&self) -> &word::Expected {
+        &self.expected
+    }
+    pub fn into_parts(self) -> (PreparedQuery, word::Expected, word::TransitionOpening) {
+        (self.query, self.expected, self.opening)
+    }
+}
 /// Exact SQL is not retained. Fresh OS blinding hides its dictionary and policy.
 /// ```compile_fail
 /// fn expose(x:storage_client::word_query::CompiledLockingSelect) { let _=x.mask; }
@@ -145,8 +167,55 @@ impl CompiledLockingSelect {
         domain: word::StatementDomain,
         mut material: Material,
     ) -> Result<PreparedQuery> {
-        let a = material.actor;
-        let w = &mut material.walk;
+        let c = self.prepare_command(material.actor, &mut material.walk, &material.salts)?;
+        let inputs = word::PrivateInputs::new(
+            material.source,
+            material.registry,
+            c,
+            material.walk,
+            self.mask.clone(),
+            material.salts.map(|row| row.map(Val::from_u64)),
+        );
+        self.finish(domain, inputs)
+    }
+    pub fn prepare_current(
+        self,
+        draft: &word::Expected,
+        mut material: CurrentMaterial,
+    ) -> Result<PreparedCurrentQuery> {
+        if draft.role() != word::Role::Predicate || draft.claims().blind_sql != self.blinded_sql() {
+            return Err(Error::Binding);
+        }
+        let command = self.prepare_command(material.actor, &mut material.walk, &material.salts)?;
+        let transition = word::prepare_transition(
+            draft,
+            word::TransitionMaterial {
+                source: material.source,
+                registry: material.registry,
+                command,
+                walk: material.walk,
+                mask: self.mask.clone(),
+                salts: material.salts.map(|row| row.map(Val::from_u64)),
+            },
+        )
+        .map_err(Error::Word)?;
+        let (expected, inputs, opening) = transition.into_parts();
+        let query = self.finish(draft.statement_domain(), inputs)?;
+        if query.root != expected.claims().statement {
+            return Err(Error::Binding);
+        }
+        Ok(PreparedCurrentQuery {
+            query,
+            expected,
+            opening,
+        })
+    }
+    fn prepare_command(
+        &self,
+        a: Actor,
+        w: &mut word::WalkInput,
+        salts: &[[u64; 4]; 3],
+    ) -> Result<word::CommandInput> {
         if a.slot >= 2
             || !(1..=2).contains(&a.principal)
             || a.transaction == 0
@@ -163,17 +232,12 @@ impl CompiledLockingSelect {
         {
             return Err(Error::Shape);
         }
-        if material
-            .salts
-            .iter()
-            .flatten()
-            .any(|v| *v >= Val::ORDER_U64)
-        {
+        if salts.iter().flatten().any(|v| *v >= Val::ORDER_U64) {
             return Err(Error::Shape);
         }
         w.sql = self.blinded_sql();
         w.statement_salt = self.salt.map(Val::from_u64);
-        let c = word::CommandInput {
+        Ok(word::CommandInput {
             op: 1,
             actor: Some(a.slot),
             principal: a.principal as usize,
@@ -184,15 +248,13 @@ impl CompiledLockingSelect {
             limit: self.policy[3],
             projection: self.policy[4],
             ..Default::default()
-        };
-        let inputs = word::PrivateInputs::new(
-            material.source,
-            material.registry,
-            c,
-            material.walk,
-            self.mask.clone(),
-            material.salts.map(|row| row.map(Val::from_u64)),
-        );
+        })
+    }
+    fn finish(
+        self,
+        domain: word::StatementDomain,
+        inputs: word::PrivateInputs,
+    ) -> Result<PreparedQuery> {
         let opening = inputs.statement_opening(&domain).map_err(Error::Word)?;
         let root = opening.root();
         let words = opening.into_words();

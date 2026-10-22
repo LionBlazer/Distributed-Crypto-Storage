@@ -7,6 +7,7 @@ use super::{
     predicate::Walk,
     schema::*,
 };
+use p3_field::PrimeCharacteristicRing;
 fn header<'a>(b: &'a Builder, label: &str) -> Vec<E<'a>> {
     super::header(label).into_iter().map(|v| b.val(v)).collect()
 }
@@ -20,6 +21,11 @@ fn fields<'a>(b: &'a Builder, label: &str, v: &[E<'a>], size: usize) -> Vec<E<'a
 fn capture(b: &Builder, g: E<'_>, actual: [E<'_>; 4], expected: [E<'_>; 4]) {
     for i in 0..4 {
         b.gate(g, actual[i] - expected[i]);
+        if b.constant(g.id) == Some(crate::Val::ONE)
+            && matches!(b.pool.borrow().nodes.get(expected[i].id), Some(super::expr::Node::Public(a)) if a.transition_root())
+        {
+            b.derive(expected[i], actual[i]);
+        }
     }
 }
 fn selected_controller<'a>(c: &Command<'a>, controllers: [[E<'a>; 8]; 2]) -> [E<'a>; 8] {

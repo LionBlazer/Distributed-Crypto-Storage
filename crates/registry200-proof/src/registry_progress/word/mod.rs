@@ -5,10 +5,16 @@ mod expected;
 mod inputs;
 pub mod read;
 mod statement;
+mod transition;
 use super::word_inventory::{probe, probe_wire};
 pub use expected::{Claims, Expected};
-pub use inputs::{CommandInput, PrivateInputs, RegistryOpening, SourceOpening, WalkInput};
+pub use inputs::{
+    CommandInput, CurrentRegistry, PrivateInputs, RegistryOpening, SourceOpening, WalkInput,
+};
 pub use statement::{StatementDomain, StatementOpening};
+pub use transition::{
+    PreparedTransition, TransitionMaterial, TransitionOpening, prepare_transition,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {

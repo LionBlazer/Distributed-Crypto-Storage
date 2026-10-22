@@ -176,7 +176,7 @@ impl Drop for PrimaryInputs {
 }
 /// Exact absorb rule, with guarded scratch, never a proof or a serialized status.
 #[cfg(test)]
-pub(super) fn hash(v: &[Val]) -> [Val; 4] {
+pub(in crate::registry_progress) fn hash(v: &[Val]) -> [Val; 4] {
     assert!(!v.is_empty() && v.len().is_multiple_of(8));
     let mut state = [Val::ZERO; 12];
     let mut scratch = [Val::ZERO; 248];

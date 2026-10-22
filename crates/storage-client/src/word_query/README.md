@@ -21,11 +21,14 @@ exposes only the intended 32-byte blinded commitment as eight public field words
 
 ## Ownership and public contracts
 
-1. The owner independently obtains complete Source/old/new registry material,
+1. The owner independently obtains complete Source/current registry material,
    caller/actor identity, call/invocation and fresh enrollment/command/result
    salts. `Actor` and `Material` are claims and private witness material; they
-   authenticate neither a client nor its rights. A real owner state/witness
-   lifecycle must produce them before application SQL acceptance.
+   authenticate neither a client nor its rights. `CurrentMaterial` supplies only
+   the old bank; `prepare_current` produces the proposed transition through the
+   original Word witness recipes. Durable owner state and fresh quorum admission
+   are still required before application SQL acceptance. The lower `Material`
+   entry also permits independently implemented old/new witness producers.
 2. `compile(...).prepare(domain, Material)` consumes those guarded inputs. This
    start-only route rejects nonzero prior progress, prior SQL/statement openings
    and invalid actor/field bounds. It sets the exact compiled mask, lock/window/
@@ -67,6 +70,27 @@ owners. The root feature enables the existing owner-read mathematical compositio
 it does not enable the historical private-input-proofs pipeline by aliasing it.
 
 ## Validation and remaining scope
+
+`compile(...).prepare_current(draft, CurrentMaterial)` pins the actual immutable
+source, enrollment, parent, independently retained old root and this compiled
+blinded SQL. It uses [Word current-state preparation](../../../registry200-proof/src/registry_progress/word/README.md)
+to produce original private next-bank/result openings and all transition roots.
+`PreparedCurrentQuery::into_parts` returns the normal prepared query, proposed
+expectation and move-only guarded candidate opening. Neither output authorizes
+installing a bank or returning rows. This client entry remains fresh-start-only;
+the Word producer separately supports the original WAIT continuation. A persisted
+client continuation lifecycle and fresh consensus integration are unfinished.
+
+The actual native client example now supplies only the old bank. Independent
+hand-written next-bank/result words are used solely as assertions after normal
+production, then the actual installed DATA, Word proof and original SDK product
+must pass independent receiving before mathematical completion. Fresh candidate
+progress entropy is cleared automatically on Done. The recorded preparation
+interval is only owner witness construction, not a complete SQL measurement.
+
+```text
+cargo test --release --locked -p storage-client --features word-query word_query:: -- --test-threads=1
+```
 
 Compiler cases cover all twelve lock strength/wait combinations, exact original
 mask/window/projection words, NULL three-valued cases, unsupported SQL, stale

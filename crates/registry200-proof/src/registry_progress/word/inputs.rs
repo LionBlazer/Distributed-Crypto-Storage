@@ -125,6 +125,36 @@ impl Drop for RegistryOpening {
         self.banks.iter_mut().for_each(|v| v.fill(Val::ZERO));
     }
 }
+/// Unauthenticated current private bank and entropy for the proposed next bank.
+/// No next state, selected rows or result is supplied by the caller.
+pub struct CurrentRegistry {
+    inner: RegistryOpening,
+}
+impl CurrentRegistry {
+    pub fn new(
+        controllers: [[Val; 8]; 2],
+        current: Zeroizing<[u64; 208]>,
+        next_salt: Zeroizing<[u64; 4]>,
+    ) -> Result<Self> {
+        if current
+            .iter()
+            .chain(next_salt.iter())
+            .any(|&v| v >= Val::ORDER_U64)
+        {
+            return Err(Error::Shape);
+        }
+        let mut old = current.map(Val::from_u64);
+        let mut banks = [old; 2];
+        old.fill(Val::ZERO);
+        banks[1][190..194].copy_from_slice(&next_salt.map(Val::from_u64));
+        Ok(Self {
+            inner: RegistryOpening::new(controllers, banks),
+        })
+    }
+    pub(super) fn into_registry(self) -> RegistryOpening {
+        self.inner
+    }
+}
 /// Move-only owning preparation. Best-effort clearing is not a stack/allocator erasure claim.
 /// ```compile_fail
 /// use registry200_proof::registry_progress::word::PrivateInputs;

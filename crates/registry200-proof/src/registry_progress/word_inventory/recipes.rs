@@ -107,6 +107,8 @@ pub(super) struct Origins {
     pub recipes: Vec<Recipe>,
     pub targets: BTreeMap<usize, usize>,
     pub errors: Vec<&'static str>,
+    // Producer-only directions for existing equalities. No AIR/PP/wire change.
+    pub derived: BTreeMap<usize, usize>,
 }
 impl Origins {
     pub fn primary(&mut self, id: usize, p: Primary) {
@@ -136,6 +138,18 @@ impl Origins {
                 }
             } else if origins != 0 {
                 return Err(format!("origin-for-noninput:{i}"));
+            }
+        }
+        if self.derived.len() != if p.predicate { 140 } else { 136 } {
+            return Err("transition-direction-count".into());
+        }
+        for (&target, &value) in &self.derived {
+            let allowed = self.primary.get(&target).is_some_and(|primary| {
+                matches!(primary.group, Group::Bank(true))
+                    && matches!(primary.index, 80..=189 | 194..=203)
+            }) || matches!(p.nodes.get(target), Some(Node::Public(a)) if a.transition_root());
+            if !allowed || target == value || value >= p.nodes.len() {
+                return Err("transition-direction-origin".into());
             }
         }
         Ok(())

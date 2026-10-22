@@ -233,13 +233,19 @@ fn compiled_sql_requires_genuine_data_word_and_original_product_before_owner_com
     let banks = banks(&draft, &plain, enrollment, controllers);
     let old = digest(&banks[0]);
     let next = digest(&banks[1]);
-    let draft = expected(&source, enrollment, claims(old, next, blind));
+    let draft = expected(&source, enrollment, claims(old, [Val::ZERO; 4], blind));
+    let proposal_began = Instant::now();
     let prepared = compiled
-        .prepare(
-            draft.statement_domain(),
-            Material {
+        .prepare_current(
+            &draft,
+            CurrentMaterial {
                 source: word::SourceOpening::checked(plain, Zeroizing::new([2; 4])).unwrap(),
-                registry: word::RegistryOpening::new(controllers, banks),
+                registry: word::CurrentRegistry::new(
+                    controllers,
+                    Zeroizing::new(banks[0].map(|v| v.as_canonical_u64())),
+                    Zeroizing::new([6; 4]),
+                )
+                .unwrap(),
                 actor: Actor {
                     slot: 0,
                     principal: 1,
@@ -249,14 +255,22 @@ fn compiled_sql_requires_genuine_data_word_and_original_product_before_owner_com
                     client: fields(&[0x47; 32]),
                     call: 1,
                     invocation: fields(&[0x48; 32]),
+                    new_salt: [Val::from_u32(9); 4],
                     ..Default::default()
                 },
                 salts: Zeroizing::new([[3; 4], [4; 4], [5; 4]]),
             },
         )
         .unwrap();
-    // Independently serialize the hand-specified command/result witnesses. No
-    // production query evaluator or fixture answer feeds the actual FHE worker.
+    let (prepared, proposed, opening) = prepared.into_parts();
+    eprintln!(
+        "word_sql_native owner_current_prepare_us={} accepted_sql=false",
+        proposal_began.elapsed().as_micros()
+    );
+    let (candidate_bank, candidate_result) = opening.into_words();
+    assert_eq!(*candidate_bank, banks[1].map(|v| v.as_canonical_u64()));
+    // These independent hand-written expectations are assertions only. Neither
+    // the next bank nor result opening was supplied to the normal producer.
     let mut command = word::command_header().to_vec();
     command.extend(draft.context());
     command.extend(old);
@@ -290,11 +304,19 @@ fn compiled_sql_requires_genuine_data_word_and_original_product_before_owner_com
     result.extend([Val::from_u32(5); 4]);
     result.extend([Val::ZERO; 6]);
     assert_eq!(result.len(), 160);
+    assert_eq!(
+        candidate_result.as_slice(),
+        result
+            .iter()
+            .map(|v| v.as_canonical_u64())
+            .collect::<Vec<_>>()
+    );
     let mut claims = claims(old, next, blind);
     claims.command = digest(&command);
     claims.statement = statement;
     claims.result = digest(&result);
     let expected = expected(&source, enrollment, claims);
+    assert_eq!(expected.binding(), proposed.binding());
     let scope = InputScope {
         database: source.statement().heads[0][8..24].try_into().unwrap(),
         transaction: 1,
@@ -409,7 +431,7 @@ fn compiled_sql_requires_genuine_data_word_and_original_product_before_owner_com
         Err(Error::Consumed)
     ));
     eprintln!(
-        "word_sql_native whole_test_ms={:.3} actual_Source_DATA_Word_product=true sql_compiler=true owner_witness_supplied=true network=false SQL_accepted=false current_head=false finality=false locks_granted=false security_assessed=false",
+        "word_sql_native whole_test_ms={:.3} actual_Source_DATA_Word_product=true sql_compiler=true owner_witness_from_current=true network=false SQL_accepted=false current_head=false finality=false locks_granted=false security_assessed=false",
         began.elapsed().as_secs_f64() * 1000.
     );
 }

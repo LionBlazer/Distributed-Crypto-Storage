@@ -45,6 +45,7 @@ pub(super) struct Evaluator<'a> {
     recipe_state: Vec<u8>,
     hash_state: Vec<u8>,
     depth: usize,
+    synthesis: bool,
 }
 impl<'a> Evaluator<'a> {
     pub fn new(
@@ -73,7 +74,15 @@ impl<'a> Evaluator<'a> {
             recipe_state: vec![0; origins.recipes.len()],
             hash_state: vec![0; pool.hashes.len()],
             depth: 0,
+            synthesis: false,
         })
+    }
+    pub fn synthesize(mut self) -> Self {
+        self.synthesis = true;
+        self
+    }
+    pub fn named(&mut self, label: &str) -> Result<Val> {
+        self.value(*self.pool.fields.get(label).ok_or(Error::Shape)?)
     }
     pub fn finish(mut self) -> Result<Values> {
         for id in 0..self.pool.nodes.len() {
@@ -117,6 +126,11 @@ impl<'a> Evaluator<'a> {
         result
     }
     fn evaluate(&mut self, id: usize) -> Result<Val> {
+        if self.synthesis
+            && let Some(&value) = self.origins.derived.get(&id)
+        {
+            return self.value(value);
+        }
         Ok(match self.pool.nodes[id].clone() {
             Node::Constant(v) => v,
             Node::Public(a) => self.public.value(a),

@@ -1,4 +1,4 @@
-//! Closed owner-math instruction graph. Test-private; never a proof/verifier API.
+//! Closed owner-math instruction graph. Internal; never a proof/verifier API.
 use super::recipes::{Built, Group, Origins, Primary, Recipe};
 use crate::Val;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
@@ -209,6 +209,21 @@ impl Builder {
     }
     pub fn eq(&self, a: E<'_>, b: E<'_>) {
         self.zero(a - b);
+    }
+    /// Record a private producer direction without changing the existing equation.
+    pub fn derive(&self, target: E<'_>, value: E<'_>) {
+        if self
+            .origins
+            .borrow_mut()
+            .derived
+            .insert(target.id, value.id)
+            .is_some()
+        {
+            self.origins
+                .borrow_mut()
+                .errors
+                .push("duplicate-transition-direction");
+        }
     }
     pub fn boolean(&self, e: E<'_>) {
         self.zero(e * (e - 1));

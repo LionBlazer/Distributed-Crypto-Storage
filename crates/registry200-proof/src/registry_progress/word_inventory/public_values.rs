@@ -66,6 +66,12 @@ pub(super) struct Address {
     index: usize,
 }
 impl Address {
+    pub fn transition_root(self) -> bool {
+        matches!(
+            self.group,
+            Group::Old | Group::Command | Group::Statement | Group::Next | Group::Result
+        )
+    }
     pub fn new(group: Group, index: usize) -> Self {
         assert!(index < group.len(), "closed public address");
         Self { group, index }

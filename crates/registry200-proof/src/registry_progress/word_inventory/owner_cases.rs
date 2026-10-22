@@ -238,7 +238,7 @@ fn command(m: &Metadata, p: &PrimaryInputs, old: &Bank) -> Vec<Val> {
     assert_eq!(v.len(), 160);
     v
 }
-fn result(case: &Case) -> Vec<Val> {
+pub(in crate::registry_progress) fn result(case: &Case) -> Vec<Val> {
     let m = &case.metadata;
     let p = &case.input;
     let o = &case.outcome;

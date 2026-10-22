@@ -178,10 +178,10 @@ pub(super) fn apply<'a>(
     let rev = b.increment(old.revision(), b.c(1));
     for (i, &revision) in rev.iter().enumerate() {
         b.eq(new.revision()[i], revision);
-        b.eq(
-            new.allocator()[i],
-            b.select(c.op[BEGIN], c.allocation[i], old.allocator()[i]),
-        );
+        b.derive(new.revision()[i], revision);
+        let allocator = b.select(c.op[BEGIN], c.allocation[i], old.allocator()[i]);
+        b.eq(new.allocator()[i], allocator);
+        b.derive(new.allocator()[i], allocator);
     }
     let acquire = if predicate {
         b.c(1) - effect.failed
@@ -262,6 +262,7 @@ pub(super) fn apply<'a>(
             };
             expected = expected + c.op[END] * (ended - oldv);
             b.eq(n.f[p], expected);
+            b.derive(n.f[p], expected);
         }
         for p in 0..5 {
             let oldp = old.progress(t)[p];
@@ -281,6 +282,7 @@ pub(super) fn apply<'a>(
                 oldp + c.op[END] * (ended - oldp)
             };
             b.eq(new.progress(t)[p], expected);
+            b.derive(new.progress(t)[p], expected);
         }
     }
 }

@@ -8,6 +8,13 @@ state, current head, SQL result or finality authority. The public facade exposes
 this exact mathematical backend; existing runtime/finality admission profiles
 are unchanged. Fixtures, owner cases and diagnostic/attack helpers remain test-only.
 
+Normal owner [current-state preparation](../word/README.md) uses producer-only
+directions attached to existing equalities to construct candidate next-bank and
+command/statement/result openings. The exact graph and all assertions remain;
+the ordinary trace writer and independent verifier never substitute derived
+values for their independently pinned inputs. This private witness facility
+does not execute a peer SQL request or install an accepted state.
+
 ## Responsibilities and dependencies
 
 - `complete_role` constructs the sole graph from the role alone. `schema`,
