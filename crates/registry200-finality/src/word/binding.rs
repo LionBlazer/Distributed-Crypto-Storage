@@ -39,9 +39,7 @@ impl Binding {
         descriptor: Descriptor,
         source: &[u8],
     ) -> Result<Self> {
-        if source.is_empty()
-            || source.len() > registry200_proof::source::version::MAX_CERTIFICATE_BYTES
-        {
+        if source.is_empty() || source.len() > super::MAX_SOURCE_CERTIFICATE_BYTES {
             return Err(Error::ResourceLimit);
         }
         if !rules.is_multi_slot()

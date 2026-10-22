@@ -207,3 +207,10 @@ N4096 BFV computation/certification with public-only worker inputs. Its reply
 is unverified mathematical material; SQL/current-head/lock admission remains
 separate. `cargo test --release --locked -p dcs-peer --test gold_product`
 exercises an independently running daemon and actual TLS roundtrip.
+
+## Word participant
+
+`--participant-word-finality new|existing <directory>` starts the distinct Word
+participant with five bounded local IPC frames and actual native proof/QC/WAL
+replay. EOF joins its real TLS/signer work. Predicate and SQL remain closed.
+See [contracts and native four-process observations](../../crates/peer-runtime/WORD-FINALITY.md).

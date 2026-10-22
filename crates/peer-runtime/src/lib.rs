@@ -20,6 +20,7 @@ mod read_image;
 mod server;
 mod store;
 mod wire;
+pub mod word_participant;
 pub use client::{ActivityPhase, RemotePeer, RpcActivity, Trace};
 pub use delta::{
     MAX_STORE_DELTA_PAGES, MAX_STORE_DELTA_REQUEST_BYTES, MAX_STORE_DELTA_RESPONSE_BYTES,
@@ -52,6 +53,7 @@ pub use objects::{
 };
 pub use participant_bootstrap::JointParticipantBootstrap;
 pub use participant_bootstrap::ProgressParticipantBootstrap;
+pub use participant_bootstrap::WordParticipantBootstrap;
 pub use participant_bootstrap::{PARTICIPANT_BOOTSTRAP_BYTES, ParticipantBootstrap};
 
 /// Reject incompatible participant state before a producer writes or launches.

@@ -1236,6 +1236,7 @@ name = "dcs-peer"
 version = "0.1.0"
 dependencies = [
  "bfv-ciphertext-formation",
+ "bfv-hiding-stark",
  "bfv-key-transform",
  "bfv-mul-relin-proof",
  "bfv-product-evidence",

@@ -256,6 +256,35 @@ fn launch(
     args: &[&std::ffi::OsStr],
     frames: &[&[u8]],
 ) -> io::Result<(ChildOwner, String)> {
+    let caps: Vec<_> = (0..frames.len())
+        .map(|index| match index {
+            0 => 64 * 1024,
+            1 => work_finality::MAX_GENESIS_BYTES,
+            2 => 716,
+            3 => 896,
+            4 => 136,
+            _ => protocol_storage::MAX_BLOB_BYTES as usize,
+        })
+        .collect();
+    launch_bounded(executable, args, frames, &caps)
+}
+fn launch_bounded(
+    executable: &Path,
+    args: &[&std::ffi::OsStr],
+    frames: &[&[u8]],
+    caps: &[usize],
+) -> io::Result<(ChildOwner, String)> {
+    if frames.len() != caps.len()
+        || frames
+            .iter()
+            .zip(caps)
+            .any(|(bytes, cap)| bytes.len() > *cap)
+    {
+        return Err(io::Error::other(
+            "Test IPC frame exceeds its exact role bound",
+        ));
+    }
+
     let mut command = Command::new(executable);
     command
         .args(args)
@@ -278,15 +307,7 @@ fn launch(
         input: Some(input),
     };
     // Limits are test IPC bounds only; the actual daemon parses exact roles.
-    for (index, bytes) in frames.iter().enumerate() {
-        let cap = match index {
-            0 => 64 * 1024,
-            1 => work_finality::MAX_GENESIS_BYTES,
-            2 => 716,
-            3 => 896,
-            4 => 136,
-            _ => protocol_storage::MAX_BLOB_BYTES as usize,
-        };
+    for (bytes, &cap) in frames.iter().zip(caps) {
         peer_transport::write_frame(owned.input.as_mut().unwrap(), bytes, cap)?;
     }
     let stdout = owned
@@ -440,6 +461,61 @@ impl ProgressProcess {
         Ok(process)
     }
     pub(crate) fn ready(&self) -> &peer_runtime::progress_participant::ProgressParticipantReady {
+        &self.ready
+    }
+    pub(crate) fn endpoint(&self) -> &Endpoint {
+        &self.ready.endpoint
+    }
+    pub(crate) fn pid(&self) -> u32 {
+        self.owned.child.id()
+    }
+    pub(crate) fn finish(mut self) -> io::Result<()> {
+        self.owned.finish()
+    }
+}
+
+// Word has exactly five bounded frames and inline original native evidence.
+#[allow(dead_code)]
+pub(crate) struct WordProcess {
+    owned: ChildOwner,
+    ready: peer_runtime::word_participant::WordParticipantReady,
+}
+#[allow(dead_code)]
+impl WordProcess {
+    pub(crate) fn start(
+        executable: &Path,
+        directory: &Path,
+        install: ParticipantInstall,
+        frames: &[&[u8]],
+    ) -> io::Result<Self> {
+        if frames.len() != 5 {
+            return Err(io::Error::other("Word needs exactly five test IPC frames"));
+        }
+        let mode = match install {
+            ParticipantInstall::New => "new",
+            ParticipantInstall::Existing => "existing",
+        };
+        let args = [
+            std::ffi::OsStr::new("--participant-word-finality"),
+            std::ffi::OsStr::new(mode),
+            directory.as_os_str(),
+        ];
+        let caps = [
+            64 * 1024,
+            work_finality::MAX_GENESIS_BYTES,
+            716,
+            registry200_joint::word::MAX_DESCRIPTOR_BYTES,
+            registry200_finality::word::MAX_SOURCE_CERTIFICATE_BYTES,
+        ];
+        let (owned, line) = launch_bounded(executable, &args, frames, &caps)?;
+        let ready = serde_json::from_str(&line).map_err(io::Error::other)?;
+        let process = Self { owned, ready };
+        if process.ready.pid != process.owned.child.id() {
+            return Err(io::Error::other("Word Ready PID differs from held child"));
+        }
+        Ok(process)
+    }
+    pub(crate) fn ready(&self) -> &peer_runtime::word_participant::WordParticipantReady {
         &self.ready
     }
     pub(crate) fn endpoint(&self) -> &Endpoint {

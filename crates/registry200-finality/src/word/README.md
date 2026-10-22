@@ -41,8 +41,10 @@ by the existing participant storage lifecycle.
 `finalized_parent` exposes private-constructor historical full-proof/QC metadata.
 It does not attest global currentness after return and cannot authorize SQL or
 locks. The fixed current roster still assumes less than one third of its confirmed
-work weight is Byzantine; open roster changes and independent network processes
-remain separate requirements. Predicate/FHE product admission and final client
+work weight is Byzantine; open roster changes remain unfinished. The
+[Word TLS host](../../../peer-runtime/WORD-FINALITY.md) now supplies independent
+processes with native proof/QC/reopen checks. Network scheduling remains outside
+this library. Predicate/FHE product admission and final client
 SQL completion are not enabled here.
 
 Direct dependencies are [registry200-joint Word](../../../registry200-joint/src/word/README.md),

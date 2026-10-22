@@ -14,12 +14,15 @@ mod proof_application;
 mod proof_client;
 mod server;
 mod wire;
+mod word_client;
+mod word_wire;
 
 pub use client::FinalityClient;
 pub use joint_client::JointFinalityClient;
 pub use joint_prefetch::ProofBlobSelector;
 pub use joint_server::{
     JointFinalityServer, ProgressFinalityServer, RunningJointFinality, RunningProgressFinality,
+    RunningWordFinality, WordFinalityServer,
 };
 pub use joint_wire::{
     OPERATION_BUDGET as JOINT_OPERATION_BUDGET, profile_digest as joint_profile_digest,
@@ -30,6 +33,8 @@ pub use progress_wire::{
 };
 pub use server::{FinalityServer, ListenerConfig, RunningFinality};
 pub use wire::profile_digest;
+pub use word_client::WordFinalityClient;
+pub use word_wire::profile_digest as word_profile_digest;
 
 use registry200_finality::CandidateBlock;
 use std::{

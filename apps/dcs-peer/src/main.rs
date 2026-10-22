@@ -8,6 +8,7 @@ mod joint_participant;
 mod participant;
 mod progress_participant;
 mod supervision;
+mod word_participant;
 fn main() {
     if let Err(error) = run() {
         eprintln!("dcs-peer: {error}");
@@ -17,6 +18,18 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let first = args.next();
+    if first.as_deref() == Some("--participant-word-finality") {
+        let install = match args.next().as_deref() {
+            Some("new") => peer_runtime::participant::ParticipantInstall::New,
+            Some("existing") => peer_runtime::participant::ParticipantInstall::Existing,
+            _ => return Err("Expected participant-word-finality new|existing".into()),
+        };
+        let directory = PathBuf::from(args.next().ok_or("Missing Word participant directory")?);
+        if args.next().is_some() {
+            return Err("Unexpected Word participant argument".into());
+        }
+        return word_participant::run(&directory, install);
+    }
     if first.as_deref() == Some("--participant-progress-finality") {
         let install = match args.next().as_deref() {
             Some("new") => peer_runtime::participant::ParticipantInstall::New,

@@ -1,5 +1,10 @@
 # Closed Registry200 TLS actor
 
+The distinct [Word bridge](../../WORD-FINALITY.md) adds `WordFinalityClient` and
+`FinalityServer::bind_word` to the same bounded dispatcher. `DCSWFN01` carries
+inline native evidence to the actual Word voter, with no blob/catalog, old-family
+casts, Predicate acceptance or current SQL/lock capability.
+
 This module runs the original Source/Lifecycle application through the concrete
 [registry200-finality](../../../registry200-finality/README.md) owner. It contains
 no generic application verifier, SQL execution path or serialized accepting token.

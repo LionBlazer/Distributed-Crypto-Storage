@@ -1,6 +1,6 @@
 //! Closed installed application pairing. Only bounded public bytes cross this
 //! boundary; neither a manifest nor a catalog is a verified operation.
-use super::{error, invalid, joint_wire, progress_wire};
+use super::{error, invalid, joint_wire, progress_wire, word_wire};
 use bfv_product_evidence::{CatalogClaim, CatalogId};
 use peer_transport::{Connector, Endpoint};
 use protocol_storage::BlobId;
@@ -13,24 +13,28 @@ use version_journal::{Body, Genesis};
 pub(super) enum Kind {
     Joint,
     Progress,
+    Word,
 }
 impl Kind {
     pub fn checkpoint_cap(self) -> usize {
         match self {
             Self::Joint => registry200_finality::joint::MAX_CHECKPOINT_BYTES,
             Self::Progress => registry200_finality::progress::MAX_CHECKPOINT_BYTES,
+            Self::Word => registry200_finality::word::MAX_CHECKPOINT_BYTES,
         }
     }
     pub fn encode(self, binding: [u8; 32], tag: u8, bytes: &[u8]) -> io::Result<Vec<u8>> {
         match self {
             Self::Joint => joint_wire::encode(binding, tag, bytes),
             Self::Progress => progress_wire::encode(binding, tag, bytes),
+            Self::Word => word_wire::encode(binding, tag, bytes),
         }
     }
     pub fn decode(self, binding: [u8; 32], bytes: &[u8]) -> io::Result<(u8, &[u8])> {
         match self {
             Self::Joint => joint_wire::decode(binding, bytes),
             Self::Progress => progress_wire::decode(binding, bytes),
+            Self::Word => word_wire::decode(binding, bytes),
         }
     }
 }
@@ -44,6 +48,9 @@ pub(super) enum Installed {
         binding: Binding,
         ingress: ProgressEvidenceIngress,
     },
+    Word {
+        binding: registry200_finality::word::Binding,
+    },
 }
 pub(super) struct Reference {
     pub ordinal: usize,
@@ -56,18 +63,21 @@ impl Installed {
         match self {
             Self::Joint { .. } => Kind::Joint,
             Self::Progress { .. } => Kind::Progress,
+            Self::Word { .. } => Kind::Word,
         }
     }
     pub fn id(&self) -> [u8; 32] {
         match self {
             Self::Joint { binding, .. } => binding.id(),
             Self::Progress { binding, .. } => binding.id(),
+            Self::Word { binding } => binding.id(),
         }
     }
     pub fn genesis(&self) -> &Genesis {
         match self {
             Self::Joint { binding, .. } => binding.journal_genesis(),
             Self::Progress { binding, .. } => binding.journal_genesis(),
+            Self::Word { binding } => binding.journal_genesis(),
         }
     }
     pub fn client(&self, connector: Connector, endpoint: Endpoint) -> super::proof_client::Client {
@@ -75,6 +85,7 @@ impl Installed {
     }
     pub fn read(&self, id: BlobId, cap: usize) -> io::Result<Vec<u8>> {
         match self {
+            Self::Word { .. } => Err(invalid()),
             Self::Joint { ingress, .. } => ingress.read_public_blob(id, cap).map_err(|e| match e {
                 registry200_joint::Error::Storage(e) => blob_error(e),
                 e => error(e),
@@ -89,18 +100,21 @@ impl Installed {
     }
     pub fn retain(&self, bytes: &[u8]) -> io::Result<BlobId> {
         match self {
+            Self::Word { .. } => Err(invalid()),
             Self::Joint { ingress, .. } => ingress.retain_public_blob(bytes).map_err(error),
             Self::Progress { ingress, .. } => ingress.retain_public_blob(bytes).map_err(error),
         }
     }
     pub fn catalog(&self, id: CatalogId) -> io::Result<CatalogClaim> {
         match self {
+            Self::Word { .. } => Err(invalid()),
             Self::Joint { ingress, .. } => ingress.catalog_claim(id).map_err(error),
             Self::Progress { ingress, .. } => ingress.catalog_claim(id).map_err(error),
         }
     }
     pub fn require_setup(&self, claim: &CatalogClaim) -> io::Result<()> {
         let (bytes, parts) = match self {
+            Self::Word { .. } => return Err(invalid()),
             Self::Joint { binding, .. } => {
                 (binding.setup_claim().bytes(), binding.setup_claim().parts())
             }
@@ -136,6 +150,19 @@ impl Installed {
         }
         body.check_authorization(&genesis.owner, g).map_err(error)?;
         match self {
+            Self::Word { binding } => {
+                use registry200_joint::word::{Application, OperationId, Request};
+                let app = Application::new(binding.application_descriptor().clone(), genesis)
+                    .map_err(error)?;
+                let request = Request::decode(&body.request).map_err(error)?;
+                if request.parent() != header.parent {
+                    return Err(invalid());
+                }
+                // Canonical application/request/evidence association only. The
+                // actual durable actor independently verifies native proofs.
+                let _ = OperationId::new(&app, &request, &body.proof).map_err(error)?;
+                Ok(Vec::new()) // Word evidence is inline in the charged Body.
+            }
             Self::Joint { binding, .. } => {
                 use registry200_joint::{Application, Manifest, ManifestRole, Request};
                 let app = Application::new(binding.application_descriptor().clone(), genesis)

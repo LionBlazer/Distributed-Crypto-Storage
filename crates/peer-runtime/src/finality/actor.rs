@@ -99,7 +99,7 @@ impl Handle {
         let bytes = match &command {
             Command::JointInput(b, _) => b.len(),
             Command::JointCheckpoint(c, _) => {
-                c.certificate().len() + registry200_finality::joint::CANDIDATE_BYTES + 12
+                c.certificate().len() + c.candidate().encode().len() + 12
             }
             _ => 256,
         };
@@ -437,7 +437,9 @@ fn process(
             let checkpoint = match owned.checkpoint(slot)? {
                 Some(Certificate::Original(c)) => Some(c),
                 None => None,
-                Some(Certificate::Joint(_) | Certificate::Progress(_)) => return Err(invalid()),
+                Some(Certificate::Joint(_) | Certificate::Progress(_) | Certificate::Word(_)) => {
+                    return Err(invalid());
+                }
             };
             Ok(Reply::Checkpoint(checkpoint))
         }
@@ -603,12 +605,12 @@ fn process(
 fn require_original(owned: &Owner) -> io::Result<()> {
     match owned {
         Owner::Original(_) => Ok(()),
-        Owner::Joint(_) | Owner::Progress(_) => Err(invalid()),
+        Owner::Joint(_) | Owner::Progress(_) | Owner::Word(_) => Err(invalid()),
     }
 }
 fn require_joint(owned: &Owner) -> io::Result<()> {
     match owned {
-        Owner::Joint(_) | Owner::Progress(_) => Ok(()),
+        Owner::Joint(_) | Owner::Progress(_) | Owner::Word(_) => Ok(()),
         Owner::Original(_) => Err(invalid()),
     }
 }

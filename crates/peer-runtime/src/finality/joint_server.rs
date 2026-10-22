@@ -604,7 +604,28 @@ pub struct ProgressFinalityServer {
 pub struct RunningProgressFinality {
     inner: Running,
 }
+pub struct WordFinalityServer {
+    inner: ProofServer,
+}
+pub struct RunningWordFinality {
+    inner: Running,
+}
 impl super::FinalityServer {
+    /// Distinct Word owner with inline native proofs and the same bounded actor.
+    pub fn bind_word(
+        config: ListenerConfig,
+        owned: registry200_finality::word::DurableFinality,
+        gate: crate::ProofGate,
+    ) -> io::Result<WordFinalityServer> {
+        let binding = owned.binding().map_err(error)?;
+        ProofServer::bind(
+            config,
+            Owner::Word(Box::new(owned)),
+            Installed::Word { binding },
+            gate,
+        )
+        .map(|inner| WordFinalityServer { inner })
+    }
     /// Trusted composition supplies the already-owned signer/depot and SAME gate.
     pub fn bind_joint(
         config: ListenerConfig,
@@ -667,6 +688,27 @@ impl RunningJointFinality {
     }
 }
 impl RunningProgressFinality {
+    pub fn endpoint(&self) -> &Endpoint {
+        self.inner.endpoint()
+    }
+    pub fn stop(&mut self) -> io::Result<()> {
+        self.inner.stop()
+    }
+}
+impl WordFinalityServer {
+    pub fn endpoint(&self) -> &Endpoint {
+        self.inner.endpoint()
+    }
+    pub fn set_neighbors(&mut self, neighbors: Vec<Endpoint>) -> io::Result<()> {
+        self.inner.set_neighbors(neighbors)
+    }
+    pub fn spawn(self) -> io::Result<RunningWordFinality> {
+        self.inner
+            .spawn()
+            .map(|inner| RunningWordFinality { inner })
+    }
+}
+impl RunningWordFinality {
     pub fn endpoint(&self) -> &Endpoint {
         self.inner.endpoint()
     }

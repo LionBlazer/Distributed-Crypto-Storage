@@ -1,5 +1,10 @@
 # Peer runtime
 
+The [Word TLS participant](WORD-FINALITY.md) hosts the actual Word durable voter
+in independent processes. Its typed client, five-frame IPC and explicit daemon
+entry preserve native proof/QC/replay checks. Predicate and accepted SQL remain
+unavailable; measured control latency exceeds the full-query target.
+
 ## Scoped product completion for the v3 owner
 
 `RemotePeer::prove_private_product_recorded_scoped_shared` uses the SAME concrete

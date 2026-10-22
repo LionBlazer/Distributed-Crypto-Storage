@@ -1,6 +1,7 @@
 //! Independently pinned local IPC bootstrap; never a network admission packet.
 mod joint;
 mod progress;
+mod word;
 use crate::{Endpoint, Identity, finality::MAX_PEERS};
 use ed25519_dalek::SigningKey;
 pub use joint::JointParticipantBootstrap;
@@ -15,6 +16,7 @@ use std::{
     io::{self, Read},
     net::SocketAddr,
 };
+pub use word::WordParticipantBootstrap;
 use work_finality::consensus::Rules;
 use zeroize::Zeroizing;
 
