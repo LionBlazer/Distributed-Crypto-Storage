@@ -1,5 +1,6 @@
 //! Explicitly NONSECRET owner inputs; real Source/Word, signatures and Journal I/O.
 use super::*;
+mod predicate;
 use ed25519_dalek::SigningKey;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use registry200_proof::{Val, registry_progress::word as math, source};
@@ -192,7 +193,12 @@ fn boot(f: &Fixture, a: &Application, parent: Hash) -> (Request, Evidence, [Val;
         bank,
     )
 }
-fn begin(f: &Fixture, a: &Application, parent: Hash, old: [Val; 208]) -> (Request, Evidence) {
+fn begin(
+    f: &Fixture,
+    a: &Application,
+    parent: Hash,
+    old: [Val; 208],
+) -> (Request, Evidence, [Val; 208]) {
     let enrollment = old[33..37].try_into().unwrap();
     let controllers: [[_; 8]; 2] = [
         words(&[0x41; 32]).try_into().unwrap(),
@@ -279,6 +285,7 @@ fn begin(f: &Fixture, a: &Application, parent: Hash, old: [Val; 208]) -> (Reques
     (
         Request::control(a, parent, [2; 32], enrollment, c).unwrap(),
         Evidence::control(p.as_bytes()).unwrap(),
+        next,
     )
 }
 fn candidate(
@@ -314,7 +321,7 @@ fn candidate(
     (header, body.encode(&genesis(d).profile).unwrap())
 }
 #[test]
-fn full_descriptor_and_frames_reject_foreign_state_noncanonical_fields_and_predicate_lane() {
+fn full_descriptor_and_frames_reject_foreign_state_noncanonical_fields_and_unknown_lane() {
     let f = fixture();
     let bytes = f.descriptor.encode();
     assert_eq!(Descriptor::decode(&bytes).unwrap().encode(), bytes);
@@ -345,7 +352,7 @@ fn full_descriptor_and_frames_reject_foreign_state_noncanonical_fields_and_predi
         if at == 112 {
             bad[112..120].copy_from_slice(&Val::ORDER_U64.to_le_bytes());
         } else {
-            bad[at] = 2;
+            bad[at] = 3;
         }
         assert!(Request::decode(&bad).is_err());
     }
@@ -421,7 +428,7 @@ fn actual_source_bootstrap_begin_and_owner_journal_handoff_are_required() {
         verifier.check_block(&journal, &unauthorized_header, &unauthorized, 200, id),
         Err(Error::Unauthorized)
     ));
-    let (r, e) = begin(f, &a, h.id(), bank);
+    let (r, e, _) = begin(f, &a, h.id(), bank);
     let id = OperationId::new(&a, &r, e.as_bytes()).unwrap();
     let before = Control::Active {
         enrollment: r.enrollment(),

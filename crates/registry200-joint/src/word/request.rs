@@ -8,18 +8,21 @@ pub const REQUEST_BYTES: usize = 368;
 pub enum Lane {
     Bootstrap,
     Control,
+    Predicate,
 }
 impl Lane {
     pub(super) fn tag(self) -> u8 {
         match self {
             Self::Bootstrap => 0,
             Self::Control => 1,
+            Self::Predicate => 2,
         }
     }
     pub(super) fn decode(n: u8) -> Result<Self> {
         match n {
             0 => Ok(Self::Bootstrap),
             1 => Ok(Self::Control),
+            2 => Ok(Self::Predicate),
             _ => Err(Error::InvalidEncoding),
         }
     }
@@ -64,8 +67,29 @@ impl Request {
         enrollment: [Val; 4],
         claims: Claims,
     ) -> Result<Self> {
+        Self::mutation(a, Lane::Control, parent, nonce, enrollment, claims)
+    }
+    /// Unverified original Predicate intent. Successful native checks still do
+    /// not admit this lane until composed-security policy is established.
+    pub fn predicate(
+        a: &Application,
+        parent: Hash,
+        nonce: Hash,
+        enrollment: [Val; 4],
+        claims: Claims,
+    ) -> Result<Self> {
+        Self::mutation(a, Lane::Predicate, parent, nonce, enrollment, claims)
+    }
+    fn mutation(
+        a: &Application,
+        lane: Lane,
+        parent: Hash,
+        nonce: Hash,
+        enrollment: [Val; 4],
+        claims: Claims,
+    ) -> Result<Self> {
         let r = Self {
-            lane: Lane::Control,
+            lane,
             app: a.id(),
             parent,
             nonce,
@@ -89,7 +113,11 @@ impl Request {
     }
     fn require_shape(&self) -> Result<()> {
         let c = self.claims;
-        if c.statement != [Val::ZERO; 4]
+        let invalid_statement = match self.lane {
+            Lane::Predicate => c.statement == [Val::ZERO; 4],
+            Lane::Bootstrap | Lane::Control => c.statement != [Val::ZERO; 4],
+        };
+        if invalid_statement
             || self.lane == Lane::Bootstrap
                 && (c.old != [Val::ZERO; 4]
                     || c.command != [Val::ZERO; 4]

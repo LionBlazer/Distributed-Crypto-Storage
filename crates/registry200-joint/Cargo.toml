@@ -21,6 +21,7 @@ p3-field = "=0.8.0"
 compact-store = { path = "../compact-store" }
 
 [dev-dependencies]
+bfv-query-core = { path = "../bfv-query-core", features = ["gold-owner"] }
 bfv-hiding-stark = { path = "../bfv-hiding-stark" }
 bfv-relinearization-key-source = { path = "../bfv-relinearization-key-source" }
 zeroize = "=1.9.1"

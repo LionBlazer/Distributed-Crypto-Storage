@@ -115,6 +115,31 @@ impl Verifier {
                         .map_err(|_| Error::RejectedComputationProof)?,
                 )
             }
+            (
+                Lane::Predicate,
+                Control::Active {
+                    enrollment,
+                    registry,
+                },
+            ) => {
+                if enrollment != r.enrollment() || registry != c.old || registry == c.next {
+                    return Err(Error::InvalidTransition);
+                }
+                let e = word::Expected::checked(
+                    self.source.expected(),
+                    word::Role::Predicate,
+                    a.genesis(),
+                    s.parent.block,
+                    enrollment,
+                    c,
+                )
+                .map_err(|_| Error::WrongDomain)?;
+                self.check_predicate_relation(&e, child)?;
+                // Complete native mathematics is necessary but cannot supply
+                // the still-unestablished composed-security admission policy.
+                // Never construct an accepting operation/import for this lane.
+                return Err(Error::RejectedComputationProof);
+            }
             _ => return Err(Error::InvalidTransition),
         };
         Ok(VerifiedOperation {
@@ -122,6 +147,22 @@ impl Verifier {
             request: r,
             proof,
         })
+    }
+    pub(super) fn check_predicate_relation(
+        &self,
+        expected: &word::Expected,
+        packet: &[u8],
+    ) -> Result<()> {
+        if expected.role() != word::Role::Predicate {
+            return Err(Error::WrongDomain);
+        }
+        let parsed = super::predicate::BorrowedPredicate::parse(self.source.expected(), packet)?;
+        let read = parsed.expected(expected)?;
+        drop(
+            word::read::verify(&read, parsed.evidence())
+                .map_err(|_| Error::RejectedComputationProof)?,
+        );
+        Ok(())
     }
     pub fn check_block(
         &self,

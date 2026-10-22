@@ -12,6 +12,9 @@ impl Evidence {
     pub fn control(child: &[u8]) -> Result<Self> {
         Self::new(Lane::Control, &[], child)
     }
+    pub fn predicate(packet: &super::predicate::PredicatePacket) -> Result<Self> {
+        Self::new(Lane::Predicate, &[], packet.as_bytes())
+    }
     fn new(lane: Lane, source: &[u8], child: &[u8]) -> Result<Self> {
         let n = 24usize
             .checked_add(source.len())
@@ -44,6 +47,12 @@ impl Evidence {
                     return Err(Error::InvalidEncoding);
                 }
                 word::MAX_EVIDENCE_BYTES
+            }
+            Lane::Predicate => {
+                if source != 0 {
+                    return Err(Error::InvalidEncoding);
+                }
+                super::predicate::MAX_PREDICATE_PACKET_BYTES
             }
         };
         if child == 0 || child > cap {

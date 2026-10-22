@@ -1,7 +1,7 @@
 # Complete unverified Predicate packet
 
 Public `word::predicate` owns one bounded grammar for the original public
-DATA/Word/Query/FHE evidence needed by a future Joint Predicate operation.
+DATA/Word/Query/FHE evidence used by the closed Joint Predicate candidate path.
 `PredicatePacket` owns encoded unverified bytes; `BorrowedPredicate` parses
 borrowed bytes against an independently retained Source. Neither type is a
 mathematical result, journal transition, current-head receipt or lock authority.
@@ -84,13 +84,22 @@ insufficient. The codec accepts no alternate verifier or serialized verdict.
 
 ## Integration boundary
 
-This grammar is a prerequisite for carrying the complete original public
-argument in a real journal candidate. It does not change `Lane`, the Word
-application contract digest, `TransitionVerifier`, admission or finality policy.
-No RPC, new accepting callback, latest-head oracle or durable registry update is
-added. A later actual Predicate branch must join full native receiving to the
-original authorized journal parent and fresh weighted agreement before granting
-SQL/Result160/lock authority.
+`Request::predicate` and `Evidence::predicate` now carry the complete argument
+in a real signed journal candidate under `Lane::Predicate` (tag2). The common
+Joint `Verifier::check` constructs the Word expectation from the retained verified
+Source, application Genesis, actual parent and old registry, then invokes the
+original full native receiver. Even genuine mathematics ends in an unconditional
+`RejectedComputationProof` before any `Proof`, `VerifiedOperation` or pending
+import can be created. Owner authorization runs first on actual Journal paths.
+
+The existing application contract digest remains unchanged because its accepted
+Bootstrap/Control bytes and semantics remain unchanged and Predicate never
+succeeds. The candidate grammar has its own packet profile, lane tag and full
+operation association. A future accepting Predicate policy must introduce a new
+application contract identity covering its full read/packet/security policy,
+and establish fresh weighted agreement before granting SQL/Result160/lock
+authority. No RPC, new accepting callback, latest-head oracle or durable registry
+update is added here.
 
 The current Source/Word/DATA/Query hiding suite retains its individual native
 128-bit policies. The144-bit floor belongs to the separate historical

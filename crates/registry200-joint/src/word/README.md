@@ -3,19 +3,22 @@
 This distinct application composes genuine StateCertificate/Word EMPTY265 and
 Control309 native proofs with the owner-authorized version journal. It is one
 step toward the new SQL proof route, not a SQL, freshness or lock capability.
-Predicate is rejected: its eventual admission must include the original DATA,
-fused Query and actual FHE product, with assessed cryptographic security. A Word
-predicate proof by itself cannot authorize a result or a lock here.
+Predicate remains rejected. Its candidate now reaches the actual journal
+verifier, which reconstructs the original DATA, fused Query and FHE product
+expectations and checks all six native proofs. Successful mathematics still
+cannot authorize an operation: composed cryptographic security is unassessed.
+A Word predicate proof by itself cannot authorize a result or a lock here.
 
 The public [`predicate` packet codec](PREDICATE-PACKET.md) defines the complete
-bounded evidence grammar needed before that Joint branch can be implemented.
+bounded evidence grammar used by this closed Joint Predicate branch.
 `PredicatePacket` contains original public request/output bytes and all six
 proofs. `BorrowedPredicate` reconstructs its metadata against an independently
 retained Source; it accepts no caller-supplied theorem or association digest.
 Parsing and `expected(&WordExpected)` perform no native proof verification,
-authorization or freshness check. This stage changes no Lane, application
-contract digest or Predicate admission rule, and adds no RPC or accepting
-callback. Existing Predicate rejection remains in force.
+authorization or freshness check. `Lane::Predicate`, `Request::predicate` and
+`Evidence::predicate` frame unverified candidates only. The accepted transition
+set and application contract digest remain unchanged; no RPC or accepting
+callback is added. Predicate cannot return a `VerifiedOperation` or import.
 
 `Descriptor` owns complete independently installed SourceVersion metadata,
 network and distinct source/control shard IDs. DCSWAD01 encoding includes both
@@ -31,7 +34,9 @@ controls retain enrollment and prove the original full old/next registry roots.
 original Word claims. DCSWRQ01 has 368 bytes, including canonical Goldilocks
 fields. `Evidence` bounds and frames detached real proofs under DCSWJE01. A
 bootstrap carries Source and EMPTY proof; a control carries one native Word
-proof. Frames contain no accepting flag. `OperationId` is an unverified full
+proof; a Predicate carries one complete `PredicatePacket`. Frames contain no
+accepting flag. Predicate requires nonzero StmtRoot, while bootstrap/control
+require zero. `OperationId` is an unverified full
 request/evidence association; callers must retain their original intent, rather
 than derive an expectation from a responder's proposed bytes.
 
@@ -42,6 +47,15 @@ openings or per-operation verdicts. Every control creates its expectation from
 that original verified Source and the actual journal parent, then runs the native
 Word verifier. The bootstrap also independently verifies its attached Source and
 EMPTY proof. Retaining an immutable theorem proves no latest network head.
+
+Predicate derives its Word expectation from that same verified Source,
+application Genesis, actual journal parent, enrollment and actual old registry.
+The original public request must bind that complete expectation. A private
+helper runs the original six-proof `word::read::verify`; its move-only result
+is discarded before an unconditional `RejectedComputationProof`. There is no
+Predicate `Proof` variant or accepting result construction. Only a later
+assessed admission policy may expand the accepted transition set, and that
+change must also introduce a new application contract identity.
 
 `check` verifies historical mathematical consistency with an independent operation
 pin. `check_block` first uses the Journal's real owner signature, body/header/work
@@ -72,3 +86,5 @@ QC, weighted finality, durable floor/reopen, network SQL or GUI acceptance path.
 
 The actual Source/bootstrap/Begin/owner handoff and rejection cases passed the
 [native validation](VALIDATION.md). Its component timings are not full SQL times.
+The six-proof Predicate/actual-parent/closed-import cases passed the separate
+[closed journal validation](PREDICATE-JOURNAL-VALIDATION.md).
