@@ -34,6 +34,14 @@ exposes it by borrow through `product()` for protected client-side completion.
 It exposes the checked original Ct3 too. No new wire format, old-profile
 conversion or verdict cache is added.
 
+`verify_and_retain` performs the same complete six-proof native verification as
+`verify`, in the same product/DATA/query order, and returns both the checked read
+and its actual `VerifiedDataFormation`. Neither result is released on any failed
+check. This lets an application retain the independently verified immutable DATA
+theorem without verifying those same three proofs a second time. It does not
+retain Word/Query/product verdicts; later calls must use `verify_retained` with
+complete matching DATA metadata and fresh per-query native checks.
+
 Owners first retain complete Source and Word expectations, prepare DATA using
 `two_lane_encoding::data_formation`, derive the query context/root and use
 `bfv_query_core::gold::Owner::prepare_query` with the original private Stmt96

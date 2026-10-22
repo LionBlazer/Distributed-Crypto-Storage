@@ -85,3 +85,64 @@ control extraction and durable acceptance. No transport, consensus, WAL or
 recovery behavior changed; the expensive four-peer recovery gate was not repeated.
 Fresh agreement, assessed composition and actual SQL/locking admission remain
 required work. No proof, resource fuse or production timeout was relaxed.
+
+## Exact immutable DATA retention, 2026-10-22
+
+Based on `6e12edec9cf8602cb76256d65f0bc64ce6dac4de`, the private Joint Predicate
+receiver now retains one actual native State/Role3/DATA theorem and literal
+copies of its three public proof frames. Reuse requires complete DATA metadata
+equality and byte-for-byte equality of all three frames. Every changed immutable
+proof takes the complete six-proof path. Word, fused Query and product arithmetic
+are independently checked on every call, including repeated candidates.
+
+The new public `read::verify_and_retain` preserves the original full receiving
+order and errors and releases both results only after every check succeeds.
+Existing `read::verify` delegates to it and discards DATA as before. The single
+private slot is replaced only after complete mathematical success; failures keep
+the old theorem. Its old proof copies are dropped before replacement copies
+allocate. A mutex serializes this verifier's Predicate checks without holding
+I/O, consensus or Journal publication. Poisoning rejects. Retained proof bytes
+are bounded by the unchanged packet cap below 32MiB; there is no persisted verdict,
+per-query receipt, proof hash shortcut or cross-query public-setup reuse.
+
+The three owning cases passed in 26.72s. The extended case verifies a genuinely
+fresh QueryCt, nonce, vector commitment and SDK product for the same hidden
+statement using the same immutable DATA. It rejects an old Query proof against
+that new expectation through actual receiving, then successfully checks the
+genuine packet again. All six individual proof damages, owner/parent/registry/
+intent failures, and the closed signed import checks remain covered. An original
+packet also succeeds after the damage sequence. The whole Joint Verifier retains
+`Send + Sync`, checked at compile time. Independent read-only review found no
+proof, association, replacement or concurrency bypass.
+
+| Receiving interval in the same process | ms |
+| --- | ---: |
+| Cold complete six-proof verification and initial retention | 2026.258 |
+| Same candidate, exact immutable proofs retained | 692.076 |
+| Original candidate after all proof-damage cases | 742.328 |
+| Fresh encryption of the same hidden statement, same immutable DATA | 703.726 |
+
+These intervals exclude proof production, network I/O, weighted agreement and
+locks. They are component observations, not an end-to-end SQL latency
+distribution. The 500ms full-query target remains unmet, and the common Predicate
+admission guard remains unconditionally closed. No native proof, timeout,
+cryptographic parameter, accepted contract identity or finality rule changed.
+
+The final source/image-pinned native capture is
+`.local/word-cmd-native-r469-registry200-joint-observe-tests/result.json`, SHA256
+`6C3437E8BC77204A33F3A05CD482B6592FC80341245CFACD5CF68F3FC843708A`.
+Its 26,180,608-byte test image SHA256 is
+`FAB954ACDAD7F4E4C9435C0E8213E5E0B1212A9F61AC5F442D8E57BA21D51E6D`.
+Process lifetime was 26753.5617ms. Sampled working-set/private peaks were
+699,805,696 / 694,738,944 bytes; OS peak working set was 705,368,064 bytes. The
+unchanged 120s/1792MiB fuses, 20ms sampling and exact held process identity checks
+passed without faults or cleanup; no build overlapped capture. These are scoped
+test-process measurements, not a whole production-peer resource guarantee.
+
+Strict all-target Clippy passed for Joint, registry200-proof and finality. All 12
+Word proof compile-fail examples, both Joint Word compile-fail examples and the
+requirements mirror test passed. Formatting and documentation links were checked;
+no executable source changed after the final native capture. The existing
+reproduction commands above still exercise the affected Joint behavior. Transport,
+WAL and accepted consensus behavior are unchanged, so the expensive four-peer
+recovery gate was not repeated.

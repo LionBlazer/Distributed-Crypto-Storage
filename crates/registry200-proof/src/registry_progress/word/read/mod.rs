@@ -179,22 +179,29 @@ pub fn verify<'a>(
     expected: &'a Expected,
     evidence: Evidence<'_>,
 ) -> Result<ArithmeticCheckedRead<'a>> {
+    verify_and_retain(expected, evidence).map(|(checked, _)| checked)
+}
+/// Freshly check all six proofs, returning the actual immutable DATA theorem
+/// alongside this call's read result. Both are released only after every check
+/// succeeds. Retaining DATA grants no new query, authorization or head status.
+pub fn verify_and_retain<'a>(
+    expected: &'a Expected,
+    evidence: Evidence<'_>,
+) -> Result<(ArithmeticCheckedRead<'a>, installed::VerifiedDataFormation)> {
     evidence.require_bounds()?;
     let product =
         product::check_arithmetic(&expected.product, evidence.product).map_err(Error::Product)?;
     let prerequisites =
         installed::Prerequisites::checked(evidence.state, evidence.child).map_err(Error::Data)?;
-    drop(
-        installed::verify_dense(
-            &expected.data,
-            expected.data.request(),
-            prerequisites,
-            evidence.data,
-        )
-        .map_err(Error::Data)?,
-    );
+    let retained = installed::verify_dense(
+        &expected.data,
+        expected.data.request(),
+        prerequisites,
+        evidence.data,
+    )
+    .map_err(Error::Data)?;
     verify_query_proofs(expected, &evidence.query())?;
-    Ok(ArithmeticCheckedRead { expected, product })
+    Ok((ArithmeticCheckedRead { expected, product }, retained))
 }
 /// Retains only an actual private State/Role3/DATA verification result. Complete
 /// DATA equality is mandatory; Word, Query and product are checked on EVERY call.

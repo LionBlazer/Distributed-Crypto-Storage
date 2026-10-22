@@ -3,6 +3,7 @@
 mod descriptor;
 mod evidence;
 pub mod predicate;
+mod predicate_receiving;
 mod request;
 mod state;
 #[cfg(test)]

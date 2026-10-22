@@ -5,7 +5,9 @@ Control309 native proofs with the owner-authorized version journal. It is one
 step toward the new SQL proof route, not a SQL, freshness or lock capability.
 Predicate remains rejected. Its candidate now reaches the actual journal
 verifier, which reconstructs the original DATA, fused Query and FHE product
-expectations and checks all six native proofs. Successful mathematics still
+expectations and initially checks all six native proofs. An exact immutable
+State/Role3/DATA theorem may then be retained; Word/Query/product are checked
+afresh on every call. Successful mathematics still
 cannot authorize an operation: composed cryptographic security is unassessed.
 A Word predicate proof by itself cannot authorize a result or a lock here.
 
@@ -41,9 +43,10 @@ request/evidence association; callers must retain their original intent, rather
 than derive an expectation from a responder's proposed bytes.
 
 `Verifier::new` genuinely verifies the immutable Source and independently creates
-the public Word receiving setup. It retains only the private move-only Source
-mathematical capability and public setup, not proof bytes, randomness, private
-openings or per-operation verdicts. Every control creates its expectation from
+the public Word receiving setup. At construction it retains the private move-only
+Source mathematical capability and public setup, without proof bytes, randomness,
+private openings or per-operation verdicts. The later bounded Predicate DATA
+retention is described below. Every control creates its expectation from
 that original verified Source and the actual journal parent, then runs the native
 Word verifier. The bootstrap also independently verifies its attached Source and
 EMPTY proof. Retaining an immutable theorem proves no latest network head.
@@ -51,11 +54,22 @@ EMPTY proof. Retaining an immutable theorem proves no latest network head.
 Predicate derives its Word expectation from that same verified Source,
 application Genesis, actual journal parent, enrollment and actual old registry.
 The original public request must bind that complete expectation. A private
-helper runs the original six-proof `word::read::verify`; its move-only result
-is discarded before an unconditional `RejectedComputationProof`. There is no
+helper uses the original six-proof `word::read::verify_and_retain` or the original
+`verify_retained` with a matching actual DATA theorem. The per-query move-only
+result is discarded before an unconditional `RejectedComputationProof`. There is no
 Predicate `Proof` variant or accepting result construction. Only a later
 assessed admission policy may expand the accepted transition set, and that
 change must also introduce a new application contract identity.
+
+The private `predicate_receiving` module owns one in-memory DATA theorem and
+literal copies of its three original public proof frames, bounded by the packet
+limit. Reuse requires full DATA metadata equality and exact equality of all three
+frames. Any changed proof triggers actual six-proof verification. Replacement
+occurs only after all native checks succeed; ordinary rejection preserves the
+old theorem. Old proof bytes are dropped before replacement copies allocate.
+The mutex serializes only this verifier's Predicate checking, with no I/O or
+consensus under the lock. Poisoning rejects. No proof hash, persisted verdict,
+query receipt, imported setup or current-head assertion is retained.
 
 `check` verifies historical mathematical consistency with an independent operation
 pin. `check_block` first uses the Journal's real owner signature, body/header/work

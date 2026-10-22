@@ -91,6 +91,8 @@ fn evidence(frames: [&[u8]; 6]) -> math::read::Evidence<'_> {
 
 #[test]
 fn genuine_predicate_proofs_reach_closed_journal_admission_without_publishing_a_bank() {
+    fn require_send_sync<T: Send + Sync>() {}
+    require_send_sync::<Verifier>();
     let began = Instant::now();
     let f = fixture();
     let g = genesis(&f.descriptor);
@@ -277,7 +279,7 @@ fn genuine_predicate_proofs_reach_closed_journal_admission_without_publishing_a_
         .prepare_query(
             &original,
             &query_expected,
-            statement,
+            statement.clone(),
             Zeroizing::new([10; 4]),
         )
         .unwrap();
@@ -318,6 +320,13 @@ fn genuine_predicate_proofs_reach_closed_journal_admission_without_publishing_a_
         .check_predicate_relation(&expected, packet.as_bytes())
         .unwrap();
     let checked_ms = math_started.elapsed().as_secs_f64() * 1000.;
+    // The SAME original immutable proofs are retained; all three per-query
+    // native checks still run for this re-verification of the same candidate.
+    let repeated = Instant::now();
+    verifier
+        .check_predicate_relation(&expected, packet.as_bytes())
+        .unwrap();
+    let repeated_ms = repeated.elapsed().as_secs_f64() * 1000.;
     let request =
         Request::predicate(&a, parent, [0xb1; 32], enrollment, expected.claims()).unwrap();
     let proof = Evidence::predicate(&packet).unwrap();
@@ -418,6 +427,106 @@ fn genuine_predicate_proofs_reach_closed_journal_admission_without_publishing_a_
             ));
         }
     }
+    // Neither a bad immutable frame nor a bad per-query proof can poison or
+    // replace the retained valid theorem. The genuine candidate remains usable.
+    let after_damage = Instant::now();
+    verifier
+        .check_predicate_relation(&expected, packet.as_bytes())
+        .unwrap();
+    let after_damage_ms = after_damage.elapsed().as_secs_f64() * 1000.;
+    // A fresh encryption of the SAME private statement has different QueryCt,
+    // vector, request nonce and product. Only its immutable DATA is reusable.
+    let fresh = data
+        .owner
+        .originate(
+            protected::Mask256::new(mask),
+            original.public_request().binding().clone(),
+            data.expected.core_expected(),
+        )
+        .unwrap();
+    let fresh_request = fresh.public_request().formation_request().unwrap();
+    assert_ne!(fresh_request.nonce(), formation_request.nonce());
+    assert_ne!(
+        fresh.public_request().as_bytes(),
+        original.public_request().as_bytes()
+    );
+    let fresh_context = math::read::query::encoding_context(
+        &fresh_request,
+        data.expected.core_expected(),
+        expected.claims().statement,
+    )
+    .unwrap();
+    let fresh_vector = data
+        .owner
+        .query_commitment(
+            &fresh,
+            fresh_context.map(|v| v.as_canonical_u64()),
+            &[11; 4],
+        )
+        .unwrap()
+        .map(Val::from_u64);
+    let fresh_query_expected = math::read::query::expected(
+        &fresh_request,
+        data.expected.core_expected(),
+        expected.claims().statement,
+        fresh_vector,
+    )
+    .unwrap();
+    let fresh_query = fused::prove(
+        &fresh_query_expected,
+        data.owner
+            .prepare_query(
+                &fresh,
+                &fresh_query_expected,
+                statement,
+                Zeroizing::new([11; 4]),
+            )
+            .unwrap(),
+    )
+    .unwrap()
+    .into_bytes();
+    let fresh_product = protected::Evaluator::new()
+        .unwrap()
+        .evaluate(fresh.public_request())
+        .unwrap();
+    let fresh_read = math::read::Expected::checked(
+        &expected,
+        &data.expected,
+        &fresh_request,
+        fresh_vector,
+        fresh_product.output().to_vec(),
+    )
+    .unwrap();
+    let fresh_frames = [
+        frames[0],
+        frames[1],
+        frames[2],
+        frames[3],
+        fresh_query.as_slice(),
+        fresh_product.certificate(),
+    ];
+    let fresh_packet =
+        PredicatePacket::from_read(&fresh_read, fresh.public_request(), evidence(fresh_frames))
+            .unwrap();
+    let fresh_started = Instant::now();
+    verifier
+        .check_predicate_relation(&expected, fresh_packet.as_bytes())
+        .unwrap();
+    let fresh_ms = fresh_started.elapsed().as_secs_f64() * 1000.;
+    // An old Query proof cannot satisfy this genuinely different expectation.
+    let mut old_query = fresh_frames;
+    old_query[4] = frames[4];
+    let foreign_query =
+        PredicatePacket::from_read(&fresh_read, fresh.public_request(), evidence(old_query))
+            .unwrap();
+    assert!(
+        verifier
+            .check_predicate_relation(&expected, foreign_query.as_bytes())
+            .is_err()
+    );
+    verifier
+        .check_predicate_relation(&expected, fresh_packet.as_bytes())
+        .unwrap();
     assert_eq!(journal.header_count(), count);
     assert_eq!(journal.ancestry_floor(), floor);
     assert_eq!(
@@ -425,7 +534,7 @@ fn genuine_predicate_proofs_reach_closed_journal_admission_without_publishing_a_
         old
     );
     eprintln!(
-        "word_journal_predicate full_native_six_proofs_ms={checked_ms:.3} whole_test_ms={:.3} original_bootstrap_BEGIN_parent=true original_registry=true owner_header=true actual_FHE=true all6_native=true joint_admission=false SQL_accepted=false current_head=false finality=false locks_granted=false security_assessed=false",
+        "word_journal_predicate full_native_six_proofs_ms={checked_ms:.3} same_candidate_reverification_ms={repeated_ms:.3} after_damage_reverification_ms={after_damage_ms:.3} fresh_encryption_receive_ms={fresh_ms:.3} whole_test_ms={:.3} original_bootstrap_BEGIN_parent=true original_registry=true owner_header=true actual_FHE=true all6_initial_native=true immutable_evidence_exact=true fresh_Word_Query_product=true joint_admission=false SQL_accepted=false current_head=false finality=false locks_granted=false security_assessed=false",
         began.elapsed().as_secs_f64() * 1000.
     );
 }

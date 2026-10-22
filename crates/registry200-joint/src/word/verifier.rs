@@ -11,6 +11,7 @@ pub struct Verifier {
     application: Application,
     source: version::VerifiedSourceVersion,
     word: word::Verifier,
+    predicate: super::predicate_receiving::PredicateReceiver,
 }
 impl Verifier {
     /// Verify the complete immutable Source once. It proves no current network head.
@@ -24,6 +25,7 @@ impl Verifier {
             application,
             source,
             word,
+            predicate: super::predicate_receiving::PredicateReceiver::default(),
         })
     }
     pub fn application(&self) -> &Application {
@@ -156,13 +158,8 @@ impl Verifier {
         if expected.role() != word::Role::Predicate {
             return Err(Error::WrongDomain);
         }
-        let parsed = super::predicate::BorrowedPredicate::parse(self.source.expected(), packet)?;
-        let read = parsed.expected(expected)?;
-        drop(
-            word::read::verify(&read, parsed.evidence())
-                .map_err(|_| Error::RejectedComputationProof)?,
-        );
-        Ok(())
+        self.predicate
+            .check(self.source.expected(), expected, packet)
     }
     pub fn check_block(
         &self,

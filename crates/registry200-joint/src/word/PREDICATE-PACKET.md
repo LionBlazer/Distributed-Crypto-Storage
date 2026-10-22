@@ -88,7 +88,12 @@ insufficient. The codec accepts no alternate verifier or serialized verdict.
 in a real signed journal candidate under `Lane::Predicate` (tag2). The common
 Joint `Verifier::check` constructs the Word expectation from the retained verified
 Source, application Genesis, actual parent and old registry, then invokes the
-original full native receiver. Even genuine mathematics ends in an unconditional
+original full native receiver. The bounded private receiver can retain an actual
+immutable State/Role3/DATA theorem after full native success. Reuse requires the
+complete DATA expectation and literal equality of all three proof frames;
+Word/Query/product remain fresh native checks on every invocation. Any changed
+immutable proof requires full six-proof receiving again. Even genuine mathematics
+ends in an unconditional
 `RejectedComputationProof` before any `Proof`, `VerifiedOperation` or pending
 import can be created. Owner authorization runs first on actual Journal paths.
 
