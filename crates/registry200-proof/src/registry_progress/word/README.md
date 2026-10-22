@@ -97,6 +97,11 @@ original10000-node/209-permutation limits.
 protected inputs and a move-only `TransitionOpening`. Its consuming export is
 guarded private plaintext for the owner's later state lifecycle. It is **not**
 an accepted bank or SQL result: there is no commit/install/lock-grant method.
+`registry_root`, `result_root` and `enrollment_root` recompute the original fixed
+Registry208, Result160 and Enrollment64 commitments, with canonical field-word
+checks. Enrollment serialization includes the original33-word header, eight table
+words, both controller identities/principals and private salt. They open existing
+commitments only; they cannot create proof, finality or currentness authority.
 The owner must produce the original native proof and independently receive the
 actual DATA/FHE composition, authenticate rights and prior state, and require
 fresh weighted finality before applying a candidate. Private witness production

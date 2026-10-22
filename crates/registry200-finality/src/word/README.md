@@ -41,6 +41,13 @@ It does not accept a caller-selected parent/target or grant publication/proof
 authority. The [client control owner](../../../storage-client/src/word_control/README.md)
 uses this boundary before actual bounded mining and QC-based private confirmation.
 
+`History::check_operation_candidate` performs a fresh original owner, header,
+ancestry, intent and native-proof check against this exact historical floor.
+It does not import/publish the candidate or require a QC, and returns only the
+lower mathematical receipt. The owner recovery boundary uses it to recheck the
+original pending proof and private openings; it cannot confirm the bank or mint
+a finalized/current parent without the separate real QC path.
+
 `Candidate` and `Checkpoint` use DCSWCV01/DCSWCQ01. Word Rules have their own
 algorithm identity selected before Work bootstrap. Old candidate/QC/parent types
 and Rules cannot be relabeled as Word. The bounded `CandidateBlock` is shared

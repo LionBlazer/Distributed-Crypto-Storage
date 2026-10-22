@@ -71,6 +71,30 @@ impl History {
         self.journal.validate_mining_candidate(&header, now)?;
         Ok(header)
     }
+    /// Fresh native/owner/ancestry checking of a candidate against THIS current
+    /// historical floor. No QC, publication, currentness or SQL grant is returned.
+    pub fn check_operation_candidate(
+        &self,
+        block: &CandidateBlock,
+        expected: OperationId,
+    ) -> Result<registry200_joint::word::VerifiedOperation> {
+        self.live()?;
+        let candidate =
+            super::Candidate::for_context(&self.binding, &self.context, block.header().clone())?;
+        require_candidate_context(
+            &self.binding,
+            &self.context,
+            self.journal.ancestry_floor(),
+            &candidate,
+        )?;
+        Ok(self.verifier.check_block(
+            &self.journal,
+            block.header(),
+            block.body(),
+            crate::adapter::now()?,
+            expected,
+        )?)
+    }
     /// Follow another historical operation with full native/owner/QC checks.
     /// This supplies no receipt asserting that it was the caller's own request.
     pub fn apply(

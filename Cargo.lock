@@ -1243,6 +1243,7 @@ dependencies = [
  "bfv-query-core",
  "bfv-query-proof",
  "bincode",
+ "chacha20poly1305",
  "compact-query",
  "compact-store",
  "ed25519-dalek",

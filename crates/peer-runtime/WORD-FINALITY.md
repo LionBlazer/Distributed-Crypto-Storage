@@ -353,3 +353,69 @@ The three original current-state/native-proof tests, protected owner API
 compile-fail contract and strict storage-client/dcs-peer all-target Clippy passed.
 The root tests retain their independent manual next-bank/result comparisons and
 the unchanged genuine native verifier. Only documentation changed after capture.
+
+## Encrypted owner-record recovery,2026-10-22
+
+Capture371/build370 extends the same four-process gate with the normal
+[Word control owner's encrypted records](../storage-client/src/word_control/README.md).
+The actual immutable EvidenceStore syncs the original pending record before its
+candidate is exposed. After submission the test drops the WHOLE Owner and store,
+reopens the actual files with a new budget and replays genuine Source/bootstrap
+history into a new receiving instance. Restoration verifies AEAD, exact context/
+parent/slot/decision, original owner/native argument and the bank/enrollment/next/
+result openings. The resumed candidate has exactly the original header and Body;
+its operation nonce and proof are not regenerated.
+
+Wrong wrapping key, record family and tag are rejected. Three additional records
+have genuinely valid AEAD tags under the explicit PUBLIC NONSECRET test key but
+contain a false next bank, false result or damaged native proof. The damaged
+proof's Body is genuinely re-signed and mined and its intent pin recomputed, so
+hashes/signatures/AEAD cannot substitute for original native verification. All
+three restorations reject. The original pending record restores successfully;
+actual TLS/QC confirmation syncs the confirmed bank before exposing its result.
+Another full Owner reconstruction restores that bank under actual BEGIN lineage
+and prepares/confirms a genuine END. No fixture supplies the confirmed bank.
+
+| Observed component, diagnostics disabled | Capture371 ms |
+| --- | ---: |
+| Real Source/Word History installation, within owner preparation | 869.965 |
+| Wrong owner/bank/controller/enrollment opening trials with real receivers | 6388.474 |
+| Control-owner installation and public prover setup | 131.929 |
+| Fresh BEGIN witness/proof/signed candidate and encrypted pending write | 262.193 |
+| Drop/reopen, rejection trials, real history replay and same pending restoration | 12136.796 |
+| Observe BEGIN QC after the recovery work above | 12.879 |
+| Original BEGIN proof/QC confirmation plus confirmed encrypted bank write | 96.654 |
+| BEGIN plus the recovery/rejection work above | 12495.056 |
+| Replay BEGIN lineage and restore confirmed private bank | 1804.102 |
+| END from restored bank, including original proof/TLS/QC and encrypted writes | 1106.782 |
+| Four participants reopen/replay all three decisions | 23049.200 |
+| Whole expanded partition/rejection/recovery/restart scenario | 80842.446 |
+
+The QC can arrive while owner recovery trials are running:12.879ms is NOT the
+submission-to-quorum interval. The expanded BEGIN interval is likewise not
+comparable to the ordinary in-memory BEGIN above. Neither is a full SQL/FHE
+query; the500ms target remains unmet. This tests actual Owner/store object and
+file-handle reconstruction, not an OS owner-process crash or power failure.
+Independent wrapping/signing-key custody, exact latest-record selection, durable
+anti-rollback, completed-reply lifecycle and the EvidenceStore Windows directory
+durability limitation remain explicit. Predicate/FHE-result admission, general
+latest-head/row-lock authority and full composed security remain unfinished.
+
+The unchanged120s/1792MiB aggregate fuses,20ms observer sleep, held executable/
+creation checks and locked/offline release environment applied. Twelve daemon
+lifetimes exited0; no faults or cleanup actions occurred. There were871 root
+samples over81.187s. Maximum sampled summed live working set was564,105,216 bytes
+and private bytes552,656,896. Summed live per-process OS peak counters reached
+1,133,723,648 bytes; that is not simultaneous physical memory.
+
+Capture371 report SHA256:
+`D0254F825B388C6285AD93DB06AF7843F97F591B41EB42FA171562E9809089EA`.
+The8,688,640-byte test image SHA256 was
+`84B0E62BD0CAEC61E4F29BB7D68B7EEA315F9FD13A39E0AB0A55FF5454A9D2E0`;
+the23,872,512-byte daemon image SHA256 was
+`7B2FA08713BAA3BE21E4493248E2B999F7940788446EFA1883AB0318896DEA0E`.
+The three original current-state/proof tests, three History failure/retry tests,
+seven compile-fail ownership contracts and dependency-free requirements mirror
+test passed. Strict all-target Clippy passed for storage-client, dcs-peer,
+registry200-finality and registry200-proof. Only documentation changed after this
+capture; all Rust, manifest and lockfile bytes still match its source pins.

@@ -8,22 +8,29 @@ mod fixture;
     reason = "Shared supervisor also serves the separately tested older protocols"
 )]
 mod process;
+use chacha20poly1305::{
+    KeyInit, XChaCha20Poly1305, XNonce,
+    aead::{AeadInPlace, Tag},
+};
 use peer_runtime::{
     Connector, Endpoint, Identity, finality::WordFinalityClient, participant::ParticipantInstall,
 };
 use process::WordProcess;
+use protocol_storage::{BlobId, ByteBudget, EvidenceStore, StoreLimits};
 use registry200_finality::{
     CandidateBlock,
     word::{Binding, Checkpoint, History},
 };
 use registry200_proof::registry_progress::word::CommandInput;
 use std::{
-    io::{self, Write},
+    io::{self, Read, Write},
     net::TcpListener,
     path::{Path, PathBuf},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use storage_client::word_control::{Error as OwnerError, Mining, Owner as ControlOwner};
+use storage_client::word_control::{
+    Error as OwnerError, Mining, Owner as ControlOwner, RecoveryIdentity, RecoveryKey,
+};
 use work_finality::consensus::MAX_RECORD_BYTES;
 use zeroize::Zeroizing;
 
@@ -137,6 +144,62 @@ fn observation(line: String) {
     // redirected stderr handle and may emit diagnostics concurrently.
     io::stderr().lock().write_all(line.as_bytes()).unwrap();
 }
+fn owner_store(path: &Path) -> EvidenceStore {
+    std::fs::create_dir_all(path).unwrap();
+    EvidenceStore::open(
+        path,
+        ByteBudget::new(64 * 1024 * 1024).unwrap(),
+        StoreLimits::new(protocol_storage::MAX_BLOB_BYTES, 16).unwrap(),
+    )
+    .unwrap()
+}
+fn replay_bootstrap(
+    b: &Binding,
+    boot: &CandidateBlock,
+    qc: &Checkpoint,
+    intent: registry200_joint::word::OperationId,
+) -> History {
+    let mut history = History::new(b.clone()).unwrap();
+    history.apply_operation(qc, boot, intent).unwrap();
+    history
+}
+fn store_record(store: &mut EvidenceStore, bytes: &[u8]) -> BlobId {
+    let id = BlobId::new(version_journal::hash(bytes), bytes.len() as u64).unwrap();
+    let mut staged = store.stage(id).unwrap();
+    for chunk in bytes.chunks(64 * 1024) {
+        staged.write_chunk(chunk).unwrap();
+    }
+    staged.finish().unwrap()
+}
+// Explicit PUBLIC NONSECRET key. Forge authenticated private contents so that
+// rejection must come from the real native relation/openings, not an AEAD tag.
+fn authenticated_record(bytes: &[u8], nonce_byte: u8, change: impl FnOnce(&mut [u8])) -> Vec<u8> {
+    const HEADER: usize = 136;
+    let mut header: [u8; HEADER] = bytes[..HEADER].try_into().unwrap();
+    let mut private = Zeroizing::new(bytes[HEADER..bytes.len() - 16].to_vec());
+    let cipher = XChaCha20Poly1305::new_from_slice(&[0xb7; 32]).unwrap();
+    cipher
+        .decrypt_in_place_detached(
+            XNonce::from_slice(&header[104..128]),
+            &header,
+            private.as_mut(),
+            Tag::<XChaCha20Poly1305>::from_slice(&bytes[bytes.len() - 16..]),
+        )
+        .unwrap();
+    change(&mut private);
+    header[104..128].fill(nonce_byte);
+    let tag = cipher
+        .encrypt_in_place_detached(
+            XNonce::from_slice(&header[104..128]),
+            &header,
+            private.as_mut(),
+        )
+        .unwrap();
+    let mut result = header.to_vec();
+    result.extend(private.iter());
+    result.extend(tag);
+    result
+}
 fn phase(label: &str, began: &mut Instant) {
     observation(format!(
         "word_process_phase name={label} elapsed_ms={:.3}\n",
@@ -225,14 +288,19 @@ fn four_word_processes_require_native_proofs_and_quorum_then_replay_after_restar
     );
     // An actual checked history does not authorize a wrong owner key or a
     // different private opening. These trial receivers perform real checks.
-    for wrong_key in [true, false] {
+    for failure in 0..4 {
         let mut trial = History::new(b.clone()).unwrap();
         trial.apply_operation(&boot_qc, &boot, boot_intent).unwrap();
         let mut material = fixture::control_material(bank);
-        let key = if wrong_key {
+        let key = if failure == 0 {
             ed25519_dalek::SigningKey::from_bytes(&[0x88; 32])
         } else {
-            material.registry[84] ^= 1;
+            match failure {
+                1 => material.registry[84] ^= 1,
+                2 => material.controllers[0][0] ^= 1,
+                3 => material.enrollment_salt[0] ^= 1,
+                _ => unreachable!(),
+            }
             fixture::control_owner_key()
         };
         assert!(ControlOwner::new(trial, key, material).is_err());
@@ -245,11 +313,19 @@ fn four_word_processes_require_native_proofs_and_quorum_then_replay_after_restar
     )
     .unwrap();
     phase("install_private_control_owner", &mut phase_began);
+    let store_path = root.join("owner-records");
+    let mut store = owner_store(&store_path);
+    // PUBLIC NONSECRET wrapping key/identity, deliberately held outside Owner.
+    let recovery_key = RecoveryKey::new(Zeroizing::new([0xb7; 32]));
+    let recovery_identity = RecoveryIdentity::new([0x93; 32]).unwrap();
+    let _initial_record = control
+        .checkpoint(&mut store, &recovery_key, recovery_identity)
+        .unwrap();
     let control_began = Instant::now();
-    let (begin, begin_qc) = {
-        let begin = {
+    let (begin, begin_qc, confirmed_record) = {
+        let (begin, pending_record) = {
             let mut pending = control
-                .prepare(
+                .prepare_stored(
                     fixture::control_source(),
                     CommandInput {
                         op: 0,
@@ -262,6 +338,9 @@ fn four_word_processes_require_native_proofs_and_quorum_then_replay_after_restar
                         now: 1_000_000,
                         attempts: 16,
                     },
+                    &mut store,
+                    &recovery_key,
+                    recovery_identity,
                 )
                 .unwrap();
             let begin = CandidateBlock::new(
@@ -269,15 +348,16 @@ fn four_word_processes_require_native_proofs_and_quorum_then_replay_after_restar
                 pending.candidate().unwrap().body().to_vec(),
             )
             .unwrap();
+            let record = pending.record();
             assert!(pending.confirm(&boot_qc).is_err());
             assert_eq!(
                 pending.confirmed_parent().unwrap().head().block,
                 boot.header().id()
             );
-            phase("prepare_begin_proof", &mut phase_began);
+            phase("prepare_and_store_begin_proof", &mut phase_began);
             submit(&clients[0], &begin);
-            begin
-        }; // Losing the handle retains the exact original private draft in Owner.
+            (begin, record)
+        };
         assert!(matches!(
             control.prepare(
                 fixture::control_source(),
@@ -295,29 +375,127 @@ fn four_word_processes_require_native_proofs_and_quorum_then_replay_after_restar
             ),
             Err(OwnerError::Pending)
         ));
-        let mut pending = control.resume_pending().unwrap();
+        // The COMPLETE in-memory owner and actual file-store lifecycle end.
+        // Only original public pins/record identity and external fixture keys remain.
+        drop(control);
+        drop(store);
+        store = owner_store(&store_path);
+        let wrong_key = RecoveryKey::new(Zeroizing::new([0xb8; 32]));
+        assert!(
+            ControlOwner::restore(
+                replay_bootstrap(&b, &boot, &boot_qc, boot_intent),
+                fixture::control_owner_key(),
+                &mut store,
+                &wrong_key,
+                recovery_identity,
+                pending_record
+            )
+            .is_err()
+        );
+        assert!(
+            ControlOwner::restore(
+                replay_bootstrap(&b, &boot, &boot_qc, boot_intent),
+                fixture::control_owner_key(),
+                &mut store,
+                &recovery_key,
+                RecoveryIdentity::new([0x94; 32]).unwrap(),
+                pending_record
+            )
+            .is_err()
+        );
+        // A well-hashed blob is still not a valid AEAD snapshot or proof.
+        let mut corrupt = vec![0; pending_record.bytes() as usize];
+        let mut reader = store.reader(pending_record).unwrap();
+        reader.read_exact(&mut corrupt).unwrap();
+        reader.finish().unwrap();
+        let original = corrupt.clone();
+        *corrupt.last_mut().unwrap() ^= 1;
+        let corrupt_id = store_record(&mut store, &corrupt);
+        assert!(
+            ControlOwner::restore(
+                replay_bootstrap(&b, &boot, &boot_qc, boot_intent),
+                fixture::control_owner_key(),
+                &mut store,
+                &recovery_key,
+                recovery_identity,
+                corrupt_id
+            )
+            .is_err()
+        );
+        const PRIVATE_BASE: usize = 1880;
+        let damaged = fixture::corrupt(&b, &begin);
+        for mutation in 0..3 {
+            let forged = authenticated_record(&original, 0xc1 + mutation, |private| {
+                let block_len =
+                    u32::from_le_bytes(private[PRIVATE_BASE..PRIVATE_BASE + 4].try_into().unwrap())
+                        as usize;
+                let block_at = PRIVATE_BASE + 4;
+                let intent_at = block_at + block_len;
+                let next_at = intent_at + 32 + 64;
+                match mutation {
+                    0 => private[next_at] ^= 1,
+                    1 => private[next_at + 208 * 8] ^= 1,
+                    _ => {
+                        let encoded = damaged.encode();
+                        assert_eq!(encoded.len(), block_len);
+                        private[block_at..intent_at].copy_from_slice(&encoded);
+                        private[intent_at..intent_at + 32]
+                            .copy_from_slice(&fixture::own_operation_id(&b, &damaged).bytes());
+                    }
+                }
+            });
+            let id = store_record(&mut store, &forged);
+            assert!(
+                ControlOwner::restore(
+                    replay_bootstrap(&b, &boot, &boot_qc, boot_intent),
+                    fixture::control_owner_key(),
+                    &mut store,
+                    &recovery_key,
+                    recovery_identity,
+                    id,
+                )
+                .is_err(),
+                "Authenticated recovery must reject false next/result/native proof: {mutation}"
+            );
+        }
+        control = ControlOwner::restore(
+            replay_bootstrap(&b, &boot, &boot_qc, boot_intent),
+            fixture::control_owner_key(),
+            &mut store,
+            &recovery_key,
+            recovery_identity,
+            pending_record,
+        )
+        .unwrap();
+        let mut pending = control
+            .resume_stored(&mut store, &recovery_key, recovery_identity)
+            .unwrap();
+        assert_eq!(pending.candidate().unwrap().header(), begin.header());
         assert_eq!(pending.candidate().unwrap().body(), begin.body());
+        phase("restore_same_private_pending_from_store", &mut phase_began);
         let begin_qc = checkpoint(&clients, 1);
-        phase("submit_begin_to_first_qc", &mut phase_began);
+        phase("observe_begin_qc_after_owner_recovery", &mut phase_began);
         let receiving = Instant::now();
         let completed = pending.confirm(&begin_qc).unwrap();
         assert_eq!(
-            completed.operation().parent().head().block,
+            completed.confirmation().operation().parent().head().block,
             begin.header().id()
         );
-        assert_eq!(completed.result_words()[118], 1);
+        assert_eq!(completed.confirmation().result_words()[118], 1);
+        let record = completed.confirmed_record();
         assert!(matches!(
             pending.confirm(&begin_qc),
             Err(OwnerError::Consumed)
         ));
         observation(format!(
-            "word_process_receiver slot=2 elapsed_ms={:.3} native_Word=true owner=true independent_intent=true weighted_QC=true private_bank_confirmed=true currentness=false\n",
+            "word_process_receiver slot=2 elapsed_ms={:.3} native_Word=true owner=true independent_intent=true weighted_QC=true private_bank_confirmed=true stored=true currentness=false\n",
             receiving.elapsed().as_secs_f64() * 1000.0
         ));
-        (begin, begin_qc)
+        observation("word_owner_recovery same_original_candidate=true reopened_owner_and_store=true authenticated_false_next_rejected=true authenticated_false_result_rejected=true authenticated_bad_proof_rejected=true wrong_key_rejected=true wrong_identity_rejected=true bad_tag_rejected=true owner_OS_process_crash_tested=false\n".into());
+        (begin, begin_qc, record)
     };
     observation(format!(
-        "word_control_operation elapsed_ms={:.3} owner_current_witness=true native_prove=true real_TLS_QC=true independent_proof_QC=true FHE=false SQL=false freshness_or_lock_grant=false\n",
+        "word_control_operation elapsed_ms={:.3} owner_current_witness=true native_prove=true real_TLS_QC=true independent_proof_QC=true FHE=false SQL=false freshness_or_lock_grant=false sealed_recovery=true\n",
         control_began.elapsed().as_secs_f64() * 1000.0
     ));
     for c in &clients {
@@ -327,12 +505,34 @@ fn four_word_processes_require_native_proofs_and_quorum_then_replay_after_restar
         "independent_begin_receive_and_all_catchup",
         &mut phase_began,
     );
-    // END must originate from the newly confirmed private bank. The old
-    // bootstrap opening would fail the original old-root witness guard.
+    // Recreate a new receiver under the actual now-confirmed public lineage.
+    let mut after_begin = replay_bootstrap(&b, &boot, &boot_qc, boot_intent);
+    after_begin
+        .apply_operation(&begin_qc, &begin, fixture::own_operation_id(&b, &begin))
+        .unwrap();
+    drop(control);
+    control = ControlOwner::restore(
+        after_begin,
+        fixture::control_owner_key(),
+        &mut store,
+        &recovery_key,
+        recovery_identity,
+        confirmed_record,
+    )
+    .unwrap();
+    assert!(matches!(
+        control.resume_pending(),
+        Err(OwnerError::Consumed)
+    ));
+    phase(
+        "restore_confirmed_private_bank_from_store",
+        &mut phase_began,
+    );
+    // END uses the restored CONFIRMED private bank, not the original fixture.
     let end_began = Instant::now();
     let (end, end_qc) = {
         let mut pending = control
-            .prepare(
+            .prepare_stored(
                 fixture::control_source(),
                 CommandInput {
                     op: 6,
@@ -346,6 +546,9 @@ fn four_word_processes_require_native_proofs_and_quorum_then_replay_after_restar
                     now: 1_000_000,
                     attempts: 16,
                 },
+                &mut store,
+                &recovery_key,
+                recovery_identity,
             )
             .unwrap();
         let end = CandidateBlock::new(
@@ -361,16 +564,16 @@ fn four_word_processes_require_native_proofs_and_quorum_then_replay_after_restar
         submit(&clients[0], &end);
         let end_qc = checkpoint(&clients, 2);
         let completed = pending.confirm(&end_qc).unwrap();
-        assert_eq!(completed.result_words()[118], 1);
+        assert_eq!(completed.confirmation().result_words()[118], 1);
         assert_eq!(
-            completed.operation().parent().head().block,
+            completed.confirmation().operation().parent().head().block,
             end.header().id()
         );
         (end, end_qc)
     };
     assert_eq!(control.confirmed_parent().unwrap().slot(), 3);
     observation(format!(
-        "word_control_end_operation elapsed_ms={:.3} native_prove=true real_TLS_QC=true private_bank_confirmed=true FHE=false SQL=false\n",
+        "word_control_end_operation elapsed_ms={:.3} native_prove=true real_TLS_QC=true private_bank_confirmed=true stored=true FHE=false SQL=false\n",
         end_began.elapsed().as_secs_f64() * 1000.0
     ));
     for c in &clients {

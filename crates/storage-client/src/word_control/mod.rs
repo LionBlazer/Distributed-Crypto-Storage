@@ -1,7 +1,11 @@
 //! Originating-owner Control preparation and private bank confirmation.
 //! An own ordered mutation is not a general latest-head oracle or SQL/row lease.
+mod recovery;
 use ed25519_dalek::SigningKey;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
+pub use recovery::{
+    RecoveryIdentity, RecoveryKey, StoredConfirmation, StoredPending, recovery_profile_digest,
+};
 use registry200_finality::{
     CandidateBlock,
     word::{Checkpoint, History, VerifiedOperation, VerifiedParent},
@@ -19,6 +23,9 @@ pub enum Error {
     Consumed,
     Pending,
     Poisoned,
+    Recovery,
+    Storage(protocol_storage::Error),
+    Io(std::io::Error),
     Word(word::Error),
     Journal(version_journal::Error),
     Finality(registry200_finality::joint::Error),
@@ -29,6 +36,16 @@ impl core::fmt::Display for Error {
     }
 }
 impl std::error::Error for Error {}
+impl From<protocol_storage::Error> for Error {
+    fn from(e: protocol_storage::Error) -> Self {
+        Self::Storage(e)
+    }
+}
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(e)
+    }
+}
 impl From<word::Error> for Error {
     fn from(e: word::Error) -> Self {
         Self::Word(e)
@@ -64,8 +81,8 @@ pub struct Mining {
     pub now: u64,
     pub attempts: u64,
 }
-/// In-memory originating-owner control state. Private words and key cannot be
-/// exported, cloned or serialized. Durable recovery/custody are a separate owner.
+/// Originating-owner control state. Private words and key cannot be exported or
+/// cloned. Optional encrypted snapshots require separately retained custody pins.
 /// ```compile_fail
 /// fn expose(x:storage_client::word_control::Owner){let _=x.material.registry;}
 /// ```
@@ -80,7 +97,11 @@ pub struct Owner {
 impl Owner {
     pub fn new(history: History, key: SigningKey, material: Material) -> Result<Self> {
         let parent = history.checked_parent()?.ok_or(Error::Binding)?;
-        let Control::Active { registry, .. } = parent.control() else {
+        let Control::Active {
+            enrollment,
+            registry,
+        } = parent.control()
+        else {
             return Err(Error::Binding);
         };
         if key.verifying_key().to_bytes() != history.binding().journal_genesis().owner
@@ -90,6 +111,33 @@ impl Owner {
                 .iter()
                 .any(|&v| v >= Val::ORDER_U64)
             || word::registry_root(&material.registry)? != registry
+        {
+            return Err(Error::Binding);
+        }
+        let zero = [Val::ZERO; 4];
+        let expected = word::Expected::checked(
+            history.binding().application_descriptor().source(),
+            word::Role::Control,
+            history.binding().journal_genesis().id()?,
+            parent.head().block,
+            enrollment,
+            word::Claims {
+                old: registry,
+                command: zero,
+                statement: zero,
+                next: zero,
+                result: zero,
+                blind_sql: [Val::ZERO; 8],
+            },
+        )?;
+        if word::enrollment_root(
+            expected.enrollment_header(),
+            material.registry[37..45]
+                .try_into()
+                .map_err(|_| Error::Shape)?,
+            &material.controllers,
+            &material.enrollment_salt,
+        )? != enrollment
         {
             return Err(Error::Binding);
         }
