@@ -665,3 +665,6 @@ fn word_floor_ack_loss_recovers_and_partial_tail_is_never_repaired() {
         drop(quota);
     }
 }
+
+#[path = "history_tests.rs"]
+mod history_tests;

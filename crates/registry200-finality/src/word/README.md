@@ -1,4 +1,4 @@
-# Durable Word voting
+# Word receiving and durable voting
 
 This distinct application plugs the genuine immutable SourceVersion and original
 Word journal into the existing private durable consensus engine. It owns actual
@@ -14,6 +14,26 @@ Source heads/packets/C_key/C_state. Binding construction is metadata only. Every
 participant create/open independently verifies the Source natively before its
 fixed Word verifier becomes usable. No proof-success flag, owner key or secret
 opening is retained in Binding.
+
+`History::new(binding)` is the signer-free client receiver. It independently
+verifies the installed immutable Source and retains the fixed native Word public
+receiving setup. It owns its in-memory Journal, current Context, selected floor
+and exact last historical context; no mutable Journal or caller-supplied verifier
+is exposed. `apply` follows other historical work through actual owner, Word,
+ancestry and weighted QC checks. `apply_operation` additionally requires an
+`OperationId` retained from the original request/evidence before network submission.
+It returns a move-only `VerifiedOperation` containing that fresh mathematical
+receipt and the checked historical parent. Creating an intent pin from a peer's
+reply cannot establish that it was the caller's requested operation.
+
+Every fallible QC/successor/native/intent/control check precedes publication of
+the exact unpublished import. An unexpected floor failure poisons the receiver.
+The latest semantic retry is rechecked read-only under its retained real prior
+Context, including owner/native verification; an ancient QC or conflicting
+decision cannot roll back history. No operation verdict is cached. Empty work
+may advance historical metadata but cannot mint an own-operation receipt.
+`checked_parent` and `context` expose historical observations. History is not
+durable owner state, a global currentness barrier or a SQL/row-lock grant.
 
 `Candidate` and `Checkpoint` use DCSWCV01/DCSWCQ01. Word Rules have their own
 algorithm identity selected before Work bootstrap. Old candidate/QC/parent types
@@ -55,3 +75,8 @@ No GUI, fixture evaluator, local SQL fallback or external consensus network is u
 
 The four-party native proof/voting/reopen and fault cases passed the
 [owning validation](VALIDATION.md). The recorded test intervals are not SQL times.
+The owning [History tests](history_tests.rs) additionally cover source installation,
+invalid owner/native proof even with real fixture QC signatures, invalid QC,
+foreign binding/previous decision, independent intent, unpublished-state
+preservation, semantic retry and ancient-QC rejection. The real process consumer
+and timings are recorded in the [Word TLS record](../../../peer-runtime/WORD-FINALITY.md).

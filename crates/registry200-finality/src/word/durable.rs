@@ -20,7 +20,7 @@ pub fn participant_storage_profile_digest() -> Hash {
         ],
     )
 }
-/// Historical fully checked durable metadata. This is not a current SQL lock lease.
+/// Historical fully checked Word/QC metadata. This is not a current SQL lock lease.
 /// ```compile_fail
 /// fn cast(x:registry200_finality::progress::VerifiedParent)->registry200_finality::word::VerifiedParent { x.into() }
 /// ```
@@ -33,6 +33,21 @@ pub struct VerifiedParent {
     control: Control,
 }
 impl VerifiedParent {
+    pub(super) fn checked(
+        binding: Hash,
+        head: HeadRef,
+        slot: u64,
+        decision: Hash,
+        control: Control,
+    ) -> Self {
+        Self {
+            binding,
+            head,
+            slot,
+            decision,
+            control,
+        }
+    }
     pub fn binding_id(&self) -> Hash {
         self.binding
     }
@@ -91,13 +106,13 @@ impl DurableFinality {
         self.engine
             .finalized_parent()?
             .map(|p| {
-                Ok(VerifiedParent {
-                    binding: self.binding.id(),
-                    head: p.head(),
-                    slot: p.slot(),
-                    decision: p.decision_id(),
-                    control: p.control().word()?,
-                })
+                Ok(VerifiedParent::checked(
+                    self.binding.id(),
+                    p.head(),
+                    p.slot(),
+                    p.decision_id(),
+                    p.control().word()?,
+                ))
             })
             .transpose()
     }

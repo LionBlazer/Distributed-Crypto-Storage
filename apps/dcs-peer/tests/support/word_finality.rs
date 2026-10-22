@@ -364,28 +364,15 @@ pub fn begin(b: &Binding, old: [Val; 208], parent: Hash) -> CandidateBlock {
         },
     )
 }
-pub fn check(j: &mut version_journal::Journal, b: &Binding, block: &CandidateBlock) {
+/// Derive from the owner's original locally produced Body before submission.
+pub fn own_operation_id(b: &Binding, block: &CandidateBlock) -> OperationId {
     let app = Application::new(b.application_descriptor().clone(), b.journal_genesis()).unwrap();
-    let verifier = registry200_joint::word::Verifier::new(
-        b.application_descriptor().clone(),
-        b.journal_genesis(),
-        &fixture().source,
-    )
-    .unwrap();
     let Body::Transition(body) = Body::decode(block.body(), &b.journal_genesis().profile).unwrap()
     else {
         panic!("Expected real owner transition")
     };
     let request = Request::decode(&body.request).unwrap();
-    let id = OperationId::new(&app, &request, &body.proof).unwrap();
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    let (pending, _) = verifier
-        .prepare_import(j, block.header().clone(), block.body(), now, id)
-        .unwrap();
-    let _ = pending.commit();
+    OperationId::new(&app, &request, &body.proof).unwrap()
 }
 pub fn corrupt(b: &Binding, block: &CandidateBlock) -> CandidateBlock {
     let Body::Transition(mut body) =

@@ -6,6 +6,11 @@ weighted voter, signer WAL and floor. Its bindings, control types and storage/QC
 formats remain distinct from the earlier applications. It supplies no network
 SQL or current row-lock lease.
 
+`word::History` supplies independent keyless client receiving with one installed
+immutable Source verifier, fresh per-operation Word/owner/ancestry/QC checks,
+and an original-intent-bound historical receipt. It owns its Journal and Context;
+it supplies neither durable signer state nor network freshness.
+
 This closed library owns the original Registry200 application's actual Journal,
 weighted multi-slot signer and certificate floor log. It implements a local
 durable protocol boundary. It is not a peer actor, a freshness barrier, an epoch

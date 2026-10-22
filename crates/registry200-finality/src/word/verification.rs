@@ -29,6 +29,17 @@ pub(crate) fn verify_candidate(
     d: &Candidate,
     body: &[u8],
 ) -> Result<Control> {
+    require_candidate_context(b, c, parent, d)?;
+    let old = parent_heads(b, j, parent)?;
+    j.reverify_block(&d.header, body, crate::adapter::now()?, v)?;
+    candidate_control(b, old, body)
+}
+pub(super) fn require_candidate_context(
+    b: &Binding,
+    c: &Context,
+    parent: HeadRef,
+    d: &Candidate,
+) -> Result<()> {
     if c.rules().id() != b.rules().id()
         || c.network_id() != b.work_genesis().id()
         || c.journal_genesis() != b.journal_genesis().id()?
@@ -41,7 +52,5 @@ pub(crate) fn verify_candidate(
     {
         return Err(Error::Context);
     }
-    let old = parent_heads(b, j, parent)?;
-    j.reverify_block(&d.header, body, crate::adapter::now()?, v)?;
-    candidate_control(b, old, body)
+    Ok(())
 }

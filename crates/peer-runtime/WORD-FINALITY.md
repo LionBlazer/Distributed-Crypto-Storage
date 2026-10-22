@@ -233,3 +233,67 @@ sticky retries, context changes and resumed work. All seven Word-filtered unit
 tests, three owning queue tests, the requirements mirror contract, strict
 peer-runtime all-target Clippy and rustfmt check passed. Only documentation
 changed after capture331.
+
+## Independent keyless Word receiver,2026-10-22
+
+The client now uses the real closed `registry200_finality::word::History`, rather
+than manually joining a Context and Journal in test code. `History::new` actually
+verifies the complete original immutable Source and prepares the Word receiving
+role once. Each `apply_operation` independently checks the original owner intent,
+owner signature, native Word proof, exact ancestry/context and weighted QC before
+publishing its floor. Its private constructor receipt is historical; it grants
+no network currentness, SQL acceptance or row lock. Other operation proofs and
+Source bootstrap evidence are still genuinely verified. No per-operation success
+is retained for reuse.
+
+Capture341/build340 passed the four-process native/partition/restart gate with
+diagnostics enabled. Complete BEGIN receiving took1280.227ms. The first-QC phase
+line interleaved with another process's diagnostic output, so that component is
+not used as a measurement. Test observation records now format the complete line
+before one write. Source-install and receiver intervals are explicitly logged.
+
+Final capture344/build343 passed with diagnostics disabled. It retained the same
+native proof, foreign-client, no-quorum and restart/replay assertions, and all12
+daemon lifetimes exited0 with no observer faults or cleanup. The owner keeps its
+original intent pin before each submission, and receives through the production
+library History. The same locked/offline release environment, exact held image/
+creation checks,120s/1792MiB fuses and20ms polling sleep applied.
+
+| Complete observed component | Capture344 ms |
+| --- | ---: |
+| Owner preparation including Source/bootstrap and History installation | 3641.458 |
+| Independent Source verification and Word receiver installation, within preparation above | 757.560 |
+| Bootstrap submission through first QC | 4171.139 |
+| Independent bootstrap History receiving | 803.361 |
+| BEGIN witness/native proof preparation | 374.773 |
+| BEGIN submission through first QC | 687.748 |
+| Independent BEGIN History receiving, including native/owner/intent/QC and floor | 83.616 |
+| BEGIN preparation through independent History receiving | **1146.250** |
+| Four participant reopen/replay calls | 21548.850 |
+| Whole fault/partition/restart/shutdown scenario | 55979.012 |
+
+Initial Source/Word setup is recorded separately and remains necessary at client
+installation. It was moved into a reusable verified library owner, not replaced
+by an accepting flag. These are single local component observations; BEGIN
+still excludes FHE/Predicate/SQL, currentness and current row-lock authority.
+The500ms full-query target remains unachieved. The complete scenario and reopen
+times did not establish a speedup; cold preparation/replay and agreement remain
+material. The next full-query composition still needs actual FHE/result
+admission, fresh-head agreement and durable private owner-state completion.
+
+There were656 root samples over56.313s. Maximum sampled summed live working set
+was564,228,096 bytes and private bytes552,382,464. Summed live per-process OS peak
+counters reached1,121,193,984 bytes; this is not simultaneous physical memory.
+Capture344 report SHA256:
+`F51D10CFA35B77F3180E20D487F1C8DB7679D4922302A18F8FA40CB70D010F0E`.
+The8,458,240-byte test image SHA256 was
+`124969D5026CBC8BEB8580AE977CC2F348203BCE6815002EC05018F912A6509A`;
+the23,864,832-byte daemon image SHA256 was
+`5A0F9EE609B775B274727ED22C364E5792F1B085DF7AAE7626AC50915E90AA6B`.
+
+Three owning History tests and six compile-fail ownership contracts passed,
+along with strict registry200-finality/dcs-peer all-target Clippy. The History
+failure tests compare actual Journal header count, accounted bytes, best/floor
+and candidate presence before/after rejection; genuine fixture signatures on
+invalid work cannot replace native proof verification. Only documentation
+changed after the final capture.

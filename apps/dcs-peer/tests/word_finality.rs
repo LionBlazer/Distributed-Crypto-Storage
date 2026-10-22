@@ -14,15 +14,15 @@ use peer_runtime::{
 use process::WordProcess;
 use registry200_finality::{
     CandidateBlock,
-    word::{Binding, Checkpoint},
+    word::{Binding, Checkpoint, History},
 };
 use std::{
-    io,
+    io::{self, Write},
     net::TcpListener,
     path::{Path, PathBuf},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use work_finality::consensus::{Context, MAX_RECORD_BYTES};
+use work_finality::consensus::MAX_RECORD_BYTES;
 use zeroize::Zeroizing;
 
 fn identity() -> Identity {
@@ -111,27 +111,35 @@ fn checkpoint(clients: &[WordFinalityClient], slot: u64) -> Checkpoint {
     result.unwrap()
 }
 fn check_checkpoint(
-    b: &Binding,
-    context: &mut Context,
-    journal: &mut version_journal::Journal,
+    history: &mut History,
     block: &CandidateBlock,
     q: &Checkpoint,
+    expected: registry200_joint::word::OperationId,
 ) {
-    assert_eq!(q.candidate().slot(), context.slot());
-    assert_eq!(q.candidate().header(), block.header());
-    let decision = context
-        .verify_commit(&q.candidate().encode(), q.round(), q.certificate())
-        .unwrap();
-    // Independent owner signature, original Source/native Word and ancestry
-    // verification precede local history advancement. A TLS reply is insufficient.
-    fixture::check(journal, b, block);
-    *context = context.after_decision(&decision).unwrap();
+    let slot = history.context().unwrap().slot();
+    // The real library owns original Source/native Word, owner, ancestry and
+    // weighted QC verification. The intent pin predates the network response.
+    let receiving = Instant::now();
+    let checked = history.apply_operation(q, block, expected).unwrap();
+    observation(format!(
+        "word_process_receiver slot={slot} elapsed_ms={:.3} native_Word=true owner=true independent_intent=true weighted_QC=true currentness=false\n",
+        receiving.elapsed().as_secs_f64() * 1000.0
+    ));
+    assert_eq!(checked.parent().slot(), slot);
+    assert_eq!(checked.parent().head().block, block.header().id());
+    assert_eq!(checked.operation().operation_id(), expected);
+    assert_eq!(history.context().unwrap().slot(), slot + 1);
+}
+fn observation(line: String) {
+    // A formatted record is one write; independently running peers share this
+    // redirected stderr handle and may emit diagnostics concurrently.
+    io::stderr().lock().write_all(line.as_bytes()).unwrap();
 }
 fn phase(label: &str, began: &mut Instant) {
-    eprintln!(
-        "word_process_phase name={label} elapsed_ms={:.3}",
+    observation(format!(
+        "word_process_phase name={label} elapsed_ms={:.3}\n",
         began.elapsed().as_secs_f64() * 1000.0
-    );
+    ));
     *began = Instant::now();
 }
 #[test]
@@ -160,6 +168,13 @@ fn four_word_processes_require_native_proofs_and_quorum_then_replay_after_restar
         .map(|e| WordFinalityClient::new(connector.clone(), e.clone(), &b))
         .collect();
     let (boot, bank) = fixture::bootstrap(&b);
+    let boot_intent = fixture::own_operation_id(&b, &boot);
+    let installing = Instant::now();
+    let mut history = History::new(b.clone()).unwrap();
+    observation(format!(
+        "word_process_receiver_install elapsed_ms={:.3} native_Source=true Word_setup=true currentness=false\n",
+        installing.elapsed().as_secs_f64() * 1000.0
+    ));
     phase("prepare_public_source_and_bootstrap", &mut phase_began);
     let nodes = start(&b, &root, &tls, &endpoints, owner.fingerprint(), true, true);
     phase("create_partitioned_participants", &mut phase_began);
@@ -198,9 +213,7 @@ fn four_word_processes_require_native_proofs_and_quorum_then_replay_after_restar
     submit(&clients[0], &boot);
     let boot_qc = checkpoint(&clients, 0);
     phase("submit_bootstrap_to_first_qc", &mut phase_began);
-    let mut context = b.initial_context().clone();
-    let mut journal = version_journal::Journal::new(b.journal_genesis().clone()).unwrap();
-    check_checkpoint(&b, &mut context, &mut journal, &boot, &boot_qc);
+    check_checkpoint(&mut history, &boot, &boot_qc, boot_intent);
     for c in &clients {
         until(|| c.observed_slot().is_ok_and(|v| v == 2));
     }
@@ -210,15 +223,16 @@ fn four_word_processes_require_native_proofs_and_quorum_then_replay_after_restar
     );
     let control_began = Instant::now();
     let begin = fixture::begin(&b, bank, boot.header().id());
+    let begin_intent = fixture::own_operation_id(&b, &begin);
     phase("prepare_begin_proof", &mut phase_began);
     submit(&clients[0], &begin);
     let begin_qc = checkpoint(&clients, 1);
     phase("submit_begin_to_first_qc", &mut phase_began);
-    check_checkpoint(&b, &mut context, &mut journal, &begin, &begin_qc);
-    eprintln!(
-        "word_control_operation elapsed_ms={:.3} owner_current_witness=true native_prove=true real_TLS_QC=true independent_proof_QC=true FHE=false SQL=false freshness_or_lock_grant=false",
+    check_checkpoint(&mut history, &begin, &begin_qc, begin_intent);
+    observation(format!(
+        "word_control_operation elapsed_ms={:.3} owner_current_witness=true native_prove=true real_TLS_QC=true independent_proof_QC=true FHE=false SQL=false freshness_or_lock_grant=false\n",
         control_began.elapsed().as_secs_f64() * 1000.0
-    );
+    ));
     for c in &clients {
         until(|| c.observed_slot().is_ok_and(|v| v == 3));
     }
@@ -254,8 +268,8 @@ fn four_word_processes_require_native_proofs_and_quorum_then_replay_after_restar
         n.finish().unwrap();
     }
     phase("stop_replayed_participants", &mut phase_began);
-    eprintln!(
-        "word_process whole_test_ms={:.3} actual_processes=true partition_no_quorum=true native_Source_Word=true independent_QC=true durable_replay=true SQL_accepted=false current_lock_grant=false",
+    observation(format!(
+        "word_process whole_test_ms={:.3} actual_processes=true partition_no_quorum=true native_Source_Word=true independent_QC=true durable_replay=true SQL_accepted=false current_lock_grant=false\n",
         began.elapsed().as_secs_f64() * 1000.0
-    );
+    ));
 }
