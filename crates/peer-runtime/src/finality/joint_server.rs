@@ -192,6 +192,15 @@ fn snapshot(handle: &Handle, expires: Instant) -> io::Result<super::owner::Snaps
         _ => Err(invalid()),
     }
 }
+fn pending_snapshot(
+    handle: &Handle,
+    expires: Instant,
+) -> io::Result<super::owner::PendingSnapshot> {
+    match handle.call_joint(Command::WordPending, expires)? {
+        Reply::WordPending(p) => Ok(p),
+        _ => Err(invalid()),
+    }
+}
 impl Service {
     fn prepare(
         &self,
@@ -444,6 +453,9 @@ fn serve(socket: TcpStream, service: &Service) -> io::Result<()> {
     }
     let command = match tag {
         STATUS if data.is_empty() => Command::Status,
+        super::word_wire::GET_PENDING if data.is_empty() && kind == Kind::Word => {
+            Command::WordPending
+        }
         joint::SNAPSHOT if data.is_empty() => Command::JointSnapshot,
         INPUT => {
             let current = snapshot(handle, expires)?;
@@ -514,6 +526,13 @@ fn serve(socket: TcpStream, service: &Service) -> io::Result<()> {
                 b.extend_from_slice(&s.parent);
                 send(&mut stream, kind, id, OK, &b)
             }
+            Reply::WordPending(p) => send(
+                &mut stream,
+                kind,
+                id,
+                OK,
+                &super::word_wire::encode_pending(p),
+            ),
             Reply::NeedBlock(hash) => send(&mut stream, kind, id, NEED_BLOCK, &hash),
             Reply::JointCheckpoint(Some(c)) => send(&mut stream, kind, id, RECORD, &c.encode()),
             Reply::JointCheckpoint(None) => send(&mut stream, kind, id, NONE, &[]),
@@ -539,8 +558,24 @@ fn synchronize(
 ) -> io::Result<()> {
     let _control = handle.reserve_control()?;
     let expires = Client::expires()?;
-    let local = snapshot(handle, expires)?;
-    let remote = client.observed_slot_until(expires)?;
+    let local_pending = if application.kind() == Kind::Word {
+        Some(pending_snapshot(handle, expires)?)
+    } else {
+        None
+    };
+    let local = match local_pending {
+        Some(p) => p.current,
+        None => snapshot(handle, expires)?,
+    };
+    let advertised = if application.kind() == Kind::Word {
+        Some(client.pending_until(expires)?)
+    } else {
+        None
+    };
+    let remote = match advertised {
+        Some(p) => p.current.slot,
+        None => client.observed_slot_until(expires)?,
+    };
     if remote == 0 {
         return Err(invalid());
     }
@@ -567,6 +602,16 @@ fn synchronize(
     }
     if remote < local.slot {
         return Ok(());
+    }
+    if local_pending.is_some_and(|p| p.candidate.is_none())
+        && let Some(id) = advertised.and_then(|p| p.candidate_at(local))
+    {
+        let block = client.block(id, bodies.acquire()?, expires)?;
+        joint_prefetch::prefetch(client, application, blobs, &block.block, local, expires)?;
+        // This hint is not a proof or permission to mutate pending. The SAME
+        // durable actor rechecks owner, native proof and current snapshot first;
+        // only the actual elected proposer can subsequently sign a proposal.
+        handle.call_joint(Command::WordLearned(block, local), expires)?;
     }
     for index in 0..MAX_COMMANDS {
         let bytes = match handle.call_joint(Command::Outbound(index), expires)? {

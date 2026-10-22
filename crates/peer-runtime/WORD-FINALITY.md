@@ -19,11 +19,20 @@ plaintext Source opening or FHE secret in the peer. Canonical preflight grants
 no computation authority: the actual voter rechecks native proofs and its exact
 current snapshot before admission, voting and replay.
 
-The wire is `DCSWFN01`, with its own profile and complete Binding ID. Original,
+The wire is `DCSWFN02`, with its own profile and complete Binding ID. Original,
 Joint and Progress domains remain unchanged. The shared8-command/16MiB queue,
 8-connection/16-neighbor limits, single Body lease,180s I/O and1800s absolute
 operation budgets remain. Body I/O/preflight occur outside signer/proof locks.
 These are resource bounds, not measured latency results.
+
+The bounded pending-candidate response carries the current slot, context, parent
+and an optional header ID in exactly105 bytes. It is an availability hint only.
+A neighbor with no pending candidate in that exact context fetches the original
+Body through the single Body lease. The durable actor checks the owner signature
+and complete native proof before retaining it; only the elected proposer may
+sign. A learned candidate cannot replace existing local pending intent. No
+application verification result is cached or supplied by this hint. The retired
+`DCSWFN01` transport rejects; there is no compatibility mode or state migration.
 
 `WordParticipantBootstrap::read` consumes exactly five bounded local IPC frames:
 configuration, confirmed-work Genesis, two-shard Journal Genesis, complete Word
@@ -104,3 +113,54 @@ After capture300, the test-only Word supervisor declarations moved before the
 existing test module for strict Clippy; every function body remained unchanged.
 No production Rust changed after that capture. The named images/timings describe
 the captured build; final declaration ordering is checked by Clippy.
+
+## Candidate availability and bounded profiling,2026-10-22
+
+The opt-in `DCS_PUBLIC_TIMINGS=1` path now also emits fixed `word_actor` and
+`word_finality` observations under the existing bounded diagnostic policy.
+Capture315/build314, before availability propagation, passed the same scenario.
+For BEGIN, queue wait was usually tens of microseconds (p95 20us), while three
+propose attempts performed only one application check. Only the submitted-to
+node held pending intent and had to wait for its elected proposer round. This
+does not attribute submit-to-QC time to FHE or pure cryptography.
+
+Capture319/build318 enabled pending-candidate propagation and passed the SAME
+four-process native proof, foreign-client rejection, partition/no-quorum,
+independent receiving and restart/replay assertions. Diagnostics were disabled
+for comparison with capture300. No proof, timeout, freshness or resource bound
+was weakened. All12 daemon lifetimes exited0, with no observer cleanup/fault.
+
+| Comparable operation | Baseline300 ms | Availability319 ms |
+| --- | ---: | ---: |
+| Bootstrap submission through first QC | 29124.857 | 3818.836 |
+| BEGIN witness/native proof preparation | 291.574 | 293.394 |
+| BEGIN submission through first QC | 8946.986 | 3041.997 |
+| BEGIN preparation through independent proof/QC receiving | **9978.553** | **4061.618** |
+| Four participant reopen/replay calls | 20755.950 | 18476.506 |
+| Whole fault/partition/restart/shutdown scenario | 84318.327 | 49566.474 |
+
+These are single observations of the same bounded local scenario, not latency
+percentiles or a network-wide guarantee. BEGIN still excludes FHE, Predicate,
+SQL and current row-lock authority; the500ms full-query goal is not achieved.
+The remaining consensus wait, required repeated native checks and independent
+Source/Word receiving need separate profiling. Empty-slot timer activity before
+candidate arrival remains unchanged in this stage.
+
+The same120s/1792MiB fuses and20ms polling sleep applied. There were673 root
+samples over49.859s. Maximum sampled summed live working set was563,224,576 bytes
+and private bytes551,665,664. Summed live per-process OS peak counters reached
+1,125,826,560 bytes; this is not simultaneous physical memory.
+
+Capture319 report SHA256:
+`55987E99E7EC94AAD2E63AC25F9BDD5F15D2C147768F83BF468437CFB1F8362A`.
+The8,415,232-byte test image SHA256 was
+`F72E993ABEC430D7C2DE8EAEFCA2BA5406ACBBB596AC447C87E5DEBFAAA53AE2`;
+the23,876,096-byte daemon image SHA256 was
+`88192BBAB55E4EE1A5F974E549D93FE30666505196E4EAB2D2B7EBA17B4C157A`.
+
+Additional owning checks passed: four bounded diagnostic tests, four wire/domain
+tests including canonical availability/context/parent rejection, three queue
+lease/expiry/join tests and the dependency-free requirements mirror contract.
+Strict all-target Clippy passed for peer-runtime and registry200-finality; the
+changed Rust files passed rustfmt check. Only documentation changed after the
+captured build.

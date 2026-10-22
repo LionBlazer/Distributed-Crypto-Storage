@@ -1,7 +1,7 @@
 # Closed Registry200 TLS actor
 
 The distinct [Word bridge](../../WORD-FINALITY.md) adds `WordFinalityClient` and
-`FinalityServer::bind_word` to the same bounded dispatcher. `DCSWFN01` carries
+`FinalityServer::bind_word` to the same bounded dispatcher. `DCSWFN02` carries
 inline native evidence to the actual Word voter, with no blob/catalog, old-family
 casts, Predicate acceptance or current SQL/lock capability.
 
@@ -172,12 +172,12 @@ The full Predicate/Result160 owner WAIT boundary remains separate.
 
 ## Optional public validator timings
 
-Set DCS_PUBLIC_TIMINGS=1 before first use to collect bounded Progress observations.
+Set DCS_PUBLIC_TIMINGS=1 before first use to collect bounded Progress/Word observations.
 The default path uses no timing clock, thread-local accumulator or diagnostic IO.
 No wire, application/profile/G/Rules digest, deadline, proof, quota or agreement
 rule changes. These records grant no SQL acceptance or current-head authority.
 
-The actor records import/receive/checkpoint queue wait from immediately before
+The actor records import/learn/receive/checkpoint queue wait from immediately before
 try_send to handler entry. It also records automatic propose and timeout handlers.
 Metadata polling is excluded. At most three records are held per loop; at most
 4096 actor lines emit per process. Handler time ends when that operation returns

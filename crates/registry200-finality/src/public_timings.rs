@@ -21,6 +21,19 @@ pub(crate) fn enabled() -> bool {
         std::env::var_os("DCS_PUBLIC_TIMINGS").as_deref() == Some(std::ffi::OsStr::new("1"))
     })
 }
+#[derive(Clone, Copy)]
+pub(crate) enum Family {
+    Progress,
+    Word,
+}
+impl Family {
+    fn component(self) -> &'static str {
+        match self {
+            Self::Progress => "progress_finality",
+            Self::Word => "word_finality",
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
@@ -70,6 +83,7 @@ const EMPTY: Metric = Metric {
     micros: 0,
 };
 struct Active {
+    family: Family,
     ordinal: u64,
     slot: u64,
     kind: Kind,
@@ -78,6 +92,7 @@ struct Active {
 }
 #[derive(Clone, Copy)]
 struct Report {
+    family: Family,
     ordinal: u64,
     slot: u64,
     kind: Kind,
@@ -108,13 +123,16 @@ pub(crate) struct Scope {
     ordinal: Option<u64>,
 }
 impl Scope {
-    pub(crate) fn new(progress: bool, kind: Kind, slot: u64) -> Self {
-        if !progress || !enabled() {
+    pub(crate) fn new(family: Option<Family>, kind: Kind, slot: u64) -> Self {
+        let Some(family) = family else {
+            return Self { ordinal: None };
+        };
+        if !enabled() {
             return Self { ordinal: None };
         }
-        Self::begin(kind, slot)
+        Self::begin(family, kind, slot)
     }
-    fn begin(kind: Kind, slot: u64) -> Self {
+    fn begin(family: Family, kind: Kind, slot: u64) -> Self {
         let ordinal = BUFFER
             .try_with(|cell| {
                 let Ok(mut buffer) = cell.try_borrow_mut() else {
@@ -130,6 +148,7 @@ impl Scope {
                     .ok()?
                     .checked_add(1)?;
                 buffer.active = Some(Active {
+                    family,
                     ordinal,
                     slot,
                     kind,
@@ -163,6 +182,7 @@ impl Drop for Scope {
                 return;
             };
             let report = Report {
+                family: active.family,
                 ordinal,
                 slot: active.slot,
                 kind: active.kind,
@@ -253,7 +273,8 @@ fn reserve_line(counter: &AtomicUsize) -> bool {
 fn write_report(writer: &mut impl Write, report: Report) -> io::Result<()> {
     let m = report.metrics;
     let line = format!(
-        "dcs_public_timing component=progress_finality pid={} ordinal={} kind={} slot={} total_us={} app_calls={} app_us={} handle_wal_us={} state_wait_us={} floor_preflight_us={} floor_append_sync_us={} floor_install_us={} voter_advance_us={} synchronize_us={} import_prepare_us={} import_charge_us={} import_commit_us={}\n",
+        "dcs_public_timing component={} pid={} ordinal={} kind={} slot={} total_us={} app_calls={} app_us={} handle_wal_us={} state_wait_us={} floor_preflight_us={} floor_append_sync_us={} floor_install_us={} voter_advance_us={} synchronize_us={} import_prepare_us={} import_charge_us={} import_commit_us={}\n",
+        report.family.component(),
         std::process::id(),
         report.ordinal,
         report.kind.label(),
@@ -281,7 +302,7 @@ fn emit(writer: &mut impl Write, report: Report) {
     let _ = write_report(writer, report);
 }
 
-/// Emits already-finished, bounded Progress observation records when
+/// Emits already-finished, bounded Progress/Word observation records when
 /// DCS_PUBLIC_TIMINGS=1 was set before first use. Call after releasing protocol
 /// locks and the proof permit. It returns no value and grants no authority.
 ///
@@ -315,6 +336,7 @@ mod tests {
     use super::*;
     fn report() -> Report {
         Report {
+            family: Family::Progress,
             ordinal: 7,
             slot: 4,
             kind: Kind::Import,
@@ -330,6 +352,15 @@ mod tests {
         assert_eq!(line.lines().count(), 1);
         assert!(line.starts_with(&format!("dcs_public_timing component=progress_finality pid={} ordinal=7 kind=import slot=4 total_us=12 app_calls=0 app_us=0 ", std::process::id())));
         assert!(line.ends_with("import_commit_us=0\n"));
+        let mut word = report();
+        word.family = Family::Word;
+        let mut word_bytes = Vec::new();
+        write_report(&mut word_bytes, word).unwrap();
+        assert!(
+            String::from_utf8(word_bytes)
+                .unwrap()
+                .starts_with("dcs_public_timing component=word_finality ")
+        );
         assert!(line.len() < 1024);
         let mut largest = report();
         largest.ordinal = u64::MAX;
@@ -375,8 +406,8 @@ mod tests {
     }
     #[test]
     fn nested_observation_does_not_replace_the_original_scope() {
-        let outer = Scope::begin(Kind::Import, 11);
-        let inner = Scope::begin(Kind::Checkpoint, 12);
+        let outer = Scope::begin(Family::Progress, Kind::Import, 11);
+        let inner = Scope::begin(Family::Word, Kind::Checkpoint, 12);
         assert!(outer.ordinal.is_some());
         assert!(inner.ordinal.is_none());
         drop(inner);

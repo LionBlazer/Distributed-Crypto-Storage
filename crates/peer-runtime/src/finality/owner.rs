@@ -40,6 +40,19 @@ pub(super) struct Snapshot {
     pub context: [u8; 32],
     pub parent: [u8; 32],
 }
+/// Public availability metadata only. It never supplies a verification receipt.
+#[derive(Clone, Copy)]
+pub(super) struct PendingSnapshot {
+    pub current: Snapshot,
+    pub candidate: Option<[u8; 32]>,
+}
+impl PendingSnapshot {
+    pub fn candidate_at(self, current: Snapshot) -> Option<[u8; 32]> {
+        (self.current == current)
+            .then_some(self.candidate)
+            .flatten()
+    }
+}
 impl Pins {
     pub fn id(&self) -> [u8; 32] {
         match self {

@@ -1,4 +1,4 @@
-use super::owner::{Candidate, Certificate, Owner, Snapshot};
+use super::owner::{Candidate, Certificate, Owner, PendingSnapshot, Snapshot};
 use super::*;
 use registry200_finality::{Checkpoint, Descriptor, RegistryFinality};
 use std::io::Write as _;
@@ -18,6 +18,8 @@ pub(super) enum Command {
     GetCheckpoint(u64),
     Outbound(usize),
     JointSnapshot,
+    WordPending,
+    WordLearned(OwnedBlock, Snapshot),
     JointBlock(OwnedBlock, bool, Snapshot),
     JointInput(Vec<u8>, Snapshot),
     JointCheckpoint(Certificate, Snapshot),
@@ -31,6 +33,7 @@ pub(super) enum Reply {
     Checkpoint(Option<Checkpoint>),
     Outbound(Option<Vec<u8>>),
     JointSnapshot(Snapshot),
+    WordPending(PendingSnapshot),
     JointCheckpoint(Option<Certificate>),
 }
 struct Envelope {
@@ -189,9 +192,14 @@ fn run(
     let mut due = deadline(timer)?;
     let mut pending = None;
     let mut proposed = None;
-    let progress_timings = matches!(&*owned, Owner::Progress(_)) && public_timings_enabled();
+    let component = match &*owned {
+        Owner::Progress(_) => Some("progress_actor"),
+        Owner::Word(_) => Some("word_actor"),
+        _ => None,
+    }
+    .filter(|_| public_timings_enabled());
     while !stop.load(Ordering::Acquire) {
-        let mut timings = ActorTimings::new(progress_timings);
+        let mut timings = ActorTimings::new(component);
         let wait = due.map_or(Duration::from_millis(100), |d| {
             d.saturating_duration_since(Instant::now())
                 .min(Duration::from_millis(100))
@@ -278,6 +286,7 @@ fn public_timings_enabled() -> bool {
 fn command_kind(command: &Command) -> Option<(&'static str, u64)> {
     match command {
         Command::JointBlock(_, _, snapshot) => Some(("import", snapshot.slot)),
+        Command::WordLearned(_, snapshot) => Some(("learn", snapshot.slot)),
         Command::JointInput(_, snapshot) => Some(("receive", snapshot.slot)),
         Command::JointCheckpoint(_, snapshot) => Some(("checkpoint", snapshot.slot)),
         // Metadata polling remains unlogged so it cannot consume the fixed
@@ -297,14 +306,14 @@ struct ActorRecord {
     handler_us: u64,
 }
 struct ActorTimings {
-    enabled: bool,
+    component: Option<&'static str>,
     records: [Option<ActorRecord>; 3],
     len: usize,
 }
 impl ActorTimings {
-    fn new(enabled: bool) -> Self {
+    fn new(component: Option<&'static str>) -> Self {
         Self {
-            enabled,
+            component,
             records: [None; 3],
             len: 0,
         }
@@ -314,7 +323,7 @@ impl ActorTimings {
         kind: Option<(&'static str, u64)>,
         queued_at: Option<Instant>,
     ) -> ActorSpan<'_> {
-        let start = (self.enabled && kind.is_some()).then(Instant::now);
+        let start = (self.component.is_some() && kind.is_some()).then(Instant::now);
         let queue_us = match (start, queued_at) {
             (Some(start), Some(queued)) => {
                 u64::try_from(start.saturating_duration_since(queued).as_micros())
@@ -362,9 +371,9 @@ impl Drop for ActorSpan<'_> {
 }
 impl Drop for ActorTimings {
     fn drop(&mut self) {
-        if !self.enabled {
+        let Some(component) = self.component else {
             return;
-        }
+        };
         // Every inner native permit/State guard has already dropped. The inert
         // library drain receives no command or owner, and returns no authority.
         registry200_finality::flush_public_timings();
@@ -386,7 +395,8 @@ impl Drop for ActorTimings {
                 break;
             }
             let line = format!(
-                "dcs_public_timing component=progress_actor pid={} ordinal={} kind={} slot={} queue_us={} handler_us={}\n",
+                "dcs_public_timing component={} pid={} ordinal={} kind={} slot={} queue_us={} handler_us={}\n",
+                component,
                 std::process::id(),
                 record.ordinal,
                 record.kind,
@@ -427,6 +437,35 @@ fn process(
         Command::JointSnapshot => {
             require_joint(owned)?;
             Ok(Reply::JointSnapshot(owned.snapshot()?))
+        }
+        Command::WordLearned(block, snapshot) => {
+            if !matches!(owned, Owner::Word(_)) {
+                return Err(invalid());
+            }
+            require_snapshot(owned, snapshot)?;
+            // A remote availability hint cannot replace an existing local
+            // candidate. Ignoring it grants no receipt about the hinted body.
+            if pending.as_ref().is_some_and(|c| c.slot() == snapshot.slot) {
+                return Ok(Reply::Ok);
+            }
+            let _permit = gate.try_acquire().map_err(|_| busy())?;
+            require_snapshot(owned, snapshot)?;
+            let candidate = owned.import(&block.block)?;
+            *pending = Some(candidate);
+            Ok(Reply::Ok)
+        }
+        Command::WordPending => {
+            if !matches!(owned, Owner::Word(_)) {
+                return Err(invalid());
+            }
+            let current = owned.snapshot()?;
+            Ok(Reply::WordPending(PendingSnapshot {
+                current,
+                candidate: pending
+                    .as_ref()
+                    .filter(|c| c.slot() == current.slot)
+                    .map(|c| c.header().id()),
+            }))
         }
         Command::GetBlock(id, lease) => Ok(Reply::Block(OwnedBlock {
             block: owned.block(id)?,

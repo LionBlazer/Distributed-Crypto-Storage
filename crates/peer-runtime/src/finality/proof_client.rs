@@ -111,6 +111,24 @@ impl Client {
     pub fn checkpoint_after(&self, slot: u64) -> io::Result<Option<Certificate>> {
         self.checkpoint_until(slot, Self::expires()?)
     }
+    pub(super) fn pending_until(
+        &self,
+        expires: Instant,
+    ) -> io::Result<super::owner::PendingSnapshot> {
+        if self.kind != Kind::Word {
+            return Err(invalid());
+        }
+        let (tag, data) = self.exchange(
+            super::word_wire::GET_PENDING,
+            &[],
+            super::word_wire::PENDING_BYTES,
+            expires,
+        )?;
+        if tag != OK {
+            return Err(invalid());
+        }
+        super::word_wire::decode_pending(&data)
+    }
     pub(super) fn checkpoint_until(
         &self,
         slot: u64,

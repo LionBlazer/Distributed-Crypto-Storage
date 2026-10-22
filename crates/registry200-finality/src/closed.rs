@@ -1,7 +1,7 @@
 //! One private durable engine for three closed proof applications.
 //! All State/Arc and floor capabilities stay private to this synchronous owner.
 use crate::joint::{Error, Hash, Result};
-use crate::public_timings::{Kind, Scope, Section, Stage};
+use crate::public_timings::{Family, Kind, Scope, Section, Stage};
 use crate::{
     CandidateBlock,
     participant::{self, Paths},
@@ -683,7 +683,11 @@ impl DurableEngine {
     ) -> Result<[u8; crate::DESCRIPTOR_BYTES]> {
         self.live()?;
         let _timing = Scope::new(
-            matches!(&self.ingress, Ingress::Progress(_)),
+            match &self.ingress {
+                Ingress::Progress(_) => Some(Family::Progress),
+                Ingress::Word => Some(Family::Word),
+                Ingress::Joint(_) => None,
+            },
             Kind::Import,
             self.voter.context().slot(),
         );
@@ -784,7 +788,11 @@ impl DurableEngine {
             .binding()
             .decode(value)?;
         let _timing = Scope::new(
-            matches!(&self.ingress, Ingress::Progress(_)),
+            match &self.ingress {
+                Ingress::Progress(_) => Some(Family::Progress),
+                Ingress::Word => Some(Family::Word),
+                Ingress::Joint(_) => None,
+            },
             Kind::Checkpoint,
             candidate.slot,
         );
@@ -872,7 +880,11 @@ impl DurableEngine {
             Input::Timeout(_) => Kind::Timeout,
         };
         let _timing = Scope::new(
-            matches!(&self.ingress, Ingress::Progress(_)),
+            match &self.ingress {
+                Ingress::Progress(_) => Some(Family::Progress),
+                Ingress::Word => Some(Family::Word),
+                Ingress::Joint(_) => None,
+            },
             kind,
             self.voter.context().slot(),
         );
