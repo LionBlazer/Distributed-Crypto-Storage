@@ -6,7 +6,7 @@ use crate::{
     Error, Result,
     geometry::{N, P, Q, QP, validate_polynomials},
 };
-pub(crate) use math::{evaluate, verify_certificate};
+pub(crate) use math::{evaluate, reconstruct, verify_certificate};
 use sha2::{Digest, Sha256};
 pub(crate) fn profile_digest(role: Role) -> [u8; 32] {
     constants::profile_digest(role)
@@ -115,6 +115,18 @@ pub(crate) struct PublicCertificate {
     rows: Vec<Quotients>,
 }
 impl PublicCertificate {
+    pub(crate) fn reductions(&self) -> Result<Vec<[u128; 2]>> {
+        if self.rows.len() != N {
+            return Err(Error::Shape);
+        }
+        self.rows
+            .iter()
+            .map(|row| {
+                row.validate()?;
+                Ok(row.biased_k)
+            })
+            .collect()
+    }
     pub(crate) fn encode(&self) -> Result<Vec<u8>> {
         if self.rows.len() != N {
             return Err(Error::Shape);
@@ -138,6 +150,7 @@ impl PublicCertificate {
         Ok(out)
     }
     /// Exact-size, reserved-zero, profile-bound decode before any row allocation.
+    #[cfg(test)]
     pub(crate) fn decode(bytes: &[u8]) -> Result<Self> {
         if bytes.len() != CERTIFICATE_BYTES || &bytes[..8] != b"DCSUSC01" || bytes[9..16] != [0; 7]
         {

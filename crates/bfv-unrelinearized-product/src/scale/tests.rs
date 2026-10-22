@@ -95,6 +95,12 @@ fn both_complete_scalers_match_actual_sdk_on_all4096_coefficients_including_cent
             );
             verify_certificate(&r, &e.output, &e.certificate).unwrap();
             let wire = e.certificate.encode().unwrap();
+            // Division-based producer and shift/linear reconstruction must
+            // recover every ORIGINAL byte, including negative/tie boundaries.
+            let restored = reconstruct(&r, e.certificate.reductions().unwrap()).unwrap();
+            assert_eq!(restored.output.rows(), native);
+            assert_eq!(restored.certificate.encode().unwrap(), wire);
+            verify_certificate(&r, &restored.output, &restored.certificate).unwrap();
             assert_eq!(wire.len(), 131216);
             let decoded = PublicCertificate::decode(&wire).unwrap();
             assert!(decoded.encode().unwrap() == wire);

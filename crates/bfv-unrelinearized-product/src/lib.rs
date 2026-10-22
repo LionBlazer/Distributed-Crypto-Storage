@@ -35,9 +35,13 @@ impl std::fmt::Display for Error {
 }
 impl std::error::Error for Error {}
 
-/// Exact fixed-size UCPITC01 frame, including all seven integer certificates.
+/// Exact fixed-size UCPITC02 wire; its original full logical witness is recovered.
 pub const CERTIFICATE_BYTES: usize = certificate::FRAME_BYTES;
 pub const POINTS: usize = pit::POINTS;
+/// Canonical transport identity, separate from the unchanged arithmetic relation.
+pub fn wire_profile_digest() -> [u8; 32] {
+    certificate::wire_profile_digest()
+}
 pub fn profile_digest() -> [u8; 64] {
     let mut h = Sha512::new();
     h.update(b"DCS/UNREL-PUBLIC-CERTIFICATE-EXPERIMENT/v1/UNASSESSED/");
@@ -51,7 +55,7 @@ pub fn profile_digest() -> [u8; 64] {
     h.update(scale::profile_digest(scale::Role::Scale4To2));
     h.update(b"unseededCT2+2/CT3;lvl0;NttTagStoredPB;nonce32;ProtoCanonicalAllResidues;Extend4ExactQCopies;RNSProducts3xQP;C0=A0B0,C1=A0B1+A1B0,C2=A1B1;ordinary2N;HlengthN-1;YlengthN;F=AB-Y-(xN+1)H;Scale3Exact;all7CompactIntegerCertificates;allDataBeforeFS;SHA512fullMessagePrefixClone;basisU32LE/sampleU32LE;OS2IP512modp;noNTTverifier;noSDKqueryreplay;fixedPackedWidths30,30,62,62;fullEOF;noProofOrSourceOrSQLOrSecurityGrant;");
     h.update((pit::POINTS as u64).to_le_bytes());
-    h.update((certificate::FRAME_BYTES as u64).to_le_bytes());
+    h.update((certificate::LOGICAL_FRAME_BYTES as u64).to_le_bytes());
     h.finalize().into()
 }
 /// Canonical producer bytes. This type carries no checked arithmetic authority.
@@ -98,8 +102,9 @@ pub fn produce(expected: &Expected) -> Result<UnverifiedEvidence> {
     })
 }
 
-/// Decode the exact frame, check all deterministic integer relations and then
-/// check the product identities with challenges from these SAME original bytes.
+/// Decode the exact compact frame and reconstruct the original logical frame.
+/// Check all deterministic integer relations, then check product identities with
+/// challenges from that complete original logical transcript.
 /// Never takes a callback, caller-chosen challenge or serialized checked flag.
 pub fn check_arithmetic(expected: &Expected, frame: &[u8]) -> Result<ArithmeticCheckedProduct> {
     certificate::check(expected, frame)?;

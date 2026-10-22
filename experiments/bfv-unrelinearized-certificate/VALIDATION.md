@@ -63,7 +63,7 @@ This is one observation, without a percentile or repeated-run throughput claim.
 The earlier 103.6799 ms observation used the predecessor without client completion;
 it is retained separately and is not relabeled as this final operation.
 
-The complete frame is exactly 1,737,899 bytes: header256 + extended P253952 +
+The original complete frame was exactly 1,737,899 bytes: header256 + extended P253952 +
 products282624 + quotients282555 + seven scaler frames918512. Original request
 bytes are 123,052 and output ciphertext bytes are 92,205. These exclude Source,
 hidden-program, authorization, agreed-head and consensus evidence. At 100 Mbit/s,

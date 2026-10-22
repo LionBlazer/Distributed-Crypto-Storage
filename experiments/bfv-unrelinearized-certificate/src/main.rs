@@ -5,6 +5,7 @@ mod gold_formation;
 
 use bfv_unrelinearized_product::{
     CERTIFICATE_BYTES, N, POINTS, Q, QP, check_arithmetic, produce, profile_digest,
+    wire_profile_digest,
 };
 use sha2::{Digest, Sha512};
 use std::time::Instant;
@@ -47,6 +48,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             serde_json::json!({
                 "kind":"unassessed_public_arithmetic_certificate_profile", "profile_sha512":hex(&profile_digest()),
                 "degree":N, "ordered_qp":QP, "certificate_bytes":CERTIFICATE_BYTES,
+                "certificate_wire_profile":hex(&wire_profile_digest()),
                 "points_per_basis":POINTS, "cryptographic_security_assessed":false, "sql_accepted":false
             })
         );
@@ -137,6 +139,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         "{}",
         serde_json::json!({
             "kind":"public_arithmetic_certificate_observation", "profile_sha512":hex(&profile_digest()),
+            "certificate_wire_profile":hex(&wire_profile_digest()),
             "preparation_ms":example.preparation_ms, "sdk_product_ms":example.product_ms,
             "certificate_production_ms":produce_ms, "arithmetic_certificate_check_ms":verify_ms,
             "client_completion_ms":completion_ms,

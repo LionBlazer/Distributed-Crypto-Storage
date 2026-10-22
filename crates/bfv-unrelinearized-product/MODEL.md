@@ -1,7 +1,7 @@
 # Conditional arithmetic and noise model
 
 This is a conditional model for the existing **UNASSESSED** product profile,
-not a security approval. It changes no bytes, parameters, admission rules or
+not a security approval. It changes no mathematical profile, parameters, admission rules or
 flags. `proof_verified`, `cryptographic_security_assessed`, `noise_certified`,
 `lattice_security_assessed` and `sql_accepted` remain false in the experiment.
 A sealed `ArithmeticCheckedProduct` records only the library's mathematical
@@ -32,7 +32,11 @@ has degree<=8190. The verifier performs Horner evaluations, not NTT or query
 execution. The producer obtains H from ordinary2N convolution and Y=low-high.
 
 [PIT sampling](src/pit.rs) hashes the full prefix-free transcript: fixed domain,
-LE64 length plus literal request, output and complete canonical frame.
+LE64 length plus literal request, output and the complete original canonical
+logical frame. The [compact wire](src/certificate/README.md) reconstructs that
+same frame before hashing. Its unique accepted encoding adds no alternative
+encodings of a logical transcript; it changes neither the hash input nor the
+mathematical profile. The wire itself is not the PIT transcript.
 Each point appends a distinct fixed domain plus LE32 basis and sample index.
 All P extensions, Y, H and scaler witnesses are fixed before any point.
 Cloning an **unfinalized** SHA512 prefix computes the same full-message hash;
@@ -81,7 +85,7 @@ testing alone does not establish the universal rounding lemmas.
 ## Conditional classical random-oracle bound
 Assume a classical512-bit random oracle with independent outputs for distinct
 complete messages. Collision resistance alone is insufficient to justify this
-model for SHA512. For one fixed false canonical certificate satisfying all
+model for SHA512. For one fixed false canonical logical certificate satisfying all
 scalar checks, choose one nonzero F in one field **before** its challenges.
 A degree8190 polynomial has at most8190 roots. Each reduced digest residue has
 mass<=1/p+2^-512, so with18 independently domain-separated points in that field,

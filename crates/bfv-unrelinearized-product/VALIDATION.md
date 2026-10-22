@@ -177,3 +177,111 @@ network recovery gate was repeated for this producer-only implementation
 change. Receipts use `.local/product-ntt-native-r1-` and `r2-`; generated receipts
 are not committed. Complete-query 500 ms, concrete security and live SQL remain
 unestablished.
+
+## Compact wire with the original logical transcript
+
+Executed on 2026-10-22, based on `04f19711fe4ef841212b277c9d3f73e2872cba90`.
+The public certificate now has one canonical `UCPITC02` encoding of 1,081,595
+bytes instead of 1,737,899: exactly 656,304 bytes (37.7642%) less per product.
+This is a measured byte reduction, not an established latency improvement.
+The [codec contract](src/certificate/README.md) records the layout and unique
+expansion to the original full logical transcript. All seven original integer
+checks, all eighteen PIT points per basis, the mathematical profile, actual SDK
+product and strict claimed-CT3 equality remain. No old-wire fallback exists.
+
+The mathematical profile SHA512 remains
+`9d97f6eede741c9a179fc359d8b33f299720ab54576fbfe955f6192af65a5724fecbfad31bf8b4f7ba1d88c2d9aebcdcd2a2c925b0f9b838b71be1806b343bed`.
+The separate wire-profile SHA256 is
+`640191d5fd1e4324df163e6ec2602c812ebfeb03f1dd5feec9ccf61036f3898a`.
+Both are literal test contracts; an independent Python construction also
+reproduced the latter from its fixed domains, old profile and exact lengths.
+CLI profile and public-fixture observations report both identities.
+
+Twenty owning tests passed, including genuine compact expansion equal to EVERY
+original division-producer logical byte; actual SDK and full4096 scalar
+boundary examples; malformed shape, bindings and reserved bytes; and repaired
+false products that still fail the original PIT. Final coverage additionally
+checks both K words in every last scalar row, the first and highest forbidden
+bits, empty/header-short frames and trailing data. Two independent read-only
+agent audits found no new soundness/consumer defect; their documentation and
+test-coverage observations were incorporated. This is not an independent
+cryptographic security assessment.
+
+Source-pinned native runs used the existing release/MSVC/native-CPU environment,
+locked/offline dependencies, held exact executable/creation identities, 20ms
+sampling sleeps, 120s and 1792MiB process/aggregate fuses. No build or other heavy
+test ran concurrently. The actual peer capture used the existing corrected
+parent/image ownership guard, with no forced cleanup or faults. The observations
+below preceded only final documentation, profile-golden and rejection-test
+additions; the executable arithmetic implementation is the same.
+
+| Complete measured scope | Observation |
+| --- | ---: |
+| Genuine daemon/TLS RPC: connection through received product and compact certificate | 60.152 ms |
+| Owner's original-pair arithmetic checking and client decryption | 70.041 ms |
+| Complete mathematical RPC interval | **130.194 ms** |
+| Different public query, installed DATA, fresh Word/Query/product generation, receiving setup/check and completion, 16 workers | **1089.447 ms** |
+| Second originating-owner query, own private input premise, fresh Word/product and completion | 369.124 ms |
+| Third originating-owner query, same scope | 337.120 ms |
+
+TLS inner request/output/certificate lengths were 123,572 / 92,199 / 1,081,595
+bytes. The runtime response cap follows `CERTIFICATE_BYTES` and is now
+34+131072+1081595=1,212,701 bytes; oversized old replies reject. The actual TLS
+test retains changed-certificate, wrong-original-call, foreign-owner,
+cancellation/retry, observed-I/O, storage-unchanged and full4096 decrypted-oracle
+checks. It omits Source, Word, SQL, fresh head and locks.
+
+The complete public query carried 7,224,762 per-query proof bytes; its cold setup
+and first read took 8443.439ms and 26,114,741 bytes. The two owner-specific calls
+carried 4,105,132 / 4,107,084 bytes and omitted a public Query proof by relying on
+their originating owner's own private input premise. That premise is
+nontransferable and cannot admit a public validator Predicate. These local
+reads omit transport, current agreed head, SQL admission, consensus and locks.
+Compared with the [prior individual observations](../registry200-proof/src/registry_progress/word/read/CPU-SCALING.md),
+these runs were slower despite smaller certificates. Fresh proof randomness,
+scheduling and the additional reconstruction cost prevent a speedup claim.
+
+The read process's sampled working set/private peaks were 592,986,112 /
+587,071,488 bytes, OS peak working set 594,219,008. TLS aggregate sampled working
+set/private peaks were 49,692,672 / 22,036,480 bytes. These scoped observations
+do not establish whole production-peer resource use. The complete SQL500ms
+target remains unmet; all SQL/Predicate admission and security guards stay
+closed and no production timeout was relaxed.
+
+Generated local receipts are not committed:
+
+- Core20 r420: `.local/word-cmd-native-r420-bfv-unrelinearized-product-observe-tests/result.json`,
+  SHA256 `0CE778A00FAFCC9D6CD58C14A8988D686AAAC420A905061B4488247D5CDF8A67`.
+- Real TLS r426: `.local/gold-process-native-r426-gold/result.json`, SHA256
+  `BCF2498FE3DA0CB0BC5B256DC8FE9880AF3698105CD7165DEB8ACBB9CB68E3A4`.
+  Peer image23,874,048 bytes SHA256
+  `CE7399ACAD7C061BCD0A04A297DEF3B9F2D6DCC78F65D18A18A942562FD27632`.
+- Complete read r427: `.local/word-cmd-native-r427-registry200-proof-observe-tests/result.json`,
+  SHA256 `1F192C866016DF96133C7A33D88D4787C1F21FB26C0516CB32E5AF94D9A8DDB7`.
+  Image12,466,688 bytes SHA256
+  `51D9FC34417B830CB9FF2C167EF3F52F89E2C78F084FAC5477A84B68E7301E33`.
+
+The owning Clippy checks and consumer builds passed before these captures.
+Reproduce the owning boundaries with release locked Cargo tests for
+`bfv-unrelinearized-product`, `registry200-proof --features owner-read --lib
+registry_progress::word::read::tests::`, and `dcs-peer --test gold_product
+real_peer_returns_only_bounded_unverified_gold_math_and_owner_checks_originals`.
+Use `RAYON_NUM_THREADS=16` for the recorded complete-read worker budget; the
+TLS and core20 captures used2. Ordinary `cargo test` output alone does not
+replace the pinned-resource observer records.
+
+After the final profile-golden and failure-coverage edits, fresh matched native
+artifacts passed20 product cases (r436),12 protected-owner cases (r437) and the
+bounded runtime codec case (r438), with no faults or forced cleanup. The two
+private-result compile-fail examples, strict all-target Clippy for the product,
+experiment and runtime, rustfmt, local documentation links and actual
+`requirements_sync` test also passed. The owning Core Clippy and complete
+registry/daemon/experiment consumer builds had already passed for this same
+arithmetic implementation. Final unit receipt SHA256 values are:
+
+- `.local/word-cmd-native-r436-bfv-unrelinearized-product-observe-tests/result.json`:
+  `E7BA10DF5927286DE3C7307645BEE73B34ED73BB995C3D0F53A4E2BF0775EF43`.
+- `.local/word-cmd-native-r437-bfv-query-core-observe-tests/result.json`:
+  `3ED5C95125D5B939EBE00B62BF3D3424F4C853211522FB1E07FA760A838F6936`.
+- `.local/word-cmd-native-r438-peer-runtime-observe-tests/result.json`:
+  `295D3A2392988426773E99AFF5558F7F230B2C5F42DD1FF7C3B1B1004701C44C`.

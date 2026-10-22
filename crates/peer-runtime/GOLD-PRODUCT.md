@@ -38,12 +38,15 @@ upgrade, migration or relabeling of the earlier private-product stream.
 
 The request has the original Gold 640-byte header and two 128KiB ciphertext caps.
 Its bounded serde visitor checks the announced sequence length before allocating.
-The output is capped at 128KiB and its certificate must have exactly 1,737,899
-bytes. The total narrow response cap is 34 + 131072 + 1737899 = 1,869,005 bytes,
+The output is capped at 128KiB and its `UCPITC02` certificate must have exactly
+1,081,595 bytes. The total narrow response cap is 34 + 131072 + 1081595 = 1,212,701 bytes,
 including the actual fixed bincode envelope/vector lengths. Error strings are
 also bounded by that complete response cap. The ordinary incoming outer-frame
 cap remains owned by peer-transport. Canonical inner Gold decoding happens
 before SDK computation; malformed, truncated and trailing requests reject.
+The old 1,737,899-byte public certificate rejects. The original logical arithmetic
+transcript is restored inside the checker as described by the
+[compact codec](../bfv-unrelinearized-product/src/certificate/README.md).
 
 The response tag is selected before any unrelated vector decoder can allocate.
 Bounds never establish arithmetic validity: genuine full original-input checking

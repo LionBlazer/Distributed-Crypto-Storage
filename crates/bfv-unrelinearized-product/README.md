@@ -1,9 +1,10 @@
 # Public unrelinearized-product arithmetic
 
 This core library owns the closed N4096/Q2/P2 unrelinearized BFV product
-relation. It preserves the experiment's eighteen-point **UNASSESSED** profile,
-`UCPITQ01` request, `UCPITC01` frame and `DCSUSC01` integer certificates.
-The extraction does not admit a DCS computation proof.
+relation. It preserves the experiment's eighteen-point **UNASSESSED** mathematical
+profile and `UCPITQ01` request. The public `UCPITC02` wire expands to the unchanged
+original `UCPITC01` logical transcript and its `DCSUSC01` integer certificates.
+The library does not admit a DCS computation proof.
 
 `Expected::checked(nonce, original_ct2_pair, claimed_ct3)` parses both original
 inputs and the candidate output with the bounded canonical SDK PowerBasis wire
@@ -13,8 +14,9 @@ metadata accepts no computation.
 
 `produce(&expected)` returns `UnverifiedEvidence`. Its byte accessors export
 unverified bytes. `check_arithmetic(&expected, bytes)` checks the exact complete
-frame, canonical residues, all seven integer certificates and every product
-identity using challenges derived from the same complete original bytes. Only
+compact frame, reconstructs the original full logical frame, and checks canonical
+residues, all seven integer certificates and every product identity using
+challenges derived from that complete original logical transcript. Only
 this function creates the sealed, move-only `ArithmeticCheckedProduct`.
 Its PIT conclusion remains conditional on the Fiat-Shamir model. It grants no
 Source, key validity, hidden program, SQL completeness, current head, QC or
@@ -29,7 +31,8 @@ The private modules own distinct parts of that operation:
 - `pit`: prover convolution and the fixed eighteen-point identity checker.
 - `modular`: bounded Montgomery Horner verification and producer NTT arithmetic;
   coefficients stay ordinary while evaluation points and twiddles are encoded.
-- `certificate`: the complete 1,737,899-byte codec, associations and transcript.
+- `certificate`: the [1,081,595-byte compact wire](src/certificate/README.md),
+  original 1,737,899-byte logical transcript and complete associations.
 
 Normal dependencies are `ethnum` 1.5.3, `num-bigint` 0.4.8,
 `num-traits` 0.2.19, `sha2` 0.10.9 and `p3-maybe-rayon` 0.8.0. No SDK, registry, consensus, storage,
@@ -74,3 +77,10 @@ the observed local improvement from the still unmet complete-query target.
 existing request buffer in its original order, with no transform or copy. This
 allows protected owner completion to bind an actual checked product to its
 original inputs. Metadata getters create no checked result or SQL authority.
+
+`wire_profile_digest()` identifies the compact encoding separately from the
+unchanged `profile_digest()` mathematical relation. Only the compact encoding
+is accepted publicly; the original full frame is internal transcript material.
+The [compact-wire validation](VALIDATION.md#compact-wire-with-the-original-logical-transcript)
+records actual SDK, complete read and real-process TLS checks. The smaller frame
+has not established lower full-query latency or completion of the SQL target.

@@ -101,6 +101,66 @@ pub(crate) fn evaluate(request: &Request) -> Result<Evaluation> {
         certificate,
     })
 }
+/// Restore omitted canonical fields from the transmitted reduction witnesses.
+/// Arithmetic shifts recover the unique power-of-two intervals; y=A-p*k is a
+/// checked linear equation. No division, remainder, SDK or polynomial operation.
+/// The original independent verifier MUST still check the reconstructed record.
+pub(crate) fn reconstruct(request: &Request, reductions: Vec<[u128; 2]>) -> Result<Evaluation> {
+    if reductions.len() != N {
+        return Err(Error::Shape);
+    }
+    let role = request.role;
+    let c = constants(role);
+    let mut coefficients = vec![vec![0; N]; role.output_moduli().len()];
+    if role == super::Role::Extend2To4 {
+        coefficients[..2].clone_from_slice(&request.input);
+    }
+    let mut rows = Vec::with_capacity(N);
+    for (index, biased_k) in reductions.into_iter().enumerate() {
+        let r: [u64; 4] =
+            core::array::from_fn(|i| request.input.get(i).map_or(0, |row| row[index]));
+        let r = &r[..role.input_moduli().len()];
+        let (s, e) = dot_products(c, r)?;
+        let v = add(s, I256::from(1u128 << (c.shift - 1)))? >> c.shift;
+        if v < I256::ZERO || v > I256::from(u64::MAX) {
+            return Err(Error::Arithmetic);
+        }
+        let w = add(e, I256::from(1u128 << 126))? >> 127;
+        let biased_w = add(w, I256::from(W_OFFSET))?;
+        if biased_w < I256::ZERO || biased_w >= I256::from(1u64 << 46) {
+            return Err(Error::Arithmetic);
+        }
+        let row = Quotients {
+            v: v.as_u64(),
+            biased_w: biased_w.as_u64(),
+            biased_k,
+        };
+        row.validate()?;
+        for (j, &p) in role.computed_moduli().iter().enumerate() {
+            let a = reduction_numerator(c, r, row.v, w, j)?;
+            let k = sub(I256::from(row.biased_k[j]), I256::from(K_OFFSET))?;
+            let y = sub(a, mul(I256::from(p), k)?)?;
+            if y < I256::ZERO || y >= I256::from(p) {
+                return Err(Error::Arithmetic);
+            }
+            coefficients[role.computed_offset() + j][index] = y.as_u64();
+        }
+        rows.push(row);
+    }
+    let output = Output::new(request, coefficients)?;
+    let certificate = PublicCertificate {
+        role,
+        binding: request.binding,
+        input_digest: request_digest(request),
+        output_digest: output_digest(&output),
+        rows,
+    };
+    Ok(Evaluation {
+        output,
+        certificate,
+    })
+}
+
 /// Deterministic PUBLIC scalar relation checking, with no SDK Scaler, quotient division,
 /// remainder operation, NTT, ciphertext multiplication, plaintext, or secret-key access.
 /// Every equation is signed256-bit checked integer arithmetic, never a finite-field alias.

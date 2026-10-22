@@ -7,13 +7,15 @@ use crate::{
     statement::Expected,
 };
 use sha2::{Digest, Sha256, Sha512};
+mod compact;
+pub(crate) use compact::{FRAME_BYTES, wire_profile_digest};
 
 const MAGIC: &[u8; 8] = b"UCPITC01";
 const HEADER: usize = 256;
 const EXTENDED_P_BYTES: usize = 4 * 2 * N * 62 / 8;
 const PRODUCTS_BYTES: usize = 3 * N * (30 + 30 + 62 + 62) / 8;
 const QUOTIENTS_BYTES: usize = (3 * (N - 1) * (30 + 30 + 62 + 62)).div_ceil(8);
-pub(crate) const FRAME_BYTES: usize =
+pub(crate) const LOGICAL_FRAME_BYTES: usize =
     HEADER + EXTENDED_P_BYTES + PRODUCTS_BYTES + QUOTIENTS_BYTES + 7 * scale::CERTIFICATE_BYTES;
 struct Certificate {
     extended_p: [Polynomial; 4],
@@ -36,7 +38,7 @@ fn header(statement: &Expected) -> [u8; HEADER] {
     bytes[72..104].copy_from_slice(&statement.nonce());
     bytes[104..168].copy_from_slice(&Sha512::digest(statement.request_wire()));
     bytes[168..232].copy_from_slice(&Sha512::digest(statement.output_wire()));
-    bytes[232..240].copy_from_slice(&(FRAME_BYTES as u64).to_le_bytes());
+    bytes[232..240].copy_from_slice(&(LOGICAL_FRAME_BYTES as u64).to_le_bytes());
     bytes[240..244].copy_from_slice(&(N as u32).to_le_bytes());
     bytes[244..248].copy_from_slice(&(pit::POINTS as u32).to_le_bytes());
     bytes
@@ -133,7 +135,7 @@ impl<'a> Unpacker<'a> {
         }
     }
 }
-fn encode(statement: &Expected, certificate: &Certificate) -> Result<Vec<u8>> {
+fn encode_logical(statement: &Expected, certificate: &Certificate) -> Result<Vec<u8>> {
     let mut pack = Packer::new();
     for polynomial in &certificate.extended_p {
         pack.polynomial(polynomial, &P, N)?;
@@ -149,13 +151,14 @@ fn encode(statement: &Expected, certificate: &Certificate) -> Result<Vec<u8>> {
     for scaler in &certificate.scalers {
         bytes.extend_from_slice(&scaler.encode()?);
     }
-    if bytes.len() != FRAME_BYTES {
+    if bytes.len() != LOGICAL_FRAME_BYTES {
         return Err(Error::Shape);
     }
     Ok(bytes)
 }
-fn decode(statement: &Expected, bytes: &[u8]) -> Result<Certificate> {
-    if bytes.len() != FRAME_BYTES || bytes[..HEADER] != header(statement) {
+#[cfg(test)]
+fn decode_logical(statement: &Expected, bytes: &[u8]) -> Result<Certificate> {
+    if bytes.len() != LOGICAL_FRAME_BYTES || bytes[..HEADER] != header(statement) {
         return Err(Error::Binding);
     }
     let end = HEADER + EXTENDED_P_BYTES + PRODUCTS_BYTES + QUOTIENTS_BYTES;
@@ -186,7 +189,7 @@ fn decode(statement: &Expected, bytes: &[u8]) -> Result<Certificate> {
         scalers: scalers.try_into().map_err(|_| Error::Shape)?,
     })
 }
-pub(crate) fn produce(statement: &Expected) -> Result<Vec<u8>> {
+fn build_certificate(statement: &Expected) -> Result<Certificate> {
     let mut extended = Vec::with_capacity(4);
     let mut scalers = Vec::with_capacity(7);
     for i in 0..4 {
@@ -216,18 +219,27 @@ pub(crate) fn produce(statement: &Expected) -> Result<Vec<u8>> {
         }
         scalers.push(evaluation.certificate);
     }
-    let certificate = Certificate {
+    Ok(Certificate {
         extended_p: std::array::from_fn(|i| extended[i][2..].to_vec()),
         product,
         scalers: scalers.try_into().map_err(|_| Error::Shape)?,
-    };
-    encode(statement, &certificate)
+    })
+}
+fn encode(statement: &Expected, certificate: &Certificate) -> Result<Vec<u8>> {
+    compact::encode(statement, certificate)
+}
+fn decode(statement: &Expected, frame: &[u8]) -> Result<Certificate> {
+    compact::decode(statement, frame)
+}
+pub(crate) fn produce(statement: &Expected) -> Result<Vec<u8>> {
+    encode(statement, &build_certificate(statement)?)
 }
 
 /// Experimental public arithmetic checks only. It grants no assessed protocol,
 /// key, Source, hidden-program, database, freshness or SQL authority.
 pub(crate) fn check(statement: &Expected, frame: &[u8]) -> Result<()> {
     let certificate = decode(statement, frame)?;
+    let logical = encode_logical(statement, &certificate)?;
     let extended: [Polynomial; 4] = std::array::from_fn(|i| {
         let mut rows = statement.input(i).clone();
         rows.extend_from_slice(&certificate.extended_p[i]);
@@ -253,7 +265,7 @@ pub(crate) fn check(statement: &Expected, frame: &[u8]) -> Result<()> {
     }
     // This is the only caller of the PIT checker. Hash the SAME complete frame
     // after bounded canonical decoding, not caller-provided challenge metadata.
-    let prefix = pit::transcript_prefix(statement, frame);
+    let prefix = pit::transcript_prefix(statement, &logical);
     pit::check(&extended, &certificate.product, &prefix)
 }
 
@@ -319,7 +331,7 @@ mod tests {
             crate::check_arithmetic(&foreign, &frame),
             Err(Error::Binding)
         ));
-        for change in 0..4 {
+        for change in 0..3 {
             let mut c = decode(&statement, &frame)?;
             match change {
                 0 => {
@@ -329,7 +341,6 @@ mod tests {
                     c.product.quotients[1][0][N - 2] =
                         (c.product.quotients[1][0][N - 2] + 1) % QP[0]
                 }
-                2 => c.extended_p[3][1][N - 1] = (c.extended_p[3][1][N - 1] + 1) % P[1],
                 _ => c.scalers.swap(0, 1),
             }
             let repaired = encode(&statement, &c)?;
