@@ -50,6 +50,17 @@ It retains only an actual immutable DATA theorem and freshly checks per-query
 arguments. BFV/product security and fresh weighted SQL/lock admission remain
 separate obligations.
 
+The separate [`hash` Predicate facade](hash.rs) uses the fixed SHA-256 Merkle and
+full-prefix SHA-512 transcript suite from `bfv_hiding_stark::hash`. Its `Prover`
+consumes the same opaque original `PrivateInputs`; its independent `Verifier`
+checks the actual native argument against the same complete `Expected`. Both
+derive their own role-only preprocessing from the original AIR/plan/writer.
+The distinct `DCSWHS01` frame/profile binds the new suite, and never falls back
+to the original format. `hash::CheckedWord` is a separate move-only native-only
+candidate result, with no conversion to `VerifiedWord`, quantitative composed
+security assurance, Source authentication, current head, finality or SQL/lock
+admission. The original Word API and live admission guards are unchanged.
+
 The [EMPTY208 bootstrap](bootstrap/README.md) separately proves the original empty
 Word registry against an actual SourceVersion certificate and fixed enrollment.
 It does not authorize that enrollment or establish a current network head. Its

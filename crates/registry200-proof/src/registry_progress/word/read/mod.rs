@@ -1,5 +1,6 @@
 //! Conditional fixed Word/DATA/Query/FHE mathematics, without SQL or fresh-head admission.
 pub mod classical;
+pub mod hash;
 #[cfg(feature = "owner-read")]
 pub mod owner;
 pub mod query;

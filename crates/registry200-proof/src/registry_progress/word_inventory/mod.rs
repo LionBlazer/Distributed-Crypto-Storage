@@ -247,6 +247,9 @@ mod assessment;
 #[cfg(test)]
 mod api_tests;
 mod goldens;
+pub(super) mod hash_backend;
+mod hash_setup;
+pub(super) mod hash_wire;
 mod inventory_encoding;
 pub(super) mod probe;
 #[cfg(test)]

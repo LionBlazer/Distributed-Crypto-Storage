@@ -2106,29 +2106,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hash-hiding-fri"
-version = "0.1.0"
-dependencies = [
- "bfv-hiding-stark",
- "bounded-postcard",
- "compact-store",
- "p3-air",
- "p3-challenger",
- "p3-commit",
- "p3-dft",
- "p3-field",
- "p3-fri",
- "p3-merkle-tree",
- "p3-symmetric",
- "p3-uni-stark",
- "postcard",
- "rand 0.10.3",
- "registry200-proof",
- "sha2",
- "zeroize",
-]
-
-[[package]]
 name = "hash32"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4380,6 +4357,7 @@ dependencies = [
  "fhe-traits",
  "p3-air",
  "p3-batch-stark",
+ "p3-challenger",
  "p3-commit",
  "p3-dft",
  "p3-field",

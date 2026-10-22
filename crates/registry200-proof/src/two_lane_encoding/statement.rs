@@ -144,6 +144,13 @@ impl Expected {
     pub fn source_claim(&self) -> &source::Statement {
         self.source.claim()
     }
+    /// Internal complete immutable metadata, never reconstructed from a version tag.
+    pub(crate) fn version_source(&self) -> Result<&source::version::SourceVersionExpected, Error> {
+        match &self.source {
+            SourceExpectation::Version(expected) => Ok(expected),
+            SourceExpectation::Canonical(_) => Err(Error::Shape),
+        }
+    }
     pub(super) fn verify_source(&self, bytes: &[u8]) -> Result<(), super::wire::Error> {
         self.source.verify(bytes)
     }

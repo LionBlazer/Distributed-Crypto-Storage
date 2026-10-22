@@ -1,12 +1,12 @@
 //! Reviewed PUBLIC NONSECRET SourceVersion fixture, shared in shape with the core test.
 #![cfg(test)]
 
-use compact_store::{Commitment, Layout, Owner};
-use p3_field::PrimeCharacteristicRing;
-use registry200_proof::{
+use crate::{
     Val,
     source::{self, circuit::Witness, statement::encode_digest, version::SourceVersionExpected},
 };
+use compact_store::{Commitment, Layout, Owner};
+use p3_field::PrimeCharacteristicRing;
 use zeroize::Zeroizing;
 
 const PUBLIC_KEY: [u8; 32] = [0x51; 32];
@@ -51,14 +51,13 @@ pub(super) fn fixture() -> Fixture {
         )
         .unwrap();
     // Reviewed core-owned PUBLIC index vector, shared with the original State fixture.
-    let suffix: Vec<u8> = include_str!(
-        "../../../../crates/compact-query/tests/fixtures/index-v3-four-row-suffix.hex"
-    )
-    .lines()
-    .filter(|line| !line.starts_with('#'))
-    .flat_map(str::split_whitespace)
-    .map(|hex| u8::from_str_radix(hex, 16).unwrap())
-    .collect();
+    let suffix: Vec<u8> =
+        include_str!("../../../../compact-query/tests/fixtures/index-v3-four-row-suffix.hex")
+            .lines()
+            .filter(|line| !line.starts_with('#'))
+            .flat_map(str::split_whitespace)
+            .map(|hex| u8::from_str_radix(hex, 16).unwrap())
+            .collect();
     assert_eq!(suffix.len(), 2224);
     let mut index = stored.commitment().encode().to_vec();
     index.extend_from_slice(&suffix);

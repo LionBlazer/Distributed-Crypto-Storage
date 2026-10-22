@@ -6,6 +6,7 @@ use bfv_hiding_stark::Val;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use sha2::{Digest, Sha256, Sha512};
 use zeroize::Zeroizing;
+pub mod hash;
 
 #[cfg(test)]
 #[path = "data_formation_tests.rs"]

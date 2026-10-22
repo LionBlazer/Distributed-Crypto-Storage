@@ -128,3 +128,13 @@ are prepared under `Expected::core_expected()`. Only cold native verification
 creates its private move-only `VerifiedFormation`; that type grants mathematics
 without Source/Word/DATA admission, freshness or SQL authority. Its `DCSGQF01`
 frame rejects original/dense frames. See the [backend boundary and usage](src/gold/program/query_formation/README.md).
+
+The separate [`gold::data::hash`](src/gold/DATA-HASH.md) and
+[`gold::query::hash`](src/gold/query/README.md) facades use the engine SHA suite
+with these same closed AIRs, public expectations and consumed protected inputs.
+They have distinct `DCSHDD01`/`DCSHQF01` frames and return mathematical unit
+verification success, without constructing the original Formation result types.
+Prepared `Prover`/`Verifier` objects retain independently derived PUBLIC setup
+for one exact Expected; each proof uses fresh private OS entropy and every
+receiving call performs actual native verification. Setup costs, cryptographic
+composition, freshness and complete-query latency remain separately assessed.

@@ -1,5 +1,18 @@
 # Two-lane private encoding mathematical candidate
 
+The additive `hash` facade proves and independently verifies **only Role3** with
+the fixed [`bfv-hiding-stark::hash`](../../../bfv-hiding-stark/README.md) suite.
+`hash::prove(&Statement, &Witness)` returns unverified `DCSHER01` bytes;
+`hash::verify(&Statement, bytes)` uses the independently retained complete
+statement, including Cw, every public value and both original Source heads and
+packets. Its separate 128-byte frame, profile, canonical decoder, fixed topology
+and original 12 MiB/sequence/slot limits precede fresh native verification.
+The existing AIR/witness remain unchanged. This facade verifies Role3 relative
+to that Source claim: the caller must separately and freshly verify the matching
+Source SHA proof. It creates no old `VerifiedEncoding` or Source/current-head/SQL
+capability. Quantified composed ROM security remains unassessed; no new timing
+or executed-test claim follows from this API addition.
+
 This new namespace owns two distinct fixed hiding AIRs: SourceAllOriginal and
 PrivateMask. It changes no old coefficient/Key/Formation/progress proof profile,
 wire, current application, SQL admission or consensus rule. Ten owning tests

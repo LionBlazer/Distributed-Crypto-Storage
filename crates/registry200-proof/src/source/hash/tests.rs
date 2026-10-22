@@ -1,7 +1,8 @@
 use super::*;
-use crate::{Challenge, Val};
+use crate::Val;
+use crate::source::statement::encode_digest;
+use bfv_hiding_stark::{Challenge, PROOF_DEGREE_BITS};
 use p3_field::PrimeCharacteristicRing;
-use registry200_proof::source::statement::encode_digest;
 use std::time::Instant;
 
 #[test]
@@ -68,7 +69,7 @@ fn complete_source_air_requires_original_state_key_context_and_native_openings()
     assert!(p3_uni_stark::verify(&config().unwrap(), &air, &proof, &altered).is_err());
 
     // A correctly shaped argument from another transcript context is not valid.
-    let mut challenger = crate::challenger::Challenger::new();
+    let mut challenger = bfv_hiding_stark::hash::Challenger::new();
     use p3_challenger::CanObserve;
     challenger.observe(Val::ONE);
     use p3_uni_stark::StarkGenericConfig;

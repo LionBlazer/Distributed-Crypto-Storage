@@ -1,5 +1,9 @@
 # Fixed hiding STARK suite
 
+The separate [`hash`](src/hash/README.md) module owns the extracted SHA-256
+Merkle/full-prefix SHA-512 candidate. Closed consumers use distinct profiles and
+result types; this does not replace the original suite or enable admission.
+
 [`classical::analyze`](src/classical.rs) provides a separate fixed-multiplicity
 diagnostic over trusted actual AIR metadata. The [classical note](CLASSICAL.md)
 defines its conservative algebraic terms, original lookup inputs, numerical

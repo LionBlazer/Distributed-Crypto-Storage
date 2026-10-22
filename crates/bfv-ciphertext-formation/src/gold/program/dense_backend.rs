@@ -15,6 +15,15 @@ macro_rules! instantiate_fixed_dense_backend {
         mod native_wire {
             include!("../dense_data_inventory/native_wire.rs");
         }
+        pub(in crate::gold) mod hash_backend {
+            include!("../dense_data_inventory/hash_backend.rs");
+        }
+        mod hash_setup {
+            include!("../dense_data_inventory/hash_setup.rs");
+        }
+        mod hash_wire {
+            include!("../dense_data_inventory/hash_wire.rs");
+        }
     };
 }
 pub(super) use instantiate_fixed_dense_backend;

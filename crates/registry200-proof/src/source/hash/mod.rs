@@ -1,15 +1,14 @@
 //! Actual existing SourceVersion relation under a separate experimental hash profile.
 //! Successful verification is mathematical only; no live admission token is minted.
-use crate::Error;
-use crate::config::{Config, config};
-use bfv_hiding_stark::{PROOF_DEGREE_BITS, TRACE_HEIGHT};
+use crate::source::version::SourceVersionExpected;
+use crate::source::{self, Relation, air::OpeningAir, circuit::Witness};
+use bfv_hiding_stark::TRACE_HEIGHT;
+use bfv_hiding_stark::hash::{Config, codec, config};
 use p3_air::BaseAir;
 use p3_uni_stark::Proof;
-use registry200_proof::source::version::SourceVersionExpected;
-use registry200_proof::source::{self, Relation, air::OpeningAir, circuit::Witness};
 use sha2::{Digest, Sha256};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
-mod codec;
 #[cfg(test)]
 mod fixture;
 #[cfg(test)]
@@ -25,9 +24,9 @@ pub fn profile_digest() -> [u8; 32] {
     let mut hash = Sha256::new();
     hash.update(b"DCS/research/hash-hiding-FRI/SourceVersion/v1/no-live-admission\0");
     hash.update(source::profile_digest(Relation::StateCertificate));
-    hash.update(crate::merkle::LEAF_DOMAIN);
-    hash.update(crate::merkle::NODE_DOMAIN);
-    hash.update(crate::challenger::DOMAIN);
+    hash.update(bfv_hiding_stark::hash::LEAF_DOMAIN);
+    hash.update(bfv_hiding_stark::hash::NODE_DOMAIN);
+    hash.update(bfv_hiding_stark::hash::TRANSCRIPT_DOMAIN);
     hash.update(b"p3-0.8.0/Gold/EF5/raw32/cap0/scalar/SHA256/SHA512/rand0.10.3/OS-independent");
     hash.update(b"a21e3ed42905040ad49c519e402f018381c12d0c");
     hash.update(b"field1/cap2+count/sample3+counter/draw4+counter+retry/LE64/reject-ge-p");
@@ -69,13 +68,16 @@ fn air(expected: &SourceVersionExpected) -> Result<OpeningAir, Error> {
 /// Produces an unverified, bounded candidate frame; the independent receiver
 /// supplies its own SourceVersionExpected and invokes verify().
 pub fn prove(expected: &SourceVersionExpected, witness: &Witness) -> Result<Vec<u8>, Error> {
+    catch_unwind(AssertUnwindSafe(|| prove_inner(expected, witness))).map_err(|_| Error::Proving)?
+}
+fn prove_inner(expected: &SourceVersionExpected, witness: &Witness) -> Result<Vec<u8>, Error> {
     let air = measured("producer_air", || air(expected))?;
     let trace = measured("producer_trace", || witness.trace(expected.statement()))
         .map_err(|_| Error::Shape)?;
     if trace.values.len() != TRACE_HEIGHT * air.width() {
         return Err(Error::Shape);
     }
-    let config = measured("producer_config", config)?;
+    let config = measured("producer_config", config).map_err(|_| Error::Randomness)?;
     let proof = measured("producer_native", || {
         p3_uni_stark::prove(&config, &air, trace, &expected.statement().values())
     })
@@ -86,9 +88,13 @@ pub fn prove(expected: &SourceVersionExpected, witness: &Witness) -> Result<Vec<
 /// Bounded canonical decode and native verification of the actual complete AIR.
 /// This returns no journal, version-freshness, SQL or old-suite capability.
 pub fn verify(expected: &SourceVersionExpected, bytes: &[u8]) -> Result<(), Error> {
+    catch_unwind(AssertUnwindSafe(|| verify_inner(expected, bytes)))
+        .map_err(|_| Error::Verification)?
+}
+fn verify_inner(expected: &SourceVersionExpected, bytes: &[u8]) -> Result<(), Error> {
     let proof = measured("receiver_decode", || decode(bytes))?;
     let air = measured("receiver_air", || air(expected))?;
-    let config = measured("receiver_config", config)?;
+    let config = measured("receiver_config", config).map_err(|_| Error::Randomness)?;
     measured("receiver_native", || {
         p3_uni_stark::verify(&config, &air, &proof, &expected.statement().values())
     })
@@ -108,8 +114,7 @@ fn measured<T>(_phase: &'static str, operation: impl FnOnce() -> T) -> T {
 }
 
 fn encode(proof: &Proof<Config>) -> Result<Vec<u8>, Error> {
-    codec::check(proof)?;
-    let payload = postcard::to_allocvec(proof).map_err(|_| Error::Encoding)?;
+    let payload = codec::serialize(proof, &topology(), MAX_BYTES - HEADER)?;
     if payload.len() > MAX_BYTES - HEADER {
         return Err(Error::ResourceLimit);
     }
@@ -131,26 +136,37 @@ fn decode(bytes: &[u8]) -> Result<Proof<Config>, Error> {
     {
         return Err(Error::Encoding);
     }
-    let (proof, trailing) = bounded_postcard::take_from_bytes::<Proof<Config>>(
-        &bytes[HEADER..],
-        bounded_postcard::Limits {
-            // Same Source geometry/budgets as the existing owning decoder.
-            // Gold's canonical binary representation is an eight-byte array:
-            // each field charges eight nested slots, not just its outer slot.
-            max_sequence_elements: 16_384,
-            max_total_elements: 24 * 1024 * 1024,
-        },
-    )
-    .map_err(|error| match error {
-        bounded_postcard::Error::ResourceLimit => Error::ResourceLimit,
-        bounded_postcard::Error::Encoding => Error::Encoding,
-    })?;
-    if !trailing.is_empty() || proof.degree_bits != PROOF_DEGREE_BITS {
-        return Err(Error::Encoding);
-    }
-    codec::check(&proof)?;
-    if encode(&proof)? != bytes {
-        return Err(Error::Encoding);
-    }
+    let proof = codec::decode(&bytes[HEADER..], &topology(), 16_384, 24 * 1024 * 1024)?;
+    // Header has one fixed binary encoding; the shared bounded codec already
+    // checks canonical proof bytes, so no second full serialization is needed.
     Ok(proof)
+}
+
+fn topology() -> codec::Topology {
+    codec::Topology::checked(source::layout::PACKED_WIDTH, 16).expect("fixed Source hash geometry")
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Error {
+    Randomness,
+    Shape,
+    Encoding,
+    ResourceLimit,
+    Proving,
+    Verification,
+}
+impl core::fmt::Display for Error {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(formatter, "Source hash candidate rejected: {self:?}")
+    }
+}
+impl std::error::Error for Error {}
+impl From<codec::Error> for Error {
+    fn from(error: codec::Error) -> Self {
+        match error {
+            codec::Error::Encoding => Self::Encoding,
+            codec::Error::ResourceLimit => Self::ResourceLimit,
+            codec::Error::Shape => Self::Shape,
+        }
+    }
 }

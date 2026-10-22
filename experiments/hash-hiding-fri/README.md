@@ -1,5 +1,12 @@
 # Hash-based hiding-FRI candidate
 
+The implementation has been extracted into the reusable
+[`bfv-hiding-stark::hash`](../../crates/bfv-hiding-stark/src/hash/README.md) module
+and closed owning proof libraries. This directory retains the original research
+record; it is no longer a Cargo package or a duplicate engine implementation.
+The actual Source facade/tests now belong to
+[`registry200-proof::source::hash`](../../crates/registry200-proof/src/source/hash/README.md).
+
 This isolated research consumer proves the **actual existing SourceVersion AIR**
 with a separate SHA-256 Merkle / full-prefix SHA-512 Fiat–Shamir configuration.
 It neither changes production profiles nor enables Predicate journal acceptance.
@@ -47,7 +54,8 @@ bad shape, old profile, truncated/trailing bytes and oversized input.
 Run optimized owning tests with the pinned toolchain:
 
 ```sh
-cargo test --release --locked -p hash-hiding-fri --lib -- --test-threads=1
+cargo test --release --locked -p bfv-hiding-stark hash:: -- --test-threads=1
+cargo test --release --locked -p registry200-proof source::hash:: -- --test-threads=1
 ```
 
 Native measurements must bound the whole process and report public producer and

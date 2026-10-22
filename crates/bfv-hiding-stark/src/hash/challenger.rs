@@ -5,7 +5,7 @@ use p3_field::{BasedVectorSpace, PrimeCharacteristicRing, PrimeField64};
 use p3_symmetric::MerkleCap;
 use sha2::{Digest, Sha512};
 
-pub(crate) const DOMAIN: &[u8] = b"DCS/research/hash-hiding-FRI/FS-SHA512/full-prefix/v1\0";
+pub const DOMAIN: &[u8] = b"DCS/research/hash-hiding-FRI/FS-SHA512/full-prefix/v1\0";
 const FIELD: u8 = 1;
 const CAP: u8 = 2;
 const SAMPLE: u8 = 3;
@@ -14,13 +14,19 @@ const DRAW: u8 = 4;
 /// Retains the unfinalized SHA state of every observed/accepted-sample event.
 /// Cloning that state hashes the entire prefix, without retaining a transcript Vec.
 #[derive(Clone)]
-pub(crate) struct Challenger {
+pub struct Challenger {
     prefix: Sha512,
     draws: u64,
 }
 
+impl Default for Challenger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Challenger {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         let mut prefix = Sha512::new();
         prefix.update(DOMAIN);
         Self { prefix, draws: 0 }

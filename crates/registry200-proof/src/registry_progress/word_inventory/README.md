@@ -36,6 +36,15 @@ does not execute a peer SQL request or install an accepted state.
   producer and independently constructed receiving setups; `probe_wire` owns
   bounded canonical encoding. Internal receiving returns `Result<()>`; only the
   facade constructs its privately owned move-only mathematical result afterwards.
+- `hash_backend`, `hash_setup` and `hash_wire` reuse those same Predicate AIR,
+  plan, recipes, 309 public words and guarded MAIN writer for the separate fixed
+  SHA suite. The public facade is `word::hash`; this backend accepts no external
+  config, trace callback or producer-supplied CommonData. Existing complete IR
+  and PP-cell pins still apply; its independently reconstructed SHA commitment
+  belongs to its new suite/profile rather than the original Poseidon commitment.
+  Deterministic public configuration dies before fresh OS private proving. The
+  distinct bounded `DCSWHS01` byte-digest frame checks the same actual topology,
+  original lookup counts, resource bounds, zero PoWs and native verification.
 - `inventory_encoding` owns the unchanged exhaustive semantic byte stream used
   by mandatory literal IR/PP/commitment pins. It is normal code; it no longer
   imports a serializer from the test module.

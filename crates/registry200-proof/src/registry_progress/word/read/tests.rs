@@ -16,7 +16,7 @@ use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use std::time::Instant;
 use zeroize::Zeroizing;
 
-fn word_expected(case: &owner_cases::Case) -> word::Expected {
+pub(super) fn word_expected(case: &owner_cases::Case) -> word::Expected {
     let m = &case.metadata;
     word::Expected::checked(
         &m.source,
@@ -45,7 +45,10 @@ fn word_expected(case: &owner_cases::Case) -> word::Expected {
     .unwrap()
 }
 // Public metadata pins for this bounded example; no compiler/rights/freshness claim.
-fn input_binding(case: &owner_cases::Case, data: &installed::Expected) -> protected::InputBinding {
+pub(super) fn input_binding(
+    case: &owner_cases::Case,
+    data: &installed::Expected,
+) -> protected::InputBinding {
     let words = |fields: [Val; 8]| -> [u8; 32] {
         fields
             .into_iter()
@@ -93,7 +96,7 @@ fn produce_word(case: &mut owner_cases::Case) -> Vec<u8> {
         .unwrap()
         .into_bytes()
 }
-fn word_inputs(case: &mut owner_cases::Case) -> word::PrivateInputs {
+pub(super) fn word_inputs(case: &mut owner_cases::Case) -> word::PrivateInputs {
     let expected = word_expected(case);
     assert_eq!(expected.binding(), probe::binding(&case.metadata));
     let input = &mut case.input;
@@ -273,7 +276,7 @@ fn check_complete_native_manifests(expected: &Expected, frames: &Frames) {
         "native_complete_five_transcript_manifests source_role3_data_word_query=true native_shapes_and_mask_openings_match=true sql=false"
     );
 }
-fn ring_oracle(source: &[u64], mask: &[u64]) -> Zeroizing<Vec<u64>> {
+pub(super) fn ring_oracle(source: &[u64], mask: &[u64]) -> Zeroizing<Vec<u64>> {
     let mut oracle = Zeroizing::new(vec![0; gold::N]);
     for (i, &x) in source.iter().enumerate().filter(|(_, v)| **v != 0) {
         for (j, &y) in mask.iter().enumerate().filter(|(_, v)| **v != 0) {

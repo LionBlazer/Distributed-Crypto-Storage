@@ -4,6 +4,7 @@ pub mod circuit;
 pub mod commitment;
 pub mod data_formation;
 pub mod formation;
+pub mod hash;
 pub mod layout;
 pub mod product;
 mod prover;

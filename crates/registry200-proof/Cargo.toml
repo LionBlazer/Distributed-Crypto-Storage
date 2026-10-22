@@ -36,6 +36,7 @@ p3-dft = "=0.8.0"
 rand_public_pp = { package = "rand", version = "=0.10.3", default-features = false, features = ["std_rng"] }
 
 [dev-dependencies]
+p3-challenger = "=0.8.0"
 p3-maybe-rayon = { version = "=0.8.0", features = ["parallel"] }
 bfv-query-core = { path = "../bfv-query-core", features = ["gold-owner"] }
 fhe-math = { version = "=0.1.1", default-features = false }

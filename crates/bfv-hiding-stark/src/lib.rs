@@ -4,6 +4,7 @@ mod assessment;
 pub mod classical;
 pub mod codec;
 mod config;
+pub mod hash;
 pub mod poseidon;
 mod profile;
 mod proof;

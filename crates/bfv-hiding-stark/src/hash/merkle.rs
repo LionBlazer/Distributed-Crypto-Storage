@@ -4,7 +4,7 @@
 //! creates neither salts nor an RNG, and supplies no live proof admission. The
 //! caller owns the hiding-MMCS configuration and its unpredictable salt stream.
 
-use bfv_hiding_stark::Val;
+use crate::Val;
 use p3_field::PrimeField64;
 use p3_symmetric::{CryptographicHasher, PseudoCompressionFunction};
 use sha2::{Digest, Sha256};

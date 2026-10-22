@@ -6,6 +6,7 @@ pub mod chacha;
 pub mod circuit;
 pub mod commitment;
 pub mod factorized;
+pub mod hash;
 pub mod layout;
 pub mod poly1305;
 mod prover;

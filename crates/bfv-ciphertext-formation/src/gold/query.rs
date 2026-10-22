@@ -2,6 +2,7 @@
 use super::{Error, Result, Val, data, program::query_formation as backend};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use sha2::{Digest, Sha256, Sha512};
+pub mod hash;
 
 pub const MAX_EVIDENCE_BYTES: usize = backend::MAX_FRAME_BYTES;
 

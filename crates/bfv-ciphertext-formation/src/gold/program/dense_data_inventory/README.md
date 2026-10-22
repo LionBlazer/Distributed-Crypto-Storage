@@ -26,6 +26,7 @@ its behavior and rejects dense frames; dense receiving also rejects old frames.
 | `snapshot`, `tests` | Unconditional full relation/PP goldens and original semantic comparisons |
 | `native`, `native_setup` | Same-AIR full-PP wrapper, sealed PUBLIC preprocessing, fresh private proving and independent cold verification |
 | `native_wire` | Distinct bounded canonical frame and complete native topology checks |
+| `hash_backend`, `hash_setup`, `hash_wire` | Separate SHA-suite lifecycle, independently reconstructed PUBLIC PP and raw32-digest canonical frames over the same closed AIR/writer |
 | `native_tests` | Actual SDK fixture, genuine proofs and strict hostile verification |
 
 The sibling `gold::witness::dense` writer consumes the same guarded equation banks

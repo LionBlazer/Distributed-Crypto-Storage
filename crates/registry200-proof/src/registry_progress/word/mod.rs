@@ -2,6 +2,7 @@
 //! Native verification grants no source authentication, history, freshness or SQL authority.
 pub mod bootstrap;
 mod expected;
+pub mod hash;
 mod inputs;
 pub mod read;
 mod statement;

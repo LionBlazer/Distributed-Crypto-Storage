@@ -9,6 +9,8 @@ use super::{
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use sha2::{Digest, Sha256, Sha512};
 use std::sync::Arc;
+#[path = "data_hash.rs"]
+pub mod hash;
 #[cfg(test)]
 #[path = "data_tests.rs"]
 mod tests;

@@ -1,7 +1,7 @@
-use crate::challenger::Challenger;
-use crate::merkle::{LeafHash, NodeCompress};
+use super::challenger::Challenger;
+use super::merkle::{LeafHash, NodeCompress};
 use crate::{Challenge, Error, Val};
-use bfv_hiding_stark::{LOG_BLOWUP, QUERIES, RANDOM_CODEWORDS, SALT_ELEMENTS};
+use crate::{LOG_BLOWUP, QUERIES, RANDOM_CODEWORDS, SALT_ELEMENTS};
 use p3_commit::ExtensionMmcs;
 use p3_dft::Radix2DitParallel;
 use p3_fri::{FriParameters, HidingFriPcs};
@@ -13,15 +13,15 @@ use rand::rngs::{StdRng, SysRng};
 const _: () = {
     assert!(LOG_BLOWUP == 3 && QUERIES == 192);
     assert!(RANDOM_CODEWORDS == 5 && SALT_ELEMENTS == 4);
-    assert!(bfv_hiding_stark::EXTENSION_DEGREE == 5);
-    assert!(bfv_hiding_stark::TRACE_HEIGHT == 512);
-    assert!(bfv_hiding_stark::PROOF_DEGREE_BITS == 10);
+    assert!(crate::EXTENSION_DEGREE == 5);
+    assert!(crate::TRACE_HEIGHT == 512);
+    assert!(crate::PROOF_DEGREE_BITS == 10);
 };
 
-type Mmcs = MerkleTreeHidingMmcs<Val, u8, LeafHash, NodeCompress, StdRng, 2, 32, SALT_ELEMENTS>;
-type FriMmcs = ExtensionMmcs<Val, Challenge, Mmcs>;
-type Pcs = HidingFriPcs<Val, Radix2DitParallel<Val>, Mmcs, FriMmcs, StdRng>;
-pub(crate) type Config = StarkConfig<Pcs, Challenge, Challenger>;
+pub type Mmcs = MerkleTreeHidingMmcs<Val, u8, LeafHash, NodeCompress, StdRng, 2, 32, SALT_ELEMENTS>;
+pub type ChallengeMmcs = ExtensionMmcs<Val, Challenge, Mmcs>;
+pub type Pcs = HidingFriPcs<Val, Radix2DitParallel<Val>, Mmcs, ChallengeMmcs, StdRng>;
+pub type Config = StarkConfig<Pcs, Challenge, Challenger>;
 
 fn os_rng() -> Result<StdRng, Error> {
     StdRng::try_from_rng(&mut SysRng).map_err(|_| Error::Randomness)
@@ -29,7 +29,7 @@ fn os_rng() -> Result<StdRng, Error> {
 fn mmcs() -> Result<Mmcs, Error> {
     Ok(Mmcs::new(LeafHash, NodeCompress, 0, os_rng()?))
 }
-pub(crate) fn config() -> Result<Config, Error> {
+pub fn config() -> Result<Config, Error> {
     let fri = FriParameters {
         log_blowup: LOG_BLOWUP,
         log_final_poly_len: 0,
@@ -38,7 +38,7 @@ pub(crate) fn config() -> Result<Config, Error> {
         batch_proof_of_work_bits: 0,
         commit_proof_of_work_bits: 0,
         query_proof_of_work_bits: 0,
-        mmcs: FriMmcs::new(mmcs()?),
+        mmcs: ChallengeMmcs::new(mmcs()?),
     };
     let pcs = Pcs::new(
         Radix2DitParallel::default(),
