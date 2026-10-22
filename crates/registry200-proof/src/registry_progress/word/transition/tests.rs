@@ -88,8 +88,10 @@ fn current_bank_produces_every_original_wait_skip_resume_nowait_and_end_opening(
             "{}",
             kind.label()
         );
-        let (_, _, opening) = transition.into_parts();
+        let (proposed, _, opening) = transition.into_parts();
         let (next, result) = opening.into_words();
+        assert_eq!(word::registry_root(&next).unwrap(), proposed.claims().next);
+        assert!(word::registry_root(&[u64::MAX; 208]).is_err());
         assert_eq!(*next, expected_next, "{}", kind.label());
         assert_eq!(result.as_slice(), independent_result, "{}", kind.label());
     }
@@ -117,6 +119,7 @@ fn proposed_control_lifecycle_still_requires_actual_independent_native_proofs() 
         wrong.inner.next[0] += Val::ONE;
         assert!(receiver.verify(&wrong, evidence.as_bytes()).is_err());
         let (next, result) = opening.into_words();
+        assert_eq!(word::registry_root(&next).unwrap(), expected.claims().next);
         let slot = &next[84..137];
         assert_eq!(result[117], op as u64 + 2);
         assert_eq!(result[118], 1);

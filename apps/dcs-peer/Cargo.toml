@@ -33,6 +33,6 @@ bfv-ciphertext-formation = { path = "../../crates/bfv-ciphertext-formation" }
 compact-query = { path = "../../crates/compact-query", default-features = false, features = ["bfv-experiment"] }
 compact-store = { path = "../../crates/compact-store" }
 relational-types = { path = "../../crates/relational-types" }
-storage-client = { path = "../../crates/storage-client", features = ["private-input-proofs"] }
+storage-client = { path = "../../crates/storage-client", features = ["private-input-proofs", "word-control"] }
 version-journal = { path = "../../crates/version-journal" }
 rcgen = "=0.14.8"

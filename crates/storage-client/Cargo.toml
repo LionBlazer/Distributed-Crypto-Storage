@@ -6,6 +6,7 @@ rust-version = "1.99"
 publish = false
 
 [features]
+word-control = ["dep:registry200-proof", "dep:registry200-joint", "dep:registry200-finality", "dep:p3-field"]
 word-query = ["bfv-query-core/gold-owner", "dep:registry200-proof", "registry200-proof/owner-read", "dep:p3-field", "dep:sha2"]
 private-input-proofs = [
     "bfv-query-core/formation-proofs",

@@ -149,3 +149,10 @@ the client image was26,721,280 bytes, SHA256
 `3A4C58D84F60921995C81396A5B48C28A725B191C550D71436336ECA4D9179B2`.
 Only this evidence note was appended after those captures; production/test Rust
 and manifest hashes were rechecked before publication.
+
+`registry_root` exposes the unchanged fixed Registry208 absorb rule for owner
+opening checks. It rejects noncanonical field words and grants no proof, source,
+QC, freshness or installation status. The owning current-state/original-native
+control tests compare this root against independently prepared openings and the
+actual proved NextRoot. The [owner control SDK](../../../../storage-client/src/word_control/README.md)
+uses it only alongside an already checked Word History.

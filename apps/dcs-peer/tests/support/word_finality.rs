@@ -295,74 +295,18 @@ pub fn bootstrap(b: &Binding) -> (CandidateBlock, [Val; 208]) {
     let (r, e, bank) = boot(fixture(), &app, parent);
     (block(b, parent, 1, &r, &e, Control::Pending), bank)
 }
-pub fn begin(b: &Binding, old: [Val; 208], parent: Hash) -> CandidateBlock {
-    let f = fixture();
-    let app = Application::new(b.application_descriptor().clone(), b.journal_genesis()).unwrap();
-    let enrollment = old[33..37].try_into().unwrap();
-    let zero = [Val::ZERO; 4];
-    let draft = math::Expected::checked(
-        f.descriptor.source(),
-        math::Role::Control,
-        app.genesis(),
-        parent,
-        enrollment,
-        math::Claims {
-            old: hash(&old),
-            command: zero,
-            statement: zero,
-            next: zero,
-            result: zero,
-            blind_sql: [Val::ZERO; 8],
-        },
-    )
-    .unwrap();
-    let prepared = math::prepare_transition(
-        &draft,
-        math::TransitionMaterial {
-            source: opening(f),
-            registry: math::CurrentRegistry::new(
-                [
-                    words(&[0x41; 32]).try_into().unwrap(),
-                    words(&[0x42; 32]).try_into().unwrap(),
-                ],
-                Zeroizing::new(old.map(|v| v.as_canonical_u64())),
-                Zeroizing::new([6; 4]),
-            )
-            .unwrap(),
-            command: math::CommandInput {
-                op: 0,
-                principal: 1,
-                id: 1,
-                ..Default::default()
-            },
-            walk: Default::default(),
-            mask: Zeroizing::new([0; 32]),
-            salts: [
-                [Val::from_u8(3); 4],
-                [Val::from_u8(4); 4],
-                [Val::from_u8(5); 4],
-            ],
-        },
-    )
-    .unwrap();
-    let (expected, inputs, _) = prepared.into_parts();
-    let child = math::Prover::new(math::Role::Control)
-        .unwrap()
-        .produce(&expected, inputs)
-        .unwrap();
-    let r = Request::control(&app, parent, [2; 32], enrollment, expected.claims()).unwrap();
-    let e = Evidence::control(child.as_bytes()).unwrap();
-    block(
-        b,
-        parent,
-        2,
-        &r,
-        &e,
-        Control::Active {
-            enrollment,
-            registry: hash(&old),
-        },
-    )
+pub fn control_owner_key() -> SigningKey {
+    owner()
+}
+pub fn control_source() -> math::SourceOpening {
+    opening(fixture())
+}
+pub fn control_material(bank: [Val; 208]) -> storage_client::word_control::Material {
+    storage_client::word_control::Material {
+        registry: Zeroizing::new(bank.map(|v| v.as_canonical_u64())),
+        controllers: Zeroizing::new([[0x41; 32], [0x42; 32]]),
+        enrollment_salt: Zeroizing::new([3; 4]),
+    }
 }
 /// Derive from the owner's original locally produced Body before submission.
 pub fn own_operation_id(b: &Binding, block: &CandidateBlock) -> OperationId {

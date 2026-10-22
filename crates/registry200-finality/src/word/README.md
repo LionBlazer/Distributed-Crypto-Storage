@@ -35,6 +35,12 @@ may advance historical metadata but cannot mint an own-operation receipt.
 `checked_parent` and `context` expose historical observations. History is not
 durable owner state, a global currentness barrier or a SQL/row-lock grant.
 
+`History::candidate_header` derives authoring metadata from its exact floor and
+the real Journal target history after checking the transition owner signature.
+It does not accept a caller-selected parent/target or grant publication/proof
+authority. The [client control owner](../../../storage-client/src/word_control/README.md)
+uses this boundary before actual bounded mining and QC-based private confirmation.
+
 `Candidate` and `Checkpoint` use DCSWCV01/DCSWCQ01. Word Rules have their own
 algorithm identity selected before Work bootstrap. Old candidate/QC/parent types
 and Rules cannot be relabeled as Word. The bounded `CandidateBlock` is shared

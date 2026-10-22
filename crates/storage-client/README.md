@@ -1,5 +1,10 @@
 # Storage client
 
+The optional [`word-control` owner](src/word_control/README.md) retains private
+control state and an exact pending operation, originates real native proofs and
+installs its private candidate only after original-intent/owner/native/QC checks.
+It is in-memory Control orchestration, with no durable SQL/row-lock grant.
+
 The optional [`word-query` preparation boundary](src/word_query/README.md) compiles
 private locking SQL into the original Word statement and actual Gold encrypted
 input. It checks original context/source/actor bindings and creates native Word

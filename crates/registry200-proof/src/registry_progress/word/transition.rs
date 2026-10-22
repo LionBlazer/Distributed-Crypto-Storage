@@ -3,8 +3,26 @@ use super::{
     CommandInput, CurrentRegistry, Error, Expected, PrivateInputs, Result, SourceOpening, WalkInput,
 };
 use crate::Val;
-use p3_field::PrimeField64;
+use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use zeroize::Zeroizing;
+
+/// Original fixed Registry208 commitment. This opens no source/proof/QC or
+/// currentness authority; callers must compare it to an independently checked root.
+pub fn registry_root(words: &[u64; 208]) -> Result<[Val; 4]> {
+    if words.iter().any(|&word| word >= Val::ORDER_U64) {
+        return Err(Error::Shape);
+    }
+    let mut state = [Val::ZERO; 12];
+    let mut scratch = [Val::ZERO; crate::poseidon::WIDTH];
+    for block in words.as_chunks::<8>().0 {
+        state[..8].copy_from_slice(&block.map(Val::from_u64));
+        state = crate::poseidon::write(&mut scratch, state);
+    }
+    let root = state[..4].try_into().expect("fixed Registry208 root");
+    state.fill(Val::ZERO);
+    scratch.fill(Val::ZERO);
+    Ok(root)
+}
 
 pub struct TransitionMaterial {
     pub source: SourceOpening,

@@ -13,7 +13,7 @@ pub use inputs::{
 };
 pub use statement::{StatementDomain, StatementOpening};
 pub use transition::{
-    PreparedTransition, TransitionMaterial, TransitionOpening, prepare_transition,
+    PreparedTransition, TransitionMaterial, TransitionOpening, prepare_transition, registry_root,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -14,6 +14,8 @@ mod query_rpc;
 pub mod relational;
 mod script;
 mod session;
+#[cfg(feature = "word-control")]
+pub mod word_control;
 #[cfg(feature = "word-query")]
 pub mod word_query;
 pub use script::{

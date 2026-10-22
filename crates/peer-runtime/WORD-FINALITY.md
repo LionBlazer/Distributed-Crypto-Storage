@@ -297,3 +297,59 @@ failure tests compare actual Journal header count, accounted bytes, best/floor
 and candidate presence before/after rejection; genuine fixture signatures on
 invalid work cannot replace native proof verification. Only documentation
 changed after the final capture.
+
+## Confirmed private control state,2026-10-22
+
+Capture359/build358 replaced the fixture's direct BEGIN prover with the normal
+`storage-client/word-control` owner. It checks the initial private opening against
+the actual historical native/QC root, pins the actual Genesis owner key, retains
+public Role preprocessing and uses fresh OS request nonces and secret salts.
+The candidate's real header/target comes from History's actual Journal rules.
+The private bank is unchanged until the original candidate's native proof,
+signature, intent, ancestry and weighted QC are independently checked.
+
+The same four-process test now also checks rejected owner keys/private openings,
+old QCs before confirmation, an identical pending candidate after losing its
+handle, refusal of another pending mutation and one-shot confirmation. It then
+originates a genuine END from the newly confirmed private BEGIN bank, confirms
+it and restarts/replays all THREE decisions. The old bootstrap bank would fail
+the original old-root witness assertions for that END. Twelve actual daemon
+lifetimes exited0; no observer fault or cleanup was needed. Partition/no-quorum,
+foreign-client/native-proof rejection and ancient-QC floor checks remain.
+
+| Observed component, diagnostics disabled | Capture359 ms |
+| --- | ---: |
+| Real Source/Word History installation, within owner preparation | 866.755 |
+| Rejection of wrong owner/private opening, using real trial receivers | 3498.383 |
+| Private control-owner installation and retained public prover setup | 130.238 |
+| BEGIN current witness, fresh proof and signed candidate preparation | 250.160 |
+| BEGIN submission through first QC | 823.724 |
+| Independent BEGIN proof/QC and private bank confirmation | 85.784 |
+| Complete BEGIN path, including the pending/rejection assertions | **1159.751** |
+| Complete END from confirmed private state, including old-QC rejection | **1192.734** |
+| Four participant reopen/replay calls after three decisions | 23998.015 |
+| Expanded partition/rejection/restart/shutdown scenario | 66421.284 |
+
+This is a correctness/lifecycle extension, not a measured full-query speedup.
+Neither Control operation includes FHE/Predicate/SQL or a general latest-head/
+current-row-lock grant. The500ms full-query goal remains unmet. The owner draft
+and bank remain in memory; sealed recovery, durable anti-rollback owner state,
+actual FHE/result admission and final SQL/freshness completion remain required.
+
+The existing locked/offline release environment,120s/1792MiB aggregate fuses,
+held image/creation checks and20ms polling sleep were unchanged. There were594
+root samples over66.735s. Maximum sampled summed live working set was564,183,040
+bytes and private bytes553,594,880. Summed live per-process OS peak counters
+reached1,122,242,560 bytes, not simultaneous physical memory.
+
+Capture359 report SHA256:
+`9D5C60D340CCB93148384CCE5BF81E1319C1933AFF4C9529675EE29CD1E1DC49`.
+The8,513,024-byte test image SHA256 was
+`4860213AC363C139511D58E73A1E6989FDCFF7AE1CC59121AE60477C6ECFA0C9`;
+the23,864,320-byte daemon image SHA256 was
+`EA93002308A5FE27CB0335020993EF3BE8A3BFBF38C647A198D45E1D2C233FEC`.
+
+The three original current-state/native-proof tests, protected owner API
+compile-fail contract and strict storage-client/dcs-peer all-target Clippy passed.
+The root tests retain their independent manual next-bank/result comparisons and
+the unchanged genuine native verifier. Only documentation changed after capture.

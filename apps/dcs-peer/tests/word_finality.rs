@@ -16,12 +16,14 @@ use registry200_finality::{
     CandidateBlock,
     word::{Binding, Checkpoint, History},
 };
+use registry200_proof::registry_progress::word::CommandInput;
 use std::{
     io::{self, Write},
     net::TcpListener,
     path::{Path, PathBuf},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+use storage_client::word_control::{Error as OwnerError, Mining, Owner as ControlOwner};
 use work_finality::consensus::MAX_RECORD_BYTES;
 use zeroize::Zeroizing;
 
@@ -221,14 +223,99 @@ fn four_word_processes_require_native_proofs_and_quorum_then_replay_after_restar
         "independent_bootstrap_receive_and_all_catchup",
         &mut phase_began,
     );
+    // An actual checked history does not authorize a wrong owner key or a
+    // different private opening. These trial receivers perform real checks.
+    for wrong_key in [true, false] {
+        let mut trial = History::new(b.clone()).unwrap();
+        trial.apply_operation(&boot_qc, &boot, boot_intent).unwrap();
+        let mut material = fixture::control_material(bank);
+        let key = if wrong_key {
+            ed25519_dalek::SigningKey::from_bytes(&[0x88; 32])
+        } else {
+            material.registry[84] ^= 1;
+            fixture::control_owner_key()
+        };
+        assert!(ControlOwner::new(trial, key, material).is_err());
+    }
+    phase("reject_foreign_owner_and_private_opening", &mut phase_began);
+    let mut control = ControlOwner::new(
+        history,
+        fixture::control_owner_key(),
+        fixture::control_material(bank),
+    )
+    .unwrap();
+    phase("install_private_control_owner", &mut phase_began);
     let control_began = Instant::now();
-    let begin = fixture::begin(&b, bank, boot.header().id());
-    let begin_intent = fixture::own_operation_id(&b, &begin);
-    phase("prepare_begin_proof", &mut phase_began);
-    submit(&clients[0], &begin);
-    let begin_qc = checkpoint(&clients, 1);
-    phase("submit_begin_to_first_qc", &mut phase_began);
-    check_checkpoint(&mut history, &begin, &begin_qc, begin_intent);
+    let (begin, begin_qc) = {
+        let begin = {
+            let mut pending = control
+                .prepare(
+                    fixture::control_source(),
+                    CommandInput {
+                        op: 0,
+                        principal: 1,
+                        id: 1,
+                        ..Default::default()
+                    },
+                    Mining {
+                        timestamp: 102,
+                        now: 1_000_000,
+                        attempts: 16,
+                    },
+                )
+                .unwrap();
+            let begin = CandidateBlock::new(
+                pending.candidate().unwrap().header().clone(),
+                pending.candidate().unwrap().body().to_vec(),
+            )
+            .unwrap();
+            assert!(pending.confirm(&boot_qc).is_err());
+            assert_eq!(
+                pending.confirmed_parent().unwrap().head().block,
+                boot.header().id()
+            );
+            phase("prepare_begin_proof", &mut phase_began);
+            submit(&clients[0], &begin);
+            begin
+        }; // Losing the handle retains the exact original private draft in Owner.
+        assert!(matches!(
+            control.prepare(
+                fixture::control_source(),
+                CommandInput {
+                    op: 0,
+                    principal: 1,
+                    id: 2,
+                    ..Default::default()
+                },
+                Mining {
+                    timestamp: 102,
+                    now: 1_000_000,
+                    attempts: 16
+                },
+            ),
+            Err(OwnerError::Pending)
+        ));
+        let mut pending = control.resume_pending().unwrap();
+        assert_eq!(pending.candidate().unwrap().body(), begin.body());
+        let begin_qc = checkpoint(&clients, 1);
+        phase("submit_begin_to_first_qc", &mut phase_began);
+        let receiving = Instant::now();
+        let completed = pending.confirm(&begin_qc).unwrap();
+        assert_eq!(
+            completed.operation().parent().head().block,
+            begin.header().id()
+        );
+        assert_eq!(completed.result_words()[118], 1);
+        assert!(matches!(
+            pending.confirm(&begin_qc),
+            Err(OwnerError::Consumed)
+        ));
+        observation(format!(
+            "word_process_receiver slot=2 elapsed_ms={:.3} native_Word=true owner=true independent_intent=true weighted_QC=true private_bank_confirmed=true currentness=false\n",
+            receiving.elapsed().as_secs_f64() * 1000.0
+        ));
+        (begin, begin_qc)
+    };
     observation(format!(
         "word_control_operation elapsed_ms={:.3} owner_current_witness=true native_prove=true real_TLS_QC=true independent_proof_QC=true FHE=false SQL=false freshness_or_lock_grant=false\n",
         control_began.elapsed().as_secs_f64() * 1000.0
@@ -238,6 +325,59 @@ fn four_word_processes_require_native_proofs_and_quorum_then_replay_after_restar
     }
     phase(
         "independent_begin_receive_and_all_catchup",
+        &mut phase_began,
+    );
+    // END must originate from the newly confirmed private bank. The old
+    // bootstrap opening would fail the original old-root witness guard.
+    let end_began = Instant::now();
+    let (end, end_qc) = {
+        let mut pending = control
+            .prepare(
+                fixture::control_source(),
+                CommandInput {
+                    op: 6,
+                    actor: Some(0),
+                    principal: 1,
+                    id: 1,
+                    ..Default::default()
+                },
+                Mining {
+                    timestamp: 103,
+                    now: 1_000_000,
+                    attempts: 16,
+                },
+            )
+            .unwrap();
+        let end = CandidateBlock::new(
+            pending.candidate().unwrap().header().clone(),
+            pending.candidate().unwrap().body().to_vec(),
+        )
+        .unwrap();
+        assert!(pending.confirm(&begin_qc).is_err());
+        assert_eq!(
+            pending.confirmed_parent().unwrap().head().block,
+            begin.header().id()
+        );
+        submit(&clients[0], &end);
+        let end_qc = checkpoint(&clients, 2);
+        let completed = pending.confirm(&end_qc).unwrap();
+        assert_eq!(completed.result_words()[118], 1);
+        assert_eq!(
+            completed.operation().parent().head().block,
+            end.header().id()
+        );
+        (end, end_qc)
+    };
+    assert_eq!(control.confirmed_parent().unwrap().slot(), 3);
+    observation(format!(
+        "word_control_end_operation elapsed_ms={:.3} native_prove=true real_TLS_QC=true private_bank_confirmed=true FHE=false SQL=false\n",
+        end_began.elapsed().as_secs_f64() * 1000.0
+    ));
+    for c in &clients {
+        until(|| c.observed_slot().is_ok_and(|v| v == 4));
+    }
+    phase(
+        "end_from_confirmed_private_bank_and_all_catchup",
         &mut phase_began,
     );
     for n in nodes {
@@ -255,12 +395,12 @@ fn four_word_processes_require_native_proofs_and_quorum_then_replay_after_restar
     );
     phase("reopen_and_replay_decided_history", &mut phase_began);
     for c in &clients {
-        assert_eq!(c.observed_slot().unwrap(), 3);
-        let stored = c.candidate_block(begin.header().id()).unwrap();
-        assert_eq!(stored.header(), begin.header());
-        assert_eq!(stored.body(), begin.body());
-        let q = c.checkpoint_after(1).unwrap().unwrap();
-        assert_eq!(q.candidate(), begin_qc.candidate());
+        assert_eq!(c.observed_slot().unwrap(), 4);
+        let stored = c.candidate_block(end.header().id()).unwrap();
+        assert_eq!(stored.header(), end.header());
+        assert_eq!(stored.body(), end.body());
+        let q = c.checkpoint_after(2).unwrap().unwrap();
+        assert_eq!(q.candidate(), end_qc.candidate());
         reject(|| c.submit_checkpoint(&boot_qc)); // Ancient QC cannot reset the floor.
     }
     phase("retained_block_qc_and_ancient_rejection", &mut phase_began);

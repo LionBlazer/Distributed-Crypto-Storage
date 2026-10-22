@@ -4,7 +4,7 @@ use super::{
     verification::{candidate_control, parent_heads, require_candidate_context},
 };
 use registry200_joint::word::{OperationId, Verifier};
-use version_journal::{HeadRef, Journal};
+use version_journal::{Body, HeadRef, Header, Journal};
 use work_finality::consensus::Context;
 
 struct Last {
@@ -54,6 +54,22 @@ impl History {
     pub fn checked_parent(&self) -> Result<Option<&VerifiedParent>> {
         self.live()?;
         Ok(self.last.as_ref().map(|last| &last.checked))
+    }
+    /// Author mining metadata from this exact checked floor and actual target
+    /// history. This grants no proof, currentness, publication or SQL authority.
+    pub fn candidate_header(&self, body: &Body, timestamp: u64, now: u64) -> Result<Header> {
+        self.live()?;
+        if let Body::Transition(transition) = body {
+            transition.check_authorization(
+                &self.binding.journal_genesis().owner,
+                self.journal.genesis_id(),
+            )?;
+        }
+        let header =
+            self.journal
+                .candidate(self.journal.ancestry_floor().block, body, timestamp)?;
+        self.journal.validate_mining_candidate(&header, now)?;
+        Ok(header)
     }
     /// Follow another historical operation with full native/owner/QC checks.
     /// This supplies no receipt asserting that it was the caller's own request.
