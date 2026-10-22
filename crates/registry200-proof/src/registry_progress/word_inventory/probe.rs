@@ -146,6 +146,12 @@ pub(in crate::registry_progress) fn classical_bound(
     let (_, _, report) = prescreen_role(predicate)?;
     report.classical_bound().map_err(|_| Error::Security)
 }
+pub(in crate::registry_progress) fn transcript_manifest(
+    predicate: bool,
+) -> Result<bfv_hiding_stark::transcript::ArgumentManifest> {
+    let (air, _, report) = prescreen_role(predicate)?;
+    report.transcript_manifest(&air).map_err(|_| Error::Shape)
+}
 #[cfg(test)]
 pub(super) fn prescreen(m: &Metadata) -> Result<(ProgramAir, Assessment)> {
     let _ = Expected::checked(m).map_err(|_| Error::Shape)?;

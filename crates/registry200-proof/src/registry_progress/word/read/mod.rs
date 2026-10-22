@@ -5,6 +5,7 @@ pub mod owner;
 pub mod query;
 #[cfg(test)]
 mod tests;
+pub mod transcript;
 use super::{Expected as WordExpected, Role};
 use crate::{
     Val,

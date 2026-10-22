@@ -51,6 +51,37 @@ pub(crate) struct Backend {
     pub shape: Topology,
 }
 impl Backend {
+    pub(crate) fn source_version_manifest(
+        e: &source::version::SourceVersionExpected,
+    ) -> Result<engine::transcript::ArgumentManifest, Error> {
+        Self::manifest(FixedAir::Source(Box::new(source::air::OpeningAir::new(
+            e.statement(),
+        ))))
+    }
+    pub(crate) fn two_lane_manifest(
+        s: &two_lane_encoding::statement::Statement,
+    ) -> Result<engine::transcript::ArgumentManifest, Error> {
+        Self::manifest(FixedAir::TwoLaneEncoding(Box::new(
+            two_lane_encoding::air::EncodingAir::new(s),
+        )))
+    }
+    fn manifest(air: FixedAir) -> Result<engine::transcript::ArgumentManifest, Error> {
+        let (parameters, report) = engine::analyze(&air)?;
+        report.require_target()?;
+        let shape = p3_uni_stark::StarkShape::new::<Val, _>(
+            &air,
+            0,
+            engine::PROOF_DEGREE_BITS,
+            engine::TRACE_LOG_HEIGHT,
+            parameters.num_quotient_chunks,
+            true,
+            0,
+        );
+        let seed = engine::transcript::inspect_separator(
+            &shape.domain_separator::<Val, engine::Challenge>(),
+        );
+        engine::transcript::inspect_argument(&air, &parameters, engine::PROOF_DEGREE_BITS, 0, seed)
+    }
     /// Symbolic diagnostics over the same closed dispatch as native verification.
     /// No configuration, RNG, preprocessing or private trace is constructed.
     pub(crate) fn source_version_classical(

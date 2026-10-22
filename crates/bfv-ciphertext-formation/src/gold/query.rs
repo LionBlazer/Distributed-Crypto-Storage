@@ -21,6 +21,12 @@ pub fn profile_digest() -> [u8; 32] {
 pub fn classical_bound(expected: &Expected) -> Result<bfv_hiding_stark::classical::AlgebraicBound> {
     backend::classical_bound(expected)
 }
+/// Actual fixed fused Query transcript metadata; no setup, proof or admission.
+pub fn transcript_manifest(
+    expected: &Expected,
+) -> Result<bfv_hiding_stark::transcript::ArgumentManifest> {
+    backend::transcript_manifest(expected)
+}
 
 /// Independently retained public endpoints. Construction verifies no proof.
 /// The caller must separately authenticate the statement, DATA and original key.

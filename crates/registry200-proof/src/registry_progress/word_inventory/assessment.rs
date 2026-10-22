@@ -71,6 +71,32 @@ pub(super) struct Assessment {
     resources: Resources,
 }
 impl Assessment {
+    pub(super) fn transcript_manifest(
+        &self,
+        air: &ProgramAir,
+    ) -> Result<bfv_hiding_stark::transcript::ArgumentManifest> {
+        let shape = p3_batch_stark::BatchShape {
+            trace_widths: vec![air.width()],
+            public_value_counts: vec![air.num_public_values()],
+            preprocessed_widths: vec![air.preprocessed_width()],
+            has_preprocessed_commitment: true,
+            num_lookup_instances: 1,
+            lookup_pow_bits: 0,
+            has_randomization_commitment: true,
+            ood_pow_bits: 0,
+        };
+        let seed = bfv_hiding_stark::transcript::inspect_separator(
+            &shape.domain_separator::<Val, Challenge>(),
+        );
+        bfv_hiding_stark::transcript::inspect_argument(
+            air,
+            &self.parameters,
+            LOG_HEIGHT + 1,
+            self.aux,
+            seed,
+        )
+        .map_err(|_| "word-assessment:transcript-manifest".into())
+    }
     /// Conditional diagnostic only, evaluated on demand, never on a proof path.
     pub(super) fn classical_bound(&self) -> Result<bfv_hiding_stark::classical::AlgebraicBound> {
         bfv_hiding_stark::classical::analyze(

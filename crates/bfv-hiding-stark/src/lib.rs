@@ -7,6 +7,7 @@ mod config;
 pub mod poseidon;
 mod profile;
 mod proof;
+pub mod transcript;
 pub use assessment::*;
 pub use config::*;
 pub use profile::*;

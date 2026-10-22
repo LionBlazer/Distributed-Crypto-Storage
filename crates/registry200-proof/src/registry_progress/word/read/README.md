@@ -1,5 +1,11 @@
 # Conditional Word read mathematics
 
+[`transcript::inspect`](transcript.rs) captures the actual fixed-five SDK seed
+descriptions and native opening/salt geometry without PP, RNG or proofs. The
+[transcript note](TRANSCRIPT.md) records the shared-permutation correlations,
+LogUp argument and remaining concrete RBR/model correspondence. This is a
+diagnostic inventory, not proof acceptance or cryptographic approval.
+
 [`classical::analyze`](classical.rs) derives conditional error accounting from
 the five actual closed AIRs and the separate product PIT, without constructing
 preprocessing, private witnesses or proofs. Its explicit budget expression and

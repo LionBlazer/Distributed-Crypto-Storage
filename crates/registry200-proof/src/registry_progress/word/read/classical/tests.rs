@@ -187,3 +187,102 @@ fn the_actual_product_geometry_supports_the_coarse_306_bit_pit_lemma() {
     assert!(degree * denominator * (denominator + 1) < 1u128 << 64);
     assert_eq!(product_single_bits().unwrap(), 306);
 }
+
+#[test]
+fn fixed_five_transcript_manifest_keeps_real_salt_geometry_and_opening_order() {
+    let expected = expected();
+    let report = analyze(&expected, 60).unwrap();
+    let manifests = super::super::transcript::inspect(&expected).unwrap();
+    let widths: [&[usize]; 5] = [
+        &[14, 7170, 224],
+        &[14, 1665, 224],
+        &[14, 521, 112, 672, 419],
+        &[14, 577, 112, 718, 184],
+        &[14, 425, 112, 549, 429],
+    ];
+    // Reviewed public seed/geometry snapshots, captured independently of proofs.
+    let snapshots = [
+        "406e2791ce0b1198980fda765c99e528903723aa3b8977a9ce7e2cb333fe933a",
+        "378d90a66c4e82ec06b8dbe84b7b3d6538bc6aafc3a50d1393f1428ee3ff1977",
+        "8536f9022089addb76a956eaefdcdf269b3cd01e4a004d6692739c840925699e",
+        "9eab76dfbb11338eb63ff875189798ce1d3768d60bc96c5e3d6984db5e3d7119",
+        "7884b9c9949e5ce746cc46f482928d87d1fef2b142c8b84322b3d64242e2d742",
+    ];
+    for (i, manifest) in manifests.iter().enumerate() {
+        assert_eq!(hex(&manifest.snapshot_digest()), snapshots[i]);
+        let leafs: Vec<_> = manifest
+            .commitments()
+            .iter()
+            .map(|g| g.salted_leaf_width())
+            .collect();
+        assert_eq!(leafs, widths[i]);
+        assert_eq!(manifest.fri_salted_leaf_width(), 14);
+        assert_eq!(manifest.fri_matrix_logs().last(), Some(3));
+        let count: usize = manifest
+            .pcs_shape()
+            .claimed_evaluation_counts
+            .iter()
+            .flatten()
+            .flatten()
+            .sum();
+        assert_eq!(
+            count,
+            report.components()[i]
+                .bound()
+                .parameters()
+                .num_batched_functions
+        );
+        assert_eq!(
+            manifest.fri_shape(),
+            report.components()[i].bound().fri_shape()
+        );
+        let name: &[u8] = if i < 2 {
+            b"p3-uni-stark"
+        } else {
+            b"p3-batch-stark"
+        };
+        assert_eq!(&manifest.stark().protocol_id()[1..1 + name.len()], name);
+        assert!(
+            manifest
+                .stark()
+                .observed_fields()
+                .iter()
+                .all(|v| v.as_canonical_u64() < (1u64 << 56))
+        );
+        eprintln!(
+            "closed_transcript_manifest relation={:?} snapshot_sha256={} leaf_widths={leafs:?} stark_pattern={} pcs_pattern={} fri_pattern={} lde_log={} proof=false sql=false",
+            report.components()[i].relation(),
+            hex(&manifest.snapshot_digest()),
+            hex(manifest.stark().pattern_hash()),
+            hex(manifest.pcs().pattern_hash()),
+            hex(manifest.fri().pattern_hash()),
+            manifest.lde_log()
+        );
+    }
+    assert_ne!(
+        manifests[0].snapshot_digest(),
+        manifests[1].snapshot_digest()
+    );
+    assert_ne!(
+        manifests[2].snapshot_digest(),
+        manifests[4].snapshot_digest()
+    );
+    // DATA/Query share the batch message-count pattern but bind distinct widths.
+    assert_eq!(
+        manifests[2].stark().pattern_hash(),
+        manifests[4].stark().pattern_hash()
+    );
+    assert_ne!(
+        manifests[2].stark().instance_label(),
+        manifests[4].stark().instance_label()
+    );
+}
+
+fn hex(bytes: &[u8]) -> String {
+    use core::fmt::Write;
+    let mut text = String::new();
+    for byte in bytes {
+        write!(&mut text, "{byte:02x}").unwrap();
+    }
+    text
+}

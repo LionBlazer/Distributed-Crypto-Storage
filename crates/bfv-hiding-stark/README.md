@@ -6,6 +6,18 @@ defines its conservative algebraic terms, original lookup inputs, numerical
 policy and remaining composition premises. This report is not a proof or an
 operation capability and is not evaluated on native proof paths.
 
+[`transcript::inspect_separator`](src/transcript.rs) records the actual SDK
+`DomainSeparator<FieldUnit<Val>>::seed` field observations alongside its protocol
+identifier, pattern hash and delimited instance label. This public diagnostic
+snapshot creates no RNG, configuration or proof; callers retain responsibility
+for associating the supplied SDK separator with their actual protocol instance.
+
+`transcript::inspect_argument` adds the fixed one-AIR hiding-PCS opening geometry
+and actual SDK PCS/FRI seeds. It checks widths, salts and the total opening count,
+using the owning assessor's already BASE-flattened AUX width. Its snapshots are
+public diagnostics; they authenticate neither the supplied AIR association nor
+the shared-permutation security model. It uses no batch-STARK dependency.
+
 This crate owns the existing private-witness Goldilocks hiding-FRI implementation
 previously held by the source-primitive experiment. The
 [Owner validation](../bfv-key-transform/OWNER-KEY-VALIDATION.md) records actual

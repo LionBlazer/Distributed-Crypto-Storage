@@ -49,6 +49,14 @@ super::dense_backend::instantiate_fixed_dense_backend!();
 mod native_tests;
 pub(in crate::gold) use native::{produce, receive};
 pub(in crate::gold) use native_wire::{MAX_FRAME_BYTES, profile};
+pub(in crate::gold) fn transcript_manifest(
+    expected: &Expected,
+) -> Result<bfv_hiding_stark::transcript::ArgumentManifest> {
+    let air = air::MetadataAir::new(expected)?;
+    let report = assessment::assess(&air)?;
+    report.require_resources()?;
+    report.transcript_manifest(&air)
+}
 /// Metadata diagnostics only; no native setup, proof or admission is created.
 pub(in crate::gold) fn classical_bound(
     expected: &Expected,

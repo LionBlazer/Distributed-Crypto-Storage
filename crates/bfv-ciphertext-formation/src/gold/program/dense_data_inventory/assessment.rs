@@ -48,6 +48,32 @@ pub(in crate::gold) struct Assessment {
 }
 
 impl Assessment {
+    pub(in crate::gold) fn transcript_manifest(
+        &self,
+        air: &ProgramAir,
+    ) -> Result<bfv_hiding_stark::transcript::ArgumentManifest> {
+        let shape = p3_batch_stark::BatchShape {
+            trace_widths: vec![air.width()],
+            public_value_counts: vec![air.num_public_values()],
+            preprocessed_widths: vec![air.preprocessed_width()],
+            has_preprocessed_commitment: true,
+            num_lookup_instances: 1,
+            lookup_pow_bits: 0,
+            has_randomization_commitment: true,
+            ood_pow_bits: 0,
+        };
+        let seed = bfv_hiding_stark::transcript::inspect_separator(
+            &shape.domain_separator::<Val, Challenge>(),
+        );
+        bfv_hiding_stark::transcript::inspect_argument(
+            air,
+            &self.parameters,
+            DEGREE_BITS,
+            self.aux_width,
+            seed,
+        )
+        .map_err(|_| Error::Shape)
+    }
     pub(super) fn workspace_bytes(&self) -> usize {
         self.resources.estimated_workspace_bytes
     }

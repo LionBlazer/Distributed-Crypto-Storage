@@ -278,6 +278,12 @@ pub fn dense_classical_bound(
 ) -> Result<bfv_hiding_stark::classical::AlgebraicBound> {
     super::program::dense_data_inventory::classical_bound(expected)
 }
+/// Actual fixed dense DATA transcript metadata; no setup, proof or admission.
+pub fn dense_transcript_manifest(
+    expected: &Expected,
+) -> Result<bfv_hiding_stark::transcript::ArgumentManifest> {
+    super::program::dense_data_inventory::transcript_manifest(expected)
+}
 
 /// Prove the SAME complete single-Ct relation using the fixed H2048 layout.
 /// Consumes the original guarded W/Cs inputs; returns unverified bytes only.

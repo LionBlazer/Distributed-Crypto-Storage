@@ -148,6 +148,131 @@ fn damage_batch(bytes: &[u8]) -> Vec<u8> {
     out.extend(payload);
     out
 }
+type NativeOpening =
+    <bfv_hiding_stark::Pcs as p3_commit::Pcs<Challenge, bfv_hiding_stark::Challenger>>::Proof;
+
+fn assert_native_manifest(
+    manifest: &bfv_hiding_stark::transcript::ArgumentManifest,
+    base: &p3_uni_stark::OpenedValues<Challenge>,
+    aux: Option<(&[Challenge], &[Challenge])>,
+    opening: &NativeOpening,
+) {
+    let mut main = vec![base.trace_local.len()];
+    if let Some(next) = &base.trace_next {
+        main.push(next.len());
+    }
+    let mut groups = vec![
+        vec![vec![base.random.as_ref().unwrap().len()]],
+        vec![main],
+        base.quotient_chunks.iter().map(|v| vec![v.len()]).collect(),
+    ];
+    if let Some(pp) = &base.preprocessed {
+        let mut points = vec![pp.local.len()];
+        if let Some(next) = &pp.next {
+            points.push(next.len());
+        }
+        groups.push(vec![points]);
+    }
+    if let Some((local, next)) = aux {
+        groups.push(vec![vec![local.len(), next.len()]]);
+    }
+    assert_eq!(groups.len(), opening.0.len());
+    for (group, masks) in groups.iter_mut().zip(&opening.0) {
+        assert_eq!(group.len(), masks.len());
+        for (points, masks) in group.iter_mut().zip(masks) {
+            assert_eq!(points.len(), masks.len());
+            for (width, mask) in points.iter_mut().zip(masks) {
+                *width += mask.len();
+            }
+        }
+    }
+    assert_eq!(groups, manifest.pcs_shape().claimed_evaluation_counts);
+    assert_eq!(opening.1.input_openings.len(), manifest.commitments().len());
+    for (proof, group) in opening.1.input_openings.iter().zip(manifest.commitments()) {
+        for rows in &proof.opened_values {
+            assert_eq!(rows.len(), group.matrices().len());
+            for (row, matrix) in rows.iter().zip(group.matrices()) {
+                assert_eq!(row.len(), matrix.width());
+            }
+        }
+        for salts in &proof.opening_proof.0 {
+            assert_eq!(salts.len(), group.matrices().len());
+            assert!(salts.iter().all(|salt| salt.len() == 4));
+        }
+    }
+    assert_eq!(
+        opening.1.commit_phase_commits.len(),
+        manifest.fri_shape().log_arities.len()
+    );
+    assert_eq!(
+        opening.1.final_poly.len(),
+        manifest.fri_shape().final_poly_len
+    );
+    assert_eq!(
+        opening.1.commit_phase_openings.len(),
+        manifest.fri_shape().log_arities.len()
+    );
+    for step in &opening.1.commit_phase_openings {
+        assert_eq!(step.sibling_values.len(), manifest.fri_shape().num_queries);
+        assert!(step.sibling_values.iter().all(|values| values.len() == 1));
+        assert_eq!(step.opening_proof.0.len(), manifest.fri_shape().num_queries);
+        for salts in &step.opening_proof.0 {
+            assert_eq!(salts.len(), 1);
+            assert_eq!(salts[0].len(), 4);
+        }
+    }
+}
+fn check_complete_native_manifests(expected: &Expected, frames: &Frames) {
+    let manifests = super::transcript::inspect(expected).unwrap();
+    let state_backend = crate::fixed::Backend::source_version(expected.word.source()).unwrap();
+    let state: p3_uni_stark::Proof<Config> = codec::decode(
+        &frames.state,
+        &state_backend.shape,
+        crate::wire::MAX_SEQUENCE_ELEMENTS,
+        crate::wire::SOURCE_SLOTS,
+    )
+    .unwrap();
+    assert_native_manifest(
+        &manifests[0],
+        &state.opened_values,
+        None,
+        &state.opening_proof,
+    );
+    drop(state);
+    drop(state_backend);
+    let child_backend = crate::fixed::Backend::two_lane_encoding(expected.data.source()).unwrap();
+    let child: p3_uni_stark::Proof<Config> = codec::decode(
+        &frames.child[wire::HEADER..],
+        &child_backend.shape,
+        wire::SEQUENCE,
+        wire::CHILD_SLOTS,
+    )
+    .unwrap();
+    assert_native_manifest(
+        &manifests[1],
+        &child.opened_values,
+        None,
+        &child.opening_proof,
+    );
+    drop(child);
+    drop(child_backend);
+    for (manifest, bytes) in manifests[2..]
+        .iter()
+        .zip([&frames.data, &frames.word, &frames.query])
+    {
+        let proof: BatchProof<Config> = postcard::from_bytes(&bytes[128..]).unwrap();
+        let instance = &proof.opened_values.instances[0];
+        assert_native_manifest(
+            manifest,
+            &instance.base_opened_values,
+            Some((&instance.permutation_local, &instance.permutation_next)),
+            &proof.opening_proof,
+        );
+    }
+    eprintln!(
+        "native_complete_five_transcript_manifests source_role3_data_word_query=true native_shapes_and_mask_openings_match=true sql=false"
+    );
+}
 fn ring_oracle(source: &[u64], mask: &[u64]) -> Zeroizing<Vec<u64>> {
     let mut oracle = Zeroizing::new(vec![0; gold::N]);
     for (i, &x) in source.iter().enumerate().filter(|(_, v)| **v != 0) {
@@ -784,6 +909,7 @@ fn original_version_word_data_query_and_real_product_are_all_required_before_cli
     let actual = completed.coefficients();
     let client_ms = started.elapsed().as_secs_f64() * 1000.;
     let owner_setup_and_read_ms = began.elapsed().as_secs_f64() * 1000.;
+    check_complete_native_manifests(&expected, &frames);
     // Full-ring oracle belongs only to this PUBLIC fixture, after all verification.
     assert_eq!(actual, ring_oracle(&data_words, &mask_words).as_slice());
     for (row, age) in [0u64, 1, 128, 255].into_iter().enumerate() {

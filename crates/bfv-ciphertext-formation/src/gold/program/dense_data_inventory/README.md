@@ -1,5 +1,10 @@
 # Dense DATA mathematical proof backend
 
+`gold::data::dense_transcript_manifest` and `gold::query::transcript_manifest`
+derive SDK separators and hiding-PCS geometry from their actual owning AIRs.
+They use the assessor's already BASE-flattened AUX width and validate exact
+opening counts. They create no public setup, private input, RNG or evidence.
+
 `gold::data::dense_classical_bound` and `gold::query::classical_bound` expose
 on-demand conditional diagnostics over each actual fixed AIR. The shared
 assessor retains its already derived SDK parameters and original lookup count
