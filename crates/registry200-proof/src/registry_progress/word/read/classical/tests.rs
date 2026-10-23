@@ -518,3 +518,92 @@ fn hex(bytes: &[u8]) -> String {
     }
     text
 }
+
+// Pair-counting Johnson bound for the joint row alphabet, including the
+// conservative degree-<k+2 list used before any OOD claims exist.
+// Select exactly A agreements per candidate. Cauchy gives
+// M*A^2/n - A <= (M-1)*D, hence M <= n*(A-D)/(A^2-n*D).
+fn ali_deep_joint_list_ratio(k: u128, n: u128) -> (u128, u128, u128) {
+    assert!(matches!(k, 1024 | 4096));
+    assert_eq!(n, 8 * k);
+    let agreements = dkt_ceil_sqrt_ratio(49 * n * n, 288);
+    let degree = k + 1;
+    assert!(agreements > degree && agreements <= n);
+    let denominator = agreements * agreements - n * degree;
+    assert!(denominator > 0);
+    (agreements, n * (agreements - degree), denominator)
+}
+
+#[test]
+fn actual_ali_deep_lists_and_quotient_degrees_fit_the_existing_charges() {
+    // PUBLIC static metadata only: no candidate interpolation, native opening,
+    // theorem execution, or cryptographic/admission result is constructed.
+    let expected = expected();
+    let report = analyze(&expected, 60).unwrap();
+    let manifests = super::super::transcript::inspect(&expected).unwrap();
+    let fixed_degrees = [
+        (9217u128, 17409u128),
+        (9217, 17409),
+        (20481, 36865),
+        (5121, 9217),
+        (20481, 36865),
+    ];
+    assert_eq!(report.components().len(), 5);
+    assert_eq!(manifests.len(), 5);
+
+    for ((component, manifest), (fixed_native, fixed_diagnostic)) in report
+        .components()
+        .iter()
+        .zip(&manifests)
+        .zip(fixed_degrees)
+    {
+        let bound = component.bound();
+        let parameters = bound.parameters();
+        let k = 1u128 << bound.committed_log();
+        let n = 1u128 << manifest.lde_log();
+        let (agreements, list_numerator, list_denominator) = ali_deep_joint_list_ratio(k, n);
+        // The exact elementary bound is <7, whereas the diagnostic's paper
+        // bound L=3*n/(k-6) is >7. No floating list-size comparison is needed.
+        assert!(list_numerator < 7 * list_denominator);
+        assert!(7 * (k - 6) < 3 * n);
+        assert_eq!(agreements, if k == 1024 { 3380 } else { 13517 });
+        assert!(agreements > k + 1);
+
+        let chunks = parameters.num_quotient_chunks as u128;
+        let original_height = k / 2;
+        let quotient_domain = k * (chunks / 2);
+        assert_eq!(quotient_domain / chunks, original_height);
+        // Native opening order is randomization, MAIN, quotient, optional
+        // receiver-owned PP/AUX. R is not required in either early list.
+        let quotient = &manifest.commitments()[2];
+        assert_eq!(quotient.matrices().len() as u128, chunks);
+        for matrix in quotient.matrices() {
+            assert_eq!(matrix.width(), 10); // five base coefficients + five hiding columns.
+            assert_eq!(matrix.opening_points(), 1);
+        }
+
+        // Each fixed Lagrange recomposition weight has degree (c-1)*N.
+        // Permit every candidate column degree k+1 (the enclosing early list),
+        // then multiply the recomposed quotient by the original Z_H of degree N.
+        let recomposed_quotient_degree = (chunks - 1) * original_height + (k + 1);
+        // The cached degree treats the transition selector as degree zero.
+        // Actual constraints use at most one such factor; N-1 also covers it.
+        let native_identity_degree = (parameters.air_max_constraint_degree as u128 * (k + 1)
+            + (original_height - 1))
+            .max(original_height + recomposed_quotient_degree);
+        let diagnostic_identity_degree = (parameters.air_max_constraint_degree as u128 * (k + 1)
+            + (k - 1))
+            .max((chunks + 1) * k + 1);
+        assert_eq!(native_identity_degree, fixed_native);
+        assert_eq!(diagnostic_identity_degree, fixed_diagnostic);
+        assert!(native_identity_degree <= diagnostic_identity_degree);
+        assert!(original_height - 1 <= k + 1); // first/last selector polynomial.
+        assert!(parameters.num_constraints > 0); // Horner alpha degree C-1.
+
+        eprintln!(
+            "ali_deep_static_certificate relation={:?} k={k} n={n} agreements={agreements} joint_list_ratio={list_numerator}/{list_denominator} native_identity_degree={native_identity_degree} diagnostic_identity_degree={diagnostic_identity_degree} actual_constraints={} source_association=true runtime_candidate_observation=false native_rbr=false proof=false",
+            component.relation(),
+            parameters.num_constraints,
+        );
+    }
+}
