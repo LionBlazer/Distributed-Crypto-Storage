@@ -93,3 +93,22 @@ invalid owner/native proof even with real fixture QC signatures, invalid QC,
 foreign binding/previous decision, independent intent, unpublished-state
 preservation, semantic retry and ancient-QC rejection. The real process consumer
 and timings are recorded in the [Word TLS record](../../../peer-runtime/WORD-FINALITY.md).
+
+## Transport-only immutable reuse
+
+The real Word TLS client uses `transport::compact_body(binding, block)` on its
+original complete signed candidate. `DurableFinality::restore_transport_body`
+resolves that compact representation through this participant's existing
+`InstalledApplication::Word` verifier and its actual single immutable DATA cache.
+It checks the current candidate context, complete metadata and original full
+Body hash, then returns an unverified `CandidateBlock`. It performs no native
+proof check, signer action, import or durable write. The actual TLS consumer
+must next run its unchanged full authorization/OperationId preflight and native
+import. One full output buffer receives immutable bytes directly from the cache;
+there is no second cache or temporary full-evidence copy.
+
+The compact bytes have no Journal representation. Persisted/served candidates,
+QC binding and replay always use the original full Body. A missing/mismatched
+cache rejects compact traffic without an implicit full retry. Predicate still
+fails the unconditional common admission guard after mathematics, so a successful
+persisted Predicate replay is not established by this transport implementation.

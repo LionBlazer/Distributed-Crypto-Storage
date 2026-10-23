@@ -31,6 +31,15 @@ impl Verifier {
     pub fn application(&self) -> &Application {
         &self.application
     }
+    /// Restore exact original unverified evidence into the final transport Body.
+    /// Only this verifier's actual retained SHA DATA theorem permits omission.
+    /// This grants no owner permission, intent, proof verdict, head or admission;
+    /// the concrete Word TLS consumer checks the FULL signed Body afterwards.
+    /// Missing/mismatched cache is a hard failure and never triggers a fallback.
+    pub fn append_predicate_transport(&self, compact: &[u8], output: &mut Vec<u8>) -> Result<()> {
+        self.predicate
+            .append_transport(self.source.expected(), compact, output)
+    }
     /// Mathematical consistency only; an independent intent pin is mandatory.
     pub fn check(
         &self,

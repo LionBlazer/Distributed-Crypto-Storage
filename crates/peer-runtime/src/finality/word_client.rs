@@ -18,11 +18,13 @@ use std::io;
 #[derive(Clone)]
 pub struct WordFinalityClient {
     inner: Client,
+    binding: Binding,
 }
 impl WordFinalityClient {
     pub fn new(connector: Connector, endpoint: Endpoint, binding: &Binding) -> Self {
         Self {
             inner: Client::new(connector, endpoint, Kind::Word, binding.id()),
+            binding: binding.clone(),
         }
     }
     pub fn cancel(&self) {
@@ -41,6 +43,15 @@ impl WordFinalityClient {
     }
     pub fn submit(&self, block: &CandidateBlock) -> io::Result<()> {
         self.inner.submit(block)
+    }
+    /// Transfer only fresh query material while the server retains the exact
+    /// verified immutable DATA. Missing/mismatched cache is a hard rejection;
+    /// there is no automatic full retry and no proof/currentness/lock receipt.
+    /// The server restores the original full signed Body before normal import.
+    pub fn submit_compact(&self, block: &CandidateBlock) -> io::Result<()> {
+        let compact = registry200_finality::word::transport::compact_body(&self.binding, block)
+            .map_err(super::error)?;
+        self.inner.submit_word_compact(block.header(), &compact)
     }
     pub fn submit_checkpoint(&self, checkpoint: &Checkpoint) -> io::Result<()> {
         self.inner.submit_checkpoint(&checkpoint.encode())

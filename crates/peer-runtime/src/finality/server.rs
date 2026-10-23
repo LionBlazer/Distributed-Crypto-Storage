@@ -397,6 +397,7 @@ fn serve(
             Reply::Outbound(_)
             | Reply::JointSnapshot(_)
             | Reply::JointCheckpoint(_)
+            | Reply::WordResolved(_, _)
             | Reply::WordPending(_) => Err(invalid()),
         },
         Err(e) => send(

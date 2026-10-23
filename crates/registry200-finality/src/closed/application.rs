@@ -248,6 +248,18 @@ impl<'a> BindingRef<'a> {
     }
 }
 impl InstalledApplication {
+    pub(super) fn restore_word_transport(
+        &self,
+        header: Header,
+        compact: Vec<u8>,
+    ) -> Result<CandidateBlock> {
+        match self {
+            Self::Word { binding, verifier } => {
+                word::transport::restore_body(binding, verifier, header, compact)
+            }
+            Self::Joint { .. } | Self::Progress { .. } => Err(Error::Binding),
+        }
+    }
     pub(super) fn binding(&self) -> BindingRef<'_> {
         match self {
             Self::Joint { binding, .. } => BindingRef::Joint(binding),

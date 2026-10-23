@@ -1,7 +1,7 @@
 //! Private actor queue contracts only. No signer, proof, SQL or native evaluator.
 //! Import as a cfg(test) child module of finality::actor.
-use super::{Command, Envelope, Handle, Reply};
-use crate::finality::{BodyGate, InboxBytes};
+use super::{Command, Envelope, Handle, Reply, Snapshot};
+use crate::finality::{BodyGate, InboxBytes, OwnedCompact};
 use std::{
     io,
     sync::{
@@ -89,51 +89,86 @@ fn joint_metadata_calls_preserve_the_exact_expiry_and_release_their_leases() {
 
 #[test]
 fn joint_queue_rejections_release_control_and_body_leases() {
-    let (handle, receiver) = queue(1);
-    assert_eq!(
-        error_kind(handle.call_joint(Command::Outbound(0), Instant::now())),
-        io::ErrorKind::TimedOut,
-    );
-    assert!(matches!(receiver.try_recv(), Err(TryRecvError::Empty)));
-    assert_eq!(used(&handle), 0);
+    for resolve_compact in [false, true] {
+        let (handle, receiver) = queue(1);
+        assert_eq!(
+            error_kind(handle.call_joint(Command::Outbound(0), Instant::now())),
+            io::ErrorKind::TimedOut,
+        );
+        assert!(matches!(receiver.try_recv(), Err(TryRecvError::Empty)));
+        assert_eq!(used(&handle), 0);
 
-    // Occupy the real bounded queue without consuming its envelope. The second
-    // caller must fail promptly and release only its own reservations.
-    let (reply, _response) = mpsc::sync_channel(1);
-    assert!(
-        handle
-            .tx
-            .try_send(Envelope {
-                command: Command::Outbound(1),
-                reply,
-                bytes: handle.bytes.acquire(256).unwrap(),
-                expires: Some(Instant::now() + WAIT),
-                queued_at: None,
-            })
-            .is_ok()
-    );
-    let bodies = BodyGate::new();
-    assert_eq!(
-        error_kind(handle.call_joint(
-            Command::GetBlock([0x44; 32], bodies.acquire().unwrap()),
-            Instant::now() + WAIT,
-        )),
-        io::ErrorKind::WouldBlock,
-    );
-    assert_eq!(used(&handle), 256);
-    assert!(bodies.acquire().is_ok());
-    drop(receiver);
-    assert_eq!(used(&handle), 0);
+        let bodies = BodyGate::new();
+        let body_command = |id| {
+            let lease = bodies.acquire().unwrap();
+            if resolve_compact {
+                // Deliberately unverified metadata/dummy bytes exercise only
+                // actual queue rejection and ownership, never resolution,
+                // a signer, native computation or an authenticated Body.
+                Command::WordResolve(
+                    OwnedCompact {
+                        header: version_journal::Header {
+                            genesis: [1; 32],
+                            parent: [2; 32],
+                            height: 3,
+                            timestamp: 4,
+                            target: version_journal::Target([255; 32]),
+                            body_hash: id,
+                            state_root: [6; 32],
+                            nonce: 0,
+                        },
+                        body: vec![0; 8],
+                        _lease: lease,
+                    },
+                    Snapshot {
+                        slot: 3,
+                        context: [7; 32],
+                        parent: [2; 32],
+                    },
+                )
+            } else {
+                Command::GetBlock(id, lease)
+            }
+        };
+        assert_eq!(
+            error_kind(handle.call_joint(body_command([0x33; 32]), Instant::now())),
+            io::ErrorKind::TimedOut,
+        );
+        assert!(matches!(receiver.try_recv(), Err(TryRecvError::Empty)));
+        assert_eq!(used(&handle), 0);
+        assert!(bodies.acquire().is_ok());
 
-    assert_eq!(
-        error_kind(handle.call_joint(
-            Command::GetBlock([0x55; 32], bodies.acquire().unwrap()),
-            Instant::now() + WAIT,
-        )),
-        io::ErrorKind::BrokenPipe,
-    );
-    assert_eq!(used(&handle), 0);
-    assert!(bodies.acquire().is_ok());
+        // Occupy the real bounded queue without consuming its envelope. The
+        // second caller releases only its own control and Body reservations.
+        let (reply, _response) = mpsc::sync_channel(1);
+        assert!(
+            handle
+                .tx
+                .try_send(Envelope {
+                    command: Command::Outbound(1),
+                    reply,
+                    bytes: handle.bytes.acquire(256).unwrap(),
+                    expires: Some(Instant::now() + WAIT),
+                    queued_at: None,
+                })
+                .is_ok()
+        );
+        assert_eq!(
+            error_kind(handle.call_joint(body_command([0x44; 32]), Instant::now() + WAIT)),
+            io::ErrorKind::WouldBlock,
+        );
+        assert_eq!(used(&handle), 256);
+        assert!(bodies.acquire().is_ok());
+        drop(receiver);
+        assert_eq!(used(&handle), 0);
+
+        assert_eq!(
+            error_kind(handle.call_joint(body_command([0x55; 32]), Instant::now() + WAIT)),
+            io::ErrorKind::BrokenPipe,
+        );
+        assert_eq!(used(&handle), 0);
+        assert!(bodies.acquire().is_ok());
+    }
 }
 
 #[test]

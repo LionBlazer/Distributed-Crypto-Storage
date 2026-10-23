@@ -1,5 +1,6 @@
 //! Self-contained, canonical UNVERIFIED public Predicate endpoints and evidence.
 //! This codec grants no proof verdict, journal import, SQL result or lock.
+pub mod transport;
 use super::{Error, Result};
 use bfv_ciphertext_formation::gold::{data, query as fused};
 use bfv_query_core::gold::{self, PublicRequest};
@@ -103,6 +104,74 @@ fn key_from_words(words: [u64; 29]) -> Result<KeyBinding> {
         return Err(Error::WrongDomain);
     }
     Ok(key)
+}
+
+// Shared canonical full header, never a proof or a packet-extent assertion.
+// Transport compaction keeps these exact original bytes and all eight lengths.
+struct Header {
+    nonce: [u8; 32],
+    words: [u64; 37],
+    lengths: [usize; 8],
+    total: usize,
+}
+impl Header {
+    fn parse(raw: &[u8]) -> Result<Self> {
+        if raw.len() != HEADER || &raw[..8] != MAGIC || raw[408..] != [0; 8] {
+            return Err(Error::InvalidEncoding);
+        }
+        if raw[8..40] != profile_digest() {
+            return Err(Error::WrongDomain);
+        }
+        let nonce = raw[48..80].try_into().unwrap();
+        if nonce == [0; 32] {
+            return Err(Error::WrongDomain);
+        }
+        let words: [u64; 37] = core::array::from_fn(|i| {
+            u64::from_le_bytes(raw[80 + 8 * i..88 + 8 * i].try_into().unwrap())
+        });
+        if words[..25].iter().any(|&v| v > u64::from(u32::MAX))
+            || words[25..].iter().any(|&v| v >= Val::ORDER_U64)
+        {
+            return Err(Error::InvalidEncoding);
+        }
+        let lengths = core::array::from_fn(|i| {
+            u32::from_le_bytes(raw[376 + 4 * i..380 + 4 * i].try_into().unwrap()) as usize
+        });
+        let total = require_lengths(lengths)?;
+        if u64::from_le_bytes(raw[40..48].try_into().unwrap()) != total as u64 {
+            return Err(Error::InvalidEncoding);
+        }
+        Ok(Self {
+            nonce,
+            words,
+            lengths,
+            total,
+        })
+    }
+    fn data_expected(
+        &self,
+        source: &SourceVersionExpected,
+        request: &PublicRequest,
+    ) -> Result<installed::Expected> {
+        let statement = encoding::statement::Statement {
+            expected: encoding::statement::Expected::source_version(
+                source,
+                key_from_words(self.words[..29].try_into().unwrap())?,
+            )
+            .map_err(|_| Error::WrongDomain)?,
+            encoded: core::array::from_fn(|i| Val::from_u64(self.words[33 + i])),
+        };
+        let request_data = data::Request::checked(self.nonce, request.data_ciphertext().to_vec())
+            .map_err(|_| Error::InvalidEncoding)?;
+        let data = installed::Expected::checked(&request_data, &statement)
+            .map_err(|_| Error::WrongDomain)?;
+        if data.core_expected().binding() != request.data_binding()
+            || data.request().ciphertext() != request.data_ciphertext()
+        {
+            return Err(Error::WrongDomain);
+        }
+        Ok(data)
+    }
 }
 
 /// Owned canonical packet bytes, still UNVERIFIED. No accepted flag is encoded.
@@ -211,62 +280,27 @@ impl<'a> BorrowedPredicate<'a> {
         if raw.len() > MAX_PREDICATE_PACKET_BYTES {
             return Err(Error::ResourceLimit);
         }
-        if raw.len() < HEADER || &raw[..8] != MAGIC || raw[408..HEADER] != [0; 8] {
+        if raw.len() < HEADER {
             return Err(Error::InvalidEncoding);
         }
-        if raw[8..40] != profile_digest() {
-            return Err(Error::WrongDomain);
-        }
-        let total = u64::from_le_bytes(raw[40..48].try_into().unwrap());
-        if total != raw.len() as u64 {
-            return Err(Error::InvalidEncoding);
-        }
-        let nonce: [u8; 32] = raw[48..80].try_into().unwrap();
-        if nonce == [0; 32] {
-            return Err(Error::WrongDomain);
-        }
-        let words: [u64; 37] = core::array::from_fn(|i| {
-            u64::from_le_bytes(raw[80 + 8 * i..88 + 8 * i].try_into().unwrap())
-        });
-        if words[..25].iter().any(|&v| v > u64::from(u32::MAX))
-            || words[25..].iter().any(|&v| v >= Val::ORDER_U64)
-        {
-            return Err(Error::InvalidEncoding);
-        }
-        let lengths = core::array::from_fn(|i| {
-            u32::from_le_bytes(raw[376 + 4 * i..380 + 4 * i].try_into().unwrap()) as usize
-        });
-        if require_lengths(lengths)? != raw.len() {
+        let header = Header::parse(&raw[..HEADER])?;
+        if header.total != raw.len() {
             return Err(Error::InvalidEncoding);
         }
         let mut payload = [&[][..]; 8];
         let mut at = HEADER;
-        for (out, length) in payload.iter_mut().zip(lengths) {
+        for (out, length) in payload.iter_mut().zip(header.lengths) {
             let end = at.checked_add(length).ok_or(Error::ResourceLimit)?;
             *out = raw.get(at..end).ok_or(Error::InvalidEncoding)?;
             at = end;
         }
         // Header/range/extent validation above precedes all decoded allocation.
         // Each nested parser independently enforces its own canonical wire caps.
-        let key = key_from_words(words[..29].try_into().unwrap())?;
         let request = PublicRequest::decode(payload[0]).map_err(|_| Error::InvalidEncoding)?;
         // SHA Role3 binds a complete independently supplied Statement; its
         // frame exports no Cw. These canonical packet fields remain unverified
         // until the actual SHA Role3 argument is checked by the receiver.
-        let statement = encoding::statement::Statement {
-            expected: encoding::statement::Expected::source_version(source, key)
-                .map_err(|_| Error::WrongDomain)?,
-            encoded: core::array::from_fn(|i| Val::from_u64(words[33 + i])),
-        };
-        let data_request = data::Request::checked(nonce, request.data_ciphertext().to_vec())
-            .map_err(|_| Error::InvalidEncoding)?;
-        let data = installed::Expected::checked(&data_request, &statement)
-            .map_err(|_| Error::WrongDomain)?;
-        if data.core_expected().binding() != request.data_binding()
-            || data.request().ciphertext() != request.data_ciphertext()
-        {
-            return Err(Error::WrongDomain);
-        }
+        let data = header.data_expected(source, &request)?;
         let original = request
             .formation_request()
             .map_err(|_| Error::WrongDomain)?;
@@ -283,7 +317,7 @@ impl<'a> BorrowedPredicate<'a> {
         Ok(Self {
             data,
             request,
-            vector: core::array::from_fn(|i| Val::from_u64(words[29 + i])),
+            vector: core::array::from_fn(|i| Val::from_u64(header.words[29 + i])),
             output: payload[1],
             frames: payload[2..].try_into().unwrap(),
         })

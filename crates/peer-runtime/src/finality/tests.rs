@@ -1,5 +1,69 @@
 use super::*;
 #[test]
+fn compact_payload_lease_survives_resolution_reply_and_failed_queue() {
+    let gate = BodyGate::new();
+    let header = version_journal::Header {
+        genesis: [1; 32],
+        parent: [2; 32],
+        height: 3,
+        timestamp: 4,
+        target: version_journal::Target([255; 32]),
+        body_hash: [5; 32],
+        state_root: [6; 32],
+        nonce: 0,
+    };
+    let snapshot = owner::Snapshot {
+        slot: 3,
+        context: [7; 32],
+        parent: [2; 32],
+    };
+    let compact = OwnedCompact {
+        header: header.clone(),
+        body: vec![0; 8],
+        _lease: gate.acquire().unwrap(),
+    };
+    let command = actor::Command::WordResolve(compact, snapshot);
+    assert!(gate.acquire().is_err());
+    let actor::Command::WordResolve(
+        OwnedCompact {
+            header,
+            body,
+            _lease,
+        },
+        captured,
+    ) = command
+    else {
+        unreachable!()
+    };
+    // Only ownership is exercised here; these deliberately invalid bytes are
+    // not an accepting resolution, native proof, authenticated body or result.
+    let reply = actor::Reply::WordResolved(
+        OwnedBlock {
+            block: CandidateBlock::new(header.clone(), body).unwrap(),
+            _lease,
+        },
+        captured,
+    );
+    assert!(gate.acquire().is_err());
+    drop(reply);
+    assert!(gate.acquire().is_ok());
+
+    let command = actor::Command::WordResolve(
+        OwnedCompact {
+            header: header.clone(),
+            body: vec![0; 8],
+            _lease: gate.acquire().unwrap(),
+        },
+        snapshot,
+    );
+    let (sender, receiver) = std::sync::mpsc::sync_channel(0);
+    let failed = sender.try_send(command).unwrap_err();
+    assert!(gate.acquire().is_err());
+    drop(failed);
+    drop(receiver);
+    assert!(gate.acquire().is_ok());
+}
+#[test]
 fn one_body_lease_spans_fetch_queue_and_send_until_actual_owner_drop() {
     let gate = BodyGate::new();
     let next_connection = gate.clone();

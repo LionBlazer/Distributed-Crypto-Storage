@@ -210,6 +210,16 @@ impl Owner {
                 .map_err(error),
         }
     }
+    pub fn restore_word_transport(
+        &self,
+        header: version_journal::Header,
+        body: Vec<u8>,
+    ) -> io::Result<CandidateBlock> {
+        match self {
+            Self::Word(owner) => owner.restore_transport_body(header, body).map_err(error),
+            _ => Err(invalid()),
+        }
+    }
     pub fn import(&mut self, b: &CandidateBlock) -> io::Result<Candidate> {
         match self {
             Self::Original(o) => o

@@ -1,6 +1,6 @@
 //! Genuine six-proof Predicate mathematics reaches the actual closed journal gate.
 use super::*;
-use crate::word::predicate::PredicatePacket;
+use crate::word::predicate::{BorrowedPredicate, PredicatePacket};
 use bfv_ciphertext_formation::gold::{data, query as fused};
 use bfv_query_core::gold as protected;
 use registry200_proof::two_lane_encoding::{
@@ -322,12 +322,95 @@ fn genuine_predicate_proofs_reach_closed_journal_admission_without_publishing_a_
     let packet =
         PredicatePacket::from_read(&read, original.public_request(), evidence(frames)).unwrap();
 
+    let complete_evidence = Evidence::predicate(&packet).unwrap();
+    let compact = crate::word::predicate::transport::compact(
+        f.descriptor.source(),
+        complete_evidence.as_bytes(),
+    )
+    .unwrap();
+    let omitted = frames[..3].iter().map(|frame| frame.len()).sum::<usize>();
+    assert_eq!(
+        compact.len(),
+        complete_evidence.as_bytes().len() - omitted + 16
+    );
+    assert_eq!(
+        crate::word::predicate::transport::restored_evidence_bytes(&compact).unwrap(),
+        complete_evidence.as_bytes().len()
+    );
+    let mut restored = vec![0x59, 0x61];
+    assert!(
+        verifier
+            .append_predicate_transport(&compact, &mut restored)
+            .is_err()
+    );
+    assert_eq!(
+        restored,
+        [0x59, 0x61],
+        "a missing theorem cannot modify caller output"
+    );
+    assert!(BorrowedPredicate::parse(f.descriptor.source(), &compact).is_err());
+
     // Actual native mathematical success is separate from the admission guard.
     let math_started = Instant::now();
     verifier
         .check_predicate_relation(&expected, packet.as_bytes())
         .unwrap();
     let checked_ms = math_started.elapsed().as_secs_f64() * 1000.;
+    verifier
+        .append_predicate_transport(&compact, &mut restored)
+        .unwrap();
+    assert_eq!(&restored[2..], complete_evidence.as_bytes());
+    // Transport restoration creates no receipt and never enters the full parser
+    // as a reference. The original complete proof bytes are recovered exactly.
+    for at in [0, 8, 40 + 48, 40 + 80, 40 + 344, 40 + 376, 40 + 408] {
+        let mut damaged = compact.clone();
+        damaged[at] ^= 1;
+        let mut output = vec![0x55];
+        assert!(
+            verifier
+                .append_predicate_transport(&damaged, &mut output)
+                .is_err(),
+            "offset {at}"
+        );
+        assert_eq!(output, [0x55]);
+    }
+    // Raising one omitted length AND the original total preserves the physical
+    // compact extent. Geometry must pass, then the actual cached frame length
+    // must reject before appending anything to the caller's existing prefix.
+    for frame in 2..5 {
+        let mut damaged = compact.clone();
+        let length_at = 40 + 376 + 4 * frame;
+        let length = u32::from_le_bytes(damaged[length_at..length_at + 4].try_into().unwrap());
+        damaged[length_at..length_at + 4]
+            .copy_from_slice(&length.checked_add(1).unwrap().to_le_bytes());
+        let total = u64::from_le_bytes(damaged[80..88].try_into().unwrap());
+        damaged[80..88].copy_from_slice(&total.checked_add(1).unwrap().to_le_bytes());
+        assert_eq!(damaged.len(), compact.len());
+        assert_eq!(
+            crate::word::predicate::transport::restored_evidence_bytes(&damaged).unwrap(),
+            complete_evidence.as_bytes().len() + 1,
+        );
+        let mut output = vec![0x55];
+        assert!(
+            matches!(
+                verifier.append_predicate_transport(&damaged, &mut output),
+                Err(Error::WrongDomain)
+            ),
+            "omitted frame {frame} must match the actual retained length"
+        );
+        assert_eq!(output, [0x55]);
+    }
+    let mut trailing = compact.clone();
+    trailing.push(0);
+    for damaged in [&compact[..compact.len() - 1], trailing.as_slice()] {
+        let mut output = Vec::new();
+        assert!(
+            verifier
+                .append_predicate_transport(damaged, &mut output)
+                .is_err()
+        );
+        assert!(output.is_empty());
+    }
     // The SAME original immutable proofs are retained; all three per-query
     // native checks still run for this re-verification of the same candidate.
     let repeated = Instant::now();
@@ -339,6 +422,7 @@ fn genuine_predicate_proofs_reach_closed_journal_admission_without_publishing_a_
         Request::predicate(&a, parent, [0xb1; 32], enrollment, expected.claims()).unwrap();
     let proof = Evidence::predicate(&packet).unwrap();
     let id = OperationId::new(&a, &request, proof.as_bytes()).unwrap();
+    assert!(OperationId::new(&a, &request, &compact).is_err());
     let before = Control::Active {
         enrollment,
         registry: old,
@@ -527,6 +611,17 @@ fn genuine_predicate_proofs_reach_closed_journal_admission_without_publishing_a_
     let fresh_packet =
         PredicatePacket::from_read(&fresh_read, fresh.public_request(), evidence(fresh_frames))
             .unwrap();
+    let fresh_evidence = Evidence::predicate(&fresh_packet).unwrap();
+    let fresh_compact = crate::word::predicate::transport::compact(
+        f.descriptor.source(),
+        fresh_evidence.as_bytes(),
+    )
+    .unwrap();
+    let mut restored_fresh = Vec::new();
+    verifier
+        .append_predicate_transport(&fresh_compact, &mut restored_fresh)
+        .unwrap();
+    assert_eq!(restored_fresh, fresh_evidence.as_bytes());
     let fresh_started = Instant::now();
     verifier
         .check_predicate_relation(&expected, fresh_packet.as_bytes())

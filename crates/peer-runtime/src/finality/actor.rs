@@ -22,6 +22,7 @@ pub(super) enum Command {
     Outbound(usize),
     JointSnapshot,
     WordPending,
+    WordResolve(OwnedCompact, Snapshot),
     WordLearned(OwnedBlock, Snapshot),
     JointBlock(OwnedBlock, bool, Snapshot),
     JointInput(Vec<u8>, Snapshot),
@@ -37,6 +38,7 @@ pub(super) enum Reply {
     Outbound(Option<Vec<u8>>),
     JointSnapshot(Snapshot),
     WordPending(PendingSnapshot),
+    WordResolved(OwnedBlock, Snapshot),
     JointCheckpoint(Option<Certificate>),
 }
 struct Envelope {
@@ -311,6 +313,7 @@ fn command_kind(command: &Command) -> Option<(&'static str, u64)> {
     match command {
         Command::JointBlock(_, _, snapshot) => Some(("import", snapshot.slot)),
         Command::WordLearned(_, snapshot) => Some(("learn", snapshot.slot)),
+        Command::WordResolve(_, snapshot) => Some(("resolve", snapshot.slot)),
         Command::JointInput(_, snapshot) => Some(("receive", snapshot.slot)),
         Command::JointCheckpoint(_, snapshot) => Some(("checkpoint", snapshot.slot)),
         // Metadata polling remains unlogged so it cannot consume the fixed
@@ -516,6 +519,17 @@ fn process(
             observe_work(word_clock, snapshot.context, started);
             *pending = Some(candidate);
             Ok(Reply::Ok)
+        }
+        Command::WordResolve(compact, snapshot) => {
+            require_snapshot(owned, snapshot)?;
+            let OwnedCompact {
+                header,
+                body,
+                _lease,
+            } = compact;
+            let block = owned.restore_word_transport(header, body)?;
+            // No cache clone or new BodyLease; no signer/native/admission work.
+            Ok(Reply::WordResolved(OwnedBlock { block, _lease }, snapshot))
         }
         Command::WordPending => {
             if !matches!(owned, Owner::Word(_)) {

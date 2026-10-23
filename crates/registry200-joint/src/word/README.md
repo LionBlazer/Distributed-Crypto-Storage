@@ -107,3 +107,22 @@ The actual Source/bootstrap/Begin/owner handoff and rejection cases passed the
 [native validation](VALIDATION.md). Its component timings are not full SQL times.
 The six-proof Predicate/actual-parent/closed-import cases passed the separate
 [closed journal validation](PREDICATE-JOURNAL-VALIDATION.md).
+
+## Compact transport reconstruction
+
+`predicate::transport::compact` removes only the three immutable SHA
+State/Role3/DATA frames from original complete evidence. Its distinct DCSWJT01
+bytes retain the original full DCSWJP02 header and all lengths; they cannot be
+decoded as Journal evidence. The actual Word TLS consumer uses
+`Verifier::append_predicate_transport` to copy the exact original public frames
+directly from this verifier's single retained `CheckedData` into the eventual
+full Body allocation. Full DATA Expected equality, actual cached frame lengths
+and all canonical bounds are mandatory. Missing or mismatched cache rejects;
+no theorem, query verdict or admission token is imported or exported.
+
+Reconstruction is unverified public serialization. The consumer must match the
+original full Body hash and strict owner signature before OperationId and normal
+native import. A different valid proof for the same DATA Expected cannot replace
+the original signed bytes. All supplied full-frame changes still require native
+revalidation; restoration never changes or evicts the retained entry. Predicate
+admission remains unconditionally closed, and the durable proof family is unchanged.

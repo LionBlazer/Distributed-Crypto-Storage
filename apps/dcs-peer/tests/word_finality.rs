@@ -2,6 +2,8 @@
 //! Explicit PUBLIC NONSECRET keys/source; no SQL answer or lock grant is modeled.
 #[path = "support/word_finality.rs"]
 mod fixture;
+#[path = "support/word_predicate_transport.rs"]
+mod predicate_transport;
 #[path = "support/joint_process.rs"]
 #[expect(
     dead_code,
@@ -173,9 +175,9 @@ fn store_record(store: &mut EvidenceStore, bytes: &[u8]) -> BlobId {
 }
 // Explicit PUBLIC NONSECRET key. Forge authenticated private contents so that
 // rejection must come from the real native relation/openings, not an AEAD tag.
-fn authenticated_record(bytes: &[u8], nonce_byte: u8, change: impl FnOnce(&mut [u8])) -> Vec<u8> {
+fn open_private_record(bytes: &[u8]) -> Zeroizing<Vec<u8>> {
     const HEADER: usize = 136;
-    let mut header: [u8; HEADER] = bytes[..HEADER].try_into().unwrap();
+    let header: [u8; HEADER] = bytes[..HEADER].try_into().unwrap();
     let mut private = Zeroizing::new(bytes[HEADER..bytes.len() - 16].to_vec());
     let cipher = XChaCha20Poly1305::new_from_slice(&[0xb7; 32]).unwrap();
     cipher
@@ -186,6 +188,13 @@ fn authenticated_record(bytes: &[u8], nonce_byte: u8, change: impl FnOnce(&mut [
             Tag::<XChaCha20Poly1305>::from_slice(&bytes[bytes.len() - 16..]),
         )
         .unwrap();
+    private
+}
+fn authenticated_record(bytes: &[u8], nonce_byte: u8, change: impl FnOnce(&mut [u8])) -> Vec<u8> {
+    const HEADER: usize = 136;
+    let mut header: [u8; HEADER] = bytes[..HEADER].try_into().unwrap();
+    let mut private = open_private_record(bytes);
+    let cipher = XChaCha20Poly1305::new_from_slice(&[0xb7; 32]).unwrap();
     change(&mut private);
     header[104..128].fill(nonce_byte);
     let tag = cipher
@@ -199,6 +208,68 @@ fn authenticated_record(bytes: &[u8], nonce_byte: u8, change: impl FnOnce(&mut [
     result.extend(private.iter());
     result.extend(tag);
     result
+}
+
+fn confirmed_registry(
+    b: &Binding,
+    store: &mut EvidenceStore,
+    record: BlobId,
+    begin: &CandidateBlock,
+) -> Zeroizing<[u64; 208]> {
+    let mut bytes = vec![0; record.bytes() as usize];
+    let mut reader = store.reader(record).unwrap();
+    reader.read_exact(&mut bytes).unwrap();
+    reader.finish().unwrap();
+    let private = open_private_record(&bytes);
+    assert_eq!(&private[..8], b"WOPRIV01");
+    assert_eq!(
+        private[8], 0,
+        "extract the actual CONFIRMED opening, not a pending proposal"
+    );
+    assert_eq!(&private[48..80], &begin.header().id());
+    assert_eq!(u64::from_le_bytes(private[80..88].try_into().unwrap()), 2);
+    let bank: Zeroizing<[u64; 208]> = Zeroizing::new(core::array::from_fn(|i| {
+        u64::from_le_bytes(private[120 + 8 * i..128 + 8 * i].try_into().unwrap())
+    }));
+    let version_journal::Body::Transition(body) =
+        version_journal::Body::decode(begin.body(), &b.journal_genesis().profile).unwrap()
+    else {
+        panic!("original BEGIN")
+    };
+    let request = registry200_joint::word::Request::decode(&body.request).unwrap();
+    assert_eq!(
+        registry200_proof::registry_progress::word::registry_root(&bank).unwrap(),
+        request.claims().next
+    );
+    bank
+}
+
+fn compact_probe(
+    label: &str,
+    pid: u32,
+    client: &WordFinalityClient,
+    block: &CandidateBlock,
+    compact: bool,
+) {
+    // An existing metadata command is solely a synchronous actor-loop flush
+    // barrier. It carries no computation verdict, cache authority or fresh head.
+    assert_eq!(client.observed_slot().unwrap(), 3);
+    observation(format!(
+        "word_compact_probe label={label} boundary=begin pid={pid} slot=3 compact={compact}\n"
+    ));
+    let began = Instant::now();
+    reject(|| {
+        if compact {
+            client.submit_compact(block)
+        } else {
+            client.submit(block)
+        }
+    });
+    assert_eq!(client.observed_slot().unwrap(), 3);
+    observation(format!(
+        "word_compact_probe label={label} boundary=end pid={pid} slot=3 compact={compact} elapsed_ms={:.3} rpc_rejected=true admission=false SQL=false\n",
+        began.elapsed().as_secs_f64() * 1000.
+    ));
 }
 fn phase(label: &str, began: &mut Instant) {
     observation(format!(
@@ -510,6 +581,80 @@ fn four_word_processes_require_native_proofs_and_quorum_then_replay_after_restar
     after_begin
         .apply_operation(&begin_qc, &begin, fixture::own_operation_id(&b, &begin))
         .unwrap();
+    let actual_bank = confirmed_registry(&b, &mut store, confirmed_record, &begin);
+    let predicate_case = predicate_transport::prepare(&b, &begin, &after_begin, actual_bank);
+    observation(format!(
+        "word_compact_case full_body_bytes={} compact_body_bytes={} compiled_SQL=true local_native_all6=true full4096_oracle=true FHE_worker_network=false SQL_accepted=false currentness=false security_assessed=false\n",
+        predicate_case.full_bytes, predicate_case.compact_bytes
+    ));
+    let predicate_pid = nodes[0].pid();
+    // All calls are serialized against this otherwise idle confirmed BEGIN.
+    // Observer correlation uses pid+slot+begin/end markers: cold/nonowner/bad
+    // omitted bytes must have no import; warm must have resolve then import.
+    compact_probe(
+        "cold",
+        predicate_pid,
+        &clients[0],
+        &predicate_case.block,
+        true,
+    );
+    compact_probe(
+        "nonowner",
+        predicate_pid,
+        &stranger,
+        &predicate_case.block,
+        true,
+    );
+    compact_probe(
+        "full_warm",
+        predicate_pid,
+        &clients[0],
+        &predicate_case.block,
+        false,
+    );
+    compact_probe(
+        "warm",
+        predicate_pid,
+        &clients[0],
+        &predicate_case.block,
+        true,
+    );
+    let changed_immutable = predicate_transport::changed_immutable_body(&b, &predicate_case.block);
+    compact_probe(
+        "changed_omitted_bytes",
+        predicate_pid,
+        &clients[0],
+        &changed_immutable,
+        true,
+    );
+    let changed_product = fixture::corrupt(&b, &predicate_case.block);
+    compact_probe(
+        "changed_fresh_product",
+        predicate_pid,
+        &clients[0],
+        &changed_product,
+        true,
+    );
+    compact_probe(
+        "recovered_original",
+        predicate_pid,
+        &clients[0],
+        &predicate_case.block,
+        true,
+    );
+    for client in &clients {
+        assert_eq!(client.observed_slot().unwrap(), 3);
+        assert!(client.checkpoint_after(2).unwrap().is_none());
+        assert!(
+            client
+                .candidate_block(predicate_case.block.header().id())
+                .is_err()
+        );
+    }
+    phase(
+        "probe_compact_predicate_with_closed_admission",
+        &mut phase_began,
+    );
     drop(control);
     control = ControlOwner::restore(
         after_begin,
@@ -597,6 +742,10 @@ fn four_word_processes_require_native_proofs_and_quorum_then_replay_after_restar
         false,
     );
     phase("reopen_and_replay_decided_history", &mut phase_began);
+    // END is now the real floor. These prove stale-parent rejection after the
+    // original final restart, not a valid-current-parent cache-miss observation.
+    reject(|| clients[0].submit_compact(&predicate_case.block));
+    reject(|| clients[0].submit(&predicate_case.block));
     for c in &clients {
         assert_eq!(c.observed_slot().unwrap(), 4);
         let stored = c.candidate_block(end.header().id()).unwrap();

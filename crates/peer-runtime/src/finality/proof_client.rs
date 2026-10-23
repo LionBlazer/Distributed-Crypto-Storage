@@ -175,10 +175,33 @@ impl Client {
         tag: u8,
         expires: Instant,
     ) -> io::Result<()> {
+        self.upload_bytes(block.header(), block.body(), tag, expires)
+    }
+    pub(super) fn submit_word_compact(&self, header: &Header, bytes: &[u8]) -> io::Result<()> {
+        if self.kind != Kind::Word {
+            return Err(invalid());
+        }
+        self.upload_bytes(
+            header,
+            bytes,
+            super::word_wire::SUBMIT_COMPACT,
+            Self::expires()?,
+        )
+    }
+    fn upload_bytes(
+        &self,
+        header: &Header,
+        body: &[u8],
+        tag: u8,
+        expires: Instant,
+    ) -> io::Result<()> {
+        if body.is_empty() || body.len() > MAX_BODY_BYTES {
+            return Err(invalid());
+        }
         let mut stream = self.connect(expires)?;
         let _deadline = stream.deadline(self.remaining(expires)?)?;
-        let mut head = block.header().encode().to_vec();
-        head.extend_from_slice(&(block.body().len() as u32).to_le_bytes());
+        let mut head = header.encode().to_vec();
+        head.extend_from_slice(&(body.len() as u32).to_le_bytes());
         write_frame(
             &mut stream,
             &self.kind.encode(self.binding, tag, &head)?,
@@ -188,7 +211,7 @@ impl Client {
         if ready != OK || !data.is_empty() {
             return Err(invalid());
         }
-        write_frame(&mut stream, block.body(), MAX_BODY_BYTES)?;
+        write_frame(&mut stream, body, MAX_BODY_BYTES)?;
         let (reply, data) = self.read(&mut stream, 0)?;
         require_end(&mut stream)?;
         self.remaining(expires)?;

@@ -474,8 +474,12 @@ fn serve(socket: TcpStream, service: &Service) -> io::Result<()> {
         CHECKPOINT => {
             Command::JointCheckpoint(Certificate::decode(kind, data)?, snapshot(handle, expires)?)
         }
-        PUT_BLOCK | SUBMIT => {
-            if tag == SUBMIT && identity != *owner {
+        PUT_BLOCK | SUBMIT | super::word_wire::SUBMIT_COMPACT => {
+            let compact = tag == super::word_wire::SUBMIT_COMPACT;
+            if compact && kind != Kind::Word {
+                return Err(invalid());
+            }
+            if (tag == SUBMIT || compact) && identity != *owner {
                 return terminal(&mut stream, kind, id, REJECT, &[]);
             }
             if data.len() != HEADER_BYTES + 4 {
@@ -496,19 +500,42 @@ fn serve(socket: TcpStream, service: &Service) -> io::Result<()> {
             if bytes.len() != n {
                 return Err(invalid());
             }
-            let block = CandidateBlock::new(header, bytes).map_err(error)?;
-            let current = match service.prepare(&block, expires) {
+            let (block, resolved_snapshot) = if compact {
+                let current = snapshot(handle, expires)?;
+                match handle.call_joint(
+                    Command::WordResolve(
+                        OwnedCompact {
+                            header,
+                            body: bytes,
+                            _lease: body,
+                        },
+                        current,
+                    ),
+                    expires,
+                ) {
+                    Ok(Reply::WordResolved(block, captured)) => (block, Some(captured)),
+                    Ok(_) => return Err(invalid()),
+                    Err(e) => return terminal(&mut stream, kind, id, result_tag(&e), &[]),
+                }
+            } else {
+                (
+                    OwnedBlock {
+                        block: CandidateBlock::new(header, bytes).map_err(error)?,
+                        _lease: body,
+                    },
+                    None,
+                )
+            };
+            // Only canonical FULL bytes can reach authorization/OperationId and
+            // the ordinary native import. The same BodyLease survives both calls.
+            let current = match service.prepare(&block.block, expires) {
                 Ok(s) => s,
                 Err(e) => return terminal(&mut stream, kind, id, result_tag(&e), &[]),
             };
-            Command::JointBlock(
-                OwnedBlock {
-                    block,
-                    _lease: body,
-                },
-                tag == SUBMIT,
-                current,
-            )
+            if resolved_snapshot.is_some_and(|captured| captured != current) {
+                return terminal(&mut stream, kind, id, REJECT, &[]);
+            }
+            Command::JointBlock(block, tag == SUBMIT || compact, current)
         }
         _ => return Err(invalid()),
     };

@@ -676,6 +676,24 @@ impl DurableEngine {
             .body(id)
             .is_some())
     }
+    pub(crate) fn restore_word_transport(
+        &self,
+        header: Header,
+        compact: Vec<u8>,
+    ) -> Result<CandidateBlock> {
+        self.live()?;
+        let state = self.state.lock().map_err(|_| Error::Poisoned)?;
+        let parent = state
+            .history
+            .get(&state.current.slot())
+            .ok_or(Error::Context)?
+            .parent;
+        let binding = state.application.binding();
+        let candidate = binding.candidate(&state.current, header.clone())?;
+        binding.require_context(&state.current, parent, &candidate)?;
+        // No I/O, native proof, signer, durable write or retained result here.
+        state.application.restore_word_transport(header, compact)
+    }
     pub(crate) fn import_candidate(
         &mut self,
         header: Header,

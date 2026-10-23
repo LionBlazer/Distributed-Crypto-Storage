@@ -4,6 +4,7 @@ mod durable;
 mod history;
 #[cfg(test)]
 mod tests;
+pub mod transport;
 pub(crate) mod verification;
 mod wire;
 pub use crate::CandidateBlock;

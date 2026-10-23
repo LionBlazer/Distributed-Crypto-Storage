@@ -122,6 +122,16 @@ impl DurableFinality {
     pub fn has_candidate(&self, id: Hash) -> Result<bool> {
         self.engine.has_candidate(id)
     }
+    /// TLS-only restoration against this participant's actual immutable cache.
+    /// Returns unverified FULL bytes; performs no native check, signer action,
+    /// import or mutation. Normal full Body authorization and import are required.
+    pub fn restore_transport_body(
+        &self,
+        header: Header,
+        compact: Vec<u8>,
+    ) -> Result<crate::CandidateBlock> {
+        self.engine.restore_word_transport(header, compact)
+    }
     pub fn import_candidate(&mut self, header: Header, body: &[u8]) -> Result<Candidate> {
         Candidate::decode(&self.engine.import_candidate(header, body)?)
     }

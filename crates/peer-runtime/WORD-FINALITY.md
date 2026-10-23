@@ -19,7 +19,7 @@ plaintext Source opening or FHE secret in the peer. Canonical preflight grants
 no computation authority: the actual voter rechecks native proofs and its exact
 current snapshot before admission, voting and replay.
 
-The wire is `DCSWFN03`, with its own profile and complete Binding ID. Original,
+The wire is `DCSWFN04`, with its own profile and complete Binding ID. Original,
 Joint and Progress domains remain unchanged. The shared8-command/16MiB queue,
 8-connection/16-neighbor limits, single Body lease,180s I/O and1800s absolute
 operation budgets remain. Body I/O/preflight occur outside signer/proof locks.
@@ -32,7 +32,7 @@ Body through the single Body lease. The durable actor checks the owner signature
 and complete native proof before retaining it; only the elected proposer may
 sign. A learned candidate cannot replace existing local pending intent. No
 application verification result is cached or supplied by this hint. The retired
-`DCSWFN01`/`DCSWFN02` transports reject; there is no compatibility mode or state migration.
+`DCSWFN01`/`DCSWFN02`/`DCSWFN03` transports reject; there is no compatibility mode or state migration.
 
 A pristine Word slot waits for authenticated work before starting local round
 timeouts. Owner Body import arms it only after genuine native/owner admission;
@@ -419,3 +419,14 @@ seven compile-fail ownership contracts and dependency-free requirements mirror
 test passed. Strict all-target Clippy passed for storage-client, dcs-peer,
 registry200-finality and registry200-proof. Only documentation changed after this
 capture; all Rust, manifest and lockfile bytes still match its source pins.
+
+The DCSWFN04 owner-only `submit_compact` path transfers fresh Predicate material
+while omitting the exact three immutable SHA proof frames already verified by
+that participant. A private actor command reconstructs the original full signed
+Body from its actual single DATA cache, preserving the same Body lease; strict
+full authorization, OperationId and fresh native checks then run normally.
+Missing/mismatched cache rejects without automatic retry. Compact bytes are
+never persisted or exported as candidates. Predicate remains unconditionally
+rejected after mathematical checks; this transport path grants no SQL result,
+fresh agreed head or lock. The [actual process capture](WORD-COMPACT-VALIDATION.md)
+records the byte reduction, rejected probe intervals and remaining boundaries.

@@ -301,6 +301,11 @@ pub fn control_owner_key() -> SigningKey {
 pub fn control_source() -> math::SourceOpening {
     opening(fixture())
 }
+/// Explicitly NONSECRET original input for the owning FHE transport fixture.
+/// It is never a selected answer, a peer input or a production private getter.
+pub fn original_source_bytes() -> Zeroizing<Vec<u8>> {
+    Zeroizing::new(fixture().plain.to_vec())
+}
 pub fn control_material(bank: [Val; 208]) -> storage_client::word_control::Material {
     storage_client::word_control::Material {
         registry: Zeroizing::new(bank.map(|v| v.as_canonical_u64())),

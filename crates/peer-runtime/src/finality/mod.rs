@@ -88,6 +88,11 @@ struct OwnedBlock {
     block: CandidateBlock,
     _lease: BodyLease,
 }
+struct OwnedCompact {
+    header: version_journal::Header,
+    body: Vec<u8>,
+    _lease: BodyLease,
+}
 
 struct InboxBytes(Arc<AtomicUsize>);
 struct CommandLease {

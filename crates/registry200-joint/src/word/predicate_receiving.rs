@@ -28,6 +28,28 @@ impl RetainedData {
     }
 }
 impl PredicateReceiver {
+    pub(super) fn append_transport(
+        &self,
+        source: &SourceVersionExpected,
+        compact: &[u8],
+        output: &mut Vec<u8>,
+    ) -> Result<()> {
+        let parsed = super::predicate::transport::Borrowed::parse(source, compact)?;
+        let retained = self
+            .retained
+            .lock()
+            .map_err(|_| Error::RejectedComputationProof)?;
+        let original = retained.as_ref().ok_or(Error::MissingComputationProof)?;
+        original
+            .theorem
+            .require_expected(parsed.data_expected())
+            .map_err(|_| Error::RejectedComputationProof)?;
+        parsed.append_full(
+            original.frames.each_ref().map(|frame| frame.as_ref()),
+            output,
+        )
+    }
+
     pub(super) fn check(
         &self,
         source: &SourceVersionExpected,

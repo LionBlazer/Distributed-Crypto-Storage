@@ -1,7 +1,7 @@
 # Closed Registry200 TLS actor
 
 The distinct [Word bridge](../../WORD-FINALITY.md) adds `WordFinalityClient` and
-`FinalityServer::bind_word` to the same bounded dispatcher. `DCSWFN03` carries
+`FinalityServer::bind_word` to the same bounded dispatcher. `DCSWFN04` carries
 inline native evidence to the actual Word voter, with no blob/catalog, old-family
 casts, Predicate acceptance or current SQL/lock capability.
 
@@ -230,3 +230,20 @@ queue contracts. These checks establish the observation boundary, not a measured
 speedup or cryptographic/network success. A subsequent real four-validator public
 capture replay can observe cold calls without another FHE producer; that gate
 remains pending and retains its independent proof/QC/cleanup assertions.
+
+## Compact Word owner submission
+
+`WordFinalityClient::submit_compact` uses the existing Word TLS endpoint with
+the distinct DCSWFN04 profile and owner-only tag11. The single Body lease spans
+the bounded compact upload, a private resolution actor command, full preflight,
+the normal native import and reply. Resolution reaches the existing installed
+Word verifier; it retains no additional cache and performs no I/O or proving.
+The original full Body hash is checked before the handler invokes its existing
+strict owner-signature/OperationId preparation. Only reconstructed full bytes
+enter `JointBlock`, voting, candidate export or persistence. The captured snapshot
+is checked again before normal import. Expiry, cancellation, queue limits,
+ProofGate, old proof-family identities and unconditional Predicate rejection are
+unchanged. Missing cache returns rejection; full submission is a separate explicit
+operation. Compact success is neither a computation receipt nor a lock grant.
+The [actual four-process capture](../../WORD-COMPACT-VALIDATION.md) records
+byte counts, rejected probe intervals and the independent native/queue gates.

@@ -7,14 +7,17 @@ use super::{
 use sha2::{Digest, Sha256};
 use std::{io, time::Duration};
 pub(super) const GET_PENDING: u8 = 10;
+pub(super) const SUBMIT_COMPACT: u8 = 11;
 pub(super) const PENDING_BYTES: usize = 105;
 pub const IO_BUDGET: Duration = Duration::from_secs(180);
 pub const OPERATION_BUDGET: Duration = Duration::from_secs(1800);
 pub fn profile_digest() -> [u8; 32] {
     let mut h = Sha256::new();
-    h.update(b"dcs/Word-finality/TLS-actor/v3/DCSWFN03");
+    h.update(b"dcs/Word-finality/TLS-actor/v4/DCSWFN04");
     h.update(registry200_finality::word::profile_digest());
     h.update(b"owner-Body-authorized-inline-Word/one-native-owner/no-blob/no-Predicate-no-SQL");
+    h.update(registry200_finality::word::transport::profile_digest());
+    h.update(b"owner-TLS-compact-submit11;one-real-immutable-cache;exact-full-signed-Body-before-OperationId-native;no-compact-durable-candidate/no-fallback");
     h.update(b"pending105-is-availability-only/fetch-exact-body/full-owner-native-recheck-before-local-pending/no-replacement-of-local-intent");
     h.update(b"idle-slot-waits-for-owner-native-admission-or-authenticated-current-context-input/sticky-first-handler-start-counts-verification/resume-durable-actions-or-advanced-round-step/unchanged-active-token-budgets");
     for n in [
@@ -37,7 +40,7 @@ pub(super) fn encode(binding: [u8; 32], tag: u8, data: &[u8]) -> io::Result<Vec<
         return Err(invalid());
     }
     let mut b = Vec::with_capacity(HEADER + data.len());
-    b.extend_from_slice(b"DCSWFN03");
+    b.extend_from_slice(b"DCSWFN04");
     b.extend_from_slice(&profile_digest());
     b.extend_from_slice(&binding);
     b.push(tag);
@@ -46,7 +49,7 @@ pub(super) fn encode(binding: [u8; 32], tag: u8, data: &[u8]) -> io::Result<Vec<
 }
 pub(super) fn decode(binding: [u8; 32], b: &[u8]) -> io::Result<(u8, &[u8])> {
     if !(HEADER..=MAX_CONTROL).contains(&b.len())
-        || &b[..8] != b"DCSWFN03"
+        || &b[..8] != b"DCSWFN04"
         || b[8..40] != profile_digest()
         || b[40..72] != binding
     {
@@ -104,7 +107,7 @@ mod tests {
         let progress = super::super::progress_wire::encode(binding, 0, &[]).unwrap();
         assert!(decode(binding, &progress).is_err());
         assert!(super::super::progress_wire::decode(binding, &bytes).is_err());
-        for magic in [b"DCSWFN01", b"DCSWFN02"] {
+        for magic in [b"DCSWFN01", b"DCSWFN02", b"DCSWFN03"] {
             let mut retired = bytes.clone();
             retired[..8].copy_from_slice(magic);
             assert!(decode(binding, &retired).is_err());
