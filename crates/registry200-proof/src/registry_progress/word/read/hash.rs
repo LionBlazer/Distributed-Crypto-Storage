@@ -96,12 +96,19 @@ impl<'a> Verifier<'a> {
     }
 
     fn fresh_query(&self, evidence: QueryEvidence<'_>) -> Result<()> {
-        drop(
-            self.word
-                .verify(self.expected.word_expected(), evidence.word)
-                .map_err(Error::Word)?,
+        // Both native checks borrow only their captured public expectations.
+        // Join every job before returning, retaining Word-first error priority.
+        let (word, query) = bfv_hiding_stark::hash::join(
+            || {
+                self.word
+                    .verify(self.expected.word_expected(), evidence.word)
+                    .map(drop)
+                    .map_err(Error::Word)
+            },
+            || self.query.verify(evidence.query).map_err(Error::Query),
         );
-        self.query.verify(evidence.query).map_err(Error::Query)
+        word?;
+        query
     }
 }
 

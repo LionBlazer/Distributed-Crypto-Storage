@@ -317,12 +317,12 @@ fn five_real_hash_air_proofs_and_original_product_bind_all_endpoints_before_comp
             gold::Error::Verification
         )))
     ));
-    let bad = damage_batch(&frames.word);
+    let bad_word = damage_batch(&frames.word);
     assert!(matches!(
         receiver.verify_retained(
             &retained,
             QueryEvidence {
-                word: &bad,
+                word: &bad_word,
                 ..frames.evidence().query()
             }
         ),
@@ -339,6 +339,24 @@ fn five_real_hash_air_proofs_and_original_product_bind_all_endpoints_before_comp
         ),
         Err(Error::Query(gold::Error::Verification))
     ));
+    // Two independent native failures retain Word-first diagnostics. A failed
+    // attempt cannot poison this public receiver or a subsequent genuine read.
+    assert!(matches!(
+        receiver.verify_retained(
+            &retained,
+            QueryEvidence {
+                word: &bad_word,
+                query: &bad,
+                ..frames.evidence().query()
+            }
+        ),
+        Err(Error::Word(word::Error::Verification))
+    ));
+    assert!(
+        receiver
+            .verify_retained(&retained, frames.evidence().query())
+            .is_ok()
+    );
     let mut bad = frames.product.clone();
     bad[8] ^= 1;
     assert!(matches!(

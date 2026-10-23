@@ -12,6 +12,13 @@ captured history into a separate branch. Captures close on return and unwind;
 escaped challengers continue computing without extending a closed capture.
 New challengers constructed on unrelated threads are outside this scope.
 
+The parent `hash::join` explicitly carries the caller's capture choice into each
+job. A new challenger constructed in either job is therefore enrolled in the
+same bounded store. An unenrolled caller temporarily masks an unrelated worker's
+capture. Both choices restore the worker's previous scope on return or unwind;
+only the original `capture` closes the store. An escaped context cannot reopen a
+closed store. Concurrent independent captures remain isolated.
+
 The recorder bounds stored payload to 8MiB and traces to 64. Exceeding either limit
 returns an audit error after the observed operation finishes. Nested captures
 reject before running their body. It cannot supply randomness, observations,

@@ -1,5 +1,9 @@
 # Joined native Word and Query proving
 
+The later [verification comparison](../../../registry200-proof/src/registry_progress/word/read/VERIFICATION-VALIDATION.md)
+keeps this joined production as its control and measures independent Word/Query
+verification in the same local prepared-query interval.
+
 ## Change and owning checks
 
 `PreparedPublicQuery::prove` moves its two independent protected inputs into

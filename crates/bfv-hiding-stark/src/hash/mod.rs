@@ -40,3 +40,26 @@ pub fn profile_digest() -> [u8; 32] {
     }
     hash.finalize().into()
 }
+
+/// Run two independent tasks in the existing native Rayon pool.
+///
+/// Optional transcript auditing follows the calling scope into both tasks,
+/// including new challengers constructed there. This creates no proof settings,
+/// verification result, worker pool or additional worker budget. Both tasks finish
+/// before returning or propagating a panic, as with the underlying Rayon join.
+#[inline]
+pub fn join<A, B, RA, RB>(a: A, b: B) -> (RA, RB)
+where
+    A: FnOnce() -> RA + Send,
+    B: FnOnce() -> RB + Send,
+    RA: Send,
+    RB: Send,
+{
+    #[cfg(feature = "transcript-audit")]
+    let (a, b) = {
+        let left = audit::Context::current();
+        let right = left.clone();
+        (move || left.run(a), move || right.run(b))
+    };
+    p3_maybe_rayon::prelude::join(a, b)
+}

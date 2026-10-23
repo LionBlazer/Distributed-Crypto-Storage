@@ -33,6 +33,13 @@ observations and real SHA512 draw digests in bounded scopes for owning tests.
 It observes actual verifier call stacks and changes no coin or verification
 decision. It supplies source-correspondence evidence, not a security theorem.
 
+`join` schedules two borrowed jobs through the already pinned `p3-maybe-rayon`
+pool and returns only after both finish. It may execute serially with one worker;
+it neither creates a pool nor chooses the host's CPU budget. With transcript audit
+enabled, each job inherits the caller's capture scope for newly constructed
+challengers and restores any worker's previous scope on return or unwind. This
+is scheduling and observation only; it supplies no verification authority.
+
 This is conditional native mathematics, **not** quantified composed security or
 operation admission. The independent-domain ROM/Merkle/Fiat–Shamir reduction,
 codec expansion/retry accounting, semantic Poseidon assumptions and complete

@@ -10,6 +10,16 @@ records real five-proof receiving and independently checks every event/draw
 against those closed programs. This test-only capture establishes finite runtime
 correspondence; online extraction and adaptive composition remain separate.
 
+The separate `hash::Verifier` joins fresh Word and Query native verification on
+the existing shared worker pool. Bounds, original product checking and complete
+DATA binding still precede dispatch. Both jobs finish before return; Word errors
+retain priority when both fail. Each call uses independently captured public
+expectations and fresh native checks. The engine's `hash::join` also propagates
+optional diagnostic capture into its jobs, including challengers constructed on
+workers. No per-query verdict, private input or new thread pool is shared.
+The [verification comparison](VERIFICATION-VALIDATION.md) records full local
+intervals, receiving costs, original controls and the unchanged runtime trace gate.
+
 [`classical::analyze`](classical.rs) derives conditional error accounting from
 the five actual closed AIRs and the separate product PIT, without constructing
 preprocessing, private witnesses or proofs. Its explicit budget expression and

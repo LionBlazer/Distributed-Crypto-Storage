@@ -142,6 +142,31 @@ pub(super) fn begin(domain: &[u8]) -> Option<Handle> {
     })
 }
 
+// A task carries the caller's complete enrollment choice, including None. A
+// stolen task must not silently inherit an unrelated worker's active capture.
+#[derive(Clone)]
+pub(super) struct Context(Option<Arc<Mutex<Store>>>);
+impl Context {
+    pub(super) fn current() -> Self {
+        ACTIVE.with(|active| Self(active.borrow().clone()))
+    }
+    pub(super) fn run<T>(self, operation: impl FnOnce() -> T) -> T {
+        // An escaped context cannot reopen a finished capture. None still masks
+        // an unrelated worker scope until the operation has returned/unwound.
+        let enrolled = self
+            .0
+            .filter(|store| !store.lock().expect("audit lock").closed);
+        let previous = ACTIVE.with(|active| active.replace(enrolled));
+        let _restore = Restore(previous);
+        operation()
+    }
+}
+struct Restore(Option<Arc<Mutex<Store>>>);
+impl Drop for Restore {
+    fn drop(&mut self) {
+        ACTIVE.with(|active| *active.borrow_mut() = self.0.take());
+    }
+}
 struct Scope(Arc<Mutex<Store>>);
 impl Drop for Scope {
     fn drop(&mut self) {
