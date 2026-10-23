@@ -46,6 +46,13 @@ coins and local producer aborts. Its [actual-field and native-kernel tests](R-DE
 cover both committed height classes. This is a fixed-location algebraic result;
 input-MMCS/root hiding and adaptive transcript composition remain open.
 
+The [joint trace/quotient image](QUOTIENT-IMAGE.md) retains every base-coordinate
+disclosure and the quotient chunks' correlated mask fiber. It uses two explicit
+rotation maps into the disclosure ring, rather than an invalid rotation on the
+larger trace ring. Its honest-AIR, degree and fixed-location premises are explicit.
+The [validation note](QUOTIENT-VALIDATION.md) separates the algebra fixture from
+the actual native quotient transformation and records their coverage.
+
 This is conditional native mathematics, **not** quantified composed security or
 operation admission. The independent-domain ROM/Merkle/Fiat–Shamir reduction,
 codec expansion/retry accounting, semantic Poseidon assumptions and complete

@@ -65,6 +65,10 @@ where
 }
 
 #[cfg(test)]
+mod native_quotient_tests;
+#[cfg(test)]
 mod native_r_tests;
+#[cfg(test)]
+mod quotient_image_tests;
 #[cfg(test)]
 mod r_deep_tests;

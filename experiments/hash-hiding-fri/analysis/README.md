@@ -54,3 +54,17 @@ The ignored r674 result SHA256 is
 `8048EA76EE674EC195AC24AC1885316F8180B3D64EECDEB31830A46EF039CED0`;
 its source-pinned receipt SHA256 is
 `E2ABD482F71F280F511919F72EC789DFAE8FCE110CF2C3F5BC9A0D932CBCE1F9`.
+
+`exhaustive_quotient_fibers.py` is a separate arithmetic check of the
+[correlated quotient image](../../../crates/bfv-hiding-stark/src/hash/QUOTIENT-IMAGE.md).
+It enumerates every F_17 coefficient mask at N=4 for four disclosure moduli,
+including a root of one chunk's vanishing polynomial. Independent RREF defines
+the complete target affine fiber. Exact counters check its support, equal
+preimage sizes, and invariance under a change of original chunk polynomials
+with the same recomposed residue. It uses only public nonsecret field fixtures
+and the standard library; it invokes no native proof or cryptographic admission.
+Run its bounded exhaustive universe without bytecode output:
+
+```sh
+python -I -B experiments/hash-hiding-fri/analysis/exhaustive_quotient_fibers.py
+```
