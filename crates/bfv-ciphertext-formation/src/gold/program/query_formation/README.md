@@ -105,3 +105,10 @@ unchanged original PP pin, v2 profile and native metadata capture. The current
 [public preprocessing record](PUBLIC-PREPROCESSING.md) contains the v3 native
 and upper-consumer checks. Earlier validation/receiving measurements retain
 their historical scope.
+
+The test-only [public quotient image](public_image/README.md) evaluates the actual
+AIR over a coefficient-preserving disclosure ring. The separate
+[oracle harness](research_query/README.md) checks the real native Query verifier
+with explicit regression dictionaries. Their [owning observations](RESEARCH-VALIDATION.md)
+establish arithmetic and adapter behavior, not a complete public frame simulator,
+privacy theorem or SQL admission. Normal proof types and facades are unchanged.

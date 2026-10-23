@@ -4,7 +4,11 @@ mod layout;
 mod plan;
 #[cfg(test)]
 mod projection_tests;
+#[cfg(test)]
+mod public_image;
 mod receiving;
+#[cfg(test)]
+mod research_query;
 #[cfg(test)]
 mod tests;
 use super::{descriptor::Descriptor, pp as old_pp};

@@ -35,3 +35,6 @@ rand = "=0.9.2"
 
 # Test-only independent native Poseidon permutation oracle; already locked.
 p3-symmetric = "=0.8.0"
+# Isolated Query oracle research uses these already-locked SDK traits only in tests.
+p3-challenger = "=0.8.0"
+p3-merkle-tree = "=0.8.0"

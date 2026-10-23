@@ -32,6 +32,16 @@ fn public_stream(expected: &Expected, label: u8) -> StdRng {
     StdRng::from_seed(seed)
 }
 
+#[cfg(test)]
+#[allow(
+    dead_code,
+    reason = "shared DATA source; only the Query host owns the research test"
+)]
+pub(super) fn research_public_stream(expected: &Expected, label: u8) -> StdRng {
+    assert!(label <= 2);
+    public_stream(expected, label)
+}
+
 fn public_mmcs(expected: &Expected, label: u8) -> Mmcs {
     Mmcs::new(LeafHash, NodeCompress, 0, public_stream(expected, label))
 }

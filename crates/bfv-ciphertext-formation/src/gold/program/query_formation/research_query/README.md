@@ -1,0 +1,39 @@
+# Isolated native Query oracle harness
+
+This module exists only in the owning crate's unit-test build. It supplies an
+explicit finite H256/H512 dictionary, separate programming and query-only
+handles, and a research configuration over the genuine hiding PCS, Merkle MMCS,
+EF5 and FRI with unchanged geometry. All roles share each dictionary. The seeded
+regression RNG is not a proof of an ideal random oracle or concrete SHA security.
+
+`Programmer` may assign absent points and repeat an existing value; conflicting
+assignments reject. Native receiver code gets only `Oracle`. Its challenger
+retains exact FIELD/CAP/SAMPLE/DRAW bytes, including rejected full-digest retries.
+The owning adapter reconstructs actual public PP and packed lookups from the
+full Query Expected, bounds and canonically decodes the normal frame shape,
+then invokes the genuine `verify_batch`. Normal SHA types and facades stay closed.
+
+The separate ignored `honest_reference` case creates an ordinary real Query
+witness and proof to check this wiring. It requires complete producer/receiver
+walk equality and native rejection of missing or changed input openings. It
+also requires the normal SHA backend to reject the research proof. This case
+does not generate a proof from public inputs alone or validate a public sampler.
+The public sampler and opaque-input forest remain separate implementation work.
+See the [executed validation](../RESEARCH-VALIDATION.md) for exact checks and scope.
+
+Direct dependencies are the owning Query AIR/setup/codec, pinned P3 MMCS and
+challenger interfaces, `rand-public-pp`, bounded postcard and standard owned
+collections/synchronization. The shared DATA setup source exposes a test-only
+PUBLIC RNG stream helper; its dead-code allowance covers the DATA host, which
+does not own this Query research module. No private seed is exposed.
+
+Local dictionary bounds are 1,048,576 entries, 768 MiB of raw keys and 1 MiB per
+input; walks have separate finite caps. These do not establish a whole-process
+RAM guarantee. Heavy checks must use the existing 120-second/1792-MiB observer.
+Ordinary public helper hashes still use their concrete source implementations;
+this harness does not claim complete shared-helper ROM simulation or admission.
+
+```sh
+cargo test --release --locked -p bfv-ciphertext-formation gold::program::query_formation::research_query::research_ro:: -- --test-threads=1
+cargo test --release --locked -p bfv-ciphertext-formation gold::program::query_formation::research_query::honest_reference::actual_query_native_verifier_and_complete_walk_use_the_same_research_ro -- --ignored --exact --test-threads=1
+```
