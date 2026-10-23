@@ -14,6 +14,8 @@ use std::{
     sync::Arc,
 };
 
+mod full_history;
+pub(in crate::registry_progress) use full_history::check_actual_histories;
 mod tests;
 
 const MAIN: [usize; 5] = [7161, 1656, 512, 568, 416];

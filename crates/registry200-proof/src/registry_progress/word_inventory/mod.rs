@@ -9,6 +9,8 @@ mod evaluate;
 mod expr;
 #[cfg(test)]
 mod generalized_mu;
+#[cfg(test)]
+pub(in crate::registry_progress) use generalized_mu::check_actual_histories;
 pub(super) mod owner;
 mod plan;
 mod predicate;

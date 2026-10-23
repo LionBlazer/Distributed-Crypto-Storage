@@ -64,9 +64,13 @@ word. The new large-tail case checks that later shortening and dictionary growth
 preserve the original cutoff and snapshot identity. Only the fixed initial
 grammar is parsed; SHA512 still hashes the entire caller-provided query.
 
-This is an executable finite source-association boundary, not a complete random
-oracle experiment or a Fiat-Shamir security theorem. It does not recognize later
-canonical histories, restore ancestors, account for all implicit draws, simulate
-proofs, establish hiding or integrate with live SQL, freshness or locks. Its hash
+The executed `Driver` boundary above is finite source association, not a complete
+random-oracle experiment or Fiat-Shamir security theorem. That first-coin driver
+does not recognize later canonical histories, restore ancestors, simulate proofs,
+establish hiding or integrate with live SQL, freshness or locks. Its hash
 dictionary is a research trace recorder without a production process-memory
 guarantee. No complete-query latency follows from these component tests.
+
+The [full-history harness](full_history/README.md) extends this boundary to
+canonical later groups and reverse ancestor queries. Its checks and limitations
+are documented at that owning boundary.

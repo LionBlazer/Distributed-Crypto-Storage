@@ -14,6 +14,7 @@ use p3_matrix::{Matrix, bitrev::BitReversibleMatrix, dense::RowMajorMatrix};
 use std::io::Read;
 
 mod first_coin;
+pub(in crate::registry_progress) use first_coin::check_actual_histories;
 #[cfg(test)]
 mod tests;
 

@@ -576,6 +576,8 @@ pub(super) fn check(expected: &Expected, traces: &[Trace], evidence: Evidence<'_
             && typed.negative_openings == 5,
         "actual CAP/PP/opening totals changed",
     )?;
+    crate::registry_progress::word_inventory::check_actual_histories(traces)
+        .map_err(|error| format!("actual native full-history: {error}"))?;
     eprintln!(
         "hash_read typed_cap_totals=true roots={} PP={} authenticated_inputs={} rejected_openings={} notification_ceiling=17*Q512+75 complete_PP_extraction=false computed_FRI_rows_independently_captured=false",
         typed.roots, typed.pp, typed.authenticated_inputs, typed.negative_openings
