@@ -1,11 +1,12 @@
 # All-five public-instance association validation
 
-This stage tests the [fixed source classifier](README.md) and its separate
-first-frozen typed-word encoder. It does not implement the actual raw SHA512
-notification/coin driver, prove all RBR transitions or grant SQL admission.
-The classifier must be consumed synchronously before that driver's first coin;
-a standalone file header does not authenticate its claimed extraction history.
-All Rust additions and the reused public-fixture helper are test-only.
+The observations below test the [fixed source classifier](README.md) and its
+separate first-frozen typed-word encoder. The subsequent
+[first-coin driver](first_coin/README.md) connects actual SHA queries to that
+classifier; the earlier file observations alone do not test that connection.
+Neither component proves all RBR transitions or grants SQL admission. A standalone
+file header does not authenticate its claimed extraction history. All Rust
+additions and the reused public-fixture helper are test-only.
 
 ## Executed behavior
 

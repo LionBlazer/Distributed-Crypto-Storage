@@ -13,6 +13,7 @@ use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use p3_matrix::{Matrix, bitrev::BitReversibleMatrix, dense::RowMajorMatrix};
 use std::io::Read;
 
+mod first_coin;
 #[cfg(test)]
 mod tests;
 

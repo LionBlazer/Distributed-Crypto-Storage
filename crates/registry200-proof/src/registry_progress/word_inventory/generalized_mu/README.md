@@ -34,8 +34,11 @@ preserves that snapshot and streams bounded blocks. It must finish this classifi
 synchronously before a raw-FS driver returns its first coin. Source association
 does not prove the remaining RBR transitions, hiding, external application
 bindings, freshness, consensus or live SQL admission.
-No raw-SHA512 first-notification/coin driver is implemented here; the file bridge
-exercises frozen encoding followed by this classifier.
+The test-only [first-coin driver](first_coin/README.md) owns actual SHA256 query
+registration, parses the five native initial transcript shapes and invokes this
+classifier synchronously before answering SHA512. It binds its in-process stream
+to registered first snapshots rather than trusting a caller header. The separate
+file bridge exercises frozen encoding followed by this classifier.
 
 Run the owning metadata/FFT gate:
 
