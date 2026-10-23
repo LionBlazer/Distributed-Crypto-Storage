@@ -145,6 +145,119 @@ fn actual_sdk_patterns_group_lookup_pairs_and_complete_query_index_vectors() {
     }
 }
 
+// DKT Section 7.2 Equation (88), using the order-zero support at m=3.
+// This independently counts its monomials by closed integer sums, not SDK helpers.
+// Primary: https://quangvdao.github.io/papers/authored/reed-solomon-codes-beyond-johnson.pdf
+fn dkt_m3_curve_counts(k: u128, n: u128, functions: u128) -> (u128, u128, u128, u128) {
+    fn ceil_sqrt_ratio(numerator: u128, denominator: u128) -> u128 {
+        let floor = (numerator / denominator).isqrt();
+        floor + u128::from(floor * floor * denominator < numerator)
+    }
+
+    // Bound every intermediate in this private fixed-metadata certificate.
+    assert!(matches!(k, 1024 | 4096));
+    assert_eq!(n, 8 * k);
+    assert!((2..=u128::from(u32::MAX)).contains(&functions));
+    let degree = k - 1;
+    let ell = functions - 1;
+    let agreements = ceil_sqrt_ratio(49 * n * n, 288); // ceil(alpha*n).
+    let x_cutoff = ceil_sqrt_ratio(49 * degree * n, 4);
+    let y_degree = ceil_sqrt_ratio(49 * n, 4 * degree) - 1;
+    let z_degree = (49 * ell * n).div_ceil(12 * degree) - 1;
+    assert!(agreements > k && agreements <= n);
+    assert!(x_cutoff <= 3 * agreements);
+    assert!(y_degree >= 3 && y_degree <= 2 * degree + 1);
+    assert!(x_cutoff > degree * y_degree && z_degree >= ell * y_degree);
+
+    // Count i+degree*j < x_cutoff and ell*j+h <= z_degree.
+    // The preceding inequalities ensure every j-slice is untruncated.
+    let slices = y_degree + 1;
+    let sum_j = y_degree * slices / 2;
+    let sum_j_squared = y_degree * slices * (2 * y_degree + 1) / 6;
+    let variables = (z_degree + 1) * (x_cutoff * slices - degree * sum_j)
+        - ell * (x_cutoff * sum_j - degree * sum_j_squared);
+    // At m=3: sum_b(3-b)=6 and sum_b b*(3-b)=4.
+    let equations = n * (6 * (z_degree + 1) - 4 * ell);
+
+    // Here y_degree <= 2*degree+1, so Psi_degree has no positive-part tail.
+    let psi = 1 + (2 * degree - 1) * (2 * y_degree - 1);
+    let denominator = agreements - degree;
+    let numerator = ((2 * y_degree - 1) * z_degree + ell * (n - k) * y_degree) * denominator
+        + (n - degree) * (ell * y_degree + z_degree * psi);
+    (variables, equations, numerator, denominator)
+}
+
+#[test]
+fn actual_five_opening_inventories_fit_the_single_partition_dkt_certificate() {
+    let expected = expected();
+    let report = analyze(&expected, 60).unwrap();
+    let manifests = super::super::transcript::inspect(&expected).unwrap();
+    assert_eq!(report.components().len(), 5);
+    assert_eq!(manifests.len(), 5);
+    let fixed_functions = [14502u128, 3492, 2622, 3024, 2327];
+
+    for ((component, manifest), expected_functions) in report
+        .components()
+        .iter()
+        .zip(&manifests)
+        .zip(fixed_functions)
+    {
+        let bound = component.bound();
+        let parameters = bound.parameters();
+        let k = 1u128 << bound.committed_log();
+        let n = 1u128 << manifest.lde_log();
+        let functions: u128 = manifest
+            .pcs_shape()
+            .claimed_evaluation_counts
+            .iter()
+            .flatten()
+            .flatten()
+            .map(|&count| count as u128)
+            .sum();
+        assert_eq!(functions, parameters.num_batched_functions as u128);
+        assert_eq!(functions, expected_functions);
+
+        // Static pinned SDK constructor AND receiver-claim association:
+        // raw MAIN/AUX and PP have N rows; hiding/zero padding doubles them.
+        // R already has k=2N rows and uses inner commit without another doubling.
+        // Quotient domain k*2^r split into 2^(r+1) chunks gives N rows,
+        // then get_quotient_ldes doubles before the inner blowup.
+        let original_height = k / 2;
+        let blowup = 1u128 << parameters.fri_log_blowup;
+        let chunks = parameters.num_quotient_chunks as u128;
+        assert!(chunks >= 2 && chunks.is_power_of_two());
+        assert_eq!(blowup, 8);
+        let quotient_domain = k * (chunks / 2);
+        let quotient_chunk = quotient_domain / chunks;
+        assert_eq!(quotient_chunk, original_height);
+        assert_eq!(
+            [
+                2 * original_height * blowup,
+                k * blowup,
+                quotient_chunk * 2 * blowup,
+            ],
+            [n; 3]
+        );
+
+        let (variables, equations, numerator, denominator) = dkt_m3_curve_counts(k, n, functions);
+
+        assert!(
+            variables > equations,
+            "{:?}: no interpolant",
+            component.relation()
+        );
+        // Compare Eq. (88) with ell*343*n^2/(3*(k-1)) exactly, without logs.
+        assert!(3 * (k - 1) * numerator <= (functions - 1) * 343 * n * n * denominator);
+        // All five closed AIRs have one input-height partition individually.
+        // MatrixGeometry has no height tap: these are source-derived equations,
+        // not runtime matrix-height observations or a complete native RBR proof.
+        eprintln!(
+            "dkt_powers_curve_partition relation={:?} k={k} n={n} functions={functions} variables={variables} equations={equations} exceptional_numerator={numerator} exceptional_denominator={denominator} source_derived_height_partitions=1 runtime_height_observation=false native_rbr=false proof=false",
+            component.relation(),
+        );
+    }
+}
+
 fn print_report(report: &Report) {
     eprintln!(
         "closed_classical_composition log2_budget={} bcs_algebraic_bits={} bcs_collision_bits={} pit_bits={} conditional_sum_bits={} ideal_transcript_mapping_unproven=true binding_terms_excluded=true cryptographic_security_assessed=false sql_accepted=false",

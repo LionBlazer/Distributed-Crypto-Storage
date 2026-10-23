@@ -43,6 +43,60 @@ not the total failure probability across an interactive execution. In particular
 the SDK commit term is a maximum over folding rounds, not a sum over them.
 There are five native arguments and one separately analysed product PIT.
 
+## One source-derived PCS height partition per AIR
+
+The five opening inventories are respectively 14502, 3492, 2622, 3024 and 2327.
+For each closed AIR, let the original trace height be `N`, the committed height
+`k=2N`, and the LDE height `n=8k=16N`. Every input commitment has this same
+height within that AIR; this does not merge the domains of different AIRs.
+
+This follows from the pinned SDK constructors and receiver-side opening claims:
+
+- MAIN and lookup AUX begin with `N` rows. Hiding commit doubles them before the
+  inner blowup8. PP similarly interleaves zero rows, giving the same height.
+- The randomization matrix R already has `2N` rows and calls inner commit
+  directly; it is not doubled a second time.
+- With base quotient exponent `r`, the quotient domain has `2N*2^r` rows and
+  is split into `2^(r+1)` committed chunks. Each starts with `N` rows.
+  Hiding `get_quotient_ldes` expands it by `2^(3+1)=16`, also giving `16N`.
+- Inner commit and quotient LDEs normalize the coset shift with
+  `GENERATOR/domain.shift()` and use the same bit-reversed row order.
+
+Relevant pinned 0.8.0 source locations are `p3-uni-stark/src/prover.rs:117-119,
+209-228,281-282`, `p3-batch-stark/src/prover.rs:155-175,219,491-496`, and
+`p3-fri/src/hiding_pcs.rs:229-259,427-451,476-569,704-725`.
+This is not only an honest-producer property: uni verifier lines535-564 and
+batch verifier lines199-229 reconstruct each randomized quotient opening domain
+as `2N`; MAIN/R/AUX/PP use that same domain. The PCS verifier in
+`p3-fri/src/two_adic_pcs.rs:565-576` derives
+and deduplicates `log2(domain.size())+log_blowup`, producing one input-height
+partition. No smaller input words are inserted during these five FRI runs.
+
+The owning DKT test pins those five inventories against actual AIR metadata
+and the manifested PCS opening counts. Its exact `u128` support count checks
+`Nvar>Neq` and Equation(88) against `ell*343*n^2/(3*(k-1))`, with
+`ell=F-1`, for that single partition. See the
+[primary DKT paper, Equation(88)](https://quangvdao.github.io/papers/authored/reed-solomon-codes-beyond-johnson.pdf).
+The height equations are a static source association: the test does not invoke
+native constructors or observe runtime matrix heights. Its definition is not
+a proof of the underlying MCA theorem or of complete native RBR soundness.
+
+The next finite obligation is the fixed batch-AIR RBR bridge: starting from
+full common-witness MCA, derive the native MAIN/AUX candidate polynomials and
+singleton receiver-fixed PP, then show that the actual packed fraction,
+accumulator, last-row and zero-terminal constraints on the original `N` rows
+imply the original lookup multiset equation with the actual no-wrap derivation.
+Word's policy frequency range checks are linked through WIRE, so the proof must
+first use bounded receiver-owned WIRE counts. A first WIRE imbalance cannot
+cancel across distinct formal bus denominators; when WIRE balances, it links
+`f` and `Q-f` to their 32-bit range checks and gives the POLICY bound. MASK bounds
+come from same-row bit constraints. Do not assume every private multiplicity is
+bounded by MAIN-only local equations. Pin the exact native ALI/DEEP identities,
+selectors, rotation and claim order. The generic frozen-list argument and this
+integer certificate do not themselves execute that correspondence. This step
+is distinct from the separate Merkle/FS/binding/hiding composition and does not
+change an admission guard.
+
 ## Explicit conditional budget expression
 
 For a chosen integer `b` in 0 through 120 put `B=2^b`. This is a hypothetical
@@ -198,3 +252,9 @@ registry proof crates; all12 Word compile-fail interface examples and the
 dependency-free requirements mirror test also passed. Final formatting and
 documentation-link checks are performed before publication. No500ms full-query
 claim follows from these checks.
+
+
+On 2026-10-23, all six owning classical diagnostic tests passed, including the
+exact single-partition DKT support certificate for the actual five opening
+inventories. This metadata check invoked no native proof or SQL execution.
+Strict all-target release Clippy and the requirements mirror test also passed.

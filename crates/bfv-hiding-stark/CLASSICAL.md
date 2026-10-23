@@ -125,8 +125,19 @@ field-extension basis preserves equality and polynomial degree, so the scalar
 Johnson bound also bounds this joint list without a factor exponential in width.
 Receiver-reconstructed PP is a fixed polynomial, not another adversarial list.
 
-For each MAIN candidate satisfying MAIN-only constraints and integer multiplicity
-bounds, the fixed-message LogUp lemma costs `N*(W+2)/q`. Distinct original bus
+For each fixed MAIN candidate whose original imbalance is nonzero in the field,
+the fixed-message LogUp lemma costs `N*(W+2)/q`. Integer no-wrap must be justified
+at the actual bus boundary; it is not necessarily a MAIN-only local constraint.
+For Word, the required first-bad-bus argument starts with WIRE: its signed counts
+are bounded receiver-owned PP. A WIRE imbalance therefore remains nonzero in the
+field regardless of private POLICY frequencies. If WIRE balances, it connects
+those frequencies to the separate 32-bit checks of `f` and `Q-f`, giving
+`0<=f<=Q` as an integer statement. MASK frequencies are bounded to 0..4 by
+same-row bit equations. Distinct formal bus denominators prevent an unbalanced
+WIRE coefficient from being cancelled by an arbitrary POLICY coefficient.
+This ordered association still belongs to the owning packed-constraint proof;
+independent local bounds for all private frequencies must not be assumed.
+Distinct original bus
 denominators are formal polynomials, not a pointwise injective encoding after
 sampling. Clearing denominators gives a nonzero numerator for an unbalanced
 multiset; `W+2` charges its roots and all zero denominators, including inactive
@@ -154,7 +165,7 @@ integer powers-curve interpolation support and Equation (88) for
 `ell_h=F_h-1`, and show their exception sum is covered by the reported
 `(F_total-1)*C_max/q`. Different heights have different agreement sets. It must
 also match the native insertion of smaller input words into FRI, and pin each
-batch AIR's MAIN-only no-wrap bound plus all fraction, accumulator, last-row and
+batch AIR's actual no-wrap derivation plus all fraction, accumulator, last-row and
 zero-terminal constraints. These are concrete correspondence obligations; this
 numeric API neither authenticates nor executes them. No new public certificate
 helper or claim of completed native RBR association is introduced here.
