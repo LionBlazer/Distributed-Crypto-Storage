@@ -5,7 +5,7 @@
 //! online Merkle extractor, adaptive-ROM simulation or admission certificate.
 use crate::{
     Val,
-    registry_progress::word::read::{Expected, transcript},
+    registry_progress::word::read::{Evidence, Expected, transcript},
     source,
 };
 use bfv_hiding_stark::{
@@ -18,6 +18,9 @@ use bfv_hiding_stark::{
 };
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use sha2::{Digest, Sha512};
+
+#[path = "runtime_trace/typed_caps.rs"]
+mod typed_caps;
 
 type Result<T> = core::result::Result<T, String>;
 const FIELD: u8 = 1;
@@ -498,8 +501,9 @@ fn reject_mutations(program: &Program, view: View<'_>, parsed: &Parsed) -> Resul
 /// Invoke only after capture around genuine `Verifier::new(...).verify_and_retain`.
 /// No synthetic challenger driver, metadata-expanded event list or proof replay
 /// substitutes for those actual receiving calls. Mutation checks reuse that same
-/// captured stream and add no native proofs or verification invocations.
-pub(super) fn check(expected: &Expected, traces: &[Trace]) -> Result<()> {
+/// captured stream and add no native AIR/PCS/FHE verification invocations.
+/// Typed CAP checks additionally authenticate the existing Merkle input openings.
+pub(super) fn check(expected: &Expected, traces: &[Trace], evidence: Evidence<'_>) -> Result<()> {
     require(traces.len() <= 64, "capture exceeded trace bound")?;
     let programs = programs(expected)?;
     let mut seen = [false; 5];
@@ -509,6 +513,7 @@ pub(super) fn check(expected: &Expected, traces: &[Trace]) -> Result<()> {
     let mut mutations = 0usize;
     let mut pp_caps = Vec::new();
     let mut inactive = 0usize;
+    let mut typed = typed_caps::Counts::default();
     for trace in traces {
         if trace.draws().is_empty() {
             require(
@@ -544,6 +549,12 @@ pub(super) fn check(expected: &Expected, traces: &[Trace]) -> Result<()> {
         };
         let parsed = recognize(program, view)
             .map_err(|e| format!("{} runtime trace: {e}", NAMES[program.family]))?;
+        let actual = typed_caps::check(program, &parsed, prefix, &evidence)
+            .map_err(|e| format!("{} actual typed CAPs: {e}", NAMES[program.family]))?;
+        typed.roots += actual.roots;
+        typed.pp += actual.pp;
+        typed.authenticated_inputs += actual.authenticated_inputs;
+        typed.negative_openings += actual.negative_openings;
         groups += parsed.groups.len();
         samples += parsed.accepted.len();
         attempts += trace.draws().len();
@@ -558,6 +569,17 @@ pub(super) fn check(expected: &Expected, traces: &[Trace]) -> Result<()> {
         "actual five-family totals changed",
     )?;
     require(pp_caps.len() == 3, "missing actual receiver PP CAPs")?;
+    require(
+        typed.roots == 75
+            && typed.pp == 3
+            && typed.authenticated_inputs == 21
+            && typed.negative_openings == 5,
+        "actual CAP/PP/opening totals changed",
+    )?;
+    eprintln!(
+        "hash_read typed_cap_totals=true roots={} PP={} authenticated_inputs={} rejected_openings={} notification_ceiling=17*Q512+75 complete_PP_extraction=false computed_FRI_rows_independently_captured=false",
+        typed.roots, typed.pp, typed.authenticated_inputs, typed.negative_openings
+    );
     eprintln!(
         "hash_read runtime_call_capture=true families=5 groups={groups} samples={samples} attempts={attempts} init_traces={inactive} rejected_mutations={mutations} actual_receiver_pp_caps={pp_caps:?} online_extractor=false adaptive_ROM_proof=false admission=false"
     );

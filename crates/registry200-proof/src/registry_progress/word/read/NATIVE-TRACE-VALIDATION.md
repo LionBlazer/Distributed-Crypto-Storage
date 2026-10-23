@@ -94,3 +94,63 @@ cargo clippy --release --locked -p bfv-hiding-stark --features transcript-audit 
 cargo clippy --release --locked -p registry200-proof --features owner-read --all-targets -- -D warnings
 cargo test --release --locked -p repository-contracts --test requirements_sync
 ```
+
+## Typed CAP and actual input-opening association
+
+The follow-up owning check labels each actual CAP with its fixed receiving role,
+ordered matrix layout, base/EF5 width, per-matrix salts and depth. Roles are not
+inferred from a digest or incoming dimensions. STARK order is MAIN, optional
+PP/AUX, quotient, random, then FRI rounds; PCS order is random, MAIN, quotient,
+optional PP/AUX. The helper explicitly maps these orders.
+
+| Family | MAIN base width | PP base width | AUX EF5 width | Quotient chunks | Input depth | Total CAPs |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Source | 7161 | 0 | 0 | 16 | 13 | 13 |
+| Role3 | 1656 | 0 | 0 | 16 | 13 | 13 |
+| DATA | 512 | 668 | 82 | 8 | 15 | 17 |
+| Word | 568 | 714 | 35 | 8 | 13 | 15 |
+| Query | 416 | 545 | 84 | 8 | 15 | 17 |
+
+Private matrices append five base hiding codewords; PP does not. Each quotient
+chunk and random matrix begins with one EF5 column. Every matrix appends its own
+four base salts. A binary FRI row has two EF5 values and four salts, hence 14 base
+fields; its depth is input_depth-1-round. All matrices inside one input commit
+have the same height. The check also rejects a deliberately mixed-height schema.
+
+After the real native receive, each already accepted fixture proof is decoded
+once. Its MAIN/AUX/quotient/random/FRI roots match the captured CAPs byte-for-byte.
+All 21 actual input commitments, including all three PP commitments, are
+authenticated by the fixed SHA256 MMCS against their captured roots, actual rows,
+per-matrix salts and the 192 low-bit indices derived from the actual final Gold
+samples. This adds only Merkle authentication; it invokes no second AIR, PCS or
+FHE evaluation. The original genuine and hostile native assertions remain.
+Five altered genuine DATA PP inputs reject: root, row, salt, width and depth.
+
+All 54 FRI caps match too. Their carried sibling EF5 values, salt rows and fixed
+depth frontier bounds are checked. The other coordinate in each two-EF5 row is
+computed inside the original native folding verifier, which authenticates the
+whole row. This helper does not independently capture that computed coordinate.
+Full PP extraction is not inferred from authenticating its sampled rows.
+
+For every CAP, its exact byte extent precedes its first actual draw. MAIN and PP
+precede the first coin. These are honest runtime byte positions, not timestamps
+of an arbitrary oracle experiment. A generalized raw-query recognizer must
+notify the typed root at FIRST examination of any potentially canonical prefix,
+before later hash-table growth or Expected reveal changes its interpretation.
+At most 17 notifications per canonical raw prefix plus 75 final roots gives the
+conditional ceiling `C <= 17*Q512 + 75`. Q512 includes all auxiliary/offline and
+public-setup calls. The separate shared-dictionary [extraction argument](../../../../../../experiments/hash-hiding-fri/analysis/EXTRACTION.md)
+also counts every verifier/setup/auxiliary SHA256 query in T. Neither this count
+nor the finite native test alone proves that complete adaptive composition.
+
+The exact owning fixture passed at r678 with 75 roots, PP3, 21 authenticated input
+commitments and five rejected opening corruptions; all previous 77 groups, 1335
+draws and 78 stream mutations passed too. Test time was 8.37s and process lifetime
+8404.0975ms, including all cold setup, proofs, diagnostics and hostile examples.
+This is not a feature-disabled performance comparison or a full SQL query.
+The same native 8-worker/source/image/120s/1792MiB/20ms capture policy was retained.
+OS peak working set was 585,654,272 bytes; sampled private peak 570,949,632. It
+exited 0 without faults or cleanup. The r677 image is 14,453,760 bytes, SHA256
+`875541019B438F41FFA157C17F227E2D57C063C735186C20D9F7CE305565D298`.
+The ignored r678 receipt SHA256 is
+`E10E87078744A4AAF8463B3F0AD77DFE53E5307B20906237186400B8179A392C`.

@@ -265,7 +265,7 @@ fn five_real_hash_air_proofs_and_original_product_bind_all_endpoints_before_comp
         .sum::<usize>()
     );
     retained.require_expected(&data_expected).unwrap();
-    runtime_trace::check(&expected, &traces).unwrap();
+    runtime_trace::check(&expected, &traces, frames.evidence()).unwrap();
     let again = receiver
         .verify_retained(&retained, frames.evidence().query())
         .unwrap();
