@@ -36,6 +36,7 @@ p3-dft = "=0.8.0"
 rand_public_pp = { package = "rand", version = "=0.10.3", default-features = false, features = ["std_rng"] }
 
 [dev-dependencies]
+bfv-hiding-stark = { path = "../bfv-hiding-stark", features = ["transcript-audit"] }
 p3-challenger = "=0.8.0"
 p3-maybe-rayon = { version = "=0.8.0", features = ["parallel"] }
 bfv-query-core = { path = "../bfv-query-core", features = ["gold-owner"] }

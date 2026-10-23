@@ -15,6 +15,9 @@ use p3_field::{PrimeCharacteristicRing, PrimeField64};
 use std::time::Instant;
 use zeroize::Zeroizing;
 
+#[path = "hash_tests/runtime_trace.rs"]
+mod runtime_trace;
+
 struct Frames {
     state: Vec<u8>,
     child: Vec<u8>,
@@ -217,12 +220,19 @@ fn five_real_hash_air_proofs_and_original_product_bind_all_endpoints_before_comp
         query,
         product,
     };
-    let started = Instant::now();
-    let receiver = Verifier::new(&expected).unwrap();
-    let receiving_setup_ms = started.elapsed().as_secs_f64() * 1000.;
-    let started = Instant::now();
-    let (checked, retained) = receiver.verify_and_retain(frames.evidence()).unwrap();
-    let receive_ms = started.elapsed().as_secs_f64() * 1000.;
+    // Capture the actual closed native receiving stack. Configurations are
+    // created inside this scope; no synthetic transcript driver replaces it.
+    let ((receiver, checked, retained, receiving_setup_ms, receive_ms), traces) =
+        suite::audit::capture(|| {
+            let started = Instant::now();
+            let receiver = Verifier::new(&expected).unwrap();
+            let receiving_setup_ms = started.elapsed().as_secs_f64() * 1000.;
+            let started = Instant::now();
+            let (checked, retained) = receiver.verify_and_retain(frames.evidence()).unwrap();
+            let receive_ms = started.elapsed().as_secs_f64() * 1000.;
+            (receiver, checked, retained, receiving_setup_ms, receive_ms)
+        })
+        .unwrap();
     let started = Instant::now();
     let completed = owner
         .complete_checked_product(&original, checked.product())
@@ -255,6 +265,7 @@ fn five_real_hash_air_proofs_and_original_product_bind_all_endpoints_before_comp
         .sum::<usize>()
     );
     retained.require_expected(&data_expected).unwrap();
+    runtime_trace::check(&expected, &traces).unwrap();
     let again = receiver
         .verify_retained(&retained, frames.evidence().query())
         .unwrap();

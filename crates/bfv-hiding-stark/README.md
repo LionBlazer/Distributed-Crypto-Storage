@@ -3,6 +3,9 @@
 The separate [`hash`](src/hash/README.md) module owns the extracted SHA-256
 Merkle/full-prefix SHA-512 candidate. Closed consumers use distinct profiles and
 result types; this does not replace the original suite or enable admission.
+The disabled-by-default [transcript audit](src/hash/audit/README.md) lets owning
+tests observe real SHA challenger calls with bounded scoped storage. It cannot
+configure a verifier or replace a native check.
 
 [`classical::analyze`](src/classical.rs) provides a separate fixed-multiplicity
 diagnostic over trusted actual AIR metadata. The [classical note](CLASSICAL.md)

@@ -5,6 +5,9 @@ edition = "2024"
 rust-version = "1.99"
 publish = false
 
+[features]
+transcript-audit = []
+
 [dependencies]
 p3-air = "=0.8.0"
 p3-challenger = "=0.8.0"

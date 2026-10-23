@@ -1,5 +1,7 @@
 //! Separate fixed SHA-256 Merkle / full-prefix SHA-512 hiding-FRI candidate.
 //! Low-level mathematics only; no composed-security, operation or admission grant.
+#[cfg(feature = "transcript-audit")]
+pub mod audit;
 mod challenger;
 pub mod codec;
 mod config;

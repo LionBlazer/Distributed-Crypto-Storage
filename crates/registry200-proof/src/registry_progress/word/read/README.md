@@ -5,6 +5,10 @@ descriptions and native opening/salt geometry without PP, RNG or proofs. The
 [transcript note](TRANSCRIPT.md) records the shared-permutation correlations,
 LogUp argument and remaining concrete RBR/model correspondence. This is a
 diagnostic inventory, not proof acceptance or cryptographic approval.
+The [actual verifier-call validation](NATIVE-TRACE-VALIDATION.md) separately
+records real five-proof receiving and independently checks every event/draw
+against those closed programs. This test-only capture establishes finite runtime
+correspondence; online extraction and adaptive composition remain separate.
 
 [`classical::analyze`](classical.rs) derives conditional error accounting from
 the five actual closed AIRs and the separate product PIT, without constructing

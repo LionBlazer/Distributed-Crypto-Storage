@@ -28,6 +28,11 @@ draw/retry counters and exact Gold rejection preserve the independent byte
 vectors from the original candidate. The primitive tests now live here, rather
 than in a second implementation under experiments.
 
+The disabled-by-default [transcript-audit feature](audit/README.md) records exact
+observations and real SHA512 draw digests in bounded scopes for owning tests.
+It observes actual verifier call stacks and changes no coin or verification
+decision. It supplies source-correspondence evidence, not a security theorem.
+
 This is conditional native mathematics, **not** quantified composed security or
 operation admission. The independent-domain ROM/Merkle/Fiat–Shamir reduction,
 codec expansion/retry accounting, semantic Poseidon assumptions and complete

@@ -12,11 +12,14 @@ const SAMPLE: u8 = 3;
 const DRAW: u8 = 4;
 
 /// Retains the unfinalized SHA state of every observed/accepted-sample event.
-/// Cloning that state hashes the entire prefix, without retaining a transcript Vec.
+/// Normal builds hash the full prefix without retaining a transcript Vec.
+/// Only an explicitly enabled audit capture additionally retains public bytes.
 #[derive(Clone)]
 pub struct Challenger {
     prefix: Sha512,
     draws: u64,
+    #[cfg(feature = "transcript-audit")]
+    audit: Option<super::audit::Handle>,
 }
 
 impl Default for Challenger {
@@ -29,7 +32,20 @@ impl Challenger {
     pub fn new() -> Self {
         let mut prefix = Sha512::new();
         prefix.update(DOMAIN);
-        Self { prefix, draws: 0 }
+        Self {
+            prefix,
+            draws: 0,
+            #[cfg(feature = "transcript-audit")]
+            audit: super::audit::begin(DOMAIN),
+        }
+    }
+
+    fn absorb(&mut self, bytes: &[u8]) {
+        self.prefix.update(bytes);
+        #[cfg(feature = "transcript-audit")]
+        if let Some(audit) = &self.audit {
+            audit.observe(bytes);
+        }
     }
 
     fn field(&mut self) -> Val {
@@ -39,13 +55,17 @@ impl Challenger {
             hash.update([DRAW]);
             hash.update(counter.to_le_bytes());
             hash.update(retry.to_le_bytes());
-            let digest = hash.finalize();
+            let digest: [u8; 64] = hash.finalize().into();
+            #[cfg(feature = "transcript-audit")]
+            if let Some(audit) = &self.audit {
+                audit.draw(counter, retry, digest);
+            }
             u64::from_le_bytes(digest[..8].try_into().expect("fixed digest prefix"))
         });
         self.draws = counter.checked_add(1).expect("challenge counter overflow");
-        self.prefix.update([SAMPLE]);
-        self.prefix.update(counter.to_le_bytes());
-        self.prefix.update(value.as_canonical_u64().to_le_bytes());
+        self.absorb(&[SAMPLE]);
+        self.absorb(&counter.to_le_bytes());
+        self.absorb(&value.as_canonical_u64().to_le_bytes());
         value
     }
 }
@@ -63,20 +83,20 @@ fn rejection_sample(mut draw: impl FnMut(u64) -> u64) -> Val {
 
 impl CanObserve<Val> for Challenger {
     fn observe(&mut self, value: Val) {
-        self.prefix.update([FIELD]);
-        self.prefix.update(value.as_canonical_u64().to_le_bytes());
+        self.absorb(&[FIELD]);
+        self.absorb(&value.as_canonical_u64().to_le_bytes());
     }
 }
 impl CanObserve<&MerkleCap<Val, [u8; 32]>> for Challenger {
     fn observe(&mut self, cap: &MerkleCap<Val, [u8; 32]>) {
-        self.prefix.update([CAP]);
-        self.prefix.update(
-            u64::try_from(cap.num_roots())
+        self.absorb(&[CAP]);
+        self.absorb(
+            &u64::try_from(cap.num_roots())
                 .expect("cap root count fits u64")
                 .to_le_bytes(),
         );
         for digest in cap.roots() {
-            self.prefix.update(digest);
+            self.absorb(digest);
         }
     }
 }
