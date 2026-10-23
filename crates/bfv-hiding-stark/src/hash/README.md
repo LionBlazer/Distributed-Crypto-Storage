@@ -40,6 +40,12 @@ enabled, each job inherits the caller's capture scope for newly constructed
 challengers and restores any worker's previous scope on return or unwind. This
 is scheduling and observation only; it supplies no verification authority.
 
+The [conditional R-DEEP image](R-DEEP.md) gives the exact affine mask space
+after all ten native R-column claims and input rows, including exceptional
+coins and local producer aborts. Its [actual-field and native-kernel tests](R-DEEP-VALIDATION.md)
+cover both committed height classes. This is a fixed-location algebraic result;
+input-MMCS/root hiding and adaptive transcript composition remain open.
+
 This is conditional native mathematics, **not** quantified composed security or
 operation admission. The independent-domain ROM/Merkle/Fiat–Shamir reduction,
 codec expansion/retry accounting, semantic Poseidon assumptions and complete

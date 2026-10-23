@@ -63,3 +63,8 @@ where
     };
     p3_maybe_rayon::prelude::join(a, b)
 }
+
+#[cfg(test)]
+mod native_r_tests;
+#[cfg(test)]
+mod r_deep_tests;
