@@ -6,7 +6,7 @@ mod public;
 mod tests;
 use bfv_query_core::gold::{self, InputBinding, InputScope, Mask256, Owner};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
-pub use public::{ImmutableEvidence, ProvedPublicQuery};
+pub use public::{ImmutableEvidence, PreparedPublicQuery, ProvedPublicQuery};
 use registry200_proof::{
     Val, registry_progress::word, source::statement::encode_digest,
     two_lane_encoding::data_formation as installed,

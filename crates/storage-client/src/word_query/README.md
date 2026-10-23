@@ -85,8 +85,9 @@ it does not enable the historical private-input-proofs pipeline by aliasing it.
 
 ## Public proof preparation and completion
 
-`PendingQuery::prove_public` first compares the complete retained Word expectation
-and DATA expectation against the original query. Neither a different Word
+`PendingQuery::prepare_public(owner, word_expected, data_expected)` first compares
+the complete retained Word and DATA expectations against the original query.
+Neither a different Word
 binding nor another DATA endpoint consumes the original private material. Once
 those guards pass, it consumes that same one-use material, obtains a fresh
 fallible OS Cw salt internally, and derives the Query expectation and commitment
@@ -96,9 +97,22 @@ either proving alternative afterwards cannot reuse its private witness.
 
 The protected Gold owner's existing `query_commitment` and `prepare_query`
 constructors keep the original mask, complete Stmt96 and SDK secret private.
-The client then invokes the fixed SHA fused Query and SHA Predicate Word native
-provers over the same original mathematical inputs. It accepts no caller-selected mask, salt, RNG, alternate
-verifier or cached proof verdict. Preparing a native witness or producing its
+`prepare_public` returns a move-only `PreparedPublicQuery` holding those guarded
+inputs and an owned copy of the exact Word/Query expectations. It exposes only
+`public_request()` and `query_expected()`, so the caller can obtain the genuine
+public SDK product and independently construct `word::read::Expected` before any
+proof arrives. The existing public read verifier can then prepare its fixed
+Word/Query public setup concurrently with the producer. Preparation is public
+metadata, not evidence; no proof verdict or protected opening is exposed.
+
+`PreparedPublicQuery::prove(hash_prover)` consumes the guarded preparation and
+invokes the fixed SHA fused Query and SHA Predicate Word native provers over the
+same original mathematical inputs. Dropping the preparation or a failed prove
+cannot restore its original one-use witnesses. The existing
+`PendingQuery::prove_public(owner, hash_prover, word_expected, data_expected)`
+convenience method performs preparation followed immediately by this same prove.
+It accepts no caller-selected mask, salt, RNG, alternate verifier or cached proof
+verdict. Preparing a native witness or producing its
 bytes establishes no successful public verification.
 
 `ProvedPublicQuery` borrows the original input and exposes only:
@@ -120,15 +134,24 @@ bytes establishes no successful public verification.
   `word::read::hash::ArithmeticCheckedRead` from full public receiving, with the same
   complete Word, fused Query, DATA and original ciphertext-pair bindings.
 
-A caller can send `public_request()` through the real `RemotePeer::gold_product`,
-then independently construct the full read expectation from its original Word,
-DATA, query commitment and the received candidate Ct3. The existing public
+A caller can send the prepared or proved `public_request()` through the real
+`RemotePeer::gold_product`, then independently construct the full read expectation
+from its original Word, DATA, query commitment and the received candidate Ct3.
+The existing public
 `word::read::hash` receiver must check the real product certificate, SHA Word and fused
 Query proof, plus Source/Role3/DATA or the exact retained immutable DATA theorem.
 An owner-specific checked input or `word::read::owner` result cannot satisfy the
 public completion contract. The former public suite's checked-read also cannot
 satisfy SHA completion. No private getter or conversion from either premise
 to transferable proof authority is introduced.
+
+A complete per-request measurement must start before `prepare_public` and include
+the actual SDK product/certificate, public expected/setup construction, both fresh
+native proofs, full receiving and bound owner decryption. Overlapping independent
+public setup with proving changes scheduling only; all native checks remain fresh.
+The [executed preparation measurements](PREPARATION-VALIDATION.md) compare this
+overlap with the former sequential executable, including every native check and
+the retained interface/single-use failures. They establish no full-query500ms bound.
 
 These frames can travel to another receiver, but remain unverified until that
 receiver performs the original native checks against its independently retained

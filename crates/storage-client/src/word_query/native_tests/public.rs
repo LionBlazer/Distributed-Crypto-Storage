@@ -141,7 +141,7 @@ fn compiled_sql_public_proofs_bind_original_data_before_completion_and_share_sin
     )
     .unwrap();
     assert!(matches!(
-        pending.prove_public(&fixture.owner, &producer, &foreign_expected, &fixture.data),
+        pending.prepare_public(&fixture.owner, &foreign_expected, &fixture.data),
         Err(Error::Binding)
     ));
     let foreign_request =
@@ -161,36 +161,75 @@ fn compiled_sql_public_proofs_bind_original_data_before_completion_and_share_sin
         Err(Error::Binding)
     ));
 
-    // The normal producer receives no caller-built Cw, mask, key or Query witness.
+    // The timer includes guarded public preparation, the genuine SDK product,
+    // both fresh proofs, independent public setup/checking and bound decryption.
     let began_query = Instant::now();
-    let proved = pending
-        .prove_public(&fixture.owner, &producer, &expected, &fixture.data)
+    let prepared = pending
+        .prepare_public(&fixture.owner, &expected, &fixture.data)
         .unwrap();
-    let prove_ms = began_query.elapsed().as_secs_f64() * 1000.;
+    let preparation_ms = began_query.elapsed().as_secs_f64() * 1000.;
     assert_eq!(
-        proved.query_expected().statement_root(),
+        prepared.query_expected().statement_root(),
         expected.claims().statement
     );
     let began_product = Instant::now();
-    let response = evaluator.evaluate(proved.public_request()).unwrap();
+    let response = evaluator.evaluate(prepared.public_request()).unwrap();
     let product_ms = began_product.elapsed().as_secs_f64() * 1000.;
-    let read = public_read_expected(&proved, &expected, &fixture.data, &response);
-    let began_receive = Instant::now();
-    let checked = public_receive(
-        &read,
-        &fixture.retained,
-        word::read::QueryEvidence {
-            word: proved.word(),
-            query: proved.query(),
-            product: response.certificate(),
-        },
+    let read = word::read::Expected::checked(
+        &expected,
+        &fixture.data,
+        &prepared.public_request().formation_request().unwrap(),
+        prepared.query_expected().core_expected().roots()[0],
+        response.output().to_vec(),
     )
     .unwrap();
+    assert_eq!(
+        read.query_expected().binding(),
+        prepared.query_expected().binding()
+    );
+
+    // Only independent PUBLIC receiving preparation runs beside native proving.
+    // No proof or verification verdict exists when this setup starts. The same
+    // shared Rayon budget handles both; the protected producer stays local.
+    let (proved, receiver, setup_ms, prove_ms, setup_proving_wall_ms) =
+        std::thread::scope(|scope| {
+            let began_overlap = Instant::now();
+            let receiving = scope.spawn(|| {
+                let began_setup = Instant::now();
+                let verifier = word::read::hash::Verifier::new(&read).unwrap();
+                (verifier, began_setup.elapsed().as_secs_f64() * 1000.)
+            });
+            let began_prove = Instant::now();
+            let proved = prepared.prove(&producer).unwrap();
+            let prove_ms = began_prove.elapsed().as_secs_f64() * 1000.;
+            let (receiver, setup_ms) = receiving.join().unwrap();
+            (
+                proved,
+                receiver,
+                setup_ms,
+                prove_ms,
+                began_overlap.elapsed().as_secs_f64() * 1000.,
+            )
+        });
+    let overlap_lower_bound_ms = (setup_ms + prove_ms - setup_proving_wall_ms).max(0.);
+    let receiving_setup_overlapped = overlap_lower_bound_ms > 0.;
+    let began_receive = Instant::now();
+    let checked = receiver
+        .verify_retained(
+            &fixture.retained,
+            word::read::QueryEvidence {
+                word: proved.word(),
+                query: proved.query(),
+                product: response.certificate(),
+            },
+        )
+        .unwrap();
     let receive_ms = began_receive.elapsed().as_secs_f64() * 1000.;
+    drop(receiver);
     let began_complete = Instant::now();
     let completed = proved.complete(&fixture.owner, &checked).unwrap();
     eprintln!(
-        "word_sql_public_query from_prepared_original=true native_Word_Query_prove_ms={prove_ms:.3} SDK_product_certificate_ms={product_ms:.3} complete_public_receive_ms={receive_ms:.3} client_decrypt_ms={:.3} total_ms={:.3} Word_bytes={} Query_bytes={} product_bytes={} network=false SQL_accepted=false current_head=false finality=false locks_granted=false security_assessed=false",
+        "word_sql_public_query from_prepared_original=true public_preparation_ms={preparation_ms:.3} native_Word_Query_prove_ms={prove_ms:.3} SDK_product_certificate_ms={product_ms:.3} receiving_setup_ms={setup_ms:.3} public_setup_proving_wall_ms={setup_proving_wall_ms:.3} public_setup_overlap_lower_bound_ms={overlap_lower_bound_ms:.3} fresh_public_receive_ms={receive_ms:.3} receiving_setup_overlapped={receiving_setup_overlapped} client_decrypt_ms={:.3} total_ms={:.3} Word_bytes={} Query_bytes={} product_bytes={} network=false SQL_accepted=false current_head=false finality=false locks_granted=false security_assessed=false",
         began_complete.elapsed().as_secs_f64() * 1000.,
         began_query.elapsed().as_secs_f64() * 1000.,
         proved.word().len(),
@@ -508,6 +547,23 @@ fn compiled_sql_public_proofs_bind_original_data_before_completion_and_share_sin
             Err(Error::Consumed)
         ));
     }
+
+    // Abandoning a prepared query cannot release its protected witnesses for
+    // either public or private retry, even though no native proof was produced.
+    let (mut abandoned, abandoned_expected) = pending_sql(&fixture, 0xb6);
+    drop(
+        abandoned
+            .prepare_public(&fixture.owner, &abandoned_expected, &fixture.data)
+            .unwrap(),
+    );
+    assert!(matches!(
+        abandoned.prepare_public(&fixture.owner, &abandoned_expected, &fixture.data),
+        Err(Error::Consumed)
+    ));
+    assert!(matches!(
+        abandoned.prove(&fixture.owner, &private_producer, &abandoned_expected),
+        Err(Error::Consumed)
+    ));
 
     let foreign_owner = Owner::generate([0xbc; 32], [11; 8]).unwrap();
     let (mut foreign, foreign_owner_expected) = pending_sql(&fixture, 0xb5);

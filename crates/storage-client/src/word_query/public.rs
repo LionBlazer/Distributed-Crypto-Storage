@@ -12,6 +12,22 @@ pub struct ImmutableEvidence<'a> {
 }
 
 impl PendingQuery {
+    /// Capture public Query endpoints and consume the original guarded inputs.
+    /// This performs no native proving or verification. A caller can evaluate
+    /// the public request and prepare independent receiving while proving later.
+    /// Wrong Word/DATA bindings preserve the witness; every later failure or
+    /// dropping the prepared query consumes this same one-use attempt.
+    pub fn prepare_public<'q>(
+        &'q mut self,
+        owner: &Owner,
+        expected: &word::Expected,
+        data: &installed::Expected,
+    ) -> Result<PreparedPublicQuery<'q>> {
+        self.prepare_public_with_entropy(owner, expected, data, &mut |bytes| {
+            getrandom::getrandom(bytes).map_err(|_| Error::Entropy)
+        })
+    }
+
     /// Produce both native arguments from the same original private statement.
     /// Wrong Word/DATA endpoints preserve the witness; every later attempt
     /// consumes it, including entropy, owner, preparation and proving failures.
@@ -35,6 +51,17 @@ impl PendingQuery {
         data: &installed::Expected,
         fill: &mut impl FnMut(&mut [u8]) -> Result<()>,
     ) -> Result<ProvedPublicQuery<'q>> {
+        self.prepare_public_with_entropy(owner, expected, data, fill)?
+            .prove(producer)
+    }
+
+    fn prepare_public_with_entropy<'q>(
+        &'q mut self,
+        owner: &Owner,
+        expected: &word::Expected,
+        data: &installed::Expected,
+        fill: &mut impl FnMut(&mut [u8]) -> Result<()>,
+    ) -> Result<PreparedPublicQuery<'q>> {
         let request = self.original.public_request();
         if expected.binding() != self.expected
             || request.data_binding() != data.core_expected().binding()
@@ -66,14 +93,74 @@ impl PendingQuery {
         let query_inputs = owner
             .prepare_query(&self.original, &query_expected, words, salt)
             .map_err(Error::Input)?;
+        Ok(PreparedPublicQuery {
+            original: &self.original,
+            word_expected: expected.clone(),
+            query_expected,
+            inputs,
+            query_inputs,
+        })
+    }
+}
+
+/// Move-only original Word/Query preparation; public metadata is not evidence.
+/// Only the normal guarded owner preparation can construct this value. Its
+/// private inputs are scoped guards; dropping it abandons the consumed attempt.
+/// ```compile_fail
+/// fn duplicate<'q>(q: &storage_client::word_query::PreparedPublicQuery<'q>)
+///     -> storage_client::word_query::PreparedPublicQuery<'q> { q.clone() }
+/// ```
+/// ```compile_fail
+/// use storage_client::word_query::PreparedPublicQuery;
+/// fn forge<'q>() -> PreparedPublicQuery<'q> {
+///     PreparedPublicQuery {
+///         original: todo!(), word_expected: todo!(), query_expected: todo!(),
+///         inputs: todo!(), query_inputs: todo!(),
+///     }
+/// }
+/// ```
+/// ```compile_fail
+/// fn extract(q: storage_client::word_query::PreparedPublicQuery<'_>) {
+///     let _ = q.inputs;
+/// }
+/// ```
+/// ```compile_fail
+/// fn extract(q: storage_client::word_query::PreparedPublicQuery<'_>) {
+///     let _ = q.query_inputs;
+/// }
+/// ```
+pub struct PreparedPublicQuery<'q> {
+    original: &'q gold::OriginatingQuery,
+    word_expected: word::Expected,
+    query_expected: fused::Expected,
+    inputs: word::PrivateInputs,
+    query_inputs: fused::Prepared,
+}
+impl<'q> PreparedPublicQuery<'q> {
+    pub fn public_request(&self) -> &gold::PublicRequest {
+        self.original.public_request()
+    }
+    pub fn query_expected(&self) -> &fused::Expected {
+        &self.query_expected
+    }
+    /// Consume both guarded witnesses to produce genuine unverified native
+    /// arguments. Every proving failure consumes this prepared attempt.
+    pub fn prove(self, producer: &word::hash::Prover) -> Result<ProvedPublicQuery<'q>> {
+        let Self {
+            original,
+            word_expected,
+            query_expected,
+            inputs,
+            query_inputs,
+        } = self;
         let word = producer
-            .produce(expected, inputs)
+            .produce(&word_expected, inputs)
             .map_err(Error::Word)?
             .into_bytes();
         let query = fused::hash::prove(&query_expected, query_inputs).map_err(Error::Formation)?;
         Ok(ProvedPublicQuery {
-            original: &self.original,
-            word_binding: self.expected,
+            original,
+            word_binding: word_expected.binding(),
             query_expected,
             word,
             query,
