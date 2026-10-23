@@ -1,9 +1,9 @@
-//! Original compiled SQL's transferable unverified Word and fused Query evidence.
+//! Original compiled SQL's transferable unverified SHA Word and fused Query evidence.
 use super::*;
 use bfv_ciphertext_formation::gold::query as fused;
 use registry200_joint::word::predicate::PredicatePacket;
 
-/// Original immutable UNVERIFIED Source, Role3 and DATA frames for transfer.
+/// Immutable UNVERIFIED SHA Source, Role3 and DATA frames for transfer.
 /// A retained local theorem alone cannot be serialized in their place.
 pub struct ImmutableEvidence<'a> {
     pub state: &'a [u8],
@@ -18,7 +18,7 @@ impl PendingQuery {
     pub fn prove_public<'q>(
         &'q mut self,
         owner: &Owner,
-        producer: &word::Prover,
+        producer: &word::hash::Prover,
         expected: &word::Expected,
         data: &installed::Expected,
     ) -> Result<ProvedPublicQuery<'q>> {
@@ -30,7 +30,7 @@ impl PendingQuery {
     pub(super) fn prove_public_with_entropy<'q>(
         &'q mut self,
         owner: &Owner,
-        producer: &word::Prover,
+        producer: &word::hash::Prover,
         expected: &word::Expected,
         data: &installed::Expected,
         fill: &mut impl FnMut(&mut [u8]) -> Result<()>,
@@ -70,9 +70,7 @@ impl PendingQuery {
             .produce(expected, inputs)
             .map_err(Error::Word)?
             .into_bytes();
-        let query = fused::prove(&query_expected, query_inputs)
-            .map_err(Error::Formation)?
-            .into_bytes();
+        let query = fused::hash::prove(&query_expected, query_inputs).map_err(Error::Formation)?;
         Ok(ProvedPublicQuery {
             original: &self.original,
             word_binding: self.expected,
@@ -119,6 +117,15 @@ fn fresh_salt(fill: &mut impl FnMut(&mut [u8]) -> Result<()>) -> Result<Zeroizin
 /// use bfv_query_core::gold::Owner;
 /// use registry200_proof::registry_progress::word::read::owner::OwnerCheckedRead;
 /// fn complete(q: &ProvedPublicQuery<'_>, o: &Owner, p: &OwnerCheckedRead<'_, '_>) {
+///     let _ = q.complete(o, p);
+/// }
+/// ```
+/// The former public proof suite cannot satisfy SHA public completion either:
+/// ```compile_fail
+/// use storage_client::word_query::ProvedPublicQuery;
+/// use bfv_query_core::gold::Owner;
+/// use registry200_proof::registry_progress::word::read::ArithmeticCheckedRead;
+/// fn complete(q: &ProvedPublicQuery<'_>, o: &Owner, p: &ArithmeticCheckedRead<'_>) {
 ///     let _ = q.complete(o, p);
 /// }
 /// ```
@@ -170,7 +177,7 @@ impl ProvedPublicQuery<'_> {
     pub fn complete(
         &self,
         owner: &Owner,
-        checked: &word::read::ArithmeticCheckedRead<'_>,
+        checked: &word::read::hash::ArithmeticCheckedRead<'_>,
     ) -> Result<gold::DecryptedProduct> {
         self.require_expected(checked.expected())?;
         owner

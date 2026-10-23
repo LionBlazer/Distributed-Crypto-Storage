@@ -3,7 +3,7 @@ use super::{Error, Result, predicate::BorrowedPredicate};
 use registry200_proof::{
     registry_progress::word::{self, read},
     source::version::SourceVersionExpected,
-    two_lane_encoding::data_formation::VerifiedDataFormation,
+    two_lane_encoding::data_formation::hash::CheckedData,
 };
 use std::sync::Mutex;
 
@@ -12,7 +12,7 @@ pub(super) struct PredicateReceiver {
     retained: Mutex<Option<RetainedData>>,
 }
 struct RetainedData {
-    theorem: VerifiedDataFormation,
+    theorem: CheckedData,
     frames: [Box<[u8]>; 3],
 }
 impl RetainedData {
@@ -45,15 +45,21 @@ impl PredicateReceiver {
             .retained
             .lock()
             .map_err(|_| Error::RejectedComputationProof)?;
+        // A new complete query gets independently reconstructed PUBLIC setup.
+        // Only the immutable theorem/three exact frames survive this call.
+        let receiving =
+            read::hash::Verifier::new(&expected).map_err(|_| Error::RejectedComputationProof)?;
         if let Some(original) = retained.as_ref()
             && original.matches(&expected, &evidence)
         {
             drop(
-                read::verify_retained(&expected, &original.theorem, evidence.query())
+                receiving
+                    .verify_retained(&original.theorem, evidence.query())
                     .map_err(|_| Error::RejectedComputationProof)?,
             );
         } else {
-            let (checked, theorem) = read::verify_and_retain(&expected, evidence)
+            let (checked, theorem) = receiving
+                .verify_and_retain(evidence)
                 .map_err(|_| Error::RejectedComputationProof)?;
             drop(checked);
             let evidence = parsed.evidence();

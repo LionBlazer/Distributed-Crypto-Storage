@@ -5,7 +5,8 @@ Control309 native proofs with the owner-authorized version journal. It is one
 step toward the new SQL proof route, not a SQL, freshness or lock capability.
 Predicate remains rejected. Its candidate now reaches the actual journal
 verifier, which reconstructs the original DATA, fused Query and FHE product
-expectations and initially checks all six native proofs. An exact immutable
+expectations and initially checks all five SHA AIR proofs plus the original
+product certificate. An exact immutable
 State/Role3/DATA theorem may then be retained; Word/Query/product are checked
 afresh on every call. Successful mathematics still
 cannot authorize an operation: composed cryptographic security is unassessed.
@@ -13,8 +14,9 @@ A Word predicate proof by itself cannot authorize a result or a lock here.
 
 The public [`predicate` packet codec](PREDICATE-PACKET.md) defines the complete
 bounded evidence grammar used by this closed Joint Predicate branch.
-`PredicatePacket` contains original public request/output bytes and all six
-proofs. `BorrowedPredicate` reconstructs its metadata against an independently
+`PredicatePacket` uses only the DCSWJP02 identity, containing the original public
+request/output, explicit canonical Cw and all six unverified evidence frames.
+`BorrowedPredicate` reconstructs its metadata against an independently
 retained Source; it accepts no caller-supplied theorem or association digest.
 Parsing and `expected(&WordExpected)` perform no native proof verification,
 authorization or freshness check. `Lane::Predicate`, `Request::predicate` and
@@ -54,12 +56,15 @@ EMPTY proof. Retaining an immutable theorem proves no latest network head.
 Predicate derives its Word expectation from that same verified Source,
 application Genesis, actual journal parent, enrollment and actual old registry.
 The original public request must bind that complete expectation. A private
-helper uses the original six-proof `word::read::verify_and_retain` or the original
-`verify_retained` with a matching actual DATA theorem. The per-query move-only
+helper uses `word::read::hash::Verifier` for all five SHA arguments and the
+original product certificate, or retained receiving with a matching
+`data_formation::hash::CheckedData` theorem. The per-query move-only
 result is discarded before an unconditional `RejectedComputationProof`. There is no
 Predicate `Proof` variant or accepting result construction. Only a later
 assessed admission policy may expand the accepted transition set, and that
 change must also introduce a new application contract identity.
+The new Predicate family neither changes the original Source/Bootstrap/Control
+proof contracts nor extends a five-AIR security model to those older families.
 
 The private `predicate_receiving` module owns one in-memory DATA theorem and
 literal copies of its three original public proof frames, bounded by the packet

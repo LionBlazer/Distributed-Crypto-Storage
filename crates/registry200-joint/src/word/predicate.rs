@@ -13,8 +13,8 @@ use registry200_proof::{
 };
 use sha2::{Digest, Sha256};
 
-const MAGIC: &[u8; 8] = b"DCSWJP01";
-const HEADER: usize = 384;
+const MAGIC: &[u8; 8] = b"DCSWJP02";
+const HEADER: usize = 416;
 const BODY_RESERVE: usize = 4096;
 /// Leave a fixed reserve for the actual signed journal body and its request.
 /// The eventual journal author must still check its complete encoded body.
@@ -23,10 +23,10 @@ const CAPS: [usize; 8] = [
     gold::MAX_REQUEST_BYTES,
     gold::MAX_PRODUCT_OUTPUT_BYTES,
     source::version::MAX_CERTIFICATE_BYTES,
-    encoding::wire::MAX_CHILD,
-    data::MAX_DENSE_EVIDENCE_BYTES,
-    math::MAX_EVIDENCE_BYTES,
-    fused::MAX_EVIDENCE_BYTES,
+    encoding::hash::MAX_EVIDENCE_BYTES,
+    data::hash::MAX_EVIDENCE_BYTES,
+    math::hash::MAX_EVIDENCE_BYTES,
+    fused::hash::MAX_EVIDENCE_BYTES,
     product::CERTIFICATE_BYTES,
 ];
 
@@ -34,11 +34,11 @@ const CAPS: [usize; 8] = [
 /// It deliberately does not depend on the enclosing journal contract identity.
 pub fn profile_digest() -> [u8; 32] {
     let mut h = Sha256::new();
-    h.update(b"DCS/Word-Predicate-packet/v1/DCSWJP01/UNVERIFIED/no-admission");
-    h.update(math::read::profile_digest());
+    h.update(b"DCS/Word-Predicate-packet/v2/DCSWJP02/UNVERIFIED/no-admission");
+    h.update(math::read::hash::profile_digest());
     h.update(gold::profile_digest());
     h.update(product::wire_profile_digest());
-    h.update(b"independent-Source;DATA-nonce32/key29LE64/vector4LE64;original-GOPREQ/CT3/State/Role3/DATA/Word/Query/product;Role3-header-Cw/full-derived-DATA-binding;original-ordered-pair-and-nonce;fixed-header384/reserved-zero/exact-total-and-EOF/no-verdict");
+    h.update(b"independent-Source;DATA-nonce32/key29LE64/vector4LE64/Cw4LE64;original-GOPREQ/CT3/SHA-State/Role3/DATA/Word/Query/product;explicit-canonical-Cw/full-derived-DATA-binding;original-ordered-pair-and-nonce;fixed-header416/reserved-zero/exact-total-and-EOF/no-verdict/no-old-frame-fallback");
     for n in [HEADER, BODY_RESERVE, MAX_PREDICATE_PACKET_BYTES]
         .into_iter()
         .chain(CAPS)
@@ -148,20 +148,21 @@ impl PredicatePacket {
             return Err(Error::InvalidEncoding);
         }
         let vector = expected.query_expected().core_expected().roots()[0];
+        let cw = data.source().encoded;
         let mut header = [0; HEADER];
         header[..8].copy_from_slice(MAGIC);
         header[8..40].copy_from_slice(&profile_digest());
         header[40..48].copy_from_slice(&(total as u64).to_le_bytes());
         header[48..80].copy_from_slice(&data.request().nonce());
-        for (chunk, value) in header[80..344]
+        for (chunk, value) in header[80..376]
             .as_chunks_mut::<8>()
             .0
             .iter_mut()
-            .zip(key.into_iter().chain(vector))
+            .zip(key.into_iter().chain(vector).chain(cw))
         {
             *chunk = value.as_canonical_u64().to_le_bytes();
         }
-        for (chunk, frame) in header[344..376]
+        for (chunk, frame) in header[376..408]
             .as_chunks_mut::<4>()
             .0
             .iter_mut()
@@ -210,7 +211,7 @@ impl<'a> BorrowedPredicate<'a> {
         if raw.len() > MAX_PREDICATE_PACKET_BYTES {
             return Err(Error::ResourceLimit);
         }
-        if raw.len() < HEADER || &raw[..8] != MAGIC || raw[376..HEADER] != [0; 8] {
+        if raw.len() < HEADER || &raw[..8] != MAGIC || raw[408..HEADER] != [0; 8] {
             return Err(Error::InvalidEncoding);
         }
         if raw[8..40] != profile_digest() {
@@ -224,7 +225,7 @@ impl<'a> BorrowedPredicate<'a> {
         if nonce == [0; 32] {
             return Err(Error::WrongDomain);
         }
-        let words: [u64; 33] = core::array::from_fn(|i| {
+        let words: [u64; 37] = core::array::from_fn(|i| {
             u64::from_le_bytes(raw[80 + 8 * i..88 + 8 * i].try_into().unwrap())
         });
         if words[..25].iter().any(|&v| v > u64::from(u32::MAX))
@@ -233,7 +234,7 @@ impl<'a> BorrowedPredicate<'a> {
             return Err(Error::InvalidEncoding);
         }
         let lengths = core::array::from_fn(|i| {
-            u32::from_le_bytes(raw[344 + 4 * i..348 + 4 * i].try_into().unwrap()) as usize
+            u32::from_le_bytes(raw[376 + 4 * i..380 + 4 * i].try_into().unwrap()) as usize
         });
         if require_lengths(lengths)? != raw.len() {
             return Err(Error::InvalidEncoding);
@@ -249,13 +250,17 @@ impl<'a> BorrowedPredicate<'a> {
         // Each nested parser independently enforces its own canonical wire caps.
         let key = key_from_words(words[..29].try_into().unwrap())?;
         let request = PublicRequest::decode(payload[0]).map_err(|_| Error::InvalidEncoding)?;
-        let encoding = encoding::statement::Expected::source_version(source, key)
-            .map_err(|_| Error::WrongDomain)?;
-        let child = encoding::wire::BorrowedFrame::parse(&encoding, payload[3])
-            .map_err(|_| Error::WrongDomain)?;
+        // SHA Role3 binds a complete independently supplied Statement; its
+        // frame exports no Cw. These canonical packet fields remain unverified
+        // until the actual SHA Role3 argument is checked by the receiver.
+        let statement = encoding::statement::Statement {
+            expected: encoding::statement::Expected::source_version(source, key)
+                .map_err(|_| Error::WrongDomain)?,
+            encoded: core::array::from_fn(|i| Val::from_u64(words[33 + i])),
+        };
         let data_request = data::Request::checked(nonce, request.data_ciphertext().to_vec())
             .map_err(|_| Error::InvalidEncoding)?;
-        let data = installed::Expected::checked(&data_request, child.statement())
+        let data = installed::Expected::checked(&data_request, &statement)
             .map_err(|_| Error::WrongDomain)?;
         if data.core_expected().binding() != request.data_binding()
             || data.request().ciphertext() != request.data_ciphertext()

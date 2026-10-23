@@ -10,6 +10,7 @@ use registry200_proof::two_lane_encoding::{
 struct DataFixture {
     owner: protected::Owner,
     expected: installed::Expected,
+    state: Vec<u8>,
     child: Vec<u8>,
     frame: Vec<u8>,
 }
@@ -51,23 +52,32 @@ fn original_data(f: &Fixture) -> DataFixture {
     let original = owner.originate_data(raw).unwrap();
     let request = data::Request::checked([0x61; 32], original.ciphertext().to_vec()).unwrap();
     let expected = installed::Expected::checked(&request, &witness.statement()).unwrap();
-    let child = encoding::prove(&encoding, &witness, &f.source)
-        .unwrap()
-        .into_parts()
-        .1;
-    let frame = installed::prove_dense_prepared(
+    // Only this Predicate fixture creates the separate SHA immutable proofs.
+    // Shared Bootstrap/Control fixtures retain their original proof family.
+    let state = source::hash::prove(
+        f.descriptor.source(),
+        &source::circuit::Witness::new(
+            [0x71; 32],
+            [Val::ONE; 4],
+            [Val::TWO; 4],
+            [255, 0, 255, 128],
+        ),
+    )
+    .unwrap();
+    let child = encoding::hash::prove(&witness.statement(), &witness).unwrap();
+    let frame = installed::hash::prove_prepared(
         &expected,
         &request,
-        installed::Prerequisites::checked(&f.source, &child).unwrap(),
+        installed::hash::Prerequisites::checked(&state, &child).unwrap(),
         owner
             .prepare_data(&original, expected.core_expected(), Zeroizing::new([5; 4]))
             .unwrap(),
     )
-    .unwrap()
-    .into_bytes();
+    .unwrap();
     DataFixture {
         owner,
         expected,
+        state,
         child,
         frame,
     }
@@ -283,14 +293,12 @@ fn genuine_predicate_proofs_reach_closed_journal_admission_without_publishing_a_
             Zeroizing::new([10; 4]),
         )
         .unwrap();
-    let word = math::Prover::new(math::Role::Predicate)
+    let word = math::hash::Prover::new()
         .unwrap()
         .produce(&expected, inputs)
         .unwrap()
         .into_bytes();
-    let query = fused::prove(&query_expected, query_inputs)
-        .unwrap()
-        .into_bytes();
+    let query = fused::hash::prove(&query_expected, query_inputs).unwrap();
     let response = protected::Evaluator::new()
         .unwrap()
         .evaluate(original.public_request())
@@ -304,7 +312,7 @@ fn genuine_predicate_proofs_reach_closed_journal_admission_without_publishing_a_
     )
     .unwrap();
     let frames = [
-        f.source.as_slice(),
+        data.state.as_slice(),
         data.child.as_slice(),
         data.frame.as_slice(),
         word.as_slice(),
@@ -427,6 +435,18 @@ fn genuine_predicate_proofs_reach_closed_journal_admission_without_publishing_a_
             ));
         }
     }
+    // The old Source theorem retained for Bootstrap/Control cannot replace the
+    // distinct SHA State argument required by this five-AIR Predicate family.
+    let mut mixed_frames = frames;
+    mixed_frames[0] = &f.source;
+    let mixed =
+        PredicatePacket::from_read(&read, original.public_request(), evidence(mixed_frames))
+            .unwrap();
+    assert!(
+        verifier
+            .check_predicate_relation(&expected, mixed.as_bytes())
+            .is_err()
+    );
     // Neither a bad immutable frame nor a bad per-query proof can poison or
     // replace the retained valid theorem. The genuine candidate remains usable.
     let after_damage = Instant::now();
@@ -472,7 +492,7 @@ fn genuine_predicate_proofs_reach_closed_journal_admission_without_publishing_a_
         fresh_vector,
     )
     .unwrap();
-    let fresh_query = fused::prove(
+    let fresh_query = fused::hash::prove(
         &fresh_query_expected,
         data.owner
             .prepare_query(
@@ -483,8 +503,7 @@ fn genuine_predicate_proofs_reach_closed_journal_admission_without_publishing_a_
             )
             .unwrap(),
     )
-    .unwrap()
-    .into_bytes();
+    .unwrap();
     let fresh_product = protected::Evaluator::new()
         .unwrap()
         .evaluate(fresh.public_request())

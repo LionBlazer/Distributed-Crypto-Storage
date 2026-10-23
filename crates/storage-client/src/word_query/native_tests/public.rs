@@ -2,7 +2,7 @@
 use super::*;
 use registry200_joint::word::predicate::BorrowedPredicate;
 
-fn pending_sql(fixture: &InstalledFixture, nonce: u8) -> (PendingQuery, word::Expected) {
+fn pending_sql(fixture: &HashInstalledFixture, nonce: u8) -> (PendingQuery, word::Expected) {
     let compiled = CompiledLockingSelect::compile(
         "SELECT age,amount FROM records WHERE age>=128 OFFSET 0 LIMIT 1 FOR UPDATE SKIP LOCKED",
     )
@@ -113,17 +113,18 @@ fn public_read_expected(
 // verified immutable DATA theorem. No owner, mask, SQL or private input premise.
 fn public_receive<'a>(
     expected: &'a word::read::Expected,
-    retained: &installed::VerifiedDataFormation,
+    retained: &installed::hash::CheckedData,
     evidence: word::read::QueryEvidence<'_>,
-) -> word::read::Result<word::read::ArithmeticCheckedRead<'a>> {
-    word::read::Verifier::new(expected)?.verify_retained(retained, evidence)
+) -> word::read::hash::Result<word::read::hash::ArithmeticCheckedRead<'a>> {
+    word::read::hash::Verifier::new(expected)?.verify_retained(retained, evidence)
 }
 
 #[test]
 fn compiled_sql_public_proofs_bind_original_data_before_completion_and_share_single_use() {
     let began = Instant::now();
-    let fixture = installed_fixture();
-    let producer = word::Prover::new(word::Role::Predicate).unwrap();
+    let fixture = hash_installed_fixture();
+    let producer = word::hash::Prover::new().unwrap();
+    let private_producer = word::Prover::new(word::Role::Predicate).unwrap();
     let evaluator = gold::Evaluator::new().unwrap();
     let (mut pending, expected) = pending_sql(&fixture, 0xb1);
 
@@ -236,7 +237,10 @@ fn compiled_sql_public_proofs_bind_original_data_before_completion_and_share_sin
         reconstructed.query_expected().binding(),
         proved.query_expected().binding()
     );
-    let packet_checked = word::read::verify(&reconstructed, parsed.evidence()).unwrap();
+    let (packet_checked, _) = word::read::hash::Verifier::new(&reconstructed)
+        .unwrap()
+        .verify_and_retain(parsed.evidence())
+        .unwrap();
     assert_eq!(
         proved
             .complete(&fixture.owner, &packet_checked)
@@ -293,34 +297,47 @@ fn compiled_sql_public_proofs_bind_original_data_before_completion_and_share_sin
         ),
         Err(Error::Binding)
     ));
-    for length in [0, 7, 383, packet.as_bytes().len() - 1] {
+    let mut legacy = packet.as_bytes().to_vec();
+    legacy[..8].copy_from_slice(b"DCSWJP01");
+    assert!(BorrowedPredicate::parse(&fixture.source, &legacy).is_err());
+    for length in [0, 7, 415, packet.as_bytes().len() - 1] {
         assert!(BorrowedPredicate::parse(&fixture.source, &packet.as_bytes()[..length]).is_err());
     }
-    for at in [0, 7, 8, 39, 40, 47, 376, 383] {
+    for at in [0, 7, 8, 39, 40, 47, 408, 415] {
         let mut damaged = packet.as_bytes().to_vec();
         damaged[at] ^= 1;
         assert!(BorrowedPredicate::parse(&fixture.source, &damaged).is_err());
     }
     for component in 0..8 {
         let mut damaged = packet.as_bytes().to_vec();
-        damaged[344 + 4 * component..348 + 4 * component].copy_from_slice(&u32::MAX.to_le_bytes());
+        damaged[376 + 4 * component..380 + 4 * component].copy_from_slice(&u32::MAX.to_le_bytes());
         assert!(BorrowedPredicate::parse(&fixture.source, &damaged).is_err());
     }
-    for at in [80, 112, 144, 152, 216, 280, 312] {
+    for at in [80, 112, 144, 152, 216, 280, 312, 344, 352, 360, 368] {
         let mut damaged = packet.as_bytes().to_vec();
         damaged[at..at + 8].copy_from_slice(&u64::MAX.to_le_bytes());
         assert!(BorrowedPredicate::parse(&fixture.source, &damaged).is_err());
     }
+    for at in [344, 352, 360, 368] {
+        let mut damaged = packet.as_bytes().to_vec();
+        damaged[at..at + 8].copy_from_slice(&Val::ORDER_U64.to_le_bytes());
+        assert!(BorrowedPredicate::parse(&fixture.source, &damaged).is_err());
+    }
+    // A canonical changed Cw cannot retain the original complete DATA binding.
+    let mut changed_cw = packet.as_bytes().to_vec();
+    let cw = u64::from_le_bytes(changed_cw[344..352].try_into().unwrap());
+    changed_cw[344..352].copy_from_slice(&((cw + 1) % Val::ORDER_U64).to_le_bytes());
+    assert!(BorrowedPredicate::parse(&fixture.source, &changed_cw).is_err());
     let mut trailing = packet.as_bytes().to_vec();
     trailing.push(0);
     assert!(BorrowedPredicate::parse(&fixture.source, &trailing).is_err());
-    let lengths: Vec<_> = packet.as_bytes()[344..376]
+    let lengths: Vec<_> = packet.as_bytes()[376..408]
         .as_chunks::<4>()
         .0
         .iter()
         .map(|n| u32::from_le_bytes(*n) as usize)
         .collect();
-    let mut end = 384 + lengths[0] + lengths[1];
+    let mut end = 416 + lengths[0] + lengths[1];
     for (component, length) in lengths[2..].iter().enumerate() {
         end += *length;
         let mut damaged = packet.as_bytes().to_vec();
@@ -328,12 +345,15 @@ fn compiled_sql_public_proofs_bind_original_data_before_completion_and_share_sin
         let parsed = BorrowedPredicate::parse(&fixture.source, &damaged).unwrap();
         let e = parsed.expected(&expected).unwrap();
         assert!(
-            word::read::verify(&e, parsed.evidence()).is_err(),
+            word::read::hash::Verifier::new(&e)
+                .unwrap()
+                .verify_and_retain(parsed.evidence())
+                .is_err(),
             "damaged complete proof {component}"
         );
     }
 
-    let receiver = word::read::Verifier::new(&read).unwrap();
+    let receiver = word::read::hash::Verifier::new(&read).unwrap();
     let mut bad_query = proved.query().to_vec();
     *bad_query.last_mut().unwrap() ^= 1;
     assert!(
@@ -362,7 +382,7 @@ fn compiled_sql_public_proofs_bind_original_data_before_completion_and_share_sin
     );
     let foreign_read = public_read_expected(&proved, &foreign_expected, &fixture.data, &response);
     assert!(
-        word::read::Verifier::new(&foreign_read)
+        word::read::hash::Verifier::new(&foreign_read)
             .unwrap()
             .verify_retained(
                 &fixture.retained,
@@ -406,7 +426,7 @@ fn compiled_sql_public_proofs_bind_original_data_before_completion_and_share_sin
     drop(other_checked);
     drop(other_proved);
     assert!(matches!(
-        other.prove(&fixture.owner, &producer, &other_expected),
+        other.prove(&fixture.owner, &private_producer, &other_expected),
         Err(Error::Consumed)
     ));
     drop(checked);
@@ -418,11 +438,32 @@ fn compiled_sql_public_proofs_bind_original_data_before_completion_and_share_sin
 
     // The owner-private and transferable public routes share one consumption state.
     let (mut private, private_expected) = pending_sql(&fixture, 0xb3);
-    drop(
-        private
-            .prove(&fixture.owner, &producer, &private_expected)
-            .unwrap(),
+    let private_proved = private
+        .prove(&fixture.owner, &private_producer, &private_expected)
+        .unwrap();
+    // Genuine old-family mathematics is not SHA evidence. Packaging it grants
+    // no compatibility route, even with otherwise original SHA endpoints.
+    drop(word::verify(&private_expected, private_proved.word()).unwrap());
+    let mixed_packet = registry200_joint::word::predicate::PredicatePacket::from_read(
+        &read,
+        parsed.public_request(),
+        word::read::Evidence {
+            word: private_proved.word(),
+            ..parsed.evidence()
+        },
+    )
+    .unwrap();
+    let mixed = BorrowedPredicate::parse(&fixture.source, mixed_packet.as_bytes()).unwrap();
+    assert!(matches!(
+        receiver.verify_retained(&fixture.retained, mixed.evidence().query()),
+        Err(word::read::hash::Error::Word(word::Error::Encoding))
+    ));
+    assert!(
+        receiver
+            .verify_retained(&fixture.retained, parsed.evidence().query())
+            .is_ok()
     );
+    drop(private_proved);
     assert!(matches!(
         private.prove_public(&fixture.owner, &producer, &private_expected, &fixture.data,),
         Err(Error::Consumed)
@@ -463,7 +504,7 @@ fn compiled_sql_public_proofs_bind_original_data_before_completion_and_share_sin
         ));
         assert_eq!(calls, draws);
         assert!(matches!(
-            invalid_entropy.prove(&fixture.owner, &producer, &intent),
+            invalid_entropy.prove(&fixture.owner, &private_producer, &intent),
             Err(Error::Consumed)
         ));
     }

@@ -59,11 +59,12 @@ exposes only the intended 32-byte blinded commitment as eight public field words
    head, authorization, whole Result160 opening, weighted finality, durable owner
    state and final SQL projection/locking acceptance remain mandatory outside
    this preparation boundary.
-6. The separate `prove_public(owner, prover, word_expected, data_expected)` path
-   produces both UNVERIFIED Word and fused Query frames from the same original
+6. The separate `prove_public(owner, hash_prover, word_expected, data_expected)` path
+   takes a fixed `word::hash::Prover` and produces both UNVERIFIED SHA Word and
+   fused Query frames from the same original
    compiled input. `ProvedPublicQuery` exports bounded public evidence suitable
    for independent receiving. It supplies no owner-private premise in place of
-   a public Query proof. Actual full public `word::read` verification is required
+   a public Query proof. Actual full public `word::read::hash` verification is required
    before its protected `complete` method can decrypt the original product.
 
 No accepted flag, mutable owner getter, alternate verifier, model evaluator or
@@ -95,8 +96,8 @@ either proving alternative afterwards cannot reuse its private witness.
 
 The protected Gold owner's existing `query_commitment` and `prepare_query`
 constructors keep the original mask, complete Stmt96 and SDK secret private.
-The client then invokes the existing fused Query native prover and the original
-Word native prover. It accepts no caller-selected mask, salt, RNG, alternate
+The client then invokes the fixed SHA fused Query and SHA Predicate Word native
+provers over the same original mathematical inputs. It accepts no caller-selected mask, salt, RNG, alternate
 verifier or cached proof verdict. Preparing a native witness or producing its
 bytes establishes no successful public verification.
 
@@ -109,23 +110,24 @@ bytes establishes no successful public verification.
   metadata rather than a proof result.
 - `packet(expected, immutable, product)`: the bounded, unverified
   [complete Predicate packet](../../../registry200-joint/src/word/PREDICATE-PACKET.md).
-  `ImmutableEvidence` borrows the original Source, Role3 and DATA proof bytes;
+  `ImmutableEvidence` borrows the matching SHA Source, Role3 and DATA proof bytes;
   a retained local theorem cannot be serialized in their place. The method
   checks the same original Word/query/DATA binding before packaging all six
   frames and the original public request/output. Its receiver reconstructs
   endpoints from its independently retained Source and Word expectation, then
   must perform the full public verification.
 - `complete(owner, checked_read)`: protected decryption requiring an actual
-  `word::read::ArithmeticCheckedRead` from full public receiving, with the same
+  `word::read::hash::ArithmeticCheckedRead` from full public receiving, with the same
   complete Word, fused Query, DATA and original ciphertext-pair bindings.
 
 A caller can send `public_request()` through the real `RemotePeer::gold_product`,
 then independently construct the full read expectation from its original Word,
 DATA, query commitment and the received candidate Ct3. The existing public
-`word::read` receiver must check the real product certificate, Word and fused
+`word::read::hash` receiver must check the real product certificate, SHA Word and fused
 Query proof, plus Source/Role3/DATA or the exact retained immutable DATA theorem.
 An owner-specific checked input or `word::read::owner` result cannot satisfy the
-public completion contract. No private getter or conversion from that premise
+public completion contract. The former public suite's checked-read also cannot
+satisfy SHA completion. No private getter or conversion from either premise
 to transferable proof authority is introduced.
 
 These frames can travel to another receiver, but remain unverified until that
@@ -138,6 +140,10 @@ admission remain separate requirements; their guards stay closed.
 ## Validation and remaining scope
 
 ### Normal public producer validation, 2026-10-22
+
+This record describes the former public proof family. The current public
+producer uses the distinct SHA family and DCSWJP02 packet; it requires separate
+owning validation. The owner-private proving/receiving family is unchanged.
 
 Based on `2b1d6e7c14ae450bfd1888299067da37dacd7488`, all five owning
 `word_query::` cases passed. The additional native case uses the normal SQL

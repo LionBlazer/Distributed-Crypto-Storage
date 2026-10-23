@@ -151,11 +151,31 @@ struct InstalledFixture {
     data: installed::Expected,
     retained: installed::VerifiedDataFormation,
     data_words: Zeroizing<Vec<u64>>,
+}
+struct HashInstalledFixture {
+    owner: Owner,
+    source: source::version::SourceVersionExpected,
+    plain: Zeroizing<Vec<u8>>,
+    data: installed::Expected,
+    retained: installed::hash::CheckedData,
+    data_words: Zeroizing<Vec<u64>>,
     state_proof: Vec<u8>,
     child_proof: Vec<u8>,
     data_proof: Vec<u8>,
 }
-fn installed_fixture() -> InstalledFixture {
+// Common real owner preparation, before choosing either proof family. Each
+// owning test builds ONLY its required family; no duplicate Source/DATA proofs
+// or retained-theorem conversions are hidden in a shared fixture.
+struct InstallationMaterial {
+    owner: Owner,
+    source: source::version::SourceVersionExpected,
+    plain: Zeroizing<Vec<u8>>,
+    data: installed::Expected,
+    data_words: Zeroizing<Vec<u64>>,
+    witness: encoding::circuit::Witness,
+    inputs: data::Prepared,
+}
+fn installation_material() -> InstallationMaterial {
     let (source, plain) = source_fixture();
     let key_binding = |cs| {
         encoding::statement::KeyBinding::new(
@@ -185,40 +205,92 @@ fn installed_fixture() -> InstalledFixture {
     let original_data = owner.originate_data(data_words.clone()).unwrap();
     let request = data::Request::checked([0x61; 32], original_data.ciphertext().to_vec()).unwrap();
     let data = installed::Expected::checked(&request, &witness.statement()).unwrap();
-    let state = source::version::prove(
-        &source,
-        &source::circuit::Witness::new(
-            [0x51; 32],
-            [Val::ONE; 4],
-            [Val::TWO; 4],
-            [255, 0, 255, 128],
-        ),
-    )
-    .unwrap()
-    .into_bytes();
-    let child = encoding::prove(&e, &witness, &state)
+    let inputs = owner
+        .prepare_data(&original_data, data.core_expected(), Zeroizing::new([5; 4]))
+        .unwrap();
+    InstallationMaterial {
+        owner,
+        source,
+        plain,
+        data,
+        data_words,
+        witness,
+        inputs,
+    }
+}
+fn public_source_witness() -> source::circuit::Witness {
+    source::circuit::Witness::new([0x51; 32], [Val::ONE; 4], [Val::TWO; 4], [255, 0, 255, 128])
+}
+fn installed_fixture() -> InstalledFixture {
+    let InstallationMaterial {
+        owner,
+        source,
+        plain,
+        data,
+        data_words,
+        witness,
+        inputs,
+    } = installation_material();
+    let state = source::version::prove(&source, &public_source_witness())
+        .unwrap()
+        .into_bytes();
+    let child = encoding::prove(&data.source().expected, &witness, &state)
         .unwrap()
         .into_parts()
         .1;
     let frame = installed::prove_dense_prepared(
         &data,
-        &request,
+        data.request(),
         installed::Prerequisites::checked(&state, &child).unwrap(),
-        owner
-            .prepare_data(&original_data, data.core_expected(), Zeroizing::new([5; 4]))
-            .unwrap(),
+        inputs,
     )
     .unwrap()
     .into_bytes();
     let retained = installed::verify_dense(
         &data,
-        &request,
+        data.request(),
         installed::Prerequisites::checked(&state, &child).unwrap(),
         &frame,
     )
     .unwrap();
     drop(witness);
     InstalledFixture {
+        owner,
+        source,
+        plain,
+        data,
+        retained,
+        data_words,
+    }
+}
+fn hash_installed_fixture() -> HashInstalledFixture {
+    let InstallationMaterial {
+        owner,
+        source,
+        plain,
+        data,
+        data_words,
+        witness,
+        inputs,
+    } = installation_material();
+    let state = source::hash::prove(&source, &public_source_witness()).unwrap();
+    let child = encoding::hash::prove(data.source(), &witness).unwrap();
+    let frame = installed::hash::prove_prepared(
+        &data,
+        data.request(),
+        installed::hash::Prerequisites::checked(&state, &child).unwrap(),
+        inputs,
+    )
+    .unwrap();
+    let retained = installed::hash::verify(
+        &data,
+        data.request(),
+        installed::hash::Prerequisites::checked(&state, &child).unwrap(),
+        &frame,
+    )
+    .unwrap();
+    drop(witness);
+    HashInstalledFixture {
         owner,
         source,
         plain,
@@ -240,7 +312,6 @@ fn compiled_sql_requires_genuine_data_word_and_original_product_before_owner_com
         data,
         retained,
         data_words,
-        ..
     } = installed_fixture();
     let producer = word::Prover::new(word::Role::Predicate).unwrap();
     let receiver = word::read::owner::Verifier::new().unwrap();
