@@ -1,5 +1,7 @@
 //! Candidate child module of gold::program::query_formation, cfg(test) ONLY.
 //! Native adapter/reference gate, NOT the not-yet-implemented public V+B sampler.
+mod opaque_inputs;
+mod public_deep;
 mod research_config;
 mod research_ro;
 
