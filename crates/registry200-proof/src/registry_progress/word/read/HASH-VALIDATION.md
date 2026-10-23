@@ -48,3 +48,54 @@ the validated native paths continue to call `new()` directly. Newly authored
 standalone primitive/wire tests and doc guards were compiled/type-checked as
 applicable, but were not separately executed in this checkpoint. Generated
 receipts, proofs, logs and binaries remain local.
+
+## Buffered leaf updates and CPU scaling, 2026-10-23
+
+Commit `edce852` batches the identical canonical SHA leaf message into fixed
+512-byte stack blocks. Independent byte vectors, block-boundary/unknown-length
+iterator cases and overflow rejection passed in the engine's 17 focused primitive
+tests. Hash domains, profiles, transcript, randomness, AIRs and query counts are
+unchanged. The read test now records `current_num_threads()` instead of a fixed
+two-worker label; the observer checks that it matches its configured pool.
+
+Native build r553 includes this leaf implementation and the actual thread label.
+On an AMD Ryzen 9 9950X3D2 (16 cores, 32 logical processors; reported maximum clock
+4300 MHz), captures r554–r561 ran the SAME complete owning test in separate
+processes. All eight passed, including the original hostile/replay cases. No
+other build or native capture ran concurrently. The 120-second / 1792 MiB held-handle
+guards and 20 ms sampler were retained; every capture had zero faults and cleanup.
+
+| Shared Rayon workers | Captures | Different-query local ms, min / median / max |
+| --- | --- | --- |
+|2|r554|774.150 /774.150 /774.150|
+|4|r555|516.870 /516.870 /516.870|
+|8|r556,r558,r560|449.693 /472.261 /486.425|
+|16|r557,r559,r561|455.883 /459.932 /498.397|
+
+The enclosing different-query timer includes fresh protected request preparation,
+real BFV product and certificate, fresh Word/Query proving, independent receiving
+setup (overlapping proving), fresh Word/Query/product checking and client
+completion. Only previously verified immutable DATA and role-only Word public
+setup are reused. It is the same scope as r542, whose earlier two-worker single
+observation was 1402.567 ms. That historical comparison is not a throughput or tail
+latency guarantee; CPU scheduling and OS-seeded proof randomness vary between runs.
+
+Across these captures, maximum whole-process OS working-set peak was 594530304
+bytes. The different-query proof frames occupied 6959714–6975682 bytes. Even
+the below 500 ms local observations exclude network I/O, a fresh agreed head and
+decentralized locks. They establish neither the 500 ms full-query target nor a
+production security grant. The live Predicate guard remains closed.
+
+The r553 executable is 14294528 bytes, SHA256
+`46CAFAC08800A4261C2BA873440513395436C46860E9CAB86C5E5A6BA355682A`.
+Receipt SHA256 values for the three 8-worker captures are:
+
+- r556:`E51D0339F2580DEC77B9C4033E439F2B4B8A0E251B5F9FD2091A51EAF12C4EFC`
+- r558:`3D48859FA1A23A6B7554EC8C5271B2D2C808D846793B9CF6458E55C6FCC0D1B0`
+- r560:`1C74840F53C7B1B1DE9DC15D7E2A42F60D39D70AF61DDC2D54033DD15D610737`
+
+Each receipt pins the source hashes, exact executable, sampler, test contract,
+actual pool size, per-process resources and all phase lines. Reproduction uses
+the same owning test with `RAYON_NUM_THREADS=2`, `4`, `8` or `16` and the release
+native build; comparing worker counts requires separate processes because Rayon
+initializes its global pool once.

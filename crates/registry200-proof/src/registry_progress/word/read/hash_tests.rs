@@ -639,8 +639,9 @@ fn fresh_query(
     );
     assert_eq!(completed.coefficients()[6 * 512 + 255], 0);
     assert_eq!(completed.coefficients()[7 * 512 + 255], 0);
+    let rayon_threads = p3_maybe_rayon::prelude::current_num_threads();
     eprintln!(
-        "hash_query prepared_and_proved=true retained_DATA=true DIFFERENT_query=true word_role_setup_reused=true query_and_receiving_setup_in_budget=true shared_rayon2=true word_ms={word_ms:.3} query_ms={query_ms:.3} product_ms={product_ms:.3} receiving_setup_ms={setup_ms:.3} fresh_receive_ms={receive_ms:.3} client_ms={client_ms:.3} per_query_ms={per_query_ms:.3} bytes={} SQL=false network=false freshness=false locks=false security_assessed=false",
+        "hash_query prepared_and_proved=true retained_DATA=true DIFFERENT_query=true word_role_setup_reused=true query_and_receiving_setup_in_budget=true shared_rayon_threads={rayon_threads} word_ms={word_ms:.3} query_ms={query_ms:.3} product_ms={product_ms:.3} receiving_setup_ms={setup_ms:.3} fresh_receive_ms={receive_ms:.3} client_ms={client_ms:.3} per_query_ms={per_query_ms:.3} bytes={} SQL=false network=false freshness=false locks=false security_assessed=false",
         word.len() + query.len() + product.len()
     );
     let verifier = Verifier::new(&expected).unwrap();
