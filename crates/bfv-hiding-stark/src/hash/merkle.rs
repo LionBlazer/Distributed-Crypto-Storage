@@ -14,6 +14,9 @@ pub const LEAF_DOMAIN: &[u8] = b"DCS/research/hash-hiding-FRI/SHA256/leaf/ValLE8
 /// Fixed node identity, distinct from and not a prefix of the leaf identity.
 pub const NODE_DOMAIN: &[u8] = b"DCS/research/hash-hiding-FRI/SHA256/node/binary32/v1\0";
 
+const LEAF_BLOCK_FIELDS: usize = 64;
+const LEAF_BLOCK_BYTES: usize = LEAF_BLOCK_FIELDS * 8;
+
 /// Hash `LEAF_DOMAIN || canonical_field_LE8* || field_count_LE64` in one pass.
 /// Fixed-width canonical words and the final count make this encoding injective.
 #[derive(Clone, Copy, Debug, Default)]
@@ -29,17 +32,33 @@ impl CryptographicHasher<Val, [u8; 32]> for LeafHash {
         let mut hash = Sha256::new();
         hash.update(LEAF_DOMAIN);
         let mut count = 0u64;
+        let mut block = [0u8; LEAF_BLOCK_BYTES];
+        let mut used = 0usize;
         for field in input {
-            count = next_leaf_count(count);
-            hash.update(field.as_canonical_u64().to_le_bytes());
+            block[used..used + 8].copy_from_slice(&field.as_canonical_u64().to_le_bytes());
+            used += 8;
+            if used == LEAF_BLOCK_BYTES {
+                count = checked_leaf_count(count, LEAF_BLOCK_FIELDS as u64);
+                hash.update(block.as_slice());
+                used = 0;
+            }
+        }
+        if used != 0 {
+            count = checked_leaf_count(count, (used / 8) as u64);
+            hash.update(&block[..used]);
         }
         hash.update(count.to_le_bytes());
         hash.finalize().into()
     }
 }
 
-fn next_leaf_count(count: u64) -> u64 {
-    let next = count.checked_add(1).expect("leaf field count overflow");
+// Charge only a filled block (or its final partial prefix), before SHA sees it.
+// The reserved eight suffix bytes are included in every checked length, so the
+// SHA-256 message bit count cannot wrap even when the final block is full.
+fn checked_leaf_count(count: u64, additional: u64) -> u64 {
+    let next = count
+        .checked_add(additional)
+        .expect("leaf field count overflow");
     let domain_bytes = u64::try_from(LEAF_DOMAIN.len()).expect("fixed leaf domain fits u64");
     let message_bytes = next
         .checked_mul(8)

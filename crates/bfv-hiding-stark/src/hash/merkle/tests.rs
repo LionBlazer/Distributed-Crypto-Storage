@@ -95,7 +95,73 @@ fn binary_nodes_match_independent_bytes_and_keep_order_and_leaf_domain_distinct(
 fn unrepresentable_leaf_counts_reject_before_any_count_or_sha_length_wrap() {
     let domain_bytes = u64::try_from(LEAF_DOMAIN.len()).unwrap();
     let max = (u64::MAX / 8 - domain_bytes - 8) / 8;
-    assert_eq!(next_leaf_count(max - 1), max);
-    assert!(std::panic::catch_unwind(|| next_leaf_count(max)).is_err());
-    assert!(std::panic::catch_unwind(|| next_leaf_count(u64::MAX)).is_err());
+    assert_eq!(checked_leaf_count(max - 1, 1), max);
+    assert_eq!(checked_leaf_count(max - 64, 64), max);
+    assert_eq!(checked_leaf_count(max, 0), max);
+    // Partial/full blocks must reject the first excessive total, while both
+    // count-addition overflow and encoded-byte overflow remain hard failures.
+    for (count, additional) in [
+        (max, 1),
+        (max - 63, 64),
+        (u64::MAX, 1),
+        (u64::MAX - 63, 64),
+        (u64::MAX / 8, 0),
+    ] {
+        assert!(std::panic::catch_unwind(|| checked_leaf_count(count, additional)).is_err());
+    }
+}
+
+fn one_shot_leaf_bytes(fields: &[Val]) -> [u8; 32] {
+    // Independently encode one complete finite message, with no chunked writes
+    // or production counter helper. Allocation is restricted to this test oracle.
+    let mut bytes = b"DCS/research/hash-hiding-FRI/SHA256/leaf/ValLE8/countLE64/v1\0".to_vec();
+    for field in fields {
+        bytes.extend_from_slice(&field.as_canonical_u64().to_le_bytes());
+    }
+    bytes.extend_from_slice(&u64::try_from(fields.len()).unwrap().to_le_bytes());
+    Sha256::digest(bytes).into()
+}
+
+#[test]
+fn full_and_partial_stack_blocks_match_the_complete_one_shot_byte_stream() {
+    for length in [
+        0, 1, 7, 8, 9, 63, 64, 65, 127, 128, 129, 184, 419, 425, 429, 512, 521, 549, 577, 672, 718,
+        7170,
+    ] {
+        let fields: Vec<Val> = (0..length)
+            .map(|index| match index % 7 {
+                0 => Val::ZERO,
+                1 => Val::ONE,
+                2 => Val::from_u64(Val::ORDER_U64 - 1),
+                3 => Val::from_u64(Val::ORDER_U64),
+                4 => Val::from_u64(Val::ORDER_U64 + 1),
+                5 => Val::from_u64(u64::MAX),
+                _ => Val::from_u64(u64::try_from(index).unwrap() * 0x0102_0304_0506),
+            })
+            .collect();
+        let expected = one_shot_leaf_bytes(&fields);
+
+        let actual = LeafHash.hash_iter(fields.iter().copied());
+
+        assert_eq!(actual, expected, "field count {length}");
+    }
+}
+
+#[test]
+fn unknown_length_iterators_are_consumed_once_through_the_first_end_marker() {
+    for length in [0, 1, 63, 64, 65, 127, 128, 129] {
+        let fields: Vec<Val> = (0..length).map(Val::from_usize).collect();
+        let expected = one_shot_leaf_bytes(&fields);
+        let mut remaining = fields.iter().copied();
+        let mut visits = 0;
+        let stream = core::iter::from_fn(|| {
+            visits += 1;
+            remaining.next()
+        });
+
+        let actual = LeafHash.hash_iter(stream);
+
+        assert_eq!(actual, expected, "unknown field count {length}");
+        assert_eq!(visits, length + 1, "unknown field count {length}");
+    }
 }
