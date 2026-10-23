@@ -99,3 +99,45 @@ actual pool size, per-process resources and all phase lines. Reproduction uses
 the same owning test with `RAYON_NUM_THREADS=2`, `4`, `8` or `16` and the release
 native build; comparing worker counts requires separate processes because Rayon
 initializes its global pool once.
+
+## Rejected numeric-assessment cache experiment
+
+A subsequent candidate removed the repeated Query inventory walk and retained
+one small numeric assessment per sealed DATA/Query profile. Actual inventories,
+shape/resource checks, request-dependent equations and PP, fresh OS randomness
+and every native proof check remained active. The metadata comparison tests,
+all 15 Query tests and four full five-AIR/PIT runs passed. Correctness alone did
+not establish a latency benefit.
+
+To compare the complete local path, both variants were built with the same
+surrounding code and frozen together with all 826 pinned source files and the
+exact executable. They ran in separate processes in this order, with eight
+shared Rayon workers and the same 120-second / 1792 MiB / 20 ms observation:
+
+| Capture | Variant | Different-query local ms |
+| --- | --- | --- |
+| r582 | Original uncached production setup | 596.356 |
+| r583 | Numeric cache | 701.944 |
+| r584 | Numeric cache | 628.104 |
+| r585 | Original uncached production setup | 582.849 |
+| r586 | Original uncached production setup | 541.661 |
+| r587 | Numeric cache | 637.068 |
+
+The candidate median was 637.068 ms versus 582.849 ms uncached. The six complete
+owning tests passed, with no observer faults/cleanup; maximum whole-process OS
+working-set peak was 584159232 bytes. The candidate was rejected and its seven
+source edits were removed from the working implementation. Its exact source,
+binary and receipts remain in ignored local research output. No cross-request
+numeric cache or inventory bypass is introduced by this checkpoint.
+
+Frozen uncached build r581 executable SHA256:
+`F8FE9059AC806FC51241CFB313B622292F2D086DD9EAFA3FD46BDA50D922A2DD`.
+Frozen candidate build r568 executable SHA256:
+`58FF3098F8BD611C61D45676992F14BE2916EE6C69AB5292E6572E85D0D7A1C8`.
+The independent-source observer verifies its archive and executable before and
+after each capture, retaining the original exact-image held-handle guards.
+
+These later observations also demonstrate why the earlier below-500 ms local
+samples cannot support a stable latency guarantee. The full network SQL target
+remains unachieved; current agreed version, locks and production admission are
+still outside these measurements.
