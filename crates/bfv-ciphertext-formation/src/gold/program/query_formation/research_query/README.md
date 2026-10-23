@@ -20,8 +20,11 @@ also requires the normal SHA backend to reject the research proof. This case
 does not generate a proof from public inputs alone or validate a public sampler.
 The [whole-B arithmetic](public_deep/README.md) samples an affine polynomial
 from supplied public disclosures. The [opaque-input forest](opaque_inputs/README.md)
-constructs the four private INPUT multiproofs. Their composition with the actual
-joint disclosure law and complete native frame remains separate work.
+constructs the four private INPUT multiproofs. The
+[fixed-coin joint disclosures](../public_image/public_disclosures/README.md)
+preserve the actual fold and correlated quotient fiber before whole-B sampling.
+Complete native frame assembly and causal shared-oracle composition remain
+separate work.
 See the [executed validation](../RESEARCH-VALIDATION.md) for exact checks and scope.
 
 Direct dependencies are the owning Query AIR/setup/codec, pinned P3 MMCS and

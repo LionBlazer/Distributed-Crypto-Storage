@@ -139,13 +139,54 @@ is one passed and zero ignored. Strict Clippy r795 passed after an explicit
 coordinate-slice annotation and an iterator correction. These are arithmetic
 checks; their duration is not full proof production, acceptance or SQL latency.
 
+## Fixed-coin joint trace/quotient disclosures and whole B
+
+The private [joint disclosure sampler](public_image/public_disclosures/README.md)
+was executed through four unit cases and two owning consumer cases. It draws
+the enlarged MAIN416/AUX420 base residues and ten appended trace columns, uses
+the actual Query fold with the same coins, and preserves all five correlated
+quotient-coordinate fibers. Each fiber draws seven free masks; the eighth is
+determined by the native normalized c-weighted relation. The appended five
+quotient columns have the separate full independent image. R10 and actual PP545
+complete the 1481-column public view, without an original trace or witness.
+
+The unit cases compare native split order and normalized physical vanishing
+polynomials, all five fibers at the full 192-location budget, and independent
+rank-seven kernel images at every one of the eight zero-vanishing roots. They
+also require malformed locations and exceptional z to reject before RNG advance.
+No inverse of a possibly zero quotient vanishing factor or new rank exception
+is introduced.
+
+The first consumer samples the full 197/394 image using 350069 Gold cells, then
+composes it with whole-B preparation/convolution. Every one of the 192 physical
+rows agrees with a direct 2327-term DEEP reference. The second fixes the same
+cell tape while changing only the constraint coin: the original/appended trace,
+R, PP and appended quotient images stay identical, while every original quotient
+chunk receives the same changed offset. It also covers base z and overlapping
+current/next location sets.
+
+| Run | Cases | Harness time | Process wall | Sampled OS peak |
+| --- | ---: | ---: | ---: | ---: |
+| r810, fixed native geometry/fiber/failure laws | 4 | 0.10 s | 147.0161 ms | 54,239,232 B |
+| r811, actual joint V to whole-B consumers | 2 | 2.26 s | 2271.3342 ms | 103,964,672 B |
+
+Both use build r808 and executable SHA256
+`48FBE99498FF5352F3276A5487DF73C3B12CF1E9D81412B223DF2C31733DDCE4`.
+Source/image pins matched before and after; the observer reported no faults or
+cleanup actions. Strict Clippy r807, owning all-targets check r812 and
+requirements-mirror test r813 passed after explicit base-to-extension division
+conversions and a corrected test ring receiver. Independent source
+review found no blocking law/association defect. These are conditional fixed-coin
+algebra checks, not distribution tests, full native proof production, adaptive
+Fiat-Shamir simulation, concrete privacy or SQL latency observations.
+
 ## Remaining work
 
-The public trace/AUX residue distribution, correlated quotient-mask fiber,
-whole-B sampler, opaque input trees and final native proof assembly must still
-be composed and checked together without an original private `Prepared` or an
-honest witness. Implemented component samplers and paths do not establish their
-joint distribution, causal oracle composition or an accepting complete frame.
+The fixed-coin trace/AUX residues, correlated quotient fiber and whole-B sampler
+now compose as arithmetic. Their composition with opaque input trees and final
+native proof assembly must still be checked without an original private
+`Prepared` or honest witness. The fixed-coin joint law does not establish causal
+oracle composition, an accepting complete frame or adaptive privacy.
 The source helpers use their concrete public SHA implementations outside this
 regression dictionary; complete shared-helper ROM simulation is not claimed.
 Conditional privacy additionally needs its explicit calibrated prior-state,

@@ -1,5 +1,6 @@
 //! Isolated child of owning query_formation, cfg(test) only.
 //! PUBLIC image arithmetic, not a proof producer/verifier or valid-witness claim.
+pub(super) mod public_disclosures;
 mod ring;
 #[cfg(test)]
 mod tests;

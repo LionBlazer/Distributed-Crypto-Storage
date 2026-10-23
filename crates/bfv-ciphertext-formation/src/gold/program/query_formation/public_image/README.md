@@ -45,3 +45,9 @@ target under the owning held-process resource observer:
 ```sh
 cargo test --release --locked -p bfv-ciphertext-formation gold::program::query_formation::public_image::tests::full_locations::all_five_query_coordinate_polynomials_match_native_folder_on_192_rows_and_five_ood_embeddings -- --ignored --exact --test-threads=1
 ```
+
+The private [joint disclosure sampler](public_disclosures/README.md) draws
+enlarged MAIN/AUX residues, evaluates this actual fold with the same coins, and
+samples the normalized correlated quotient fiber plus wrapper/R disclosures.
+Its output is fixed-coin public arithmetic, without an original trace or proof.
+Oracle/FRI composition and operation admission remain separate boundaries.
