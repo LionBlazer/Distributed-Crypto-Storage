@@ -4,6 +4,9 @@ The implementation has been extracted into the reusable
 [`bfv-hiding-stark::hash`](../../crates/bfv-hiding-stark/src/hash/README.md) module
 and closed owning proof libraries. This directory retains the original research
 record; it is no longer a Cargo package or a duplicate engine implementation.
+The [typed extraction analysis](analysis/README.md) adds a standalone finite
+dictionary/snapshot model and its direct shared-oracle argument. It is research
+code, with no dependency from core or live acceptance path.
 The actual Source facade/tests now belong to
 [`registry200-proof::source::hash`](../../crates/registry200-proof/src/source/hash/README.md).
 
