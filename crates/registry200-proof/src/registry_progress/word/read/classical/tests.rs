@@ -104,7 +104,7 @@ fn actual_closed_airs_report_five_native_arguments_and_original_lookup_counts() 
             }
         );
         assert!(bound.union_bits() > 235.0);
-        assert_eq!(bound.terms().len(), if lookup.is_some() { 6 } else { 5 });
+        assert_eq!(bound.terms().len(), if lookup.is_some() { 7 } else { 6 });
         eprintln!(
             "closed_classical_air relation={relation:?} committed_log={committed_log} constraints={} degree={} chunks={} openings={} original_logup={lookup:?} rbr_sum_bits={} terms={:?} proof=false sql=false",
             params.num_constraints,
@@ -124,6 +124,25 @@ fn actual_closed_airs_report_five_native_arguments_and_original_lookup_counts() 
     );
     assert_eq!(report.pit_single_bits(), 306);
     print_report(&report);
+}
+
+#[test]
+fn actual_sdk_patterns_group_lookup_pairs_and_complete_query_index_vectors() {
+    let manifests = super::super::transcript::inspect(&expected()).unwrap();
+    for (manifest, lookup, expected_groups) in manifests
+        .iter()
+        .zip([(false, 14), (false, 14), (true, 17), (true, 15), (true, 17)])
+        .map(|(m, (lookup, groups))| (m, lookup, groups))
+    {
+        let stark = manifest.stark().challenge_group_base_draws().unwrap();
+        assert_eq!(stark, if lookup { vec![10, 5, 5] } else { vec![5, 5] });
+        let pcs = manifest.pcs().challenge_group_base_draws().unwrap();
+        assert_eq!(pcs, [5]);
+        let fri = manifest.fri().challenge_group_base_draws().unwrap();
+        assert_eq!(fri.last(), Some(&192));
+        assert!(fri[..fri.len() - 1].iter().all(|n| *n == 5));
+        assert_eq!(stark.len() + pcs.len() + fri.len(), expected_groups);
+    }
 }
 
 fn print_report(report: &Report) {

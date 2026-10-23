@@ -58,6 +58,91 @@ fn pattern(public_count: usize) -> InteractionPattern {
 }
 
 #[test]
+fn adjacent_extensions_and_all_index_draws_form_complete_challenge_groups() {
+    let interaction = InteractionPattern::new(vec![
+        Interaction::algebra::<Val, Challenge>(
+            Hierarchy::Atomic,
+            Kind::Challenge,
+            "lookup-alpha",
+            Length::Scalar,
+        ),
+        Interaction::algebra::<Val, Val>(
+            Hierarchy::Atomic,
+            Kind::Pow,
+            "free-grinding",
+            Length::Fixed(0),
+        ),
+        Interaction::bytes(
+            Hierarchy::Atomic,
+            Kind::Hint,
+            "unabsorbed-hint",
+            Length::Bounded(64),
+        ),
+        Interaction::algebra::<Val, Challenge>(
+            Hierarchy::Atomic,
+            Kind::Challenge,
+            "lookup-beta",
+            Length::Scalar,
+        ),
+        Interaction::opaque(
+            Hierarchy::Atomic,
+            Kind::Message,
+            "aux-commitment",
+            Length::Scalar,
+        ),
+        Interaction::bits(
+            Hierarchy::Atomic,
+            Kind::Challenge,
+            "indices",
+            15,
+            Length::Fixed(192),
+        ),
+    ])
+    .unwrap();
+    let separator = DomainSeparator::<FieldUnit<Val>>::new(1, b"groups", interaction);
+
+    let groups = inspect_separator(&separator)
+        .challenge_group_base_draws()
+        .unwrap();
+
+    assert_eq!(groups, [10, 192]);
+}
+
+#[test]
+fn unsupported_sampling_or_positive_grinding_rejects_group_analysis() {
+    for step in [
+        Interaction::algebra::<Val, Val>(
+            Hierarchy::Atomic,
+            Kind::Pow,
+            "positive-grinding",
+            Length::Fixed(1),
+        ),
+        Interaction::uniform_bits(
+            Hierarchy::Atomic,
+            Kind::Challenge,
+            "uniform-bits",
+            15,
+            Length::Scalar,
+        ),
+        Interaction::bits(
+            Hierarchy::Atomic,
+            Kind::Challenge,
+            "variable-indices",
+            15,
+            Length::Bounded(192),
+        ),
+    ] {
+        let pattern = InteractionPattern::new(vec![step]).unwrap();
+        let separator = DomainSeparator::<FieldUnit<Val>>::new(1, b"unsupported-groups", pattern);
+        assert!(
+            inspect_separator(&separator)
+                .challenge_group_base_draws()
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn actual_seed_fields_decode_to_independent_protocol_and_chunk_framing() {
     let pattern = pattern(1);
     let pattern_hash = pattern.pattern_hash();

@@ -34,8 +34,11 @@ DATA, Word and Query retain their independently enforced eight-chunk batch gate.
 The [engine diagnostic](../../../../../bfv-hiding-stark/CLASSICAL.md) fixes the
 analysis multiplicity to three and the native suite to Goldilocks/EF5, blowup8,
 192 queries, binary folds, final degree one and no grinding. It reports separate
-ALI, conservative paper DEEP, batching, FRI commit, FRI query and original LogUp
-terms. The reported sum bounds the reported algebraic RBR contributions; it is
+ALI, conservative paper DEEP, OOD-domain hits, batching, FRI commit, FRI query
+and original LogUp terms. The lookup contribution includes a union over the
+frozen joint MAIN list; the explicit OOD charge covers the whole excluded domain,
+not only positions eventually sampled by FRI. The reported sum bounds the
+reported algebraic RBR contributions; it is
 not the total failure probability across an interactive execution. In particular,
 the SDK commit term is a maximum over folding rounds, not a sum over them.
 There are five native arguments and one separately analysed product PIT.

@@ -29,7 +29,7 @@ fn term<'a>(bound: &'a AlgebraicBound, label: &str) -> &'a AlgebraicTerm {
 }
 
 #[test]
-fn a_two_point_air_uses_paper_list_squared_and_original_lookup_messages() {
+fn a_two_point_air_charges_list_squared_deep_and_list_union_lookup() {
     let bound = analyze(&small_air(), 10, Some((3, 5))).unwrap();
 
     // For k=1024,n=8192,m=3 the paper list size is 24576/1018.
@@ -38,13 +38,15 @@ fn a_two_point_air_uses_paper_list_squared_and_original_lookup_messages() {
     let q = 2.0f64.powi(319);
     let ali_probability = 24576.0 / (1018.0 * q);
     let deep_probability = (24576.0 * 24576.0 * 5121.0) / (1018.0 * 1018.0 * q);
-    let lookup_probability = 21504.0 / q; // 3 * 1024 * (5+2)
+    // Each original lookup inventory is charged for every frozen MAIN candidate.
+    let lookup_probability = (24576.0 * 21504.0) / (1018.0 * q);
     // At m=3 the line-MCA count is 343*n^2/(3*(k-1)); it also
     // dominates the second conservative binary-fold commit contribution.
     let line_count = 343.0 * 8192.0 * 8192.0 / (3.0 * 1023.0);
     for (label, probability) in [
         ("air-composition", ali_probability),
         ("deep-ali", deep_probability),
+        ("ood-domain-hit", 9216.0 / q),
         ("batch-combination", 19.0 * line_count / q),
         ("ldt-commit-phase", line_count / q),
         ("ldt-query-phase", (49.0f64 / 288.0).powi(96)),
@@ -54,10 +56,51 @@ fn a_two_point_air_uses_paper_list_squared_and_original_lookup_messages() {
         assert!(reported_probability >= probability);
         assert!(reported_probability < 4.1 * probability);
     }
-    assert_eq!(term(&bound, "logup-fingerprint").bits(), 303.0);
+    assert_eq!(term(&bound, "logup-fingerprint").bits(), 299.0);
+    assert_eq!(bound.terms().len(), 7);
     assert_eq!(bound.analysis_m(), 3);
     assert_eq!(bound.logup(), Some((3, 5)));
     assert!((bound.paper_list_size() - 24.141453831041257).abs() < 1e-12);
+}
+
+#[test]
+fn out_of_domain_charge_covers_the_whole_lde_and_trace_at_both_heights() {
+    let q = 2.0f64.powi(319);
+    for (committed_log, excluded_size, reported_bits) in [(10, 9216.0, 304.0), (12, 36864.0, 302.0)]
+    {
+        let without_lookup = analyze(&small_air(), committed_log, None).unwrap();
+        let with_lookup = analyze(&small_air(), committed_log, Some((3, 5))).unwrap();
+
+        // D has eight times the committed height. Charge all of D union H,
+        // independently of which 192 positions the verifier eventually queries.
+        let reference_probability = excluded_size / q;
+        for bound in [&without_lookup, &with_lookup] {
+            let actual = term(bound, "ood-domain-hit");
+            let reported_probability = 2.0f64.powf(-actual.bits());
+            assert_eq!(actual.bits(), reported_bits);
+            assert!(reported_probability >= reference_probability);
+            assert!(reported_probability < 4.1 * reference_probability);
+        }
+    }
+}
+
+#[test]
+fn original_lookup_inventory_is_unioned_over_the_fixed_joint_main_list() {
+    let one = analyze(&small_air(), 12, Some((1, 1))).unwrap();
+    let two = analyze(&small_air(), 12, Some((2, 1))).unwrap();
+
+    // At k=4096,n=32768 the paper list bound is 98304/4090.
+    // One original interaction, including denominator failures, costs 3*4096/q.
+    let single_candidate = 12288.0 / 2.0f64.powi(319);
+    let list_union = (98304.0 / 4090.0) * single_candidate;
+    let reported = 2.0f64.powf(-term(&one, "logup-fingerprint").bits());
+    assert!(reported >= list_union);
+    assert!(reported < 4.1 * list_union);
+    assert!(reported > 24.0 * single_candidate);
+    assert_eq!(
+        term(&two, "logup-fingerprint").bits(),
+        term(&one, "logup-fingerprint").bits() - 1.0
+    );
 }
 
 #[test]
@@ -91,7 +134,7 @@ fn union_charges_each_probability_and_contains_no_hash_workbit_cap() {
     assert!(reported_probability < 4.1 * sum);
     assert!(bound.union_bits() > 240.0);
     assert!(bound.union_bits() < 245.0);
-    assert_eq!(bound.terms().len(), 5);
+    assert_eq!(bound.terms().len(), 6);
     assert!(
         bound
             .terms()

@@ -9,8 +9,10 @@ mod argument;
 pub use argument::{ArgumentManifest, CommitmentGeometry, MatrixGeometry, inspect_argument};
 use p3_challenger::{
     CanObserve,
-    fs::{DomainSeparator, FieldUnit},
+    fs::{DomainSeparator, FieldUnit, Hierarchy, InteractionPattern, Kind, Length, TypeTag},
 };
+use p3_field::PrimeField64;
+use std::sync::Arc;
 
 /// Public metadata copied from one SDK separator and its actual seeding stream.
 /// This freely clonable snapshot is a diagnostic report, not a capability.
@@ -20,6 +22,7 @@ pub struct SeedBinding {
     pattern_hash: [u8; 32],
     instance_label: Vec<u8>,
     observed_fields: Vec<Val>,
+    pattern: Arc<InteractionPattern>,
 }
 
 impl SeedBinding {
@@ -44,6 +47,60 @@ impl SeedBinding {
     pub fn observed_fields(&self) -> &[Val] {
         &self.observed_fields
     }
+
+    /// Base-field draws in each consecutive challenge group of this SDK pattern.
+    ///
+    /// Adjacent extension challenges share a group. So do all index draws before
+    /// the next observation. Zero grinding, hints and structural markers do not
+    /// absorb data and cannot split a group. A domain separator seeds an actual
+    /// observation between parent/PCS/FRI patterns, so owners concatenate their
+    /// separately inspected groups without merging across those boundaries.
+    ///
+    /// This fixed Gold/EF5 diagnostic rejects unsupported or variable sampling
+    /// shapes. Counts measure Gold draws, not uniform bits or cryptographic
+    /// security. In particular, projecting a Gold draw to low index bits keeps
+    /// the bias accounted for separately by the algebraic analyzer.
+    pub fn challenge_group_base_draws(&self) -> Result<Vec<usize>, crate::Error> {
+        let mut groups = Vec::new();
+        let mut pending = 0usize;
+        for step in self.pattern.interactions() {
+            if step.hierarchy() != Hierarchy::Atomic || step.kind() == Kind::Hint {
+                continue;
+            }
+            let length = match step.length() {
+                Length::Scalar => 1,
+                Length::Fixed(n) => n,
+                Length::None => 0,
+                Length::Bounded(_) => return Err(crate::Error::Shape),
+            };
+            match step.kind() {
+                Kind::Challenge => {
+                    let degree = match step.type_tag() {
+                        TypeTag::Algebra {
+                            modulus, degree, ..
+                        } if modulus == Val::ORDER_U64 && matches!(degree, 1 | 5) => degree,
+                        TypeTag::Bits { width } if width < 64 => 1,
+                        _ => return Err(crate::Error::Shape),
+                    };
+                    pending = degree
+                        .checked_mul(length)
+                        .and_then(|n| pending.checked_add(n))
+                        .ok_or(crate::Error::Shape)?;
+                }
+                Kind::Public | Kind::Message | Kind::Salt if length != 0 => {
+                    if pending != 0 {
+                        groups.push(core::mem::take(&mut pending));
+                    }
+                }
+                Kind::Pow if length != 0 => return Err(crate::Error::Shape),
+                _ => {}
+            }
+        }
+        if pending != 0 {
+            groups.push(pending);
+        }
+        Ok(groups)
+    }
 }
 
 struct SeedTap(Vec<Val>);
@@ -66,6 +123,7 @@ pub fn inspect_separator(separator: &DomainSeparator<FieldUnit<Val>>) -> SeedBin
         pattern_hash: separator.pattern().pattern_hash(),
         instance_label: separator.instance_label().to_vec(),
         observed_fields: tap.0,
+        pattern: separator.pattern().clone(),
     }
 }
 

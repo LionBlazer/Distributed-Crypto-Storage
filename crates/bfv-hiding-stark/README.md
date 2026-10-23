@@ -15,6 +15,11 @@ operation capability and is not evaluated on native proof paths.
 identifier, pattern hash and delimited instance label. This public diagnostic
 snapshot creates no RNG, configuration or proof; callers retain responsibility
 for associating the supplied SDK separator with their actual protocol instance.
+`SeedBinding::challenge_group_base_draws` inspects that same SDK pattern and
+groups consecutive draws between observations. It preserves both the ten Gold
+draws in a lookup challenge pair and all 192 index draws; zero grinding and hints
+cannot create a fictitious observation boundary. Unsupported sampling shapes
+reject. These counts support transcript analysis and supply no security verdict.
 
 `transcript::inspect_argument` adds the fixed one-AIR hiding-PCS opening geometry
 and actual SDK PCS/FRI seeds. It checks widths, salts and the total opening count,

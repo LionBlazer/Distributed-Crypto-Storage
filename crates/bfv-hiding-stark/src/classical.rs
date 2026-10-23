@@ -165,10 +165,11 @@ pub fn analyze(
     let deep_factor = air_factor.max(chunk_factor);
     // q >= 2^319, |D union H| <= n+k. ln_1p retains the denominator
     // correction even when subtracting n+k directly from 2^319 rounds away.
-    let excluded_fraction = (n + k) as f64 * 2.0f64.powi(-(MODULUS_BITS as i32));
+    let excluded_domain_size = n.checked_add(k).ok_or(Error::Shape)?;
+    let excluded_fraction = excluded_domain_size as f64 * 2.0f64.powi(-(MODULUS_BITS as i32));
     let denominator_bits =
         MODULUS_BITS as f64 + (-excluded_fraction).ln_1p() / std::f64::consts::LN_2;
-    let mut terms = Vec::with_capacity(6);
+    let mut terms = Vec::with_capacity(7);
     push_term(
         &mut terms,
         "air-composition",
@@ -178,6 +179,14 @@ pub fn analyze(
         &mut terms,
         "deep-ali",
         denominator_bits - 2.0 * paper_list_size.log2() - (deep_factor as f64).log2(),
+    )?;
+    // The paper's excluded-domain denominator is conditional on an OOD point
+    // outside D union H. Native sampling uses the whole extension field; in
+    // particular, rejecting a pole at a queried row is not global exclusion of D.
+    push_term(
+        &mut terms,
+        "ood-domain-hit",
+        MODULUS_BITS as f64 - (excluded_domain_size as f64).log2(),
     )?;
     push_term(
         &mut terms,
@@ -203,6 +212,8 @@ pub fn analyze(
         fri::query_phase_error(alpha, QUERIES, 0).bits() - query_bias_bits,
     )?;
     if let Some((num_interactions, max_message_width)) = original_logup {
+        // MAIN is committed before the fingerprint, but list decoding permits
+        // several joint MAIN candidates. Later AUX must project into that list.
         push_term(
             &mut terms,
             "logup-fingerprint",
@@ -213,7 +224,8 @@ pub fn analyze(
                 },
                 &instance,
             )
-            .bits(),
+            .bits()
+                - paper_list_size.log2(),
         )?;
     }
     let errors: Vec<_> = terms
