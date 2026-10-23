@@ -6,6 +6,14 @@ the proposed round-by-round derivation remains subject to independent review.
 It changes no engine term, proof configuration, wire profile or admission guard
 and establishes no composed cryptographic security or SQL/lock authority.
 
+The later [owning ordered-equation gate](../../../../../bfv-ciphertext-formation/src/gold/program/ORDERED-AIR-VALIDATION.md)
+checks actual DATA/Query evaluator emissions, the SDK verifier's alpha-Horner
+fold and prover split powers, with arbitrary field-valued PP. A balanced lookup
+with invalid local MAIN remains outside the application-eligible candidate list
+before lookup coins; a later alpha cancellation is charged separately. The four
+tests support this source bridge, not the generalized instance recognizer,
+frozen PP degree check, online extractor or complete RBR/security argument.
+
 ## Fixed native execution
 
 The five closed arguments have a single input-PCS height partition individually:

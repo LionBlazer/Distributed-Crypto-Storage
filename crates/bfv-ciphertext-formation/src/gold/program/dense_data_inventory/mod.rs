@@ -78,3 +78,12 @@ pub(in crate::gold) const WRITER_LAYOUT: [usize; 10] = [
     ACCUMULATOR,
     SLOTS,
 ];
+
+#[cfg(test)]
+mod ordered_constraint_tests {
+    fn metadata() -> super::Expected {
+        super::expected().unwrap()
+    }
+    fn clear_first_statement_count(_pp: &mut [bfv_hiding_stark::Challenge]) {}
+    include!("../ordered_constraint_tests.rs");
+}

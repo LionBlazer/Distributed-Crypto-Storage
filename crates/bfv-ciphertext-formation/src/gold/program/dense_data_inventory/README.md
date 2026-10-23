@@ -1,5 +1,9 @@
 # Dense DATA mathematical proof backend
 
+The [ordered AIR gate](../ORDERED-AIR-VALIDATION.md) checks actual emitted
+application/LogUp equations and native alpha folding with arbitrary field PP.
+It is test-only source correspondence and grants no proof or SQL admission.
+
 `gold::data::dense_transcript_manifest` and `gold::query::transcript_manifest`
 derive SDK separators and hiding-PCS geometry from their actual owning AIRs.
 They use the assessor's already BASE-flattened AUX width and validate exact

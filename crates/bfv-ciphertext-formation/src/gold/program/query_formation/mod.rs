@@ -58,3 +58,15 @@ pub(in crate::gold) const WRITER_LAYOUT: [usize; 10] = [
     ACCUMULATOR,
     SLOTS,
 ];
+
+#[cfg(test)]
+mod ordered_constraint_tests {
+    fn metadata() -> super::Expected {
+        super::tests::metadata()
+    }
+    fn clear_first_statement_count(pp: &mut [bfv_hiding_stark::Challenge]) {
+        pp[super::layout::STMT_LOOKUP] =
+            <bfv_hiding_stark::Challenge as p3_field::PrimeCharacteristicRing>::ZERO;
+    }
+    include!("../ordered_constraint_tests.rs");
+}

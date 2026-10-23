@@ -1,5 +1,9 @@
 # Fused query Formation backend
 
+The [ordered AIR gate](../ORDERED-AIR-VALIDATION.md) checks the same native
+evaluator's complete application/fraction/terminal order, including non-Boolean
+PP and a balanced-lookup counterexample that still violates local equations.
+
 The [CPU-budget study](../../../../../registry200-proof/src/registry_progress/word/read/CPU-SCALING.md)
 records actual worker counts, lower native Query and complete local read intervals.
 
