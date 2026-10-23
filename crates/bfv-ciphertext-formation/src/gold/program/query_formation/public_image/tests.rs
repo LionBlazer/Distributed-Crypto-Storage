@@ -1,4 +1,6 @@
 //! Arithmetic/source association checks only. No original witness or proof.
+mod full_locations;
+
 use super::*;
 use p3_air::RowWindow;
 use p3_batch_stark::folder::VerifierConstraintFolderWithLookups;

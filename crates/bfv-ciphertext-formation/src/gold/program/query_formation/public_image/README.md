@@ -27,6 +27,21 @@ checks passed in the [bounded owning runs](../RESEARCH-VALIDATION.md). The small
 folder case has an empty query set and base OOD point 49; it is not a full
 192-location test or a privacy/Fiat-Shamir theorem.
 
+The separate opt-in full-profile case now compares every coordinate at 192
+physical locations and five coefficient-Frobenius embeddings at fixed nonbase
+z. Its negative control detects a nonzero tensor error invisible to all base
+locations and the first scalar embedding. This checks the complete degree<197
+coordinate residues for one public fixture against the actual SDK folder;
+it is not a separate reconstruction of the public PP commitment. The
+[owning observations](../RESEARCH-VALIDATION.md) record its executed scope.
+
 ```sh
 cargo test --release --locked -p bfv-ciphertext-formation gold::program::query_formation::public_image:: -- --test-threads=1
+```
+
+The full-profile case is ignored by the ordinary filter above. Execute its exact
+target under the owning held-process resource observer:
+
+```sh
+cargo test --release --locked -p bfv-ciphertext-formation gold::program::query_formation::public_image::tests::full_locations::all_five_query_coordinate_polynomials_match_native_folder_on_192_rows_and_five_ood_embeddings -- --ignored --exact --test-threads=1
 ```

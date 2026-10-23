@@ -103,6 +103,42 @@ No private RNG clone API or dependency was added. Independent source reviews
 found no blocking arithmetic or forest-protocol defect. The process memory and
 durations above cover these component checks, not full proof assembly or SQL.
 
+## Complete Query image comparison at 192 locations
+
+The opt-in `public_image::tests::full_locations` case was explicitly executed
+under the same held-process limits. It uses the actual Query AIR and packed
+LogUp folder independently from the symbolic ring evaluator. The target/source
+moduli have degrees 197/394, with 192 disjoint current/next physical locations
+and a nonbase OOD point. MAIN/AUX are dense public residue fixtures of degree
+393, without a private configuration, witness, RNG or proof.
+
+At every base location, all five native folder coefficients are compared
+separately: 960 equalities. At fixed nonbase z, five distinct Frobenius maps
+apply only to the coefficient extension and coins, keeping evaluation values
+and selectors fixed. Their nonzero Vandermonde determinant establishes that
+the five scalar comparisons determine all five extension-valued coordinates.
+Together with the base locations this determines each degree<197 residue.
+The nonzero control `P_S(X)*((X-2)-u)` is invisible to those base checks and the
+first OOD map but is detected by the remaining four maps.
+
+Actual public PP comes from the existing getter; native DFT evaluates its 545
+columns in batches of 16, with selected scalar Horner checks of coset order and
+rotation. This gate does not independently reconstruct the PP commitment or
+establish a globally valid AIR trace. It invokes the real SDK folder 197 times.
+An independent source review found no blocking arithmetic or association issue.
+
+| Run | Cases | Harness time | Process wall | Sampled OS peak |
+| --- | ---: | ---: | ---: | ---: |
+| r798, exact opt-in full image/native folder | 1 | 2.50 s | 2535.3662 ms | 121,270,272 B |
+
+Build r796 completed before the run. The executable SHA256 was
+`70DDAE1792B19A5E2E9B29EDE077C79C8EBFA0665BBDBBF098112854C69E677A`.
+Source/image pins matched before and after; the observer reported no faults or
+cleanup actions. The explicit ignored target ran, so the resulting harness count
+is one passed and zero ignored. Strict Clippy r795 passed after an explicit
+coordinate-slice annotation and an iterator correction. These are arithmetic
+checks; their duration is not full proof production, acceptance or SQL latency.
+
 ## Remaining work
 
 The public trace/AUX residue distribution, correlated quotient-mask fiber,
