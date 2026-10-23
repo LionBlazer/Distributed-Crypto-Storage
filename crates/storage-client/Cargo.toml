@@ -7,7 +7,7 @@ publish = false
 
 [features]
 word-control = ["dep:registry200-proof", "dep:registry200-joint", "dep:registry200-finality", "dep:p3-field", "dep:protocol-storage", "dep:chacha20poly1305", "dep:sha2"]
-word-query = ["bfv-query-core/gold-owner", "dep:bfv-ciphertext-formation", "dep:registry200-joint", "dep:registry200-proof", "registry200-proof/owner-read", "dep:p3-field", "dep:sha2"]
+word-query = ["bfv-query-core/gold-owner", "dep:bfv-ciphertext-formation", "dep:registry200-joint", "dep:registry200-proof", "registry200-proof/owner-read", "dep:p3-field", "dep:p3-maybe-rayon", "dep:sha2"]
 private-input-proofs = [
     "bfv-query-core/formation-proofs",
     "dep:registry200-proof",
@@ -38,6 +38,7 @@ bfv-ciphertext-formation = { path = "../bfv-ciphertext-formation", optional = tr
 bfv-mul-relin-proof = { path = "../bfv-mul-relin-proof", optional = true }
 bfv-product-evidence = { path = "../bfv-product-evidence", optional = true }
 p3-field = { version = "=0.8.0", optional = true }
+p3-maybe-rayon = { version = "=0.8.0", features = ["parallel"], optional = true }
 sha2 = { version = "=0.10.9", optional = true }
 chacha20poly1305 = { version = "=0.10.1", optional = true }
 protocol-storage = { path = "../protocol-storage", optional = true }

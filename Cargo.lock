@@ -4882,6 +4882,7 @@ dependencies = [
  "fhe-math",
  "getrandom 0.2.17",
  "p3-field",
+ "p3-maybe-rayon",
  "peer-runtime",
  "peer-transport",
  "proof-acceleration",

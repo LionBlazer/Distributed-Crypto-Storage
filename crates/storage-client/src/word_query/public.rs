@@ -144,7 +144,9 @@ impl<'q> PreparedPublicQuery<'q> {
         &self.query_expected
     }
     /// Consume both guarded witnesses to produce genuine unverified native
-    /// arguments. Every proving failure consumes this prepared attempt.
+    /// arguments in the native backends' shared Rayon pool. Both branches finish
+    /// before returning; each uses its own moved inputs and fresh private RNG.
+    /// Every proving failure consumes this prepared attempt.
     pub fn prove(self, producer: &word::hash::Prover) -> Result<ProvedPublicQuery<'q>> {
         let Self {
             original,
@@ -153,11 +155,18 @@ impl<'q> PreparedPublicQuery<'q> {
             inputs,
             query_inputs,
         } = self;
-        let word = producer
-            .produce(&word_expected, inputs)
-            .map_err(Error::Word)?
-            .into_bytes();
-        let query = fused::hash::prove(&query_expected, query_inputs).map_err(Error::Formation)?;
+        let (word, query) = p3_maybe_rayon::prelude::join(
+            || {
+                producer
+                    .produce(&word_expected, inputs)
+                    .map_err(Error::Word)
+            },
+            || fused::hash::prove(&query_expected, query_inputs).map_err(Error::Formation),
+        );
+        // Join both owning computations before handling either error. No private
+        // worker survives the call, and Word retains its original error priority.
+        let word = word?.into_bytes();
+        let query = query?;
         Ok(ProvedPublicQuery {
             original,
             word_binding: word_expected.binding(),

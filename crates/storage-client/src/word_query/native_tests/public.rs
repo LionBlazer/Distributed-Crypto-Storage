@@ -188,9 +188,9 @@ fn compiled_sql_public_proofs_bind_original_data_before_completion_and_share_sin
         prepared.query_expected().binding()
     );
 
-    // Only independent PUBLIC receiving preparation runs beside native proving.
-    // No proof or verification verdict exists when this setup starts. The same
-    // shared Rayon budget handles both; the protected producer stays local.
+    // Independent PUBLIC receiving preparation runs beside native proving.
+    // No proof or verification verdict exists when this setup starts. Both
+    // proof branches and setup reuse the same native Rayon pool.
     let (proved, receiver, setup_ms, prove_ms, setup_proving_wall_ms) =
         std::thread::scope(|scope| {
             let began_overlap = Instant::now();

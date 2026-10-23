@@ -78,8 +78,9 @@ original canonical serialization and native proofs, its DATA composition,
 direct [Gold Formation](../../../bfv-ciphertext-formation/src/gold/README.md)
 dependency for original fused Query preparation/proving, the
 [Joint packet codec](../../../registry200-joint/src/word/PREDICATE-PACKET.md)
-for complete unverified evidence transfer, OS entropy,
-SHA2 and zeroize. Peer transport and finality policy remain with their existing
+for complete unverified evidence transfer, the native `p3-maybe-rayon` shared
+pool for joining independent proof jobs, OS entropy, SHA2 and zeroize.
+Peer transport and finality policy remain with their existing
 owners. The root feature enables the existing owner-read mathematical composition;
 it does not enable the historical private-input-proofs pipeline by aliasing it.
 
@@ -107,7 +108,13 @@ metadata, not evidence; no proof verdict or protected opening is exposed.
 
 `PreparedPublicQuery::prove(hash_prover)` consumes the guarded preparation and
 invokes the fixed SHA fused Query and SHA Predicate Word native provers over the
-same original mathematical inputs. Dropping the preparation or a failed prove
+same original mathematical inputs in their shared Rayon pool. Each branch owns
+its distinct guarded preparation and obtains fresh independent private RNGs;
+the originating query stays outside both jobs. Both jobs finish before either
+error is returned, retaining Word-first error precedence. The caller owns the
+pool's worker/resource policy; this library creates no additional pool or detached
+private worker. Concurrent proving/setup memory still needs whole-process
+measurement. Dropping the preparation or a failed prove
 cannot restore its original one-use witnesses. The existing
 `PendingQuery::prove_public(owner, hash_prover, word_expected, data_expected)`
 convenience method performs preparation followed immediately by this same prove.
@@ -152,6 +159,9 @@ public setup with proving changes scheduling only; all native checks remain fres
 The [executed preparation measurements](PREPARATION-VALIDATION.md) compare this
 overlap with the former sequential executable, including every native check and
 the retained interface/single-use failures. They establish no full-query500ms bound.
+The [joined native proving measurements](PROVING-VALIDATION.md) separately compare
+sequential Word/Query production with their shared-pool join, while retaining
+the same overlapping public setup and complete receiving checks.
 
 These frames can travel to another receiver, but remain unverified until that
 receiver performs the original native checks against its independently retained
