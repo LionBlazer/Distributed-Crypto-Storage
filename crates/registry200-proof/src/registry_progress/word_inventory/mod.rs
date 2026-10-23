@@ -7,6 +7,8 @@ mod check;
 mod control;
 mod evaluate;
 mod expr;
+#[cfg(test)]
+mod generalized_mu;
 pub(super) mod owner;
 mod plan;
 mod predicate;

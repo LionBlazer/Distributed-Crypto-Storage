@@ -14,6 +14,12 @@ mod fixture;
 #[cfg(test)]
 mod tests;
 
+/// Reuse the owning nonsecret fixture's public expectation in sibling tests.
+#[cfg(test)]
+pub(crate) fn public_fixture_expected() -> SourceVersionExpected {
+    fixture::fixture().expected
+}
+
 const MAGIC: &[u8; 8] = b"DCSHSF01";
 const HEADER: usize = 44;
 const MAX_BYTES: usize = source::version::MAX_CERTIFICATE_BYTES;

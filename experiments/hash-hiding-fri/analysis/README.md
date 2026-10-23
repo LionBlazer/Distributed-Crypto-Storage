@@ -68,3 +68,35 @@ Run its bounded exhaustive universe without bytecode output:
 ```sh
 python -I -B experiments/hash-hiding-fri/analysis/exhaustive_quotient_fibers.py
 ```
+
+`generalized_mu.py` adds fixed native five-family geometry, canonical full PV
+shapes, stable typed snapshots, explicit base/EF5/hiding/salt projection and a
+one-column inverse FFT on physical bit-reversed `7*K`. Its Python-only final
+checker covers generalized DATA/Query PP and retains explicit rejection of the
+three factories it cannot derive on its own.
+
+`protocol_mu.py` freezes one actual first snapshot and emits the complete public
+vector and column-streamed PP for the analysis-only all-five reader in
+`registry200-proof::registry_progress::word_inventory::generalized_mu` (cfg(test)
+only). That reader must finish synchronously before the first challenge: Source
+uses the complete owning canonical image/version-tag factory; Role3 recomputes
+its complete source/key/profile/acyclic contexts; Word compares every PP cell to
+the genuine fixed Predicate graph and the exact zero-interleaved public LDE.
+DATA/Query allow arbitrary canonical field PP of degree below k. No Expected
+preimage search, private input, Config, RNG or accepted native result is used.
+The stream's root/cutoff pin comes from the separately frozen extraction history;
+the reader itself does not authenticate a supplied history or parse raw SHA512
+queries. Encoding alone is not successful source association. Missing/malformed
+leaves retain the extraction model's fixed zero completion. These components
+implement source association, not the stitched RBR proof or live admission.
+
+The new Python gates use actual native dimensions with compact public assigned
+oracle DAGs. Rust owning gates use the existing explicitly public Source fixture,
+complete original Word PP and genuine public constructors; no proof is generated.
+After independent review, run the Python `test_generalized_mu.py` and
+`test_protocol_mu.py` filters and the Rust `word_inventory::generalized_mu::tests::`
+filter. The optional `protocol_request_from_first_frozen_snapshot_if_requested`
+bridge is ignored by default and requires `DCS_MU_REQUEST` to name an actual
+encoded request. It must be explicitly executed before claiming cross-language
+evidence. The Python-only `DegreeRecognizer` is the narrower DATA/Query degree
+primitive; it grants no all-five source association.

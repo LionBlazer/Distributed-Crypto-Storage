@@ -48,6 +48,10 @@ does not execute a peer SQL request or install an accepted state.
 - `inventory_encoding` owns the unchanged exhaustive semantic byte stream used
   by mandatory literal IR/PP/commitment pins. It is normal code; it no longer
   imports a serializer from the test module.
+- Test-only [generalized public-instance association](generalized_mu/README.md)
+  connects a first-frozen complete public word to the actual five public source
+  factories. It keeps arbitrary field preprocessing for DATA/Query and literal
+  fixed preprocessing for Word; its result supplies no native acceptance.
 
 The module uses this crate's SourceVersion metadata and encodings,
 [bfv-hiding-stark](../../../../bfv-hiding-stark/README.md) for the actual hiding
