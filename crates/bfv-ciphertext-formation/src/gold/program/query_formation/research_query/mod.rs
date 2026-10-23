@@ -1,6 +1,7 @@
 //! Candidate child module of gold::program::query_formation, cfg(test) ONLY.
-//! Native adapter/reference gate, NOT the not-yet-implemented public V+B sampler.
+//! Native adapter/reference and public V+B assembly gates; no production authority.
 mod joint_disclosures_tests;
+mod native_fri;
 mod opaque_inputs;
 mod public_deep;
 mod research_config;

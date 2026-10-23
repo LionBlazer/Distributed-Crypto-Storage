@@ -23,8 +23,10 @@ from supplied public disclosures. The [opaque-input forest](opaque_inputs/README
 constructs the four private INPUT multiproofs. The
 [fixed-coin joint disclosures](../public_image/public_disclosures/README.md)
 preserve the actual fold and correlated quotient fiber before whole-B sampling.
-Complete native frame assembly and causal shared-oracle composition remain
-separate work.
+The [native FRI assembler](native_fri/README.md) composes that public V and B with
+the genuine native prover, normal public PP and opaque input openings. Its
+complete receiver test passes without an original private witness. Causal
+shared-oracle privacy composition remains separate work.
 See the [executed validation](../RESEARCH-VALIDATION.md) for exact checks and scope.
 
 Direct dependencies are the owning Query AIR/setup/codec, pinned P3 MMCS and

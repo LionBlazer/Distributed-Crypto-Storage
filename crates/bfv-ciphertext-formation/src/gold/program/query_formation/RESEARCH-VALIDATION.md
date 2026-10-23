@@ -180,13 +180,58 @@ review found no blocking law/association defect. These are conditional fixed-coi
 algebra checks, not distribution tests, full native proof production, adaptive
 Fiat-Shamir simulation, concrete privacy or SQL latency observations.
 
+## Public Query disclosures to a genuine native FRI frame
+
+The private [native assembler](research_query/native_fri/README.md) now consumes
+the joint public V disclosures, the public whole-B polynomial and a presampled
+complete raw Fiat-Shamir tape. It invokes the real batch/PCS transcript drivers
+and native FRI prover with unchanged Query geometry. No original trace,
+`Prepared`, private key or honest-reference proof is requested by this path.
+The ordinary native PP commitment is rebuilt from its public coefficients and
+salt stream and must exactly equal the independently derived CommonData cap.
+The proof contains all five native INPUT openings and twelve FRI rounds, with
+the exact outer/wrapper claim split and normal public PP openings.
+
+The small tape case checks the full rejected digest, all contiguous retries,
+duplicate index/row reuse and unused/gapped-draw rejection. The first heavy case
+uses explicit public zero private-column algebra and a separately constructed
+PP DEEP polynomial: genuine native PCS accepts, but the complete AIR receiver
+rejects. Twelve omissions/mutations must also reject. This distinguishes the
+PCS component gate from full AIR acceptance.
+
+The second heavy case uses the actual joint V and whole-B samplers. The existing
+bounded frame decoder and complete native `verify_batch` accept. All produced
+and received RAW/FIELD/CAP/SAMPLE events agree: 277 accepted draws and seventeen
+caps. The run had 192 unique input positions and 348377 ideal Gold cells. Ten
+omission/mutation controls reject, including missing input rounds, changed AUX
+next and quotient coordinates, wrapper claims, public PP salt and nonzero PoW.
+The normal concrete SHA receiver rejects this research frame.
+
+| Run | Cases | Harness time | Process wall | Sampled OS peak |
+| --- | ---: | ---: | ---: | ---: |
+| r821, exact raw tape and duplicate laws | 1 | 0.00 s | 29.6957 ms | 6,221,824 B |
+| r822, genuine native PCS with AIR rejection | 1 | 1.56 s | 1574.3182 ms | 577,437,696 B |
+| r823, complete public V/B to native Query receiver | 1 | 4.55 s | 4574.4771 ms | 604,524,544 B |
+
+All three used the optimized build r819, executable SHA256
+`2F6DDA25ABCB981EB502FDF8E5A09C29E677CF274DA49F6841E337ACD6471818`.
+Source/image pins matched before and after; no observer faults or cleanup
+actions occurred. Strict Clippy r818 passed after explicitly discarding the
+unused AIR challenge in the deliberately PCS-only test receiver. Heavy cases
+ran with exact names and `--ignored`, reporting one passed and zero ignored.
+The existing 120-second/1792-MiB held-process limits were unchanged.
+
+Acceptance here uses an explicitly programmable research oracle. It checks
+native assembly and verification, not soundness under programmable hashes,
+adaptive privacy, concrete SHA security, production admission or SQL latency.
+
 ## Remaining work
 
-The fixed-coin trace/AUX residues, correlated quotient fiber and whole-B sampler
-now compose as arithmetic. Their composition with opaque input trees and final
-native proof assembly must still be checked without an original private
-`Prepared` or honest witness. The fixed-coin joint law does not establish causal
-oracle composition, an accepting complete frame or adaptive privacy.
+The fixed-coin trace/AUX residues, correlated quotient fiber, whole-B sampler,
+opaque input trees and final native frame assembly now compose in an accepting
+research receiver without an original private `Prepared` or honest witness.
+This executable path does not establish causal oracle composition or adaptive
+privacy across sessions and all five proof families.
 The source helpers use their concrete public SHA implementations outside this
 regression dictionary; complete shared-helper ROM simulation is not claimed.
 Conditional privacy additionally needs its explicit calibrated prior-state,
