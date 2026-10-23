@@ -97,6 +97,13 @@ integer certificate do not themselves execute that correspondence. This step
 is distinct from the separate Merkle/FS/binding/hiding composition and does not
 change an admission guard.
 
+The owning tests also cover all 54 folds of the actual five binary FRI schedules:
+49 positive-degree child cases at 11 distinct dimensions and five constant tails.
+The two smallest positive dimensions retain Equation(37)'s positive-part Psi
+tail; the final degree-zero case uses a direct 28-pair exceptional bound.
+See the [native correspondence note](NATIVE-RBR.md) for the exact certificates,
+common-agreement invariant and remaining conditional boundaries.
+
 ## Explicit conditional budget expression
 
 For a chosen integer `b` in 0 through 120 put `B=2^b`. This is a hypothetical

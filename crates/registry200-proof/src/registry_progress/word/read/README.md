@@ -11,6 +11,10 @@ the five actual closed AIRs and the separate product PIT, without constructing
 preprocessing, private witnesses or proofs. Its explicit budget expression and
 unfinished transcript/model correspondence are recorded in
 [the classical composition note](CLASSICAL.md). It grants no admission.
+The [native correspondence note](NATIVE-RBR.md) records the common-agreement
+argument and integer certificates for all 54 binary folds, including the five
+constant endpoints. Its proposed RBR derivation is separate from the executed
+metadata checks and remains conditional on the stated extraction/model premises.
 
 This normal library boundary joins the existing immutable SourceVersion/Role3/
 dense DATA Formation, Word Predicate, fused Query Formation and unrelinearized

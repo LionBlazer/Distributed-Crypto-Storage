@@ -145,28 +145,28 @@ fn actual_sdk_patterns_group_lookup_pairs_and_complete_query_index_vectors() {
     }
 }
 
+fn dkt_ceil_sqrt_ratio(numerator: u128, denominator: u128) -> u128 {
+    let floor = (numerator / denominator).isqrt();
+    floor + u128::from(floor * floor * denominator < numerator)
+}
+
 // DKT Section 7.2 Equation (88), using the order-zero support at m=3.
 // This independently counts its monomials by closed integer sums, not SDK helpers.
 // Primary: https://quangvdao.github.io/papers/authored/reed-solomon-codes-beyond-johnson.pdf
 fn dkt_m3_curve_counts(k: u128, n: u128, functions: u128) -> (u128, u128, u128, u128) {
-    fn ceil_sqrt_ratio(numerator: u128, denominator: u128) -> u128 {
-        let floor = (numerator / denominator).isqrt();
-        floor + u128::from(floor * floor * denominator < numerator)
-    }
-
     // Bound every intermediate in this private fixed-metadata certificate.
-    assert!(matches!(k, 1024 | 4096));
+    assert!(k.is_power_of_two() && (2..=4096).contains(&k));
     assert_eq!(n, 8 * k);
     assert!((2..=u128::from(u32::MAX)).contains(&functions));
     let degree = k - 1;
     let ell = functions - 1;
-    let agreements = ceil_sqrt_ratio(49 * n * n, 288); // ceil(alpha*n).
-    let x_cutoff = ceil_sqrt_ratio(49 * degree * n, 4);
-    let y_degree = ceil_sqrt_ratio(49 * n, 4 * degree) - 1;
+    let agreements = dkt_ceil_sqrt_ratio(49 * n * n, 288); // ceil(alpha*n).
+    let x_cutoff = dkt_ceil_sqrt_ratio(49 * degree * n, 4);
+    let y_degree = dkt_ceil_sqrt_ratio(49 * n, 4 * degree) - 1;
     let z_degree = (49 * ell * n).div_ceil(12 * degree) - 1;
     assert!(agreements > k && agreements <= n);
     assert!(x_cutoff <= 3 * agreements);
-    assert!(y_degree >= 3 && y_degree <= 2 * degree + 1);
+    assert!(y_degree >= 3);
     assert!(x_cutoff > degree * y_degree && z_degree >= ell * y_degree);
 
     // Count i+degree*j < x_cutoff and ell*j+h <= z_degree.
@@ -179,8 +179,10 @@ fn dkt_m3_curve_counts(k: u128, n: u128, functions: u128) -> (u128, u128, u128, 
     // At m=3: sum_b(3-b)=6 and sum_b b*(3-b)=4.
     let equations = n * (6 * (z_degree + 1) - 4 * ell);
 
-    // Here y_degree <= 2*degree+1, so Psi_degree has no positive-part tail.
-    let psi = 1 + (2 * degree - 1) * (2 * y_degree - 1);
+    // Equation (37)'s positive-part tail matters at the last positive-degree
+    // FRI codes: k=2 and k=4 have y_degree > 2*degree+1.
+    let psi =
+        1 + (2 * degree - 1) * (2 * y_degree - 1) + 2 * y_degree.saturating_sub(2 * degree + 1);
     let denominator = agreements - degree;
     let numerator = ((2 * y_degree - 1) * z_degree + ell * (n - k) * y_degree) * denominator
         + (n - degree) * (ell * y_degree + z_degree * psi);
@@ -256,6 +258,104 @@ fn actual_five_opening_inventories_fit_the_single_partition_dkt_certificate() {
             component.relation(),
         );
     }
+}
+
+#[test]
+fn actual_binary_fri_schedules_cover_every_positive_degree_and_the_constant_tail() {
+    // PUBLIC metadata only. These finite interpolation certificates neither run
+    // native proofs nor establish the complete RBR/state-restoration correspondence.
+    let expected = expected();
+    let report = analyze(&expected, 60).unwrap();
+    let manifests = super::super::transcript::inspect(&expected).unwrap();
+    let expected_round_counts = [10usize, 10, 12, 10, 12];
+    let mut positive_child_dimensions = std::collections::BTreeSet::new();
+    let mut constant_tails = 0usize;
+    let mut fold_cases = 0usize;
+
+    for ((component, manifest), expected_rounds) in report
+        .components()
+        .iter()
+        .zip(&manifests)
+        .zip(expected_round_counts)
+    {
+        let bound = component.bound();
+        let shape = manifest.fri_shape();
+        let initial_k = 1u128 << bound.committed_log();
+        let initial_n = 1u128 << manifest.lde_log();
+        assert_eq!(shape.log_arities, vec![1; expected_rounds]);
+        assert_eq!(shape.log_arities.len(), bound.committed_log());
+        assert_eq!(shape.num_queries, 192);
+        assert_eq!(shape.index_bits, manifest.lde_log());
+        assert_eq!(shape.log_blowup, 3);
+        assert_eq!(shape.max_log_arity, 1);
+        assert_eq!(shape.final_poly_len, 1);
+        assert_eq!(initial_n, 8 * initial_k);
+
+        let mut parent_k = initial_k;
+        let mut parent_n = initial_n;
+        for (&log_arity, matrix_log) in shape.log_arities.iter().zip(manifest.fri_matrix_logs()) {
+            assert_eq!(log_arity, 1);
+            let child_k = parent_k / 2;
+            let child_n = parent_n / 2;
+            // Native FRI commits the current word as binary rows. Its matrix
+            // height is the child evaluation length, not a new input PCS height.
+            assert_eq!(child_n, 1u128 << matrix_log);
+            assert_eq!(child_n, 8 * child_k);
+            let parent_agreements = dkt_ceil_sqrt_ratio(49 * parent_n * parent_n, 288);
+            let child_agreements = dkt_ceil_sqrt_ratio(49 * child_n * child_n, 288);
+            assert!(2 * child_agreements >= parent_agreements);
+
+            if child_k == 1 {
+                // For E(y)+beta*O(y), every pair of distinct coefficient pairs
+                // has at most one collision beta. Outside their union, any
+                // constant matching >=2 positions lifts to constant E and O on
+                // that same complete agreement set. This handles degree zero
+                // directly; the positive-degree (k-1) denominator is unavailable.
+                assert_eq!(
+                    (parent_k, parent_n, child_n, child_agreements),
+                    (2, 16, 8, 4)
+                );
+                let exceptional_pairs = child_n * (child_n - 1) / 2;
+                assert_eq!(exceptional_pairs, 28);
+                assert!(3 * (initial_k - 1) * exceptional_pairs <= 343 * initial_n * initial_n);
+                constant_tails += 1;
+            } else {
+                // One binary fold is a line in its two even/odd coefficient
+                // words: ell=1, hence functions=2, on this CHILD code.
+                let (variables, equations, numerator, denominator) =
+                    dkt_m3_curve_counts(child_k, child_n, 2);
+                assert!(variables > equations);
+                assert!(3 * (child_k - 1) * numerator <= 343 * child_n * child_n * denominator);
+                assert!(
+                    3 * (initial_k - 1) * numerator <= 343 * initial_n * initial_n * denominator
+                );
+                // These exact references detect omission of Psi's positive tail.
+                if child_k == 2 {
+                    assert_eq!(
+                        (variables, equations, numerator, denominator),
+                        (6475, 6272, 55887, 6)
+                    );
+                }
+                if child_k == 4 {
+                    assert_eq!(
+                        (variables, equations, numerator, denominator),
+                        (8976, 8320, 155798, 11)
+                    );
+                }
+                positive_child_dimensions.insert(child_k);
+            }
+            fold_cases += 1;
+            parent_k = child_k;
+            parent_n = child_n;
+        }
+        assert_eq!((parent_k, parent_n), (1, 8));
+    }
+    assert_eq!(fold_cases, 54);
+    assert_eq!(constant_tails, 5);
+    assert_eq!(
+        positive_child_dimensions.into_iter().collect::<Vec<_>>(),
+        (1..=11).map(|log| 1u128 << log).collect::<Vec<_>>()
+    );
 }
 
 fn print_report(report: &Report) {
