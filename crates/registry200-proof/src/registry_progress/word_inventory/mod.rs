@@ -16,6 +16,8 @@ mod plan;
 mod predicate;
 pub(super) mod preparation;
 #[cfg(test)]
+mod public_image;
+#[cfg(test)]
 mod public_tests;
 mod public_values;
 mod recipes;

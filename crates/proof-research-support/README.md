@@ -2,9 +2,10 @@
 
 This unpublished library owns the existing pure coefficient arithmetic shared by
 owning proof research tests. It is a workspace member outside default-members;
-its current consumer is a dev-dependency of
-[BFV ciphertext formation](../bfv-ciphertext-formation/). Normal proof facades
-and production dependencies do not import it.
+its consumers use dev-dependencies from
+[BFV ciphertext formation](../bfv-ciphertext-formation/) and
+[Registry200 proof](../registry200-proof/) for owning Word arithmetic checks.
+Normal proof facades and production dependencies do not import it.
 
 The [ring module](src/ring.rs) exposes `Poly`, `Tensor`, `Result`, free polynomial
 operations and `Ring`. Coefficients use the fixed Gold field and EF5 basis from
@@ -36,5 +37,5 @@ cargo test --release --locked -p proof-research-support
 ```
 
 Existing Query/DATA image, disclosure, DEEP and native-session tests remain with
-their respective owning adapters. No Registry dependency or cross-crate native
-research adapter is added by this extraction.
+their respective owning adapters. Registry imports only this arithmetic; no
+shared oracle, native-frame or cross-crate research adapter is supplied.

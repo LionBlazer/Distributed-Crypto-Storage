@@ -53,6 +53,13 @@ does not execute a peer SQL request or install an accepted state.
   factories. It keeps arbitrary field preprocessing for DATA/Query and literal
   fixed preprocessing for Word; its result supplies no native acceptance.
 
+- Test-only [Word public-image arithmetic](public_image/README.md) derives the
+  actual Predicate AIR, complete Expected309 and fixed PP714 coefficient image.
+  It compares all five quotient coordinates with the native SDK folder, retaining
+  all 34 packed contexts, the actual three-bus width-five lookup law, and both
+  native PP rotations. This finite arithmetic bridge produces no proof, frame,
+  privacy or admission capability. Its pure Ring dependency is dev-only.
+
 The module uses this crate's SourceVersion metadata and encodings,
 [bfv-hiding-stark](../../../../bfv-hiding-stark/README.md) for the actual hiding
 suite and Poseidon2 gadget, and
