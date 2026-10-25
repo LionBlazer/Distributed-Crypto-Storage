@@ -3,6 +3,9 @@
 mod joint_disclosures_tests;
 mod native_fri;
 mod public_deep;
+mod public_frames;
+pub(in crate::gold::program) use native_fri::TapePlan;
+pub(in crate::gold::program) use public_frames::{public_expected, public_frame};
 
 use super::super::research_hash::{config as research_config, opaque_inputs, ro as research_ro};
 use super::{Expected, assessment::Assessment, hash_setup, hash_wire, native};
@@ -19,7 +22,12 @@ const MAX_SLOTS: usize = 4 * 1024 * 1024;
 const MAX_FRAME: usize = 4 * 1024 * 1024;
 
 /// Private wrapper cannot be passed as normal proof bytes by a public API.
-struct ResearchFrame(Vec<u8>);
+pub(in crate::gold::program) struct ResearchFrame(Vec<u8>);
+impl ResearchFrame {
+    pub(in crate::gold::program) fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
 
 fn public_data(
     expected: &Expected,
@@ -90,13 +98,13 @@ fn encode(
     ResearchFrame(frame)
 }
 
-fn decode(
-    frame: &ResearchFrame,
+fn decode_bytes(
+    frame: &[u8],
     expected: &Expected,
     assessment: &Assessment,
 ) -> Option<BatchProof<Config>> {
     // Header/full Expected binding/caps before proof decoding and native verification.
-    let payload = hash_wire::payload(expected, &frame.0).ok()?;
+    let payload = hash_wire::payload(expected, frame).ok()?;
     // This first genuine owner decoder pins topology, canonical fields and EOF.
     let normal_shape = hash_wire::decode(payload, assessment).ok()?;
     drop(normal_shape);
@@ -116,7 +124,15 @@ fn decode(
     Some(proof)
 }
 
-struct Receiver {
+fn decode(
+    frame: &ResearchFrame,
+    expected: &Expected,
+    assessment: &Assessment,
+) -> Option<BatchProof<Config>> {
+    decode_bytes(frame.as_bytes(), expected, assessment)
+}
+
+pub(in crate::gold::program) struct Receiver {
     expected: Expected,
     air: native::FullAir,
     assessment: Assessment,
@@ -124,7 +140,7 @@ struct Receiver {
     oracle: Oracle,
 }
 impl Receiver {
-    fn new(expected: &Expected, oracle: Oracle) -> Self {
+    pub(in crate::gold::program) fn new(expected: &Expected, oracle: Oracle) -> Self {
         let (air, assessment, public) = public_data(expected, oracle.clone());
         let common = public.common;
         drop(public.prover_only);
@@ -155,9 +171,13 @@ impl Receiver {
         )
         .is_ok()
     }
-    fn receive(&self, frame: &ResearchFrame, walks: Walks) -> bool {
+    pub(in crate::gold::program) fn receive(&self, frame: &ResearchFrame, walks: Walks) -> bool {
+        self.receive_bytes(frame.as_bytes(), walks)
+    }
+    /// Test-owner byte entry retains the actual Query header/shape boundary.
+    pub(in crate::gold::program) fn receive_bytes(&self, frame: &[u8], walks: Walks) -> bool {
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            decode(frame, &self.expected, &self.assessment)
+            decode_bytes(frame, &self.expected, &self.assessment)
                 .is_some_and(|proof| self.verify_native(&proof, walks))
         }))
         .unwrap_or(false)

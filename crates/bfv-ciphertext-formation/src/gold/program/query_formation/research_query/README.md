@@ -49,3 +49,11 @@ It does not claim a global all-string SHA ROM, complete helper capture or admiss
 cargo test --release --locked -p bfv-ciphertext-formation gold::program::research_hash::ro:: -- --test-threads=1
 cargo test --release --locked -p bfv-ciphertext-formation gold::program::query_formation::research_query::honest_reference::actual_query_native_verifier_and_complete_walk_use_the_same_research_ro -- --ignored --exact --test-threads=1
 ```
+
+The [owning public frame factory](public_frames.rs) now has one definition shared
+by the preserved two-Query gate and the
+[mixed Query/DATA gate](../../research_hash/MIXED-SESSIONS.md). Its original
+producer operations/drop boundary and old two-Query test body are unchanged.
+Query frame/receiver/tape visibility is limited to the program's unit-test owner;
+foreign bytes still use the actual bounded Query decoder. The affected old gate
+and new mixed gate passed after extraction; no normal API was widened.

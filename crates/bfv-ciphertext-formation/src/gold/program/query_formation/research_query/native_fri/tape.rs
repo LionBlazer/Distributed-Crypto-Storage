@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 const ACCEPTED: usize = 277;
 const MAX_RAW: usize = 4096;
 
-pub(in super::super) struct TapePlan {
+pub(in crate::gold::program) struct TapePlan {
     pub(super) tape: Tape,
     accepted: Vec<F>,
     indices: Vec<usize>,
@@ -18,7 +18,7 @@ pub(in super::super) struct TapePlan {
 impl TapePlan {
     /// No RO query/programming: sample complete64-byte digests, preserving every
     /// rejected firstLE64 candidate. The finite raw cap is an explicit error.
-    pub(in super::super) fn sample(rng: &mut impl CryptoRng) -> Result<Self> {
+    pub(in crate::gold::program) fn sample(rng: &mut impl CryptoRng) -> Result<Self> {
         let mut tape = Tape::new();
         for counter in 0..ACCEPTED as u64 {
             let mut retry = 0;
@@ -39,7 +39,7 @@ impl TapePlan {
         Self::checked(tape)
     }
 
-    pub(in super::super) fn checked(tape: Tape) -> Result<Self> {
+    pub(in crate::gold::program) fn checked(tape: Tape) -> Result<Self> {
         if tape.is_empty() || tape.len() > MAX_RAW {
             return Err("Query-tape-raw-limit");
         }
@@ -98,28 +98,28 @@ impl TapePlan {
     fn extension(&self, start: usize) -> E {
         E::from_basis_coefficients_fn(|i| self.accepted[start + i])
     }
-    pub(in super::super) fn lookup_alpha(&self) -> E {
+    pub(in crate::gold::program) fn lookup_alpha(&self) -> E {
         self.extension(0)
     }
-    pub(in super::super) fn lookup_beta(&self) -> E {
+    pub(in crate::gold::program) fn lookup_beta(&self) -> E {
         self.extension(5)
     }
-    pub(in super::super) fn constraint_alpha(&self) -> E {
+    pub(in crate::gold::program) fn constraint_alpha(&self) -> E {
         self.extension(10)
     }
-    pub(in super::super) fn z(&self) -> E {
+    pub(in crate::gold::program) fn z(&self) -> E {
         self.extension(15)
     }
-    pub(in super::super) fn theta(&self) -> E {
+    pub(in crate::gold::program) fn theta(&self) -> E {
         self.extension(20)
     }
-    pub(in super::super) fn indices(&self) -> &[usize] {
+    pub(in crate::gold::program) fn indices(&self) -> &[usize] {
         &self.indices
     }
-    pub(in super::super) fn positions(&self) -> &[F] {
+    pub(in crate::gold::program) fn positions(&self) -> &[F] {
         &self.positions
     }
-    pub(in super::super) fn accepted(&self) -> &[F] {
+    pub(in crate::gold::program) fn accepted(&self) -> &[F] {
         &self.accepted
     }
 }

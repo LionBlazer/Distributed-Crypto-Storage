@@ -73,5 +73,7 @@ query measurement. Whole-process resource compliance still needs the unchanged
 held-process observer; dictionary limits alone do not establish it.
 A subsequent [DATA native gate](../dense_data_inventory/research_data/README.md)
 also passed complete frame acceptance/replay and21 hostile native checks using
-this same implementation. A complete mixed Query/DATA prior-state execution is
-still required; two separate family gates do not establish it.
+this same implementation. The subsequent [mixed Query/DATA gate](MIXED-SESSIONS.md) also passes native
+acceptance, same-history replay after a raw-tail conflict, foreign-header
+rejection and selected concrete helper consistency. Whole-process memory includes
+both PP histories. Source/Role3/Word and adaptive/concrete assurance remain open.

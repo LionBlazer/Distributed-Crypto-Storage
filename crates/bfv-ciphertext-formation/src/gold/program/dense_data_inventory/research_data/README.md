@@ -147,9 +147,10 @@ under the owning held-process observer.
 
 ## Remaining conditions
 
-A complete mixed Query/DATA prior-state gate must retain both families' raw
-dictionary history and count it toward whole-process memory. Never clear that
-history, raise resource limits or weaken proof checks to make it fit.
+The [mixed Query/DATA gate](../../research_hash/MIXED-SESSIONS.md) now passes
+with both families' raw dictionary and PP histories retained in measured memory.
+It checks complete walks and old-frame replay after a named raw conflict.
+Source/Role3/Word and the wider security model still require separate work.
 
 The model remains a seeded programmable research proof-ROM with concrete PUBLIC
 preprocessing. The code does not establish ideal independence, adaptive privacy,
@@ -158,5 +159,3 @@ application admission, or all-five-family composition. A successful research
 frame would still grant no production authority. Network SQL, fresh weighted
 agreement, finalized FOR UPDATE/SKIP LOCKED and the complete<=500ms goal remain
 unimplemented/unmeasured by this module.
-
-CODE EDIT STOP after manifest freeze.

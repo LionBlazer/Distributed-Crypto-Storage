@@ -8,7 +8,7 @@ mod projection_tests;
 mod public_image;
 mod receiving;
 #[cfg(test)]
-mod research_query;
+pub(in crate::gold::program) mod research_query;
 #[cfg(test)]
 mod tests;
 use super::{descriptor::Descriptor, pp as old_pp};

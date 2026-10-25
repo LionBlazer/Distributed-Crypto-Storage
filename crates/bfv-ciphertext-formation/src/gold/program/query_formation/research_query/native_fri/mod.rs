@@ -4,7 +4,7 @@ mod joint_public_tests;
 mod shared_sessions_tests;
 mod tape;
 mod tests;
-pub(super) use tape::TapePlan;
+pub(in crate::gold::program) use tape::TapePlan;
 
 use super::opaque_inputs::{DenseFamily, OpaqueInputs, PrivateInput};
 use super::public_deep::{Column, PublicView};

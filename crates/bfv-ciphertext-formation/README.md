@@ -165,5 +165,7 @@ regressions pass after the move. The owning
 [DATA research receiver](src/gold/program/dense_data_inventory/research_data/README.md)
 also passes complete native FRI/frame acceptance, replay,21 native tampering and
 six header controls. It uses the programmed research proof-ROM; normal SHA rejects
-the frame. Mixed-family prior-state composition, crypto assessment and SQL
-admission remain separate requirements.
+the frame. The [mixed Query/DATA gate](src/gold/program/research_hash/MIXED-SESSIONS.md)
+also passes acceptance/replay/conflict/foreign-header checks in one retained raw
+history. Source/Role3/Word composition, crypto assessment and SQL admission remain
+separate requirements.

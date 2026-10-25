@@ -309,3 +309,18 @@ took8.81s harness/8817.2222ms process and OS peak709193728B, including two fresh
 productions, receives/replays, conflict rejection and normal SHA rejections.
 It is not a full SQL latency measurement. The shared owner records the exact
 executable, unchanged120s/1792MiB observer, remaining model and DATA-frame boundary.
+
+## Mixed Query/DATA prior-state regression
+
+The [mixed gate](../research_hash/MIXED-SESSIONS.md) now runs complete Query and
+DATA research frames in one retained raw-input dictionary. Native acceptance,
+entire walk equality, foreign-header rejection, normal-SHA rejection, a named
+full raw-tail conflict and old-frame replay passed in r912. The moved Query
+factory and original two-Query test body retain their operations; its affected
+native gate r913 and raw-tape parser r914 also passed.
+
+Build r911/Clippy r910 and normal/requirements checks r915/r916 passed. Mixed
+time was9.62s harness/9636.3207ms process, OS peak1041694720B with both true PP
+histories retained. This is a research multi-frame regression, not full SQL or
+production crypto assessment. The linked record owns exact image, helper,
+resource and measurement scopes.

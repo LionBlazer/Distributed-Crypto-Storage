@@ -1,129 +1,14 @@
 //! Two public Query frames in ONE prior-state research dictionary.
 //! This owning cfg(test) gate is not an adaptive privacy theorem or admission.
-use super::super::super::public_image::{QueryCoins, QueryFoldProgram, public_disclosures};
+use super::super::public_frames::assert_complete_walk;
 use super::super::research_ro::{Tape, Walk};
-use super::super::{Receiver, ResearchFrame, encode, public_deep};
+use super::super::{Receiver, ResearchFrame, public_frame};
 use super::*;
 use crate::gold::public_hash_trace::{self, Algorithm, Call};
 use p3_challenger::{CanObserve, CanSample};
 use rand_public_pp::SeedableRng;
 use sha2::Digest;
 use std::collections::BTreeSet;
-
-fn convert(columns: &[public_disclosures::Column]) -> Vec<Column> {
-    columns
-        .iter()
-        .map(|column| Column {
-            rows: column.rows.clone(),
-            at_z: column.at_z,
-            at_hz: column.at_hz,
-        })
-        .collect()
-}
-
-/// Consumes one attempt and drops all PP/input trees, V/B values and proof data
-/// before the next attempt. Only an immutable bounded frame and walk escape.
-fn public_frame(
-    expected: &Expected,
-    programmer: Programmer,
-    receiver: &Receiver,
-    plan: TapePlan,
-    seed_base: u8,
-) -> (ResearchFrame, Walk) {
-    let inputs = Inputs::new(
-        expected,
-        programmer,
-        StdRng::from_seed([seed_base; 32]),
-        StdRng::from_seed([seed_base + 1; 32]),
-    )
-    .unwrap();
-    let pp_coefficients = inputs.public_pp_coefficients();
-    let program = QueryFoldProgram::from_expected(expected).unwrap();
-    assert_eq!(pp_coefficients.as_slice(), program.public_pp_coefficients());
-    let coins = QueryCoins {
-        lookup_alpha: plan.lookup_alpha(),
-        lookup_beta: plan.lookup_beta(),
-        constraint_alpha: plan.constraint_alpha(),
-    };
-    let disclosures = public_disclosures::sample(
-        &program,
-        &coins,
-        plan.z(),
-        plan.positions(),
-        &mut StdRng::from_seed([seed_base + 2; 32]),
-    )
-    .unwrap();
-    assert_eq!(disclosures.expected_binding, expected.binding());
-    assert_eq!(disclosures.z, plan.z());
-    assert_eq!(disclosures.s, plan.positions());
-    let r = convert(&disclosures.r);
-    let main = convert(&disclosures.main);
-    let quotient = disclosures
-        .quotient
-        .iter()
-        .map(|matrix| convert(matrix))
-        .collect::<Vec<_>>();
-    let pp = convert(&disclosures.pp);
-    let aux = convert(&disclosures.aux);
-    let view = PublicView {
-        s: &disclosures.s,
-        z: disclosures.z,
-        theta: plan.theta(),
-        r: &r,
-        main: &main,
-        quotient: &quotient,
-        pp: &pp,
-        pp_coefficients: &pp_coefficients,
-        aux: &aux,
-    };
-    let b_sampler = public_deep::prepare(&view).unwrap();
-    let b = b_sampler.sample(&mut StdRng::from_seed([seed_base + 3; 32]));
-    assert_eq!(b.len(), 4095);
-    drop(b_sampler);
-    let produce_walks = Walks::default();
-    let proof = inputs
-        .prove(plan, &view, &b, produce_walks.clone())
-        .unwrap();
-    let frame = encode(expected, &proof, &receiver.assessment);
-    drop(proof);
-    let mut produced = produce_walks.with_draws();
-    assert_eq!(produced.len(), 1);
-    let walk = produced.pop().unwrap();
-    assert_complete_walk(&walk);
-    (frame, walk)
-}
-
-fn assert_complete_walk(walk: &Walk) {
-    assert!(
-        walk.prefix
-            .starts_with(bfv_hiding_stark::hash::TRANSCRIPT_DOMAIN)
-    );
-    assert_eq!(
-        walk.events
-            .iter()
-            .filter(|event| matches!(event, Event::Sample { .. }))
-            .count(),
-        277
-    );
-    assert_eq!(
-        walk.events
-            .iter()
-            .filter(|event| matches!(event, Event::Cap(_)))
-            .count(),
-        17
-    );
-    assert!(
-        walk.events
-            .iter()
-            .any(|event| matches!(event, Event::Field(_)))
-    );
-    assert!(walk.draws.len() >= 277);
-    assert!(
-        walk.draws
-            .iter()
-            .all(|draw| draw.prefix_len <= walk.prefix.len())
-    );
-}
 
 /// Receiver holds only query rights. Equality includes the complete raw prefix,
 /// EVERY raw64 digest/retry and all FIELD/CAP/SAMPLE observations, not just coins.
