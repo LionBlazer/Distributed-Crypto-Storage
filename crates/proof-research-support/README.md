@@ -4,7 +4,7 @@ This unpublished library owns the existing pure coefficient arithmetic shared by
 owning proof research tests. It is a workspace member outside default-members;
 its consumers use dev-dependencies from
 [BFV ciphertext formation](../bfv-ciphertext-formation/) and
-[Registry200 proof](../registry200-proof/) for owning Word arithmetic checks.
+[Registry200 proof](../registry200-proof/) for owning Word and Source arithmetic checks.
 Normal proof facades and production dependencies do not import it.
 
 The [ring module](src/ring.rs) exposes `Poly`, `Tensor`, `Result`, free polynomial

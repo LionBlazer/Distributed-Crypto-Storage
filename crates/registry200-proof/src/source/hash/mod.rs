@@ -10,6 +10,8 @@ use sha2::{Digest, Sha256};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 #[cfg(test)]
+mod public_image;
+#[cfg(test)]
 mod fixture;
 #[cfg(test)]
 mod tests;

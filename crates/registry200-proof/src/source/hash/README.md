@@ -17,5 +17,11 @@ token. SDK panics fail closed. The owning native tests retain honest independent
 verification, old-suite baseline, changed state/key/native opening/context,
 cross-suite and malformed/resource rejection examples.
 
+The private cfg(test) [public-image arithmetic](public_image/README.md) now owns
+actual OpeningAir/periodic512 coefficient interpretation and independent native
+field-folder comparisons. The candidate adds no proof/configuration or accepting
+API; its public fixture still draws fresh compact-store nonces. See that owner
+for the small arithmetic gate and outstanding full-profile/security boundaries.
+
 The composed hash model remains conditional. This API is mathematical evidence
 for the separate candidate, not SQL admission or an end-to-end latency claim.
