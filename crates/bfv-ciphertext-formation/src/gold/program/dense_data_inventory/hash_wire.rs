@@ -4,12 +4,15 @@ use super::layout::{
     AUX, DOMAIN, EXT_BOUND, GOLD_BOUND, H, LOG_H, PACKED, PP as PP_WIDTH, W as WIDTH,
 };
 use super::{Expected, native_wire};
+#[cfg(test)]
+use crate::gold::public_hash_trace::Sha256;
 use crate::gold::{Error, Result};
 use bfv_hiding_stark::hash::{Challenger, Config, Pcs};
 use bfv_hiding_stark::{Challenge, LOG_BLOWUP, QUERIES, Val};
 use p3_batch_stark::BatchProof;
 use p3_commit::UnivariateStarkPcs;
 use p3_field::PrimeCharacteristicRing;
+#[cfg(not(test))]
 use sha2::{Digest, Sha256};
 
 const MAGIC: &[u8; 8] = if WIDTH == 512 {

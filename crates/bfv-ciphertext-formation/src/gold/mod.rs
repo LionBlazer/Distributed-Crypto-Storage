@@ -6,6 +6,8 @@ mod fft;
 mod geometry;
 mod graph;
 mod program;
+#[cfg(test)]
+mod public_hash_trace;
 pub mod query;
 mod relation;
 mod request;

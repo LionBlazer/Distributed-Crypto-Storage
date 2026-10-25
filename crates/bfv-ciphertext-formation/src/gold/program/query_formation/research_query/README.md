@@ -39,7 +39,11 @@ Local dictionary bounds are 1,048,576 entries, 768 MiB of raw keys and 1 MiB per
 input; walks have separate finite caps. These do not establish a whole-process
 RAM guarantee. Heavy checks must use the existing 120-second/1792-MiB observer.
 Ordinary public helper hashes still use their concrete source implementations;
-this harness does not claim complete shared-helper ROM simulation or admission.
+the [finite PUBLIC helper observer](../../../public_hash_trace.rs) records selected
+synchronous helper inputs/results without changing them. The shared-session test
+requires their exact manifests to agree across two fresh proofs in one dictionary.
+The model is restricted proof-MMCS/FS ROM with concrete PUBLIC preprocessing.
+It does not claim a global all-string SHA ROM, complete helper capture or admission.
 
 ```sh
 cargo test --release --locked -p bfv-ciphertext-formation gold::program::query_formation::research_query::research_ro:: -- --test-threads=1

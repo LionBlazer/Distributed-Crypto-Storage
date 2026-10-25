@@ -138,3 +138,10 @@ Prepared `Prover`/`Verifier` objects retain independently derived PUBLIC setup
 for one exact Expected; each proof uses fresh private OS entropy and every
 receiving call performs actual native verification. Setup costs, cryptographic
 composition, freshness and complete-query latency remain separately assessed.
+
+The private unit-test [Query oracle harness](src/gold/program/query_formation/research_query/README.md)
+also owns public-only assembly and shared-session checks. Its
+[PUBLIC SHA observer](src/gold/public_hash_trace.rs) records selected synchronous
+helper finalizations through the actual SHA implementation; it has no result
+override and is absent from normal builds. These finite checks supply no new
+production proof or SQL authority.

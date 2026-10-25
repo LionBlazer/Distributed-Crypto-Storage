@@ -1,4 +1,6 @@
 //! One real DATA Ct2 Formation. Mathematical evidence supplies no Source/key/current-head/SQL authority.
+#[cfg(test)]
+use super::public_hash_trace::{Sha256, Sha512};
 use super::{
     Error, Result, ScaledOpening, SecretOpening, Val,
     geometry::{N, Polynomial, Q, SCALE, T},
@@ -7,6 +9,7 @@ use super::{
     witness::Preparation,
 };
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
+#[cfg(not(test))]
 use sha2::{Digest, Sha256, Sha512};
 use std::sync::Arc;
 #[path = "data_hash.rs"]

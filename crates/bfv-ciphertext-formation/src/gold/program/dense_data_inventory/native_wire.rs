@@ -9,9 +9,12 @@ use super::{
 };
 use crate::gold::{Error, Result};
 const DEGREE_BITS: usize = LOG_H + 1;
+#[cfg(test)]
+use crate::gold::public_hash_trace::Sha256;
 use bfv_hiding_stark::{Challenge, Config, LOG_BLOWUP, QUERIES, Val};
 use p3_batch_stark::BatchProof;
 use p3_field::PrimeCharacteristicRing;
+#[cfg(not(test))]
 use sha2::{Digest, Sha256};
 
 pub(super) const HEADER_BYTES: usize = 128;

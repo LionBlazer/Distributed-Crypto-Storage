@@ -1,6 +1,7 @@
 //! Isolated native Query assembly from supplied PUBLIC V/B and raw FS tape.
 //! No original trace, Prepared, witness, key or production proof capability.
 mod joint_public_tests;
+mod shared_sessions_tests;
 mod tape;
 mod tests;
 pub(super) use tape::TapePlan;

@@ -1,6 +1,9 @@
 //! One fused Stmt96/mask/Cw/Cs/QueryCt relation, without Word/DATA/SQL admission.
+#[cfg(test)]
+use super::public_hash_trace::{Sha256, Sha512};
 use super::{Error, Result, Val, data, program::query_formation as backend};
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
+#[cfg(not(test))]
 use sha2::{Digest, Sha256, Sha512};
 pub mod hash;
 

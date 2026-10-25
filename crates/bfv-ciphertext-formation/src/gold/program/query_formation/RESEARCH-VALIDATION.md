@@ -225,6 +225,59 @@ Acceptance here uses an explicitly programmable research oracle. It checks
 native assembly and verification, not soundness under programmable hashes,
 adaptive privacy, concrete SHA security, production admission or SQL latency.
 
+## Two fresh Query frames in one prior-state dictionary
+
+The owning opt-in shared-session test constructs two complete public V/B frames
+with one fixed complete Expected, one shared Programmer dictionary and one
+query-only Receiver. Each proof has an independent full raw64-byte FS tape,
+sampled before either frame is made, and distinct owned V/B/opaque/FRI streams.
+The first attempt's Inputs, PP trees, V/B and native proof allocations are dropped
+before the second attempt; only immutable frame bytes and its full walk survive.
+
+Both complete bounded receiver calls agree with their entire produced walks,
+including raw prefixes, all raw64 rejection/retry digests, 277 accepted samples
+and seventeen caps each. The first immutable frame replays after the second
+producer has added cells. A planter then reconstructs its first native draw
+prefix and changes only digest byte63, keeping the Gold candidate unchanged.
+The exact named programming-conflict panic occurs outside the receiver guard.
+Both old frames replay afterwards through the same dictionary and receiver,
+without overwriting, replacing the dictionary, regenerating a proof or resampling.
+Normal concrete-SHA facades reject both research frames.
+
+The private cfg(test) PUBLIC SHA observer records actual update bytes and actual
+SHA results at the selected Query/DATA profile and Expected, dense wire profile
+and public-PP stream sites. Normal builds retain the original SHA types. Capture
+is synchronous on the calling thread, clears on unwind, and bounds each input
+to 1 MiB, all inputs to 16 MiB and completed calls to 4096. Its unit case compares
+both SHA algorithms with their actual unwrapped results and tests panic cleanup.
+
+The complete test independently recomputes every observed digest, requires raw
+namespace disjointness from proof LEAF/NODE/FS, and compares exact deduplicated
+algorithm/input/result manifests across the two productions. All four selected
+SHA256 and three SHA512 helper-family prefixes must actually occur. Initial
+Expected construction recorded eleven calls/six distinct cells; each production
+recorded fourteen calls/five distinct cells, including all three public-PP labels.
+
+| Run | Cases | Harness time | Process wall | Sampled OS peak |
+| --- | ---: | ---: | ---: | ---: |
+| r845, actual SHA observation and unwind cleanup | 1 | 0.00 s | 12.1538 ms | 6,025,216 B |
+| r846, two native frames, old replay, conflict and helper inventory | 1 | 8.03 s | 8033.0309 ms | 709,300,224 B |
+
+Both use optimized build r844, executable SHA256
+`890724DA075E1C451491E3B3A27A20F392A14DCDBED6F7C2B710E386B4EDA6B9`.
+The existing 120-second/1792-MiB held-process limits and Rayon8 were unchanged;
+source/image pins matched and no observer fault or cleanup occurred. The ignored
+heavy case ran explicitly with its exact name and reported one passed/zero ignored.
+Strict Clippy r843 passed. Independent source review found no blocking defect.
+
+This is finite selected synchronous PUBLIC preprocessing with restricted
+proof-MMCS/FS ROM. The suite profile, geometry/graph/request helpers and arbitrary
+worker calls remain outside this capture. It is not a single global all-string
+SHA ROM or a complete helper inventory. PIT challenge randomness remains a
+separate soundness question. Two-session replay does not establish arbitrary
+adaptive auxiliary-information composition, all-five-family simulation,
+ideal-cell/PRG security, concrete cryptography, admission or full SQL latency.
+
 ## Remaining work
 
 The fixed-coin trace/AUX residues, correlated quotient fiber, whole-B sampler,

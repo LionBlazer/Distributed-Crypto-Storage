@@ -51,6 +51,16 @@ including preparation and mutation checks. See the
 [executed validation](../../RESEARCH-VALIDATION.md) for image pins, process
 measurements and scope. These are research tests, not full SQL measurements.
 
+The additional shared-session gate builds two fresh complete frames in one
+dictionary with independent presampled tapes and owned sampler streams. It
+replays the first immutable frame after the second, forces an existing-different
+full raw512 FS cell, then replays both old frames through the same query-only
+receiver. Actual FIELD/CAP/SAMPLE/RAW walks remain equal. Selected concrete
+PUBLIC helper finalizations have equal complete algorithm/input/result manifests;
+all seven instrumented helper families and all three PP stream labels are required.
+This finite gate passed in r846; its 8.03 s harness time includes preparation,
+two productions, repeated verification and conflict controls.
+
 The dictionary is an explicit seeded regression/programming model. Concrete SHA
 cannot be programmed. Ordinary public helper SHA calls remain outside this
 shared dictionary; no complete helper-ROM or concrete PRG theorem is claimed.

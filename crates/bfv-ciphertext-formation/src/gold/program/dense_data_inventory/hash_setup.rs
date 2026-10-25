@@ -4,6 +4,8 @@ use super::assessment::Assessment;
 use super::hash_wire as wire;
 use super::layout::{BUS, DOMAIN, LOG_H, PORTS, PP as PP_WIDTH};
 use super::native::FullAir;
+#[cfg(test)]
+use crate::gold::public_hash_trace::Sha512;
 use crate::gold::{Error, Result};
 use bfv_hiding_stark::hash::{
     ChallengeMmcs, Challenger, Config, LeafHash, Mmcs, NodeCompress, Pcs,
@@ -14,6 +16,7 @@ use p3_dft::Radix2DitParallel;
 use p3_fri::FriParameters;
 use p3_lookup::Kind;
 use rand_public_pp::{SeedableRng, rngs::StdRng};
+#[cfg(not(test))]
 use sha2::{Digest, Sha512};
 
 const DEGREE_BITS: usize = LOG_H + 1;
