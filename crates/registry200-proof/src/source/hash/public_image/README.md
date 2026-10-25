@@ -31,7 +31,7 @@ MAINnext uses h of order512, and the quotient denominator is X^512-1.
 The input-row domain is7*H8192; enlarged/target degrees remain<=394/197 under
 at most192 physical locations, within the unchanged pure Ring limit.
 
-Four owning cases cover actual periodic coefficients and independent SDK values,
+Four small owning cases cover actual periodic coefficients and independent SDK values,
 the deliberately wrong1024-padded periodic sum, all five scalar quotient
 coordinates of the complete AIR, full-public/domain/cache refusal controls, and
 a nonbase case with three physical locations plus all five coefficient embeddings.
@@ -63,6 +63,20 @@ cargo test --release --locked -p registry200-proof source::hash::public_image:: 
 The four small cases passed in the [owning validation](VALIDATION.md), which
 records exact graph counts and process measurements without a proof or SQL claim.
 
-Full192 coverage, sampler/distribution premises, a Source native public frame,
-FRI/RO composition, adaptive privacy, freshness, SQL admission and the <=500ms
-complete-query target remain outside this stage. No full192 case is included.
+An ignored [full192 arithmetic case](tests/full_locations.rs) uses the same
+complete Source program and unchanged independent native oracle at192 physical
+locations and all five coefficient embeddings. It retains7161 MAIN columns,
+960 base-coordinate comparisons and the lossy-embedding error-tensor control.
+Select its exact target under the unchanged held-process resource observer:
+
+```sh
+cargo test --release --locked -p registry200-proof source::hash::public_image::tests::full_locations::all_five_source_coordinate_polynomials_match_native_folder_on_192_rows_and_five_ood_embeddings -- --ignored --exact --test-threads=1
+```
+
+The ordinary filter leaves this heavy case ignored. Phase diagnostics distinguish
+the actual ring fold from the straightforward scalar native comparisons. The full
+arithmetic case passed in the [owning validation](VALIDATION.md), which records
+phase timings and whole-process observations.
+Sampler/distribution premises, a Source native public frame, FRI/RO composition,
+adaptive privacy, freshness, SQL admission and the <=500ms complete-query target
+remain outside this arithmetic boundary.

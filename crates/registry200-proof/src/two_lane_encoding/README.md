@@ -452,3 +452,12 @@ commitment, original Cs and original DataCt; physical buffer identity is not a
 proof or authority. The receiver, frame, profile and all equations are unchanged.
 The Word read owning example exercises this route and its repaired native
 State/Role3 failures and foreign original DATA request rejection.
+
+## Test-only Role3 public image
+
+The [owning public-image arithmetic](hash/public_image/README.md) derives the
+actual EncodingAir(VersionSourceAllOriginal), complete Statement740 including
+Cw4, original Source-image binding and genuine periodic512. Four small SDK-folder
+comparisons retain five quotient coordinates and report the exact live Role3 DAG.
+This arithmetic bridge produces no proof, native frame or admission capability;
+full192 and sampler/FRI work require their own measured owning gates.

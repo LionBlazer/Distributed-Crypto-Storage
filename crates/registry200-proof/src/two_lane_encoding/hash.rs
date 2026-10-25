@@ -8,6 +8,9 @@ use p3_field::PrimeField64;
 use sha2::{Digest, Sha256, Sha512};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+#[cfg(test)]
+mod public_image;
+
 const MAGIC: &[u8; 8] = b"DCSHER01";
 const HEADER: usize = 128;
 /// Complete frame limit, retaining the original Role3 child byte budget.
