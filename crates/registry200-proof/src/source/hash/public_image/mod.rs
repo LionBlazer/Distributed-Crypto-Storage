@@ -1,6 +1,7 @@
 //! Owning SourceVersion public image arithmetic, cfg(test) only.
 //! Actual OpeningAir + genuine periodic512; the fold creates no witness/proof/RNG.
 mod domain;
+mod public_disclosures;
 mod tests;
 
 use super::SourceVersionExpected;

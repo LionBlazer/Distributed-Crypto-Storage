@@ -1,5 +1,6 @@
 //! Observable arithmetic comparisons against actual owning SDK code only.
 mod full_locations;
+mod joint_disclosures;
 mod nonbase;
 use super::*;
 use p3_air::RowWindow;

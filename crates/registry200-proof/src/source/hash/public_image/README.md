@@ -80,3 +80,9 @@ phase timings and whole-process observations.
 Sampler/distribution premises, a Source native public frame, FRI/RO composition,
 adaptive privacy, freshness, SQL admission and the <=500ms complete-query target
 remain outside this arithmetic boundary.
+
+The [small16 joint-disclosure arithmetic](public_disclosures/README.md) now
+retains the complete native R10/MAIN7166/Q16x10 layout and all sixteen active
+zero-divisor chunk cases. Its fixed public-cell recipe and independent replay
+passed their [owning gates](public_disclosures/VALIDATION.md). This does not
+establish a conditioned native distribution, proof, privacy or SQL admission result.
