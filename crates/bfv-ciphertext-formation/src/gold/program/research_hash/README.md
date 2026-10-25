@@ -24,7 +24,8 @@ SHA or an implementation proof of an ideal random oracle or PRG assumption.
 The native config retains EF5, blowup8,192 queries, random5, salt4, cap0,
 12 FRI folds for degree12, and all zero-PoW slots. Query keeps its actual AIR,
 Expected, PP factory, codec, Receiver, transcript schedule and native assembler.
-The planned DATA owner must supply its own corresponding contracts. Moving
+The [DATA research owner](../dense_data_inventory/research_data/README.md)
+supplies its own corresponding contracts. Moving
 these helpers does not itself assemble a DATA proof or a mixed-family receiver.
 
 Direct dependencies are fixed bfv-hiding-stark field/namespace/parameter aliases,
@@ -70,3 +71,7 @@ not all-helper ROM, adaptive privacy, concrete SHA/PRG/BFV assurance, Source/key
 current-version authority, application admission, executable SQL or a <=500ms
 query measurement. Whole-process resource compliance still needs the unchanged
 held-process observer; dictionary limits alone do not establish it.
+A subsequent [DATA native gate](../dense_data_inventory/research_data/README.md)
+also passed complete frame acceptance/replay and21 hostile native checks using
+this same implementation. A complete mixed Query/DATA prior-state execution is
+still required; two separate family gates do not establish it.

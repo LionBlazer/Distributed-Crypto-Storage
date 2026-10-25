@@ -65,7 +65,8 @@ under the owning held-process observer with --ignored.
 This is a fixed-public-input algebraic image under the original honest AIR,
 degree/divisibility and ideal independent-cell premises. CSPRNG sampling alone
 does not establish those premises. Residues need not form a globally valid
-original trace. Native DATA FRI/frame acceptance, salted commitments/shared
-raw-key oracle, adaptive Fiat-Shamir/auxiliary/abort analysis, concrete PRG and
+original trace. The owning [DATA research receiver](../../research_data/README.md) now checks
+complete native frame acceptance in the programmed proof-ROM. Mixed-family
+prior-state coupling, adaptive Fiat-Shamir/auxiliary/abort analysis, concrete PRG and
 cryptography, Source/key/current-version association and admission remain open.
 Network SQL, finalized locks and the complete500ms request are unmeasured here.

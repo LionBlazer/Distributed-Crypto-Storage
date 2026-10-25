@@ -155,10 +155,15 @@ family-specific statements, AIRs, packing and profiles remain with their owners.
 Its owning [joint DATA disclosures](src/gold/program/dense_data_inventory/public_image/public_disclosures/README.md)
 and [whole-B image](src/gold/program/dense_data_inventory/public_deep/README.md)
 now match all2622 actual native DEEP terms on192 physical points. Fifteen observed
-arithmetic/coupling/rejection cases passed; full DATA native FRI/frame assembly
-and its security/admission assessment remain separate work.
+arithmetic/coupling/rejection cases passed. Native frame assembly and its
+security/admission assessment are separate boundaries.
 
 The private [shared research hash owner](src/gold/program/research_hash/README.md)
 now holds one raw-key dictionary/config and the closed Query/DATA opaque engine.
 Native geometry/hostile checks and existing complete Query shared-session
-regressions pass after the move; full DATA frame assembly remains separate.
+regressions pass after the move. The owning
+[DATA research receiver](src/gold/program/dense_data_inventory/research_data/README.md)
+also passes complete native FRI/frame acceptance, replay,21 native tampering and
+six header controls. It uses the programmed research proof-ROM; normal SHA rejects
+the frame. Mixed-family prior-state composition, crypto assessment and SQL
+admission remain separate requirements.

@@ -104,3 +104,8 @@ does not assemble FRI or produce a DATA proof. Source/key/current
 version authority, adaptive privacy, concrete cryptography, production admission,
 network SQL, locks and the complete 500-ms request remain separate requirements.
 These test durations are not full SQL latency measurements.
+
+The separate [DATA research receiver](../research_data/README.md) now assembles
+this public image and B into an actual native FRI/frame under the shared
+programmed proof-ROM. Its native acceptance/replay and hostile checks passed.
+This does not convert these arithmetic values into production or SQL authority.

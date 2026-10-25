@@ -72,8 +72,9 @@ encapsulated native assembly must preserve that association; consistency checks
 alone give no Source/key/version or admission authority.
 
 Affine distribution claims retain honest AIR, degree/divisibility, ideal-cell
-and public-conditioning premises. Full DATA native FRI/frame assembly, shared
-raw-key oracle and adaptive/auxiliary/abort handling, concrete crypto/PRG,
+and public-conditioning premises. The owning [DATA research receiver](../research_data/README.md) now checks full
+native frame assembly in the programmed proof-ROM. Mixed-family prior-state
+coupling and adaptive/auxiliary/abort handling, concrete crypto/PRG,
 application bindings and production admission remain separate work. Network SQL,
 fresh consensus and finalized locks are neither implemented nor timed by these
 tests; the complete500ms goal remains unmet.

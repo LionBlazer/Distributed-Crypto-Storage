@@ -7,6 +7,8 @@ mod public_deep;
 #[cfg(test)]
 mod public_image;
 #[cfg(test)]
+pub(in crate::gold::program) mod research_data;
+#[cfg(test)]
 mod snapshot;
 #[cfg(test)]
 mod tests;
