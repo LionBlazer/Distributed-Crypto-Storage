@@ -1,4 +1,5 @@
 //! Independent actual Role3 SDK comparisons with explicitly public arithmetic.
+mod full_locations;
 mod nonbase;
 use super::*;
 use crate::{

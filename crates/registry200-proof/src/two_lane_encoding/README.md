@@ -459,5 +459,6 @@ The [owning public-image arithmetic](hash/public_image/README.md) derives the
 actual EncodingAir(VersionSourceAllOriginal), complete Statement740 including
 Cw4, original Source-image binding and genuine periodic512. Four small SDK-folder
 comparisons retain five quotient coordinates and report the exact live Role3 DAG.
+The separately measured full192 case retains all five coordinate embeddings.
 This arithmetic bridge produces no proof, native frame or admission capability;
-full192 and sampler/FRI work require their own measured owning gates.
+sampler/FRI work still requires its own owning gates.

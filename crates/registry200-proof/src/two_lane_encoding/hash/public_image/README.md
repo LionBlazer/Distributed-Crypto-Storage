@@ -94,8 +94,8 @@ is Frobenius-transformed; all five coefficient embeddings are retained.
 The owning validation record must distinguish independent source review from
 actual integration and bounded execution. The small arithmetic filter is
 `two_lane_encoding::hash::public_image`, run alone under the unchanged held-process
-120-second/1792-MiB limits. Record actual counts/resources before extending the
-same gate to192 positions. No full192 test is included at this stage.
+120-second/1792-MiB limits. The ignored full192 case below passed its separate
+exact bounded gate, recorded with phase timings in the validation record.
 
 The four small cases passed in the [owning validation](VALIDATION.md), which
 records actual counts/resources and the executed coverage.
@@ -104,3 +104,20 @@ No sampler, honest-witness/divisibility law, privacy/ROM claim, native FRI/frame
 fresh prerequisite proof, current head, SQL/lock admission or500ms complete-query
 result is implemented here. Production APIs, profiles, resources and proof gates
 remain with their existing owners.
+
+An ignored [full192 arithmetic case](tests/full_locations.rs) uses the unchanged
+complete Role3 program and native oracle with1656 original MAIN polynomials,
+all740 public values, Cw/full-Source SHA binding,192 physical points and five
+coefficient embeddings. It checks960 literal base coordinates and the actual
+lossy-embedding error tensor. The exact target is:
+
+```sh
+cargo test --release --locked -p registry200-proof two_lane_encoding::hash::public_image::tests::full_locations::all_five_role3_coordinate_polynomials_match_native_folder_on_192_rows_and_five_ood_embeddings -- --ignored --exact --test-threads=1
+```
+
+Run it alone through the owning held-process observer with unchanged120-second/
+1792-MiB limits. Normal filters leave it ignored. The [full observation](VALIDATION.md)
+records the passed exact case and separates the Ring fold from straightforward
+native field checks. The actual graph-derived node/cache limit
+is retained, with no fixed previous count. Sampler/distribution laws, native
+frame/FRI and application/privacy admission remain separate work.
