@@ -2,11 +2,9 @@
 //! Native adapter/reference and public V+B assembly gates; no production authority.
 mod joint_disclosures_tests;
 mod native_fri;
-mod opaque_inputs;
 mod public_deep;
-mod research_config;
-mod research_ro;
 
+use super::super::research_hash::{config as research_config, opaque_inputs, ro as research_ro};
 use super::{Expected, assessment::Assessment, hash_setup, hash_wire, native};
 use bfv_hiding_stark::Val;
 use p3_batch_stark::{BatchProof, CommonData, ProverData, verify_batch};

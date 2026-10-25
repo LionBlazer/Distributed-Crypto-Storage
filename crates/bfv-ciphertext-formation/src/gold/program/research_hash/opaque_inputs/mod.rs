@@ -1,8 +1,8 @@
-//! Isolated research_query child. Opaque PRIVATE INPUT commitments only.
+//! Private program-owned research hash child. Opaque PRIVATE INPUT commitments only.
 //! Real native MMCS verifies every returned proof; this creates no verdict.
 //! Public PP remains ordinary native ProverData and has no role in this enum.
-use super::research_config::Mmcs as ResearchMmcs;
-use super::research_ro::{Oracle, Programmer, leaf_input};
+use super::config::Mmcs as ResearchMmcs;
+use super::ro::{Oracle, Programmer, leaf_input};
 use bfv_hiding_stark::Val as F;
 use p3_fri::BatchMultiOpening;
 use p3_matrix::Dimensions;
@@ -21,7 +21,7 @@ const HEIGHT: usize = 32768;
 const MAX_OPENED: usize = 192;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Error {
+pub(in crate::gold::program) enum Error {
     Shape,
     ConflictingRow,
     DisclosureLimit,
@@ -29,8 +29,32 @@ pub(super) enum Error {
     FailedAttempt,
 }
 
+/// Closed owning layouts only. Incoming frames cannot supply dimensions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum PrivateInput {
+pub(in crate::gold::program) enum DenseFamily {
+    Query,
+    Data,
+}
+impl DenseFamily {
+    fn widths(self, role: PrivateInput) -> Vec<usize> {
+        match (self, role) {
+            (_, PrivateInput::Random) => vec![10],
+            (Self::Query, PrivateInput::Main) => vec![421],
+            (Self::Data, PrivateInput::Main) => vec![517],
+            (_, PrivateInput::Quotient) => vec![10; 8],
+            (Self::Query, PrivateInput::Aux) => vec![425],
+            (Self::Data, PrivateInput::Aux) => vec![415],
+        }
+    }
+    fn max_width(self) -> usize {
+        match self {
+            Self::Query => 425,
+            Self::Data => 517,
+        }
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::gold::program) enum PrivateInput {
     Random,
     Main,
     Quotient,
@@ -45,23 +69,19 @@ impl PrivateInput {
             Self::Aux => 3,
         }
     }
-    fn widths(self) -> Vec<usize> {
-        match self {
-            Self::Random => vec![10],
-            Self::Main => vec![421],
-            Self::Quotient => vec![10; 8],
-            Self::Aux => vec![425],
-        }
-    }
 }
 
-/// Fixed four-private-commitment Query grammar. No PP, height or width override.
-pub(super) struct OpaqueInputs {
+/// Four private commitments in one closed family. No PP or geometry override.
+pub(in crate::gold::program) struct OpaqueInputs {
     trees: [Tree; 4],
     failed: bool,
 }
 impl OpaqueInputs {
-    pub(super) fn new(programmer: Programmer, rng: &mut impl CryptoRng) -> Result<Self> {
+    pub(in crate::gold::program) fn new(
+        family: DenseFamily,
+        programmer: Programmer,
+        rng: &mut impl CryptoRng,
+    ) -> Result<Self> {
         let roles = [
             PrivateInput::Random,
             PrivateInput::Main,
@@ -71,8 +91,9 @@ impl OpaqueInputs {
         let mut trees = Vec::with_capacity(4);
         for role in roles {
             trees.push(Tree::sample(
+                family,
                 HEIGHT,
-                role.widths(),
+                family.widths(role),
                 programmer.clone(),
                 rng,
             )?);
@@ -83,15 +104,15 @@ impl OpaqueInputs {
             failed: false,
         })
     }
-    pub(super) fn commitment(&self, role: PrivateInput) -> MerkleCap<F, Digest> {
+    pub(in crate::gold::program) fn commitment(&self, role: PrivateInput) -> MerkleCap<F, Digest> {
         self.trees[role.index()].commitment()
     }
-    pub(super) fn dimensions(&self, role: PrivateInput) -> Vec<Dimensions> {
+    pub(in crate::gold::program) fn dimensions(&self, role: PrivateInput) -> Vec<Dimensions> {
         self.trees[role.index()].dimensions()
     }
     /// Public rows come from V, in actual query/matrix/column order.
     /// Repeated indices must reuse precisely the same rows and four salts.
-    pub(super) fn opening(
+    pub(in crate::gold::program) fn opening(
         &mut self,
         role: PrivateInput,
         indices: &[usize],
@@ -127,6 +148,7 @@ struct Tree {
 }
 impl Tree {
     fn sample(
+        family: DenseFamily,
         height: usize,
         widths: Vec<usize>,
         programmer: Programmer,
@@ -137,7 +159,9 @@ impl Tree {
             || !height.is_power_of_two()
             || widths.is_empty()
             || widths.len() > 8
-            || widths.iter().any(|&width| width == 0 || width > 425)
+            || widths
+                .iter()
+                .any(|&width| width == 0 || width > family.max_width())
         {
             return Err(Error::Shape);
         }
@@ -145,9 +169,10 @@ impl Tree {
         for label in &mut labels {
             rng.fill_bytes(label);
         }
-        Self::from_labels(height, widths, programmer, labels)
+        Self::from_labels(family, height, widths, programmer, labels)
     }
     fn from_labels(
+        family: DenseFamily,
         height: usize,
         widths: Vec<usize>,
         programmer: Programmer,
@@ -159,7 +184,9 @@ impl Tree {
             || labels.len() != height
             || widths.is_empty()
             || widths.len() > 8
-            || widths.iter().any(|&width| width == 0 || width > 425)
+            || widths
+                .iter()
+                .any(|&width| width == 0 || width > family.max_width())
         {
             return Err(Error::Shape);
         }

@@ -18,7 +18,7 @@ const MAX_PREFIX: usize = 1024 * 1024;
 
 type Digest256 = [u8; 32];
 type Digest512 = [u8; 64];
-pub(super) type Tape = BTreeMap<(u64, u64), Digest512>;
+pub(in crate::gold::program) type Tape = BTreeMap<(u64, u64), Digest512>;
 
 struct State {
     h256: BTreeMap<Vec<u8>, Digest256>,
@@ -31,14 +31,14 @@ struct State {
 
 /// Explicit owner of programming rights. Never passed to native receiver code.
 #[derive(Clone)]
-pub(super) struct Programmer(Arc<Mutex<State>>);
+pub(in crate::gold::program) struct Programmer(Arc<Mutex<State>>);
 
 /// Query-only interface used by actual MMCS and verifier challenger implementations.
 #[derive(Clone)]
-pub(super) struct Oracle(Arc<Mutex<State>>);
+pub(in crate::gold::program) struct Oracle(Arc<Mutex<State>>);
 
 impl Programmer {
-    pub(super) fn regression(seed: [u8; 32]) -> Self {
+    pub(in crate::gold::program) fn regression(seed: [u8; 32]) -> Self {
         Self(Arc::new(Mutex::new(State {
             h256: BTreeMap::new(),
             h512: BTreeMap::new(),
@@ -48,13 +48,17 @@ impl Programmer {
             queries512: 0,
         })))
     }
-    pub(super) fn oracle(&self) -> Oracle {
+    pub(in crate::gold::program) fn oracle(&self) -> Oracle {
         Oracle(Arc::clone(&self.0))
     }
 
     /// The public simulator may plant an absent point or repeat its existing value.
     /// Conflict is a named model failure; it MUST NOT overwrite an old answer.
-    pub(super) fn plant256(&self, input: Vec<u8>, output: Digest256) -> Result<(), ()> {
+    pub(in crate::gold::program) fn plant256(
+        &self,
+        input: Vec<u8>,
+        output: Digest256,
+    ) -> Result<(), ()> {
         let mut state = self.0.lock().unwrap();
         if let Some(old) = state.h256.get(&input) {
             return if old == &output { Ok(()) } else { Err(()) };
@@ -89,7 +93,7 @@ impl State {
     }
 }
 impl Oracle {
-    pub(super) fn h256(&self, input: Vec<u8>) -> Digest256 {
+    pub(in crate::gold::program) fn h256(&self, input: Vec<u8>) -> Digest256 {
         let mut state = self.0.lock().unwrap();
         state.queries256 = state.queries256.checked_add(1).unwrap();
         if let Some(output) = state.h256.get(&input) {
@@ -115,7 +119,7 @@ impl Oracle {
     }
 }
 
-pub(super) fn leaf_input(values: impl IntoIterator<Item = Val>) -> Vec<u8> {
+pub(in crate::gold::program) fn leaf_input(values: impl IntoIterator<Item = Val>) -> Vec<u8> {
     let mut output = bfv_hiding_stark::hash::LEAF_DOMAIN.to_vec();
     let mut count = 0u64;
     for value in values {
@@ -127,14 +131,14 @@ pub(super) fn leaf_input(values: impl IntoIterator<Item = Val>) -> Vec<u8> {
     output
 }
 #[derive(Clone)]
-pub(super) struct Leaf(pub(super) Oracle);
+pub(in crate::gold::program) struct Leaf(pub(in crate::gold::program) Oracle);
 impl CryptographicHasher<Val, Digest256> for Leaf {
     fn hash_iter<I: IntoIterator<Item = Val>>(&self, input: I) -> Digest256 {
         self.0.h256(leaf_input(input))
     }
 }
 #[derive(Clone)]
-pub(super) struct Node(pub(super) Oracle);
+pub(in crate::gold::program) struct Node(pub(in crate::gold::program) Oracle);
 impl PseudoCompressionFunction<Digest256, 2> for Node {
     fn compress(&self, children: [Digest256; 2]) -> Digest256 {
         let mut input = bfv_hiding_stark::hash::NODE_DOMAIN.to_vec();
@@ -146,26 +150,26 @@ impl PseudoCompressionFunction<Digest256, 2> for Node {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) enum Event {
+pub(in crate::gold::program) enum Event {
     Field(u64),
     Cap(Vec<Digest256>),
     Sample { counter: u64, value: u64 },
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct Draw {
-    pub(super) prefix_len: usize,
-    pub(super) counter: u64,
-    pub(super) retry: u64,
-    pub(super) digest: Digest512,
+pub(in crate::gold::program) struct Draw {
+    pub(in crate::gold::program) prefix_len: usize,
+    pub(in crate::gold::program) counter: u64,
+    pub(in crate::gold::program) retry: u64,
+    pub(in crate::gold::program) digest: Digest512,
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(super) struct Walk {
-    pub(super) prefix: Vec<u8>,
-    pub(super) events: Vec<Event>,
-    pub(super) draws: Vec<Draw>,
+pub(in crate::gold::program) struct Walk {
+    pub(in crate::gold::program) prefix: Vec<u8>,
+    pub(in crate::gold::program) events: Vec<Event>,
+    pub(in crate::gold::program) draws: Vec<Draw>,
 }
 #[derive(Clone, Default)]
-pub(super) struct Walks(Arc<Mutex<Vec<Walk>>>);
+pub(in crate::gold::program) struct Walks(Arc<Mutex<Vec<Walk>>>);
 impl Walks {
     fn fork(&self, walk: Walk) -> usize {
         let mut walks = self.0.lock().unwrap();
@@ -174,7 +178,7 @@ impl Walks {
         walks.push(walk);
         index
     }
-    pub(super) fn with_draws(&self) -> Vec<Walk> {
+    pub(in crate::gold::program) fn with_draws(&self) -> Vec<Walk> {
         self.0
             .lock()
             .unwrap()
@@ -191,7 +195,7 @@ enum Access {
     Plant(Programmer, Arc<Tape>),
 }
 
-pub(super) struct ResearchChallenger {
+pub(in crate::gold::program) struct ResearchChallenger {
     prefix: Vec<u8>,
     counter: u64,
     access: Access,
@@ -226,10 +230,14 @@ impl ResearchChallenger {
             trace,
         }
     }
-    pub(super) fn receiver(oracle: Oracle, walks: Walks) -> Self {
+    pub(in crate::gold::program) fn receiver(oracle: Oracle, walks: Walks) -> Self {
         Self::new(Access::Query(oracle), walks)
     }
-    pub(super) fn planter(programmer: Programmer, tape: Tape, walks: Walks) -> Self {
+    pub(in crate::gold::program) fn planter(
+        programmer: Programmer,
+        tape: Tape,
+        walks: Walks,
+    ) -> Self {
         Self::new(Access::Plant(programmer, Arc::new(tape)), walks)
     }
     fn absorb(&mut self, bytes: &[u8]) {

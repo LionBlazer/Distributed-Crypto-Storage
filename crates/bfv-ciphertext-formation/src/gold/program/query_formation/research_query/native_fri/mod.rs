@@ -6,7 +6,7 @@ mod tape;
 mod tests;
 pub(super) use tape::TapePlan;
 
-use super::opaque_inputs::{OpaqueInputs, PrivateInput};
+use super::opaque_inputs::{DenseFamily, OpaqueInputs, PrivateInput};
 use super::public_deep::{Column, PublicView};
 use super::research_config::{self, ChallengeMmcs, Config, Mmcs as ResearchMmcs};
 use super::research_ro::{Event, Oracle, Programmer, ResearchChallenger, Walks};
@@ -141,7 +141,7 @@ impl Inputs {
             return Err("Query-native-shape");
         }
         let pp = PublicPp::new(expected, oracle, &global.commitment)?;
-        let forest = OpaqueInputs::new(programmer.clone(), &mut opaque_salts)
+        let forest = OpaqueInputs::new(DenseFamily::Query, programmer.clone(), &mut opaque_salts)
             .map_err(|_| "Query-opaque-construction")?;
         Ok(Self {
             expected: expected.clone(),

@@ -62,7 +62,7 @@ measured executable was built.
 
 The next owning stage adds the private test-only
 [whole-B arithmetic](research_query/public_deep/README.md) and
-[opaque INPUT forest](research_query/opaque_inputs/README.md). The first
+[opaque INPUT forest](../research_hash/opaque_inputs/README.md). The first
 constructs the affine polynomial from supplied public disclosures, using the
 exact native 2327-term order, base-field CRT/Frobenius consistency, two DEEP
 divisions and a native all-coordinate DFT product. Seven algebra cases cover
@@ -293,3 +293,19 @@ Soundness, concrete cryptography and the application bindings are separate.
 
 These durations include research checks and are not full SQL latency. No network,
 fresh agreed head, finalized lock or complete 500-ms result is established.
+
+## Shared research-hash owner regression
+
+The former local Query RO/config/opaque modules now have one private cfg(test)
+[program owner](../research_hash/README.md). Query imports that exact owner and
+selects its closed421/425 layout; DATA opaque checks select517/415. No raw
+namespace, seed/parameter, AIR, public PP, codec, normal config or admission
+contract changed. Old measurements above retain their historical source paths.
+
+Clippy r888/build r889 passed, followed by eight shared/native opaque cases r890,
+the existing Query tape check r891 and the existing complete two-frame Query
+gate r892. All10 selected cases passed with zero ignored. The heavy Query gate
+took8.81s harness/8817.2222ms process and OS peak709193728B, including two fresh
+productions, receives/replays, conflict rejection and normal SHA rejections.
+It is not a full SQL latency measurement. The shared owner records the exact
+executable, unchanged120s/1792MiB observer, remaining model and DATA-frame boundary.

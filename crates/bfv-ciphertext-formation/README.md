@@ -157,3 +157,8 @@ and [whole-B image](src/gold/program/dense_data_inventory/public_deep/README.md)
 now match all2622 actual native DEEP terms on192 physical points. Fifteen observed
 arithmetic/coupling/rejection cases passed; full DATA native FRI/frame assembly
 and its security/admission assessment remain separate work.
+
+The private [shared research hash owner](src/gold/program/research_hash/README.md)
+now holds one raw-key dictionary/config and the closed Query/DATA opaque engine.
+Native geometry/hostile checks and existing complete Query shared-session
+regressions pass after the move; full DATA frame assembly remains separate.

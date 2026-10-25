@@ -5,6 +5,8 @@ mod descriptor;
 mod pp;
 #[cfg(test)]
 mod public_image_ring;
+#[cfg(test)]
+mod research_hash;
 use super::{Error, Result};
 pub(super) use air::ProgramAir;
 pub(super) use assessment::{Assessment, assess};

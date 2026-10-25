@@ -1,6 +1,6 @@
-//! Actual native MMCS checks; tiny8 and full Query32768 are separate cases.
+//! Actual native MMCS checks; tiny8 and closed Query/DATA32768 cases.
 //! Public literal rows here are not an AIR trace, SQL answer or private fixture.
-use super::super::research_config;
+use super::super::config as research_config;
 use super::*;
 use p3_commit::Mmcs as _;
 use p3_field::PrimeCharacteristicRing;
@@ -134,7 +134,14 @@ fn literal_eight_leaf_opaque_tree_authenticates_real_native_multiproof_and_reuse
     let programmer = Programmer::regression([0x61; 32]);
     let mut rng = CountingRng::from_seed([0x62; 32]);
     let widths = vec![2, 1];
-    let mut tree = Tree::sample(8, widths.clone(), programmer.clone(), &mut rng).unwrap();
+    let mut tree = Tree::sample(
+        DenseFamily::Query,
+        8,
+        widths.clone(),
+        programmer.clone(),
+        &mut rng,
+    )
+    .unwrap();
     let indices = [1, 2, 5, 1];
     let data = rows(&widths, &indices);
     let opening = tree.opening(&indices, &data, &mut rng).unwrap();
@@ -227,28 +234,27 @@ fn frontier_matches_independent_genuine_native_open_multi_batch_on_public_litera
         })
         .collect();
     // from_labels is PRIVATE and used only for this genuine-public-fixture
-    // comparison. The public Query constructor ALWAYS samples fresh labels.
-    let tree = Tree::from_labels(8, widths, programmer, labels).unwrap();
+    // comparison. Both closed family constructors ALWAYS sample fresh labels.
+    let tree = Tree::from_labels(DenseFamily::Query, 8, widths, programmer, labels).unwrap();
     assert_eq!(tree.commitment().roots(), cap.roots());
     let indices = [5, 1, 2, 1];
     let (_, native_proof) = mmcs.open_multi_batch(&indices, &prover_data);
     assert_eq!(tree.frontier(&indices), native_proof.1.sibling_hashes);
 }
 
-#[test]
-fn actual_query_four_input_geometries_use_32768_rows_192_indices_and_native_verification() {
+fn require_actual_family(family: DenseFamily, main_width: usize, aux_width: usize) {
     let programmer = Programmer::regression([0x66; 32]);
     let mut rng = CountingRng::from_seed([0x67; 32]);
-    let mut forest = OpaqueInputs::new(programmer.clone(), &mut rng).unwrap();
+    let mut forest = OpaqueInputs::new(family, programmer.clone(), &mut rng).unwrap();
     let mmcs = research_config::mmcs(programmer.oracle(), StdRng::from_seed([0x68; 32]));
     let mut indices: Vec<usize> = (0..192).map(|i| (257 * i + 17) & 32767).collect();
     indices[191] = indices[0];
     // Independent literal owning grammar, including quotient8 separate matrices.
     for (role, widths) in [
         (PrivateInput::Random, vec![10]),
-        (PrivateInput::Main, vec![421]),
+        (PrivateInput::Main, vec![main_width]),
         (PrivateInput::Quotient, vec![10; 8]),
-        (PrivateInput::Aux, vec![425]),
+        (PrivateInput::Aux, vec![aux_width]),
     ] {
         let dimensions: Vec<_> = widths
             .iter()
@@ -292,7 +298,7 @@ fn actual_query_four_input_geometries_use_32768_rows_192_indices_and_native_veri
             &opening,
         );
     }
-    // The constructor cannot be persuaded to build a smaller/faster Query tree.
+    // The constructor cannot be persuaded to build a smaller/faster family tree.
     let data = rows(&[10], &indices);
     assert!(matches!(
         forest.opening(
@@ -366,12 +372,63 @@ fn actual_query_four_input_geometries_use_32768_rows_192_indices_and_native_veri
         forest.opening(
             PrivateInput::Main,
             &indices,
-            &rows(&[421], &indices),
+            &rows(&[main_width], &indices),
             &mut rng
         ),
         Err(Error::FailedAttempt)
     ));
     eprintln!(
-        "research_query opaque_inputs_native_MMCS=true private_commits=4 height=32768 indices=192 native_positive=5 native_negative=24 repeated_row_salt_reuse=true programming_conflict_fail_closed=true PP_in_forest=false full_simulator=false admission=false"
+        "research_hash family={family:?} opaque_inputs_native_MMCS=true private_commits=4 height=32768 indices=192 native_positive=5 native_negative=24 repeated_row_salt_reuse=true programming_conflict_fail_closed=true PP_in_forest=false full_simulator=false admission=false"
     );
+}
+
+#[test]
+fn actual_query_four_input_geometries_use_32768_rows_192_indices_and_native_verification() {
+    require_actual_family(DenseFamily::Query, 421, 425);
+}
+
+#[test]
+fn actual_data_four_input_geometries_use_32768_rows_192_indices_and_native_verification() {
+    require_actual_family(DenseFamily::Data, 517, 415);
+}
+
+#[test]
+fn both_private_tree_constructors_preserve_the_chosen_family_width_guard_before_rng_use() {
+    for (family, allowed, forbidden) in [
+        (DenseFamily::Query, 425, 426),
+        (DenseFamily::Data, 517, 518),
+    ] {
+        let programmer = Programmer::regression([0x6a; 32]);
+        let mut rng = CountingRng::from_seed([0x6b; 32]);
+        let before = rng.calls;
+        assert!(matches!(
+            Tree::sample(family, 8, vec![forbidden], programmer.clone(), &mut rng),
+            Err(Error::Shape)
+        ));
+        assert_eq!(rng.calls, before);
+        assert!(matches!(
+            Tree::from_labels(
+                family,
+                8,
+                vec![forbidden],
+                programmer.clone(),
+                vec![[0; 32]; 8]
+            ),
+            Err(Error::Shape)
+        ));
+        let tree = Tree::sample(family, 8, vec![allowed], programmer.clone(), &mut rng).unwrap();
+        assert_eq!(tree.dimensions()[0].width, allowed);
+        let imported =
+            Tree::from_labels(family, 8, vec![allowed], programmer, tree.levels[0].clone())
+                .unwrap();
+        assert_eq!(imported.commitment(), tree.commitment());
+    }
+    // Query never acquires DATA's517-column allowance through the shared engine.
+    let programmer = Programmer::regression([0x6c; 32]);
+    let mut rng = CountingRng::from_seed([0x6d; 32]);
+    assert!(matches!(
+        Tree::sample(DenseFamily::Query, 8, vec![517], programmer, &mut rng),
+        Err(Error::Shape)
+    ));
+    assert_eq!(rng.calls, 0);
 }

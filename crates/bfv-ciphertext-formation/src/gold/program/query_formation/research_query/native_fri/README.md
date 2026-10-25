@@ -32,8 +32,8 @@ Repeated native indices reuse their exact rows and salts. Wrapper OOD claims
 retain native [round][matrix][point] nesting: five per private matrix/point,
 zero for PP. R carries five outer coordinates plus five wrapper coordinates.
 
-Direct dependencies are [research_ro](../research_ro.rs),
-[research_config](../research_config.rs), [opaque_inputs](../opaque_inputs/README.md),
+Direct dependencies are [shared research_ro](../../../research_hash/ro.rs),
+[shared research_config](../../../research_hash/config.rs), [closed opaque_inputs](../../../research_hash/opaque_inputs/README.md),
 [public_deep](../public_deep.rs), actual public_image/FullAir/setup/codec, pinned
 P3 native transcript/FRI/MMCS types, rand-public-pp and standard owned collections.
 The separate full receiver test additionally needs the owning joint-disclosure

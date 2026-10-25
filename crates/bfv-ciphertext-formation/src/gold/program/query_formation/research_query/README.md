@@ -1,6 +1,6 @@
 # Isolated native Query oracle harness
 
-This module exists only in the owning crate's unit-test build. It supplies an
+This module exists only in the owning crate's unit-test build. It uses the program-owned [shared research hash harness](../../research_hash/README.md) for an
 explicit finite H256/H512 dictionary, separate programming and query-only
 handles, and a research configuration over the genuine hiding PCS, Merkle MMCS,
 EF5 and FRI with unchanged geometry. All roles share each dictionary. The seeded
@@ -9,7 +9,7 @@ regression RNG is not a proof of an ideal random oracle or concrete SHA security
 `Programmer` may assign absent points and repeat an existing value; conflicting
 assignments reject. Native receiver code gets only `Oracle`. Its challenger
 retains exact FIELD/CAP/SAMPLE/DRAW bytes, including rejected full-digest retries.
-The owning adapter reconstructs actual public PP and packed lookups from the
+The Query-owned adapter reconstructs actual public PP and packed lookups from the
 full Query Expected, bounds and canonically decodes the normal frame shape,
 then invokes the genuine `verify_batch`. Normal SHA types and facades stay closed.
 
@@ -19,7 +19,7 @@ walk equality and native rejection of missing or changed input openings. It
 also requires the normal SHA backend to reject the research proof. This case
 does not generate a proof from public inputs alone or validate a public sampler.
 The [whole-B arithmetic](public_deep/README.md) samples an affine polynomial
-from supplied public disclosures. The [opaque-input forest](opaque_inputs/README.md)
+from supplied public disclosures. The [opaque-input forest](../../research_hash/opaque_inputs/README.md)
 constructs the four private INPUT multiproofs. The
 [fixed-coin joint disclosures](../public_image/public_disclosures/README.md)
 preserve the actual fold and correlated quotient fiber before whole-B sampling.
@@ -46,6 +46,6 @@ The model is restricted proof-MMCS/FS ROM with concrete PUBLIC preprocessing.
 It does not claim a global all-string SHA ROM, complete helper capture or admission.
 
 ```sh
-cargo test --release --locked -p bfv-ciphertext-formation gold::program::query_formation::research_query::research_ro:: -- --test-threads=1
+cargo test --release --locked -p bfv-ciphertext-formation gold::program::research_hash::ro:: -- --test-threads=1
 cargo test --release --locked -p bfv-ciphertext-formation gold::program::query_formation::research_query::honest_reference::actual_query_native_verifier_and_complete_walk_use_the_same_research_ro -- --ignored --exact --test-threads=1
 ```
