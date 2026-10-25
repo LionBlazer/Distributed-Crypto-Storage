@@ -69,13 +69,38 @@ Ordinary owning checks can be run with:
     cargo test --release --locked -p bfv-ciphertext-formation gold::program::dense_data_inventory::public_image:: -- --test-threads=1
     cargo test --release --locked -p bfv-ciphertext-formation gold::program::public_image_ring:: -- --test-threads=1
 
-The first filter leaves the two heavy cases ignored. Select each exact target
+The first filter leaves the heavy cases ignored. Select each exact target
 under the owning held-process observer for the complete measured checks.
+
+## Joint disclosures and whole-B validation
+
+The owning [joint sampler](public_disclosures/README.md) now draws the actual
+DATA trace/quotient image. Its downstream [whole-B module](../public_deep/README.md)
+constructs the complete affine coefficient image using DATA's2622-term order,
+true668 PP columns and exponent1124. It retains383953 sampled Gold cells at
+generic192 locations,4095 B coefficients and3899 free EF5 coefficients.
+
+| Run | Actual owning gate | Passed | Harness | Process wall | OS peak |
+| --- | --- | ---: | ---: | ---: | ---: |
+| r876 | Native geometry/five-coordinate fiber/rank/preflight | 4 | 0.10 s | 145.7679 ms | 64,069,632 B |
+| r877 | Same-cell DATA constraint-coin coupling, base z/hS overlap | 1 | 0.30 s | 308.8602 ms | 75,943,936 B |
+| r878 | Full192 joint V versus actual2622-term packed kernel | 1 | 2.12 s | 2131.0380 ms | 117,207,040 B |
+| r879 | Seven B algebra controls plus actual DATA base z | 8 | 0.65 s | 662.9932 ms | 75,927,552 B |
+| r880 | Full192 DATA joint V -> B versus2622 native terms | 1 | 2.83 s | 2842.9390 ms | 116,965,376 B |
+
+All15 cases passed with zero ignored in their selected executions; r878/r880
+explicitly selected their ignored targets. Build r875 executable SHA256:
+`67A2E7676C1EB31D6A2A2F3617326CFCABEB006E02F03F528C5FF7472F3B8471`.
+Strict Clippy r874, normal owning check r881 and requirements_sync r882 passed.
+The same held executable/creation handle,120-second/1792-MiB process fuse,
+20-ms sampling and Rayon8 policy were retained. Source/image pins matched;
+no observer fault or cleanup occurred. The durations include setup and independent
+comparison controls, rather than isolating production proof generation.
 
 ## Remaining boundary
 
 Arbitrary public residues are not claimed to be a valid DATA witness. This module
-does not sample joint V, construct B/FRI or produce a DATA proof. Source/key/current
+does not assemble FRI or produce a DATA proof. Source/key/current
 version authority, adaptive privacy, concrete cryptography, production admission,
 network SQL, locks and the complete 500-ms request remain separate requirements.
 These test durations are not full SQL latency measurements.

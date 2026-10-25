@@ -151,3 +151,9 @@ checks its actual AIR quotient coordinates against the SDK folder and reconstruc
 all zero-interleaved public PP cells and the genuine native cap. It and Query
 share one private [coefficient ring](src/gold/program/public_image_ring.rs);
 family-specific statements, AIRs, packing and profiles remain with their owners.
+
+Its owning [joint DATA disclosures](src/gold/program/dense_data_inventory/public_image/public_disclosures/README.md)
+and [whole-B image](src/gold/program/dense_data_inventory/public_deep/README.md)
+now match all2622 actual native DEEP terms on192 physical points. Fifteen observed
+arithmetic/coupling/rejection cases passed; full DATA native FRI/frame assembly
+and its security/admission assessment remain separate work.

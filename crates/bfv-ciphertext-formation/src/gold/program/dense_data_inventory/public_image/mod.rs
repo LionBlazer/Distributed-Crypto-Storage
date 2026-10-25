@@ -3,6 +3,7 @@
 // Shared pure coefficient arithmetic; DATA supplies its own AIR, public
 // Expected, packing, dimensions and preprocessing. No Query fixture is used.
 use super::super::public_image_ring as ring;
+pub(super) mod public_disclosures;
 #[cfg(test)]
 mod tests;
 
