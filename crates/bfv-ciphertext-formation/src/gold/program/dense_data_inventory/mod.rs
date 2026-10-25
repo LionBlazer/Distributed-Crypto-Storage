@@ -3,6 +3,8 @@ mod air;
 mod layout;
 mod plan;
 #[cfg(test)]
+mod public_image;
+#[cfg(test)]
 mod snapshot;
 #[cfg(test)]
 mod tests;

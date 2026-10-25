@@ -3,6 +3,8 @@ mod assessment;
 mod dense_backend;
 mod descriptor;
 mod pp;
+#[cfg(test)]
+mod public_image_ring;
 use super::{Error, Result};
 pub(super) use air::ProgramAir;
 pub(super) use assessment::{Assessment, assess};

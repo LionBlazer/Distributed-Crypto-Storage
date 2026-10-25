@@ -3,7 +3,7 @@
 This test-only module evaluates the actual owning `FullAir` and automatically
 packed LogUp constraints over a finite polynomial quotient ring. It depends on
 the fixed Query prescreen/layout, native public PP, the SDK symbolic builder,
-Gold/EF5 arithmetic, DFT, and its private `ring` implementation. It retains no
+Gold/EF5 arithmetic, DFT, and the private shared [coefficient ring](../../public_image_ring.rs). It retains no
 private configuration, witness, original trace, `Prepared` or secret RNG.
 
 `QueryFoldProgram::from_expected` derives the genuine expression DAG and global
@@ -21,7 +21,7 @@ the honest-AIR, degree, divisibility and ideal-cell premises in
 [QUOTIENT-IMAGE](../../../../../../bfv-hiding-stark/src/hash/QUOTIENT-IMAGE.md).
 This module alone does not sample the full disclosure law or construct proofs.
 
-Owning checks compare literal small-ring products and the actual Query fold
+The shared Ring example runs at its program-level owner; Query checks compare its fold
 with the independent SDK field folder, plus projection/Frobenius framing. These
 checks passed in the [bounded owning runs](../RESEARCH-VALIDATION.md). The small
 folder case has an empty query set and base OOD point 49; it is not a full
@@ -38,6 +38,10 @@ it is not a separate reconstruction of the public PP commitment. The
 ```sh
 cargo test --release --locked -p bfv-ciphertext-formation gold::program::query_formation::public_image:: -- --test-threads=1
 ```
+
+The shared arithmetic example is selected separately after its ownership move:
+
+    cargo test --release --locked -p bfv-ciphertext-formation gold::program::public_image_ring:: -- --test-threads=1
 
 The full-profile case is ignored by the ordinary filter above. Execute its exact
 target under the owning held-process resource observer:

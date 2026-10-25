@@ -145,3 +145,9 @@ also owns public-only assembly and shared-session checks. Its
 helper finalizations through the actual SHA implementation; it has no result
 override and is absent from normal builds. These finite checks supply no new
 production proof or SQL authority.
+
+The private [DATA public image](src/gold/program/dense_data_inventory/public_image/README.md)
+checks its actual AIR quotient coordinates against the SDK folder and reconstructs
+all zero-interleaved public PP cells and the genuine native cap. It and Query
+share one private [coefficient ring](src/gold/program/public_image_ring.rs);
+family-specific statements, AIRs, packing and profiles remain with their owners.
