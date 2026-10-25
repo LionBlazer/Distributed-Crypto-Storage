@@ -19,7 +19,7 @@ rotation is an endomorphism of M_T. Degrees are bounded by 197/394 for at most
 | --- | --- |
 | [native.rs](../native.rs), [layout.rs](../layout.rs) | Actual DATA FullAir, prescreen, bus and fixed dimensions |
 | [hash_wire.rs](../hash_wire.rs), [hash_setup.rs](../hash_setup.rs) | Existing closed frame checks and sealed PUBLIC native PP factory |
-| [Shared coefficient ring](../../public_image_ring.rs) | Private cfg(test) program-owned pure Gold/EF5 polynomial arithmetic; also used by Query |
+| [Shared coefficient ring](../../../../../../proof-research-support/src/ring.rs) | Pure Gold/EF5 polynomial arithmetic from a dev-dependency; also used by Query |
 | Pinned P3 0.8 | Actual symbolic emission, packing, independent concrete folder, DFT and MMCS |
 
 The common arithmetic implementation and its small test were moved byte-for-byte
@@ -67,7 +67,7 @@ A cache-node count alone is not an analytical whole-process memory guarantee.
 Ordinary owning checks can be run with:
 
     cargo test --release --locked -p bfv-ciphertext-formation gold::program::dense_data_inventory::public_image:: -- --test-threads=1
-    cargo test --release --locked -p bfv-ciphertext-formation gold::program::public_image_ring:: -- --test-threads=1
+    cargo test --release --locked -p proof-research-support -- --test-threads=1
 
 The first filter leaves the heavy cases ignored. Select each exact target
 under the owning held-process observer for the complete measured checks.

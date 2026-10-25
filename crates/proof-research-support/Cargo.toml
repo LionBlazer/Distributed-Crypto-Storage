@@ -1,0 +1,10 @@
+[package]
+name = "proof-research-support"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[dependencies]
+bfv-hiding-stark = { path = "../bfv-hiding-stark" }
+p3-field = "=0.8.0"

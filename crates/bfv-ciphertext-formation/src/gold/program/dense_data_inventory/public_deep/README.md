@@ -22,7 +22,7 @@ native4096-point base-field DFT convolution transporting all five EF5 coordinate
 
 ## Ownership and dependencies
 
-The [shared coefficient ring](../../public_image_ring.rs) supplies pure base
+The [shared coefficient ring](../../../../../../proof-research-support/src/ring.rs) supplies pure base
 product/evaluation, and pinned P3 DFT/field and rand0.10 supply native arithmetic
 and caller randomness. Local CRT and synthetic division retain owning utilities;
 no Ring or FRI implementation is duplicated. The reviewed Query affine algorithm

@@ -3,17 +3,17 @@
 use bfv_hiding_stark::{Challenge as E, Val as F};
 use p3_field::{BasedVectorSpace, Field, PrimeCharacteristicRing};
 
-pub(super) type Poly = Vec<F>;
-pub(super) type Tensor = [Poly; 5];
-pub(super) type Result<T> = core::result::Result<T, &'static str>;
+pub type Poly = Vec<F>;
+pub type Tensor = [Poly; 5];
+pub type Result<T> = core::result::Result<T, &'static str>;
 
-pub(super) fn trim(mut p: Poly) -> Poly {
+pub fn trim(mut p: Poly) -> Poly {
     while p.last() == Some(&F::ZERO) {
         p.pop();
     }
     p
 }
-pub(super) fn add(a: &[F], b: &[F]) -> Poly {
+pub fn add(a: &[F], b: &[F]) -> Poly {
     let mut result = vec![F::ZERO; a.len().max(b.len())];
     for (i, &value) in a.iter().enumerate() {
         result[i] += value;
@@ -23,13 +23,13 @@ pub(super) fn add(a: &[F], b: &[F]) -> Poly {
     }
     trim(result)
 }
-pub(super) fn scale(a: &[F], coefficient: F) -> Poly {
+pub fn scale(a: &[F], coefficient: F) -> Poly {
     trim(a.iter().map(|&value| value * coefficient).collect())
 }
-pub(super) fn sub(a: &[F], b: &[F]) -> Poly {
+pub fn sub(a: &[F], b: &[F]) -> Poly {
     add(a, &scale(b, -F::ONE))
 }
-pub(super) fn mul(a: &[F], b: &[F]) -> Poly {
+pub fn mul(a: &[F], b: &[F]) -> Poly {
     if a.is_empty() || b.is_empty() {
         return Vec::new();
     }
@@ -43,7 +43,7 @@ pub(super) fn mul(a: &[F], b: &[F]) -> Poly {
     }
     trim(result)
 }
-pub(super) fn divide(a: &[F], b: &[F]) -> Result<(Poly, Poly)> {
+pub fn divide(a: &[F], b: &[F]) -> Result<(Poly, Poly)> {
     let denominator = trim(b.to_vec());
     let Some(&leading) = denominator.last() else {
         return Err("zero-polynomial-divisor");
@@ -62,36 +62,36 @@ pub(super) fn divide(a: &[F], b: &[F]) -> Result<(Poly, Poly)> {
     }
     Ok((trim(quotient), remainder))
 }
-pub(super) fn rotate(p: &[F], h: F) -> Poly {
+pub fn rotate(p: &[F], h: F) -> Poly {
     p.iter()
         .zip(h.powers())
         .map(|(&coefficient, power)| coefficient * power)
         .collect()
 }
-pub(super) fn evaluate(p: &[F], point: E) -> E {
+pub fn evaluate(p: &[F], point: E) -> E {
     p.iter()
         .rev()
         .fold(E::ZERO, |value, &coefficient| value * point + coefficient)
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct Ring {
+pub struct Ring {
     modulus: Poly,
 }
 impl Ring {
-    pub(super) fn checked(modulus: Poly) -> Result<Self> {
+    pub fn checked(modulus: Poly) -> Result<Self> {
         if modulus.len() < 2 || modulus.len() > 395 || modulus.last() != Some(&F::ONE) {
             return Err("monic-modulus-degree");
         }
         Ok(Self { modulus })
     }
-    pub(super) fn modulus(&self) -> &[F] {
+    pub fn modulus(&self) -> &[F] {
         &self.modulus
     }
-    pub(super) fn degree(&self) -> usize {
+    pub fn degree(&self) -> usize {
         self.modulus.len() - 1
     }
-    pub(super) fn reduce(&self, p: &[F]) -> Poly {
+    pub fn reduce(&self, p: &[F]) -> Poly {
         // Monic long reduction. Large public PP polynomials are bounded4096.
         let mut p = trim(p.to_vec());
         while p.len() >= self.modulus.len() {
@@ -104,10 +104,10 @@ impl Ring {
         }
         p
     }
-    pub(super) fn multiply(&self, a: &[F], b: &[F]) -> Poly {
+    pub fn multiply(&self, a: &[F], b: &[F]) -> Poly {
         self.reduce(&mul(a, b))
     }
-    pub(super) fn power(&self, p: &[F], mut exponent: usize) -> Poly {
+    pub fn power(&self, p: &[F], mut exponent: usize) -> Poly {
         let mut result = vec![F::ONE];
         let mut factor = self.reduce(p);
         while exponent != 0 {
@@ -121,7 +121,7 @@ impl Ring {
         }
         result
     }
-    pub(super) fn inverse(&self, p: &[F]) -> Result<Poly> {
+    pub fn inverse(&self, p: &[F]) -> Result<Poly> {
         let (mut a, mut b) = (self.modulus.clone(), self.reduce(p));
         let (mut u, mut v) = (Vec::new(), vec![F::ONE]);
         while !b.is_empty() {
@@ -135,27 +135,27 @@ impl Ring {
         }
         Ok(self.reduce(&scale(&u, a[0].inverse())))
     }
-    pub(super) fn zero_tensor(&self) -> Tensor {
+    pub fn zero_tensor(&self) -> Tensor {
         core::array::from_fn(|_| Vec::new())
     }
-    pub(super) fn lift(&self, p: &[F]) -> Tensor {
+    pub fn lift(&self, p: &[F]) -> Tensor {
         let mut output = self.zero_tensor();
         output[0] = self.reduce(p);
         output
     }
-    pub(super) fn constant(&self, value: E) -> Tensor {
+    pub fn constant(&self, value: E) -> Tensor {
         core::array::from_fn(|i| trim(vec![value.as_basis_coefficients_slice()[i]]))
     }
-    pub(super) fn tensor_add(&self, a: &Tensor, b: &Tensor) -> Tensor {
+    pub fn tensor_add(&self, a: &Tensor, b: &Tensor) -> Tensor {
         core::array::from_fn(|i| add(&a[i], &b[i]))
     }
-    pub(super) fn tensor_sub(&self, a: &Tensor, b: &Tensor) -> Tensor {
+    pub fn tensor_sub(&self, a: &Tensor, b: &Tensor) -> Tensor {
         core::array::from_fn(|i| sub(&a[i], &b[i]))
     }
-    pub(super) fn tensor_neg(&self, a: &Tensor) -> Tensor {
+    pub fn tensor_neg(&self, a: &Tensor) -> Tensor {
         core::array::from_fn(|i| scale(&a[i], -F::ONE))
     }
-    pub(super) fn tensor_mul(&self, a: &Tensor, b: &Tensor) -> Tensor {
+    pub fn tensor_mul(&self, a: &Tensor, b: &Tensor) -> Tensor {
         let mut output = self.zero_tensor();
         // E_coeff=F[u]/(u^5-3). X is the separate residue indeterminate.
         for (i, left) in a.iter().enumerate() {
@@ -171,7 +171,7 @@ impl Ring {
         }
         output
     }
-    pub(super) fn tensor_scale(&self, value: &Tensor, coefficient: E) -> Tensor {
+    pub fn tensor_scale(&self, value: &Tensor, coefficient: E) -> Tensor {
         self.tensor_mul(value, &self.constant(coefficient))
     }
 }

@@ -1,6 +1,7 @@
 [workspace]
 exclude = ["vendor/p3-multi-stark"]
 members = [
+    "crates/proof-research-support",
     "crates/bfv-hiding-stark",
     "crates/registry200-proof",
     "crates/registry200-journal",

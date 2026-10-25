@@ -149,7 +149,7 @@ production proof or SQL authority.
 The private [DATA public image](src/gold/program/dense_data_inventory/public_image/README.md)
 checks its actual AIR quotient coordinates against the SDK folder and reconstructs
 all zero-interleaved public PP cells and the genuine native cap. It and Query
-share one private [coefficient ring](src/gold/program/public_image_ring.rs);
+share the dev-dependency [coefficient ring](../proof-research-support/src/ring.rs);
 family-specific statements, AIRs, packing and profiles remain with their owners.
 
 Its owning [joint DATA disclosures](src/gold/program/dense_data_inventory/public_image/public_disclosures/README.md)

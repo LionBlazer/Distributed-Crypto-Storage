@@ -4,7 +4,7 @@ mod dense_backend;
 mod descriptor;
 mod pp;
 #[cfg(test)]
-mod public_image_ring;
+use proof_research_support::ring as public_image_ring;
 #[cfg(test)]
 mod research_hash;
 use super::{Error, Result};

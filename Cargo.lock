@@ -301,6 +301,7 @@ dependencies = [
  "p3-symmetric",
  "p3-uni-stark",
  "postcard",
+ "proof-research-support",
  "rand 0.10.3",
  "rand 0.9.2",
  "sha2",
@@ -3960,6 +3961,14 @@ version = "0.1.0"
 dependencies = [
  "libloading",
  "sha2",
+]
+
+[[package]]
+name = "proof-research-support"
+version = "0.1.0"
+dependencies = [
+ "bfv-hiding-stark",
+ "p3-field",
 ]
 
 [[package]]

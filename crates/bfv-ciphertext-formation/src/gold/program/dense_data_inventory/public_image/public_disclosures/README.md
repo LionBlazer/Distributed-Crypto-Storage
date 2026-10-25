@@ -25,7 +25,7 @@ geometry consumes932*394+85*197=383953 Gold cells, excluding rejection draws.
 
 The owning [DATA image](../README.md) supplies `DataFoldProgram`,
 `DisclosureDomain` and `PublicResidues`. Its shared
-[coefficient ring](../../../public_image_ring.rs), pinned P3 domain/DFT traits and
+[coefficient ring](../../../../../../../proof-research-support/src/ring.rs), pinned P3 domain/DFT traits and
 rand0.10 CryptoRng supply arithmetic. Types/functions are visible only in the
 DATA test subtree. No Cargo or normal-build API/configuration changes are needed.
 
